@@ -2,7 +2,7 @@
 
 A series of textbooks that should exist but don't.
 
-Each volume is written end to end by **Claude Opus 5.5 (max reasoning effort)**, with **human oversight by Xiaoyu Li**. All volumes share one LaTeX design, `template/missingbook.cls`.
+*Series edited by Xiaoyu Li.* Each volume is written end to end by Claude, and conceived and edited by Xiaoyu Li. A colophon at the end of each book records the model, settings and process used. All volumes share one LaTeX design, `template/missingbook.cls`.
 
 ## Volumes
 
