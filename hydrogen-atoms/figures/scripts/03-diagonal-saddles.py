@@ -75,7 +75,8 @@ for alpha in [1e-4, 1e-12, 1e-24]:
     L = np.log(1 / alpha)
 
     def rhs(t, z):
-        g = H @ (np.exp(2 * z[:d]) - np.exp(2 * z[d:])) - b
+        with np.errstate(over="ignore", invalid="ignore"):  # rejected trial steps may overflow
+            g = H @ (np.exp(2 * z[:d]) - np.exp(2 * z[d:])) - b
         return np.concatenate([-2 * g, 2 * g])
 
     sol = solve_ivp(rhs, (0, tau_grid[-1] * L), np.log(alpha) * np.ones(2 * d),

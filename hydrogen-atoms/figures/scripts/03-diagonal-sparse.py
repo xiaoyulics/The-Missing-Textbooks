@@ -121,11 +121,12 @@ for a in alphas:
 theory = np.array(theory)
 # power-law guide through the smallest-alpha point, slope 4 gamma*
 guide = theory[-1] * (alphas / alphas[-1]) ** (4.0 * gamma_star)
+guide[alphas > 0.03] = np.nan  # draw the power law only in the rich regime
 
 with open(os.path.join(OUT, "03-diagonal-sparse-theory.dat"), "w") as f:
     f.write("alpha err errl2 guide\n")
     for a, e, gd in zip(alphas[::-1], theory[::-1], guide[::-1]):
-        f.write(f"{a:.6e} {e:.6e} {err_l2:.6e} {gd:.6e}\n")
+        f.write(f"{a:.6e} {e:.6e} {err_l2:.6e} {gd:.6e}\n" if np.isfinite(gd) else f"{a:.6e} {e:.6e} {err_l2:.6e} nan\n")
 
 # simulation points
 sim_alphas = np.logspace(1.0, -4.0, 11)
