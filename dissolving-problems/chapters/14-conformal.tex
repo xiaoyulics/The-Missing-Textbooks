@@ -1,0 +1,410 @@
+% Chapter 14 -- Symmetry for Free (key: conformal)
+% Macros local to this chapter (prefixed with the chapter key).
+\newcommand{\conformaleqd}{\overset{\mathrm{d}}{=}}
+\newcommand{\conformalLeb}{\operatorname{Leb}}
+\newcommand{\conformalQuant}{\operatorname{Quantile}}
+\newcommand{\conformalerr}{\mathrm{err}}
+
+\casechapter{Symmetry for Free}{From permutation tests to conformal prediction}{Exploit a free symmetry}{ch:conformal}
+\begin{refsection}[chapters/14-conformal.bib]
+
+\begin{chaptersummary}
+A prediction interval used to need a model: exact when the model is right, misleading when it is wrong, and silent about black-box predictors. Fisher's randomization test and Wilks's order-statistic intervals escaped the model, but each needed its own argument and hypotheses, and neither could put an interval around a fitted predictor. The move is to notice that both rest on a symmetry the data have for free: when the observations are exchangeable, the rank of a symmetrically computed score is uniform. One counting lemma then yields permutation tests, order-statistic prediction intervals, and conformal prediction sets around every predictor, valid at every sample size. The difficulty moves into the assumption of exchangeability, into the size of the sets, and into a theorem that rules out conditional coverage.
+\end{chaptersummary}
+
+%==============================================================================
+\section{Before: three islands of exact inference}\label{sec:conformal:before}
+
+Suppose we have trained a predictor on $n$ examples---a random forest, a neural network, a model somebody else built---and a new input $x$ arrives. We want an interval that contains the unseen response with probability at least $95\%$, at the sample size we have, whatever distribution produced the data. Until the late 1990s statistics could keep promises of this kind in three separate places, and this question lay in none of them.
+
+\subsection{Prediction intervals from a model}\label{sec:conformal:model}
+
+The textbook answer assumes a model and inverts a pivot. Write $t_{m,\gamma}$ for the $\gamma$-quantile of Student's $t$ distribution with $m$ degrees of freedom.
+
+\begin{proposition}[Gaussian prediction interval]\label{prop:conformal:gauss}
+Let $X$ be a fixed $n\times p$ matrix of rank $p<n$, let $Y=X\beta+\eps$ with $\eps\sim N(0,\sigma^2I_n)$ for some $\sigma>0$, and let a new response $Y_0=x_0^{\top}\beta+\eps_0$ have $\eps_0\sim N(0,\sigma^2)$ independent of $\eps$. Put $\widehat\beta=(X^{\top}X)^{-1}X^{\top}Y$, $\widehat\sigma^2=\norm{Y-X\widehat\beta}^2/(n-p)$, and $h_0=x_0^{\top}(X^{\top}X)^{-1}x_0$. Then for every $\alpha\in(0,1)$,
+\[
+\Pr\Bigl(\abs{Y_0-x_0^{\top}\widehat\beta}\le t_{n-p,\,1-\alpha/2}\,\widehat\sigma\sqrt{1+h_0}\Bigr)=1-\alpha.
+\]
+\end{proposition}
+
+\begin{proofsketch}
+The plan is to exhibit a pivot. The prediction error $Y_0-x_0^{\top}\widehat\beta=\eps_0-x_0^{\top}(X^{\top}X)^{-1}X^{\top}\eps$ is normal with mean $0$ and variance $\sigma^2(1+h_0)$. The residual vector is the projection of $\eps$ onto the orthogonal complement of the column space of $X$, so $(n-p)\widehat\sigma^2/\sigma^2$ has the $\chi^2$ law with $n-p$ degrees of freedom, independent of the prediction error because uncorrelated jointly Gaussian vectors are independent; the studentized error therefore has the $t$ law with $n-p$ degrees of freedom. Normality is used at every step; the omitted details are standard linear-model theory.
+\end{proofsketch}
+
+The interval is exact, and exactly as good as the model. Let the errors take the values $-3$, $0$, $3$ with probabilities $1/18$, $8/9$, $1/18$, so that $\sigma=1$. Under the usual conditions on the design, $\widehat\beta$ and $\widehat\sigma$ are consistent and $h_0\to0$, so the nominal $95\%$ interval approaches $x_0^{\top}\beta\pm1.96$, which misses whenever $\eps_0=\pm3$: its coverage tends to $8/9$, not $0.95$. If the noise level varies with the covariates, then the interval covers too often where the noise is small and too rarely where it is large. For a random forest there is no pivot at all.
+
+A natural repair fails for an instructive reason: put the empirical $95\%$ quantile of the absolute training residuals on either side of the prediction. A model that interpolates its training data, such as a one-nearest-neighbor rule, has every training residual equal to zero, so the interval is a single point and covers a continuous response with probability zero. The training points are not like the test point, because the model has seen them.
+
+\subsection{Distribution-free intervals for one variable}\label{sec:conformal:wilks}
+
+Without covariates there is an exact answer that needs no model.
+
+\begin{proposition}[Prediction from order statistics]\label{prop:conformal:orderstat}
+Let $Y_1,\dots,Y_{n+1}$ be independent with a common continuous distribution function $F$, let $1\le k\le n$, and let $Y_{(k)}$ denote the $k$-th smallest of $Y_1,\dots,Y_n$. Then $\Pr(Y_{n+1}\le Y_{(k)})=k/(n+1)$.
+\end{proposition}
+
+\textcite{Wilks1941} showed, in a paper on tolerance limits, that the probability content of the interval between two order statistics has the same distribution for every continuous population; \cref{prop:conformal:orderstat} is the expected value of the one-sided case.\sidenote{A tolerance interval contains a prescribed fraction of the population with prescribed confidence. A prediction interval contains the next observation with prescribed probability. Averaging the first over the sample gives the second.}\index{tolerance interval} The classical proof, in the aside, uses continuity and independence at every step, and discontinuous distributions needed the separate treatment of \textcite{ScheffeTukey1945}. The island is small: with covariates the responses are not identically distributed, and to make them so we would need to know how $Y$ depends on $X$, which is the model again.
+
+\begin{aside}[A classical proof]
+Here is the standard proof of \cref{prop:conformal:orderstat}. Put $U_i=F(Y_i)$. \emph{Step 1.} Because $F$ is continuous, the $U_i$ are independent and uniform on $[0,1]$; because $F$ is nondecreasing, the events $\{Y_{n+1}\le Y_{(k)}\}$ and $\{U_{n+1}\le U_{(k)}\}$ differ only when $Y_{n+1}$ lands in an interval on which $F$ is constant, which has probability zero. \emph{Step 2.} Conditioning on $U_1,\dots,U_n$ and using the independence of $U_{n+1}$ gives $\Pr(U_{n+1}\le U_{(k)})=\E\,U_{(k)}$. \emph{Step 3.} The order statistic $U_{(k)}$ has density $\frac{n!}{(k-1)!\,(n-k)!}\,u^{k-1}(1-u)^{n-k}$ on $[0,1]$ (choose which $k-1$ points fall below $u$ and which one falls at $u$), and a Beta integral gives
+\[
+\E\,U_{(k)}=\frac{n!}{(k-1)!\,(n-k)!}\cdot\frac{k!\,(n-k)!}{(n+1)!}=\frac{k}{n+1}.
+\]
+Step 3 proves more than was asked: the coverage $F(Y_{(k)})=U_{(k)}$ of the interval $(-\infty,Y_{(k)}]$ has the Beta$(k,\,n-k+1)$ law, whatever $F$ is. This is the form Wilks needed for tolerance limits, and it returns in \cref{sec:conformal:costs}.
+\end{aside}
+
+\subsection{Randomization and permutation tests}\label{sec:conformal:fisher}
+
+The third island is the oldest. In 1876 Darwin published an experiment on maize, \emph{Zea mays}: fifteen pairs of plants, each a cross-fertilized and a self-fertilized plant grown in the same pot.\sidenote{Darwin, unsure how far averages from so few plants could be trusted, asked Francis Galton to examine the measurements; Fisher quotes the request and the reply at length.} \textcite{Fisher1935} reanalyzed the fifteen differences in height, which in eighths of an inch are
+\[
+49,\ -67,\ 8,\ 16,\ 6,\ 23,\ 28,\ 41,\ 14,\ 29,\ 56,\ 24,\ 75,\ 60,\ -48,
+\]
+with total $314$. Student's $t$ statistic is $2.148$ on $14$ degrees of freedom, just beyond the two-sided $5\%$ point $2.145$. Fisher then tested a wider hypothesis, without normality. If the two kinds of seed come from one population and the two sites in each pair are assigned to the plants at random, then each difference is as likely to be negative as positive, so the observed total should look like a typical member of the $2^{15}=32{,}768$ totals obtained by attaching signs to the fifteen absolute differences. Fisher counted: $863$ are at least $314$ and $863$ at most $-314$, together $5.267\%$ of the possibilities, close to the $t$ test (\cref{fig:conformal:darwin}).\index{randomization test}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=1cm,y=0.68cm,font=\footnotesize]
+  % 22 bins of width 628/12 between -575.7 and 575.7; heights = counts * 3.2/4051
+  \foreach \i/\h in {5/0.752,6/1.239,7/1.811,8/2.391,9/2.868,10/3.2,11/3.2,12/2.868,13/2.391,14/1.811,15/1.239,16/0.752}{
+    \filldraw[fill=seamist,draw=sea,line width=0.4pt] (0.45*\i,0) rectangle (0.45*\i+0.45,\h);
+  }
+  \foreach \i/\h in {0/0.0024,1/0.0174,2/0.0656,3/0.177,4/0.419,17/0.419,18/0.177,19/0.0656,20/0.0174,21/0.0024}{
+    \filldraw[fill=sand,draw=sandline,line width=0.4pt] (0.45*\i,0) rectangle (0.45*\i+0.45,\h);
+  }
+  \draw[muted] (-0.15,0) -- (10.05,0);
+  \foreach \x/\l in {0.651/{$-500$},2.800/{$-250$},4.950/{$0$},7.100/{$250$},9.249/{$500$}}{
+    \draw[muted] (\x,0) -- (\x,-0.08) node[below,text=ink] {\l};
+  }
+  \draw[muted] (-0.15,0) -- (-0.15,3.35);
+  \foreach \y/\l in {0.790/1000,1.580/2000,2.370/3000,3.160/4000}{
+    \draw[muted] (-0.15,\y) -- (-0.23,\y) node[left,text=ink] {\l};
+  }
+  \draw[seadeep,densely dashed,line width=0.6pt] (7.65,0) -- (7.65,3.3) node[above,text=seadeep] {observed $314$};
+  \draw[seadeep,densely dashed,line width=0.6pt] (2.25,0) -- (2.25,3.3) node[above,text=seadeep] {$-314$};
+  \node[text=seadeep] at (8.85,0.95) {$863$};
+  \node[text=seadeep] at (1.05,0.95) {$863$};
+  \node at (4.95,-0.9) {total of the signed differences (eighths of an inch)};
+  \node[rotate=90] at (-1.15,1.6) {sign patterns};
+\end{tikzpicture}
+\caption{Fisher's reference distribution for Darwin's differences: the totals $\sum_i\pm\abs{d_i}$ over all $2^{15}=32{,}768$ choices of signs, in bins of width $628/12$. The shaded tails, totals of at least $314$ or at most $-314$, contain $863$ sign patterns each.}\label{fig:conformal:darwin}
+\end{figure}
+
+Fisher offered the count as a check on the $t$ test, not a replacement. But he saw where its validity came from: \enquote{the physical act of randomisation}, he wrote, is what allows the wider hypothesis to be tested. If a coin decides in each pair which plant gets which site, then under the null hypothesis the coin itself makes the signs symmetric; the reference distribution is manufactured by the design. Darwin had tossed no coins, which Fisher called the one flaw in his procedure, but for an experiment designed in Fisher's way the symmetry is a fact rather than an assumption.\sidenote{The more famous example in the same book is the lady tasting tea. With eight cups, four of each kind, a lady who can only guess names the four cups with milk poured first with probability $1/\binom{8}{4}=1/70$.}
+
+\textcite{Pitman1937} made the idea general: refer a statistic, such as the difference of two sample means, to its distribution over all rearrangements of the pooled observations, whatever the populations. Sequels in 1937 and 1938 treated correlation and the analysis of variance; rank tests such as Wilcoxon's are permutation tests applied to ranks.\index{permutation test}
+
+\begin{aside}[The classical validity argument]
+Pool two samples into $Z=(Z_1,\dots,Z_N)$ and suppose that under the null hypothesis the $Z_i$ are independent with a common density $f$. Conditionally on the set of observed values, almost surely $N$ distinct numbers, the symmetric joint density $f(z_1)\cdots f(z_N)$ makes all $N!$ arrangements equally likely. A test that rejects when $T(Z)$ is among the $\floor{\alpha N!}$ largest values of $T$ on the arrangements therefore has conditional level at most $\alpha$, hence level at most $\alpha$. The argument needs a density to make the conditional law explicit and a convention for ties of $T$; it covers all $N!$ arrangements, not the random few thousand a computer can afford; and it must be redone for each design.
+\end{aside}
+
+None of the islands reaches our question: tolerance intervals have no covariates, permutation tests answer yes-or-no questions, and model-based intervals need the model.
+
+%==============================================================================
+\section{The move: exchangeable scores have uniform ranks}\label{sec:conformal:move}
+
+Look at where the probability came from on each island: from coin flips within pairs for Fisher, from independent sampling for Wilks (it makes all orderings of the $n+1$ values equally likely), and from random labels for Pitman. The Gaussian model only supplied a reference distribution, and in each case a symmetry of the data supplied one for nothing. Write $U\conformaleqd V$ when $U$ and $V$ have the same distribution.
+
+\begin{definition}[Exchangeability]\label{def:conformal:exchangeable}
+A random vector $V=(V_1,\dots,V_N)$ is \term{exchangeable} if $(V_{\sigma(1)},\dots,V_{\sigma(N)})\conformaleqd(V_1,\dots,V_N)$ for every permutation $\sigma$ of $\{1,\dots,N\}$. More generally, a finite group $G$ \term{acts} on a measurable space $\cZ$ if each $g\in G$ is a measurable map $z\mapsto gz$ of $\cZ$ into itself, with $ez=z$ for the identity $e$ and $(gh)z=g(hz)$ for all $g,h\in G$; a random element $Z$ of $\cZ$ is \term{$G$-invariant} if $gZ\conformaleqd Z$ for every $g\in G$.
+\end{definition}
+
+\index{exchangeability}Independent, identically distributed vectors are exchangeable, and so are their mixtures: draw a distribution $\mu$ at random, then draw $V_1,\dots,V_N$ independently from $\mu$. A statistician who models data as a sample from an unknown distribution with a prior on it therefore assumes exchangeability, which is all that the results below use.\sidenote{De Finetti's theorem \parencite{deFinetti1937}, in its modern form, gives the converse for infinite sequences: an infinite exchangeable sequence of real random variables is a mixture of independent, identically distributed sequences.}\index{de Finetti's theorem} Exchangeability is weaker still: two draws without replacement from an urn with one black and one white ball are exchangeable but never equal, which no mixture of independent coin flips can achieve. Sampling without replacement and random assignment of treatments are exchangeable by construction; time series with a trend, adaptively collected data, and a test point from a population other than the training sample's are not.
+
+The lemma that converts symmetry into probability is about ranks. For numbers $v_1,\dots,v_N$ in $[-\infty,\infty]$ call
+\[
+r_j(v)=\#\{i\le N : v_i\ge v_j\}
+\]
+the \term{upper rank} of $v_j$. It counts $v_j$ itself and all its ties, so $1\le r_j(v)\le N$.
+
+\begin{lemma}[Rank lemma]\label{lem:conformal:rank}
+\textup{(a)} For numbers $v_1,\dots,v_N$ in $[-\infty,\infty]$ and every integer $m$ with $0\le m\le N$, at most $m$ indices $j$ satisfy $r_j(v)\le m$, and exactly $m$ do when the $v_i$ are distinct.
+\par\textup{(b)} If $V_1,\dots,V_N$ are exchangeable random variables with values in $[-\infty,\infty]$, then for each $j$ and every integer $m$ with $0\le m\le N$,
+\[
+\Pr\bigl(r_j(V)\le m\bigr)\le\frac{m}{N},
+\]
+with equality when $V_1,\dots,V_N$ are almost surely distinct.
+\end{lemma}
+
+\index{rank lemma}
+\begin{proof}
+(a) For $m=0$ there is nothing to prove, because every upper rank is at least $1$. List the indices in an order $\pi(1),\dots,\pi(N)$ with $v_{\pi(1)}\ge v_{\pi(2)}\ge\dots\ge v_{\pi(N)}$, breaking ties arbitrarily, and let $p(j)$ be the position of $j$ in the list. The $p(j)$ indices in positions $1,\dots,p(j)$ all have values at least $v_j$, so $r_j(v)\ge p(j)$. Hence $r_j(v)\le m$ forces $p(j)\le m$, and only $m$ indices occupy the positions $1,\dots,m$. When the values are distinct, $r_j(v)=p(j)$, so exactly $m$ indices qualify.
+
+(b) Exchanging the coordinates $j$ and $j'$ of $V$ does not change its law and exchanges $r_j(V)$ with $r_{j'}(V)$, so $\Pr(r_j(V)\le m)$ does not depend on $j$. Average over $j$, then apply (a) to each realization:
+\[
+\Pr\bigl(r_j(V)\le m\bigr)=\frac1N\,\E\,\#\{i\le N : r_i(V)\le m\}\le\frac mN,
+\]
+with equality in the distinct case.
+\end{proof}
+
+For prediction, the lemma compares a new score with the order statistics of $n$ old ones.\sidenote{The $+1$ in $n+1$ counts the test score among the scores. Exercise~\ref{ex:conformal:plusone} shows what dropping it costs.}
+
+\begin{corollary}[Quantile form]\label{cor:conformal:quantile}
+Let $S_1,\dots,S_{n+1}$ be exchangeable random variables with values in $(-\infty,\infty]$. For $1\le k\le n$ let $S_{(k)}$ be the $k$-th smallest of $S_1,\dots,S_n$, and put $S_{(k)}=+\infty$ for $k>n$. Then for every integer $k\ge1$,
+\[
+\Pr\bigl(S_{n+1}\le S_{(k)}\bigr)\ge\min\Bigl\{\frac{k}{n+1},\,1\Bigr\},
+\]
+with equality when the $S_i$ are almost surely distinct. In particular, if $\alpha\in(0,1)$ and $k=\ceil{(1-\alpha)(n+1)}$, then $\Pr(S_{n+1}\le S_{(k)})\ge1-\alpha$, and in the distinct case $\Pr(S_{n+1}\le S_{(k)})<1-\alpha+1/(n+1)$.
+\end{corollary}
+
+\begin{proof}
+If $k>n$, then $S_{(k)}=+\infty$ and the event is certain. Let $k\le n$. The score $S_{n+1}$ exceeds $S_{(k)}$ exactly when at least $k$ of $S_1,\dots,S_n$ lie strictly below it, that is, when at most $n-k$ of them are at least $S_{n+1}$; counting $S_{n+1}$ itself, this is the event $r_{n+1}(S)\le n+1-k$. \Cref{lem:conformal:rank}(b) with $N=n+1$ and $m=n+1-k$ bounds its probability by $(n+1-k)/(n+1)$, with equality in the distinct case. For the particular $k$, this bound is at most $\alpha$ because $k\ge(1-\alpha)(n+1)$; and in the distinct case the coverage, $k/(n+1)$ or $1$, is less than $1-\alpha+1/(n+1)$ because $k<(1-\alpha)(n+1)+1$.
+\end{proof}
+
+Scores are usually computed from the data; the second lemma says this costs nothing if the computation treats the points symmetrically. For $z=(z_1,\dots,z_N)$ and a permutation $\sigma$ write $z_\sigma=(z_{\sigma(1)},\dots,z_{\sigma(N)})$.
+
+\begin{lemma}[Equivariance]\label{lem:conformal:equivariance}
+Let $Z=(Z_1,\dots,Z_N)$ be exchangeable with values in $\cZ^N$, and let $F:\cZ^N\to[-\infty,\infty]^N$ be measurable and \term{permutation-equivariant}: $F(z_\sigma)=F(z)_\sigma$ for every $z$ and every permutation $\sigma$. Then $F(Z)$ is exchangeable. The map with coordinates $F(z)_i=s(z_i;z)$ is permutation-equivariant whenever the score $s(z_i;z)$ depends on $z$ only through the multiset $\{z_1,\dots,z_N\}$.
+\end{lemma}
+
+\index{equivariance}
+\begin{proof}
+For every permutation $\sigma$ we have $F(Z)_\sigma=F(Z_\sigma)\conformaleqd F(Z)$. For the score, $F(z_\sigma)_i=s(z_{\sigma(i)};z_\sigma)=s(z_{\sigma(i)};z)=F(z)_{\sigma(i)}$.
+\end{proof}
+
+A typical score is $s((x,y);z)=\abs{y-\widehat\mu_z(x)}$, the residual of $(x,y)$ under a regression function fitted to the whole data set $z$ by an algorithm that ignores the order of its input, such as least squares or ridge regression; a randomized algorithm becomes symmetric if it is fed the data in a uniformly random order.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=1cm,y=1cm,font=\footnotesize]
+  \draw[muted] (0,2.3) -- (10,2.3);
+  \foreach \x in {0.6,1.3,1.9,2.4,3.6,4.4,5.9,6.7,8.3}{\fill[sea] (\x,2.3) circle (2.3pt);}
+  \node[draw=sandline,fill=sand,diamond,inner sep=1.7pt] at (5.2,2.3) {};
+  \node[below=3pt] at (5.2,2.3) {$S_{n+1}$};
+  \draw[seadeep,densely dashed,line width=0.6pt] (8.3,1.95) -- (8.3,2.75) node[above] {$\widehat q=S_{(9)}$};
+  \node[anchor=west] at (0,2.9) {nine calibration scores and a test score};
+  \foreach \i in {1,...,9}{
+    \filldraw[fill=seamist,draw=sea,line width=0.4pt] (\i-0.85,0) rectangle (\i-0.15,0.6);
+    \node[below] at (\i-0.5,0) {\i};
+  }
+  \filldraw[fill=sand,draw=sandline,line width=0.4pt] (9.15,0) rectangle (9.85,0.6);
+  \node[below] at (9.5,0) {10};
+  \draw[decorate,decoration={brace,amplitude=4pt},sea] (0.15,0.75) -- (8.85,0.75) node[midway,above=4pt,text=ink] {covered};
+  \draw[decorate,decoration={brace,amplitude=4pt},sandline] (9.15,0.75) -- (9.85,0.75) node[midway,above=4pt,text=ink] {missed};
+  \node[anchor=west] at (0,-0.7) {position of $S_{n+1}$ among all ten scores: each has probability $1/10$};
+\end{tikzpicture}
+\caption{The rank lemma with $n=9$ and $\alpha=0.1$, so that $k=9$ and $\widehat q$ is the largest calibration score. Top: one realization. Bottom: by exchangeability the test score is equally likely to take each of the ten positions among all ten sorted scores, and it is missed only in position $10$; the coverage is $9/10$ whatever the scores are, and at least $9/10$ if they can tie.}\label{fig:conformal:rank}
+\end{figure}
+
+Together the two lemmas are the move. What had to be noticed was not new mathematics but two permissions. The numbers may come from anywhere, even from a neural network trained on the data, if the training treats the points symmetrically. And the unknown can be put inside the symmetric family: the test point is the last of $n+1$ exchangeable points, and a hypothesized value of its response can join the data before the model is fitted. Grothendieck's advice to stoop low applies literally: the decisive object is the rank of one number among $n+1$ (\cref{fig:conformal:rank}), an integer that knows nothing about models. The symmetry is free because it is guaranteed by the way the data were collected, by random sampling or by Fisher's coin, and not by a model of how they were generated.
+
+%==============================================================================
+\section{After: the old theorems in a line or two}\label{sec:conformal:after-old}
+
+We start by proving again what the islands knew.
+
+\begin{corollary}[Prediction from order statistics, again]\label{cor:conformal:orderstat}
+Let $Y_1,\dots,Y_{n+1}$ be exchangeable real random variables and let $Y_{(k)}$ be the $k$-th smallest of $Y_1,\dots,Y_n$. For $1\le k\le n$ we have $\Pr(Y_{n+1}\le Y_{(k)})\ge k/(n+1)$, and for $1\le j<k\le n$,
+\[
+\Pr\bigl(Y_{(j)}\le Y_{n+1}\le Y_{(k)}\bigr)\ge\frac{k-j}{n+1}.
+\]
+Both bounds are equalities when the $Y_i$ are almost surely distinct.
+\end{corollary}
+
+\begin{proof}
+The one-sided bound is \cref{cor:conformal:quantile} with $S_i=Y_i$. Applied to the exchangeable variables $-Y_i$, whose $(n+1-j)$-th smallest is $-Y_{(j)}$, the same corollary gives $\Pr(Y_{n+1}<Y_{(j)})\le j/(n+1)$. A union bound gives the two-sided inequality. In the distinct case both bounds are equalities and the two ways of missing are disjoint.
+\end{proof}
+
+Compare the aside in \cref{sec:conformal:wilks}: no probability integral transform, no density of an order statistic, no Beta integral, no continuity (discontinuous distributions are simply the case with ties), and exchangeability in place of independence.
+
+\begin{theorem}[Randomization tests]\label{thm:conformal:randomization}
+Let a finite group $G$ act on $\cZ$, let $Z$ be a $G$-invariant random element of $\cZ$, and let $T:\cZ\to\R$ be measurable.
+\par\textup{(a)} The p-value $p=\abs{G}^{-1}\,\#\{g\in G : T(gZ)\ge T(Z)\}$ satisfies $\Pr(p\le u)\le u$ for every $u\in[0,1]$.
+\par\textup{(b)} Let $G_1,\dots,G_B$ be independent and uniformly distributed on $G$, and independent of $Z$. The p-value $p_B=(B+1)^{-1}\bigl(1+\#\{b\le B : T(G_bZ)\ge T(Z)\}\bigr)$ satisfies $\Pr(p_B\le u)\le u$ for every $u\in[0,1]$.
+\end{theorem}
+
+\begin{proof}
+The plan is to place the observed statistic in a family of values in which its position is uniformly random, and then to count with \cref{lem:conformal:rank}. Let $H$ be uniform on $G$ and independent of $(Z,G_1,\dots,G_B)$. Because $Z$ is $G$-invariant and independent of $H$, conditioning on $H$ shows that $HZ\conformaleqd Z$. Because $(H,Z)$ is independent of $(G_1,\dots,G_B)$, also $(HZ,G_1,\dots,G_B)\conformaleqd(Z,G_1,\dots,G_B)$.
+
+(a) Hence $p$ has the law of $\abs{G}^{-1}\#\{g\in G : T(gHZ)\ge T(HZ)\}$. Substituting $g'=gH$, which is a bijection of $G$, shows that this quantity equals
+\[
+\frac{1}{\abs G}\,\#\bigl\{g'\in G : T(g'Z)\ge T(HZ)\bigr\}.
+\]
+Conditionally on $Z$, this is the upper rank, divided by $\abs G$, of the entry with the uniformly random index $H$ in the list $(T(g'Z))_{g'\in G}$. By \cref{lem:conformal:rank}(a), at most $m=\floor{u\abs G}$ entries of the list have upper rank at most $m$, so the conditional probability that this quantity is at most $u$ is at most $m/\abs G\le u$. Averaging over $Z$ proves (a).
+
+(b) Put $G_0=e$, $H_0=H$, and $H_b=G_bH$ for $b\ge1$. Hence the vector $(T(G_bZ))_{b=0}^{B}$ has the law of $(T(H_bZ))_{b=0}^{B}$. Given $H$, right multiplication by $H$ is a bijection of $G$, so $H_0,\dots,H_B$ are independent, uniform on $G$, and independent of $Z$. Conditionally on $Z$ the entries $T(H_bZ)$ are therefore independent and identically distributed, and the vector is exchangeable. Since $(B+1)p_B$ is the upper rank of its entry $T(Z)$, \cref{lem:conformal:rank}(b) gives $\Pr(p_B\le u)\le\floor{u(B+1)}/(B+1)\le u$.
+\end{proof}
+
+\begin{example}[Darwin's maize and two samples]\label{exa:conformal:darwin}
+Let $G=\{-1,1\}^{15}$ act on $\R^{15}$ by coordinatewise multiplication and let $T(d)=d_1+\dots+d_{15}$. Fisher's wider hypothesis says that the vector $D$ of differences is $G$-invariant, so \cref{thm:conformal:randomization}(a) makes his count a valid one-sided p-value, $863/32{,}768\approx0.026$. The differences need not be identically distributed or continuous, and the $28$ sign patterns with total exactly $314$ are counted by the ``$\ge$'' in $p$; the continuous $t$ test, Fisher noted, effectively counts only half of them. For two samples pooled into $Z\in\R^N$, let the symmetric group permute coordinates. If $Z$ is exchangeable under the null hypothesis, as when treatments are assigned completely at random and have no effect, then the theorem makes Pitman's test exact, and Wilcoxon's rank-sum test exact whatever convention is used for ties; part (b) covers a test from $B$ random permutations, provided the observed arrangement is counted among them.
+\end{example}
+
+The classical argument conditioned on the observed values and needed a density; the proof above conditions only to say that a uniform group element stays uniform after a translation, and then it counts.
+
+%==============================================================================
+\section{After: a prediction set around every predictor}\label{sec:conformal:after-new}
+
+Now the question from the opening. Data points $Z_i=(X_i,Y_i)$ take values in $\cZ=\cX\times\cY$; the first $n$ are observed, and of the test point only $X_{n+1}$. A set-valued rule $C$ has \term{marginal coverage} $1-\alpha$ if $\Pr(Y_{n+1}\in C(X_{n+1}))\ge1-\alpha$, over all $n+1$ points.\index{coverage!marginal} A \term{score function} $s$ measures how unusual a response $y$ looks at the input $x$; the residual $\abs{y-\widehat\mu(x)}$ of a regression function $\widehat\mu$ is the basic example.\index{score function} Throughout, $\alpha\in(0,1)$ and $k=\ceil{(1-\alpha)(n+1)}$.
+
+\subsection{Split and full conformal prediction}
+
+\begin{theorem}[Split conformal prediction]\label{thm:conformal:split}
+Let $Z_1,\dots,Z_{n+1}$ be exchangeable, let $s:\cX\times\cY\to\R$ be a fixed measurable score, and let $\widehat q$ be the $k$-th smallest of the calibration scores $S_i=s(X_i,Y_i)$, $i\le n$, with $\widehat q=+\infty$ if $k>n$. Then the set $C(x)=\{y\in\cY : s(x,y)\le\widehat q\}$ satisfies $\Pr(Y_{n+1}\in C(X_{n+1}))\ge1-\alpha$. If the scores $S_1,\dots,S_{n+1}$ are almost surely distinct, then this probability is less than $1-\alpha+1/(n+1)$.
+\end{theorem}
+
+\index{conformal prediction!split}
+\begin{proof}
+The response $Y_{n+1}$ lies in $C(X_{n+1})$ exactly when $S_{n+1}\le\widehat q$. The scores are exchangeable by \cref{lem:conformal:equivariance}, applied to the map that applies $s$ to each coordinate, and \cref{cor:conformal:quantile} gives both bounds.
+\end{proof}
+
+In practice the score is learned: fit $\widehat\mu$ on one part of the data and calibrate on the other $n$ points. If all the data are exchangeable, then conditionally on the first part the rest are still exchangeable and $s(x,y)=\abs{y-\widehat\mu(x)}$ is fixed, so the theorem gives the interval $\widehat\mu(x)\pm\widehat q$ \parencite{Papadopoulos2002,Lei2018}; the score $\abs{y-\widehat\mu(x)}/\widehat\sigma(x)$, with a fitted scale $\widehat\sigma$, widens it where the noise is large.\sidenote{\textcite{Papadopoulos2002} called the split method an inductive confidence machine. The book of \textcite{Vovk2005} develops the theory under the name conformal prediction.} In \cref{prop:conformal:gauss} the model bought the coverage; here the symmetry buys it, and the model buys only the width. The guarantee is marginal, so the set may cover easy inputs too often and hard ones too rarely.
+
+Splitting spends data. The original, transductive form of the method \parencite{Gammerman1998,Vovk2005} fits and calibrates on all $n$ points: add the test input with a hypothesized response, refit, and keep the response if it does not look unusual.
+
+\begin{theorem}[Full conformal prediction]\label{thm:conformal:full}
+Let $Z_1,\dots,Z_{n+1}$ be exchangeable, and let $s(z;D)$ be a measurable score of a point $z\in\cZ$ relative to a data set $D\in\cZ^{n+1}$ that depends on $D$ only through the multiset of its entries. For $y\in\cY$ let $D^y=(Z_1,\dots,Z_n,(X_{n+1},y))$, let $S^y_i=s(D^y_i;D^y)$ for $i\le n+1$, and let
+\[
+p(y)=\frac{1}{n+1}\,\#\bigl\{i\le n+1 : S^y_i\ge S^y_{n+1}\bigr\}.
+\]
+Then the set $C=\{y\in\cY : p(y)>\alpha\}$ satisfies $\Pr(Y_{n+1}\in C)\ge1-\alpha$. If the scores $S^{Y_{n+1}}_1,\dots,S^{Y_{n+1}}_{n+1}$ are almost surely distinct, then $\Pr(Y_{n+1}\in C)<1-\alpha+1/(n+1)$.
+\end{theorem}
+
+\index{conformal prediction!full}
+\begin{proof}
+At $y=Y_{n+1}$ the augmented data set is the true data vector $Z$, so the scores $S^{Y_{n+1}}_i=s(Z_i;Z)$ are exchangeable by \cref{lem:conformal:equivariance}. The response is missed exactly when $p(Y_{n+1})\le\alpha$, that is, when the upper rank of $S^{Y_{n+1}}_{n+1}$ is at most $\floor{\alpha(n+1)}$. \Cref{lem:conformal:rank}(b) bounds the probability of this event by $\floor{\alpha(n+1)}/(n+1)\le\alpha$, with equality in the distinct case, and $\floor{\alpha(n+1)}/(n+1)>\alpha-1/(n+1)$.
+\end{proof}
+
+Unwinding the definition, $y\in C$ exactly when $S^y_{n+1}$ is at most the $k$-th smallest of $S^y_1,\dots,S^y_n$, so \cref{thm:conformal:split} is the case of a score that ignores $D$. The price is computation: the model must in principle be refitted for every candidate $y$. For ridge regression each score is the absolute value of an affine function of $y$, so $C$ is a finite union of intervals that can be computed exactly.
+
+\subsection{Sets of labels}
+
+For classification, $\cY=\{1,\dots,K\}$ and the input is usually an estimate $\widehat\pi(x)$ of the conditional probabilities $\Pr(Y=y\mid X=x)$, such as a softmax output. \textcite{Romano2020} designed a score that imitates the sets one would use if $\widehat\pi$ were correct. Order the labels by decreasing $\widehat\pi_y(x)$, breaking ties by label, write $y'\prec_x y$ when $y'$ comes first, and for $u\in[0,1]$ put
+\begin{equation}\label{eq:conformal:aps}
+s(x,y,u)=\sum_{y'\prec_x y}\widehat\pi_{y'}(x)+u\,\widehat\pi_y(x).
+\end{equation}
+With $U_1,\dots,U_{n+1}$ independent, uniform on $[0,1]$, and independent of the data, \cref{thm:conformal:split} applied to the exchangeable points $((X_i,U_i),Y_i)$ shows that $C(x)=\{y : s(x,y,U_{n+1})\le\widehat q\}$, with $\widehat q$ the $k$-th smallest calibration score, covers with probability at least $1-\alpha$.\index{adaptive prediction sets} For fixed $x$ and $u$ the score does not decrease along $\prec_x$, so the set takes labels in order of decreasing $\widehat\pi_y(x)$ until their estimated mass reaches $\widehat q$, and $U_{n+1}$ decides about the boundary label. If $\widehat\pi$ is correct, then the score is uniform given $X$ and the sets nearly have conditional coverage (Exercise~\ref{ex:conformal:aps}). If it is wrong, then the marginal guarantee still holds.
+
+\subsection{Using all the data: the jackknife+}
+
+Split conformal prediction pays with data, full conformal prediction with computation; the jackknife+ of \textcite{Barber2021a} fits $n$ models and uses every point to fit and to calibrate. Given a regression algorithm that ignores the order of its input, let $\widehat\mu_{-i}$ be its fit without the $i$-th training point, and $R_i=\abs{Y_i-\widehat\mu_{-i}(X_i)}$. For numbers $v_1,\dots,v_n$ write $\widehat q^{+}\{v_i\}$ for their $k$-th smallest ($+\infty$ if $k>n$) and $\widehat q^{-}\{v_i\}$ for their $\floor{\alpha(n+1)}$-th smallest ($-\infty$ if $\floor{\alpha(n+1)}=0$).\index{jackknife+}
+
+\begin{theorem}[Jackknife+; \textcite{Barber2021a}]\label{thm:conformal:jackknife}
+Let $n\ge2$, let $Z_1,\dots,Z_{n+1}$ be exchangeable in $\cX\times\R$, and let the regression algorithm be deterministic and symmetric. Then the interval
+\[
+C(x)=\Bigl[\,\widehat q^{-}\{\widehat\mu_{-i}(x)-R_i\},\ \widehat q^{+}\{\widehat\mu_{-i}(x)+R_i\}\,\Bigr]
+\]
+satisfies $\Pr(Y_{n+1}\in C(X_{n+1}))\ge1-2\alpha$.
+\end{theorem}
+
+\begin{proof}
+The plan is to compare held-out residuals in pairs, as games between points, and to show that a miss forces the test point to win an unusually large share of its games, which at most a $2\alpha$ fraction of the points can do.
+
+\emph{The tournament.} For $i\ne j$ in $\{1,\dots,n+1\}$ let $\widetilde\mu_{ij}$ be the fit on all points other than $i$ and $j$; by symmetry $\widetilde\mu_{ij}=\widetilde\mu_{ji}$. Let $R_{ij}=\abs{Y_i-\widetilde\mu_{ij}(X_i)}$, and say that $i$ beats $j$ if $R_{ij}>R_{ji}$; in each pair at most one point wins. Call $i$ \emph{strange} if it beats at least $(1-\alpha)(n+1)$ other points.
+
+\emph{Few strange points.} Let $c$ be the number of strange points; we show $c<2\alpha(n+1)$, which holds if $c=0$. Let $c\ge1$. A strange point plays $n+1-c$ games against points that are not strange, so it beats at least $(1-\alpha)(n+1)-(n+1-c)=c-\alpha(n+1)$ strange points. Summing over the strange points counts each game among them at most once, so $c\bigl(c-\alpha(n+1)\bigr)\le c(c-1)/2$, that is, $c\le2\alpha(n+1)-1$.
+
+\emph{Symmetry.} The vector of indicators of the events that $i$ is strange, $i\le n+1$, is a permutation-equivariant function of $Z$, because the algorithm ignores the order of its input. By \cref{lem:conformal:equivariance} it is exchangeable, so the test point is strange with probability $\E[c]/(n+1)<2\alpha$.
+
+\emph{A miss makes the test point strange.} For $i\le n$ we have $\widetilde\mu_{i,n+1}=\widehat\mu_{-i}$, so $R_{i,n+1}=R_i$ and $R_{n+1,i}=\abs{Y_{n+1}-\widehat\mu_{-i}(X_{n+1})}$. If $Y_{n+1}$ lies above the interval, then $k\le n$ and $Y_{n+1}>\widehat\mu_{-i}(X_{n+1})+R_i$, so that $R_{n+1,i}>R_{i,n+1}$, for at least $k\ge(1-\alpha)(n+1)$ indices $i$. If it lies below, then $m=\floor{\alpha(n+1)}\ge1$ and $Y_{n+1}<\widehat\mu_{-i}(X_{n+1})-R_i$, so again $R_{n+1,i}>R_{i,n+1}$, for at least $n-m+1\ge(1-\alpha)(n+1)$ indices. Either way the test point is strange, and the symmetry step bounds the probability of a miss by $2\alpha$.
+\end{proof}
+
+\textcite{Barber2021a} also show that the factor $2$ cannot be removed in general,\sidenote{They note that the counting step is essentially Landau's 1953 theorem on the score sequences of tournaments.} and that the ordinary jackknife, centered at the fit on all $n$ points, can have coverage zero; with stable algorithms both cover at about $1-\alpha$.
+
+\subsection{A broken symmetry, repaired: covariate shift}
+
+The commonest violation of exchangeability is to train on one population and predict on another. Suppose only the inputs shift, and write $P_X\times P_{Y\mid X}$ for the law of $(X,Y)$ when $X\sim P_X$ and $Y$ given $X$ has the law $P_{Y\mid X}$; the training points come from $P=P_X\times P_{Y\mid X}$, the test point from $\widetilde P=\widetilde P_X\times P_{Y\mid X}$. If the density $w=\dd\widetilde P_X/\dd P_X$ is known, even up to a constant factor, then the symmetry is broken in a known way, and weights repair it. For a probability measure $\nu$ on $[-\infty,\infty]$ and $\beta\in(0,1]$ let $\conformalQuant_\beta(\nu)=\inf\{t : \nu([-\infty,t])\ge\beta\}$, an infimum that is attained because $t\mapsto\nu([-\infty,t])$ is right-continuous.\index{covariate shift}
+
+\begin{theorem}[Weighted split conformal; \textcite{Tibshirani2019}]\label{thm:conformal:weighted}
+Suppose that $\widetilde P_X$ has a density $w$ with respect to $P_X$, let $Z_1,\dots,Z_n$ be independent draws from $P$, and let $Z_{n+1}$ be an independent draw from $\widetilde P$. Let $s$ be a fixed score, $S_i=s(X_i,Y_i)$, and $W(x)=\sum_{j\le n}w(X_j)+w(x)$. For $x$ with $W(x)>0$ let
+\[
+\widehat q(x)=\conformalQuant_{1-\alpha}\Bigl(\sum_{i\le n}\frac{w(X_i)}{W(x)}\,\delta_{S_i}+\frac{w(x)}{W(x)}\,\delta_{+\infty}\Bigr)
+\]
+and $C(x)=\{y : s(x,y)\le\widehat q(x)\}$; for other $x$ let $C(x)=\cY$. Then $\Pr(Y_{n+1}\in C(X_{n+1}))\ge1-\alpha$.
+\end{theorem}
+
+\begin{proof}
+The plan is to manufacture the training sample and the test point from $n+1$ draws from $P$, choosing at random, with weights, which draw plays the test point; this restores a symmetry, and the rank argument runs with weights.
+
+\emph{A change of measure.} Let $Z'_1,\dots,Z'_{n+1}$ be independent draws from $P$, with $Z'_i=(X'_i,Y'_i)$, $S'_i=s(Z'_i)$, $W_i=w(X'_i)$, and $W=W_1+\dots+W_{n+1}$; let $Z'_{-j}$ be the multiset of the $Z'_i$ with $i\ne j$. Fix a bounded measurable function $h(D;z)$ that is symmetric in the $n$ entries of $D$, and put $h_j=h(Z'_{-j};Z'_j)$. The law $\widetilde P$ has density $(x,y)\mapsto w(x)$ with respect to $P$, and exchanging $Z'_j$ with $Z'_{n+1}$ does not change the law of $(Z'_1,\dots,Z'_{n+1})$; hence
+\begin{equation}\label{eq:conformal:tilt}
+\E\,h(Z_1,\dots,Z_n;Z_{n+1})=\E\,W_{n+1}h_{n+1}=\frac{1}{n+1}\sum_{j=1}^{n+1}\E\,W_jh_j.
+\end{equation}
+
+\emph{The probability of a miss.} Write $\widehat q(x;D)$ for the threshold of the theorem computed from a training multiset $D$; it is symmetric in $D$. Applied to $h(D;(x,y))=\ind\{s(x,y)>\widehat q(x;D)\}$, identity \eqref{eq:conformal:tilt} expresses the probability of a miss as $(n+1)^{-1}\E\sum_jW_j\ind\{S'_j>\widehat q(X'_j;Z'_{-j})\}$. If $W=0$, then every term vanishes. We show below that if $W>0$, then the sum is at most $\alpha W$; since $\E W_j=\int w\dd P_X=1$, the probability of a miss is then at most $\alpha$.
+
+\emph{A weighted count.} Let $W>0$, let $\nu=W^{-1}\sum_jW_j\,\delta_{S'_j}$, and let $q^*=\conformalQuant_{1-\alpha}(\nu)$. At $x=X'_j$ the weights of the theorem computed from $Z'_{-j}$ are $W_i/W$ for $i\ne j$ and $W_j/W$ for the point at infinity, so $\widehat q(X'_j;Z'_{-j})$ is the quantile of the measure obtained from $\nu$ by moving the mass $W_j/W$ from $S'_j$ to $+\infty$. Moving mass to the right can only raise a quantile, so a miss at $j$ implies $S'_j>q^*$. Hence
+\[
+\sum_{j}\frac{W_j}{W}\,\ind\bigl\{S'_j>\widehat q(X'_j;Z'_{-j})\bigr\}\le\nu\bigl((q^*,\infty]\bigr)\le\alpha,
+\]
+the last inequality because $\nu([-\infty,q^*])\ge1-\alpha$ by the definition of the quantile.
+\end{proof}
+
+\index{weighted exchangeability}With $w$ constant this is split conformal prediction. In practice $w$ is estimated, for instance by a classifier that tells training inputs from test inputs, and the guarantee then holds only up to the estimation error. \textcite{Tibshirani2019} also treat full conformal prediction and a general notion of weighted exchangeability.
+
+%==============================================================================
+\section{Costs and limits}\label{sec:conformal:costs}
+
+\paragraph{Where did the difficulty go?} Not into the proofs: every guarantee here is the rank lemma, a count, applied to some symmetric statistic. The difficulty went into three places. Into the hypothesis: exchangeability is free only when the design guarantees it, and for time series, adaptively collected data, or a deployed model that changes the population it predicts, it is false and the theorems say nothing. Into efficiency: the guarantee is the same for a good model and a useless one, and the model controls only the size of the set; calibration makes a model honest, not good. And into the meaning of the guarantee, which is marginal. Still, the price is paid once: a new predictor, score, or kind of data needs no new probability theory, whereas the interval of \cref{prop:conformal:gauss} needs a new pivot for every new model.
+
+\paragraph{What did not dissolve.} The first casualty is conditional coverage: a user wants the set to cover at her own input, not on average over inputs. A \term{prediction procedure} assigns to each training sample $D\in(\cX\times\R)^n$ and each input $x\in\cX$ a Borel set $C(D,x)\subseteq\R$, with $\ind\{y\in C(D,x)\}$ jointly measurable in $(D,x,y)$. Write $D_n=(Z_1,\dots,Z_n)$, $Q_X$ for the marginal on $\cX$ of a distribution $Q$ on $\cX\times\R$, and $\conformalLeb$ for Lebesgue measure on $\R$.\index{coverage!conditional}
+
+\begin{theorem}[No distribution-free conditional coverage]\label{thm:conformal:impossible}
+Let $\cX$ be a standard Borel space, such as $\R^d$. Let $C$ be a prediction procedure with \term{conditional coverage} $1-\alpha$ at every atom of every finitely supported distribution: for every distribution $Q$ on $\cX\times\R$ supported on finitely many points, if $D_n\sim Q^n$ and $(X_{n+1},Y_{n+1})\sim Q$ are independent, then
+\[
+\Pr\bigl(Y_{n+1}\in C(D_n,x)\bigm| X_{n+1}=x\bigr)\ge1-\alpha\quad\text{for every atom $x$ of $Q_X$.}
+\]
+Then for every distribution $P$ on $\cX\times\R$ and for $P_X$-almost every $x$ that is not an atom of $P_X$, if $D_n\sim P^n$, then $\Pr\bigl(\conformalLeb(C(D_n,x))=\infty\bigr)\ge1-\alpha$.
+\end{theorem}
+
+The hypothesis is implied by distribution-free conditional coverage in the usual sense, under which \textcite{Vovk2012} proved this conclusion; \textcite{LeiWasserman2014} proved a version for prediction bands.\sidenote{A randomized procedure is covered by adding an independent uniform random variable to the training sample.}
+
+\begin{proofsketch}
+The plan is to compare $P$ with finitely supported distributions, at which the hypothesis applies. Draw a pool of $M$ independent points from $P$, fix a pool point $(X^j,Y^j)$ whose input is not an atom of $P_X$, so that almost surely no other pool point shares it, and let $Q$ be the uniform distribution on the pool with the label $Y^j$ replaced by an arbitrary $y$. Conditional coverage at the atom $X^j$ of $Q$ says that the set computed from an $n$-sample of $Q$ contains $y$ with probability at least $1-\alpha$. With probability at least $1-n/M-n^2/(2M)$ the $n$-sample avoids the point $j$ and repeats no pool point; then the change of label is invisible, and the sample together with $X^j$ is distributed like $(D_n,X_{n+1})$ under $P$. Averaging over $y$ uniform in $[-L,L]$ and letting $M\to\infty$ shows that $C(D_n,X_{n+1})$ covers on average at least a fraction $1-\alpha$ of $[-L,L]$, also when $X_{n+1}$ is restricted to a set of non-atoms of positive probability, hence at almost every non-atom $x$. Letting $L\to\infty$ with Fatou's lemma gives the claim. The finite pool is adapted from an argument of \textcite{Barber2021b}; the omitted details are routine measure theory.
+\end{proofsketch}
+
+A distribution-free procedure cannot tell $P$ from a distribution that agrees with $P$ except on a tiny set around $x$, where the response may be anything; that is the whole obstruction. The non-atom condition cannot be dropped (Exercise~\ref{ex:conformal:atoms}), and relaxations are not free: \textcite{Barber2021b} show that coverage on every set of inputs of probability at least $\delta$ costs, in expected length, about as much as marginal coverage at level $1-\alpha\delta$.
+
+A second limit hides in the word marginal: the guarantee averages over the calibration sample too. With independent data and continuous scores, the coverage of split conformal prediction given the calibration sample is $F_S(\widehat q)$, with $F_S$ the distribution function of the test score, which by the aside in \cref{sec:conformal:wilks} has the Beta$(k,n+1-k)$ law; \textcite{Vovk2012} shows that with probability at least $1-\delta$ it is at least $1-\alpha-\sqrt{\ln(1/\delta)/(2n)}$. The free symmetry pays for the average, not for the tail.
+
+A third limit is the hypothesis itself, whose repairs change the move. Under arbitrary drift, \textcite{GibbsCandes2021} update the level online by $\alpha_{t+1}=\alpha_t+\gamma(\alpha-\conformalerr_t)$, with $\conformalerr_t$ the indicator of a miss, and obtain $\abs{T^{-1}\sum_{t\le T}\conformalerr_t-\alpha}\le(\max\{\alpha_1,1-\alpha_1\}+\gamma)/(\gamma T)$ for every data sequence (Exercise~\ref{ex:conformal:aci}), a long-run frequency guaranteed by feedback, the move of \cref{ch:regret}. For fixed weights $w_i\in[0,1]$, \textcite{Barber2023} bound the loss of coverage of weighted methods by $\sum_iw_i\,d_{\mathrm{TV}}(Z,Z^i)/(1+\sum_iw_i)$, with $Z^i$ the data after swapping the $i$-th point and the test point. And the symmetry is silent about which score gives the smallest sets.
+
+\paragraph{Other seas.} Bayesian predictive inference adds a prior to the same exchangeability and conditions on the data, valid in frequency only when the prior is right; conformal risk control replaces coverage by an expected loss (Exercise~\ref{ex:conformal:crc}).
+
+%==============================================================================
+\section{The move, distilled}\label{sec:conformal:distilled}
+
+\begin{move}{Exploit a free symmetry}
+\movepart{In one sentence} If the joint law of the data and the unknown is invariant under a group that the sampling or the design supplies for free, then compute your statistic equivariantly and rank it: validity costs nothing, and all modeling effort goes into power and size.
+\movepart{Triggers} A guarantee is wanted for every model at once; a model serves only to supply a reference distribution; the data were randomly sampled, assigned, or ordered.
+\movepart{Recipe} (1) Name the group and why the law is invariant under it. (2) Put the unknown inside the symmetric object, the test point as one more exchangeable point. (3) Compute a score equivariantly, by symmetric fitting or an independent split. (4) Rank the observed value among its images under the group, or under random group elements and the identity, keeping the $+1$. (5) Spend the remaining effort on the score, which decides size and power, never validity.
+\movepart{Anti-pattern} A symmetry assumed rather than given: time series or adaptive data treated as exchangeable; training points scored by a model fitted to them; a score chosen after looking at the calibration data; the $+1$ dropped.
+\end{move}
+
+\dissolutiontest{Order-statistic prediction and the validity of permutation tests follow from a counting lemma, with no Beta integral and no conditioning on the data.}{Continuity, densities, normality, and a correct model are dropped; exchangeability replaces independence; ties are allowed.}{Prediction from order statistics, permutation and rank tests, and conformal prediction are one lemma; the jackknife+, knockoffs, and risk control reuse its symmetry.}{Finite-sample prediction sets around every regression or classification algorithm, also under a known covariate shift.}
+
+This chapter shares its starting point with \cref{ch:fourier} and \cref{ch:vc}, a group acting on the data. \Cref{ch:fourier} diagonalizes the action; here only the invariance of the law is used, which is cruder and so applies to every statistic. Symmetrization in \cref{ch:vc} uses the same free symmetry, swapping points between a sample and an independent ghost sample. Without the symmetry, \cref{ch:regret} offers feedback instead, as in adaptive conformal inference; which score is best is a question of optimality, which \cref{ch:lecam} answers locally and asymptotically. And beside \cref{ch:kolmogorov}, de Finetti's theorem shows the unknown distribution of an independent sample to be a hidden parameter behind a symmetry one can see.
+
+%==============================================================================
+\begin{exercises}
+\item \consolidation\hard \emph{Ties and exact coverage.} (a) Show that split conformal prediction with a constant score covers with probability one. (b) Let $U$ be uniform on $[0,1]$ and independent of exchangeable scores $S_1,\dots,S_{n+1}$. Show that $p=\bigl(\#\{i : S_i>S_{n+1}\}+U\,\#\{i : S_i=S_{n+1}\}\bigr)/(n+1)$ is exactly uniform on $[0,1]$, and deduce a randomized prediction set with coverage exactly $1-\alpha$. \hint{for fixed numbers, group the indices by value; the intervals $[a/N,(a+t)/N]$, with $a$ the number of larger values and $t$ the size of the group, tile $[0,1]$}\label{ex:conformal:ties}
+
+\item \consolidation \emph{The $+1$.} (a) For almost surely distinct scores, show that the $\ceil{(1-\alpha)n}$-th smallest calibration score as threshold gives coverage $\ceil{(1-\alpha)n}/(n+1)$, which can be below $1-\alpha$ (try $n=10$, $\alpha=0.1$) but never below $1-\alpha-1/(n+1)$. (b) Nine calibration residuals are $0.3$, $1.2$, $0.8$, $2.5$, $0.1$, $0.9$, $1.7$, $0.4$, $3.1$. Find the split conformal interval around $\widehat\mu(x)$ for $\alpha=0.2$, $0.1$, and $0.05$, and explain the last answer with the rank lemma.\label{ex:conformal:plusone}
+
+\item \consolidation\hard \emph{The oracle behind adaptive sets.} For the score \eqref{eq:conformal:aps} let $\widehat\pi_y(x)=\Pr(Y=y\mid X=x)$. Show that $s(X,Y,U)$ is uniform on $[0,1]$ given $X$, so that $\{y : s(x,y,U)\le1-\alpha\}$ has conditional coverage exactly $1-\alpha$ at every $x$; why does $\widehat q$ then concentrate near $1-\alpha$? \hint{given $X=x$, the label in position $\ell$ has probability $\pi_{(\ell)}(x)$, and given that label the score is uniform on an interval of that length}\label{ex:conformal:aps}
+
+\item \consolidation \emph{The hypotheses of \cref{thm:conformal:impossible}.} (a) Let $\cX$ be finite. Show that split conformal prediction run separately at each $x$, on the calibration points with $X_i=x$ (with $C(x)=\cY$ if they are too few), has conditional coverage at least $1-\alpha$ at every atom; this is the simplest case of what \textcite{Vovk2005} call Mondrian conformal prediction. (b) For responses in a finite set $\cY$, adapt the proof sketch to show that at almost every non-atom $x$ every label belongs to $C(D_n,x)$ with probability at least $1-\alpha$.\label{ex:conformal:atoms}
+
+\item \consolidation\hard \emph{Adaptive conformal inference.} Let $\alpha\in(0,1)$, $\alpha_1\in[0,1]$, $\gamma>0$, and $\alpha_{t+1}=\alpha_t+\gamma(\alpha-\conformalerr_t)$ with arbitrary $\conformalerr_t\in\{0,1\}$, except that $\conformalerr_t=0$ when $\alpha_t<0$ and $\conformalerr_t=1$ when $\alpha_t>1$ (as a conformal set at level $\alpha_t$ forces). Show that $\alpha_t\in[-\gamma,1+\gamma]$ for all $t$ and deduce the bound of \textcite{GibbsCandes2021} in \cref{sec:conformal:costs}. \hint{telescope the update}\label{ex:conformal:aci}
+
+\item \transfer \emph{Rank tests are conformal statements.} (a) Under the null hypothesis of \cref{exa:conformal:darwin}, with the $\abs{D_i}$ distinct and nonzero, show that Wilcoxon's signed-rank statistic $\sum_i\rho_i\ind\{D_i>0\}$, with $\rho_i$ the rank of $\abs{D_i}$, has the law of $\sum_{i=1}^n iB_i$ for independent fair bits $B_i$. (b) For samples of sizes $n$ and $1$, show that the rank-sum p-value of \cref{exa:conformal:darwin}, ranking $Z_j$ by $\#\{i : Z_i\le Z_j\}$, is the full conformal p-value with $\cZ=\R$ and $s(z;D)=z$.\label{ex:conformal:ranks}
+
+\item \transfer\hard \emph{Conformal risk control.} Let $L_1,\dots,L_{n+1}$ be exchangeable random functions from $[0,\lambda_{\max}]$ to $[0,B]$, nonincreasing and right-continuous, with $L_i(\lambda_{\max})\le\alpha$. Let $\widehat\lambda=\inf\{\lambda : (n+1)^{-1}(\sum_{i\le n}L_i(\lambda)+B)\le\alpha\}$, or $\lambda_{\max}$ if the set is empty. Show that $\E\,L_{n+1}(\widehat\lambda)\le\alpha$ \parencite{Angelopoulos2024b}, and that $L_i(\lambda)=\ind\{s(X_i,Y_i)>\lambda\}$ with $B=1$ recovers \cref{thm:conformal:split} for scores in $[0,\lambda_{\max})$. \hint{compare $\widehat\lambda$ with $\lambda'=\inf\{\lambda : (n+1)^{-1}\sum_{i\le n+1}L_i(\lambda)\le\alpha\}$, a symmetric function of the $n+1$ losses}\label{ex:conformal:crc}
+
+\item \transfer\harder \emph{The swap symmetry of knockoffs.} Let $X=(X_1,\dots,X_p)$ be features, $Y$ a response, and $\widetilde X$ a knockoff copy: swapping $X_j$ and $\widetilde X_j$ in $(X,\widetilde X)$ leaves its law unchanged for each $j$, and $\widetilde X$ is conditionally independent of $Y$ given $X$. Call $j$ null if $Y$ is conditionally independent of $X_j$ given the other features. (a) For null $j$, show that the swap leaves the law of $((X,\widetilde X),Y)$ unchanged. (b) Let $W=w((X,\widetilde X),Y)\in\R^p$ be statistics such that the swap changes the sign of $W_j$ and no other coordinate. Show that for null $j$, given $\abs{W_j}$ and the other coordinates, the sign of a nonzero $W_j$ is a fair coin, as in Fisher's test; \textcite{BarberCandes2015} and \textcite{Candes2018} build control of the false discovery rate on this. \hint{for the swapped vector $V'$, compute $\E[f(V')g(Y)]$ by conditioning on $(X,\widetilde X)$}\label{ex:conformal:knockoffs}
+
+\item \transfer \emph{Sampling until an answer is acceptable.} A language model draws independent samples for each prompt; on $n$ calibration prompts we can check which are acceptable. Let $S_i$ be the index of the first acceptable sample for prompt $i$, or $+\infty$ if there is none. Assuming that the $n+1$ prompts and their sampling randomness are exchangeable, show that $\widehat k$ samples, with $\widehat k$ the $k$-th smallest of $S_1,\dots,S_n$, contain an acceptable answer for a new prompt with probability at least $1-\alpha$. What does $\widehat k=+\infty$ mean? \textcite{Quach2024} calibrate richer stopping rules.\label{ex:conformal:llm}
+
+\item \research\harder \emph{The free symmetries of a benchmark.} If a language model never saw a benchmark, then the canonical order of its examples should be no more likely under the model than a random reordering, and \textcite{Oren2024} build a contamination test on this. (a) State conditions under which the rank of the canonical order's log-likelihood among those of $B$ random reorderings is an exact p-value by \cref{thm:conformal:randomization}(b). (b) Open-ended: which other free symmetries does an evaluation have (option order, random public and private splits, two models on the same questions), which give exact tests, and how much power do they have against partial contamination? No general theory of such tests exists. \hint{ask who shuffled the benchmark, and when}\label{ex:conformal:benchmark}
+\end{exercises}
+
+%==============================================================================
+\notesandrefs
+
+Randomization tests begin with \textcite{Fisher1935}, who used Darwin's maize and the lady tasting tea to show that physical randomization supplies an exact reference distribution; \textcite{Pitman1937} and two sequels extended the idea. \textcite{Wilks1941} introduced distribution-free tolerance limits from order statistics, which \textcite{ScheffeTukey1945} extended to arbitrary distribution functions.
+
+Conformal prediction was developed by Vovk, Gammerman, and collaborators from the late 1990s \parencite{Gammerman1998}; \textcite{Vovk2005} is the systematic account, \textcite{Papadopoulos2002} introduced the split version, and \textcite{Vovk2012} studied conditional validity. \textcite{LeiWasserman2014} and \textcite{Lei2018} brought the method into mainstream statistics. Barber, Cand\`es, Ramdas, and Tibshirani developed the jackknife+ \parencite{Barber2021a}, the limits of conditional inference \parencite{Barber2021b}, weighted conformal prediction \parencite{Tibshirani2019}, and conformal prediction beyond exchangeability \parencite{Barber2023}; adaptive prediction sets are due to \textcite{Romano2020}, and adaptive conformal inference to \textcite{GibbsCandes2021}.
+
+For a practical introduction see \textcite{AngelopoulosBates2023}, for the theory \textcite{Angelopoulos2024a}, and for exchangeability \textcite{deFinetti1937}. The same symmetry drives knockoffs \parencite{BarberCandes2015,Candes2018}, conformal risk control \parencite{Angelopoulos2024b}, guarantees for language-model samples \parencite{Quach2024}, and contamination tests \parencite{Oren2024}.
+
+\printchapterbib
+\end{refsection}

@@ -1,0 +1,487 @@
+% Chapter 11 -- From Finite to Infinite: The Vapnik--Chervonenkis dimension (key: vc)
+\casechapter{From Finite to Infinite}{The Vapnik--Chervonenkis dimension}{The right invariant}{ch:vc}
+\begin{refsection}[chapters/11-vc.bib]
+% Chapter macros, prefixed with the chapter key (local to this refsection).
+\newcommand{\vcdim}{\operatorname{VCdim}}
+\newcommand{\vcGrowth}{\Pi}
+\newcommand{\vcfat}{\operatorname{fat}}
+\newcommand{\vcRad}{\operatorname{Rad}}
+
+\begin{chaptersummary}
+A learner who fits a hypothesis to data trusts many empirical estimates at once, one for every hypothesis it might choose. For finitely many hypotheses a union bound pays for all of them; for the half-lines of the Glivenko--Cantelli theorem it gives nothing, and each infinite class needed an argument of its own. Vapnik and Chervonenkis measured a class not by its size but by the number of ways it can label a finite sample, and an imaginary second sample moved the whole question onto finitely many points. One integer, the VC dimension, then decides uniform convergence, learnability by empirical risk minimization, and whether learning is possible at all, and it fixes the number of examples needed up to a logarithmic factor.
+\end{chaptersummary}
+
+%==============================================================================
+\section{Before: one class at a time}\label{sec:vc:before}
+
+Draw $m$ independent points from an unknown distribution and count how often each event of interest occurs. The law of large numbers promises that each frequency converges to its probability. Statistics and learning need more: that the frequencies of a whole class of events converge together. A statistician who estimates a distribution function needs this for all half-lines $(-\infty,t]$ at once; a learner who picks the hypothesis that fits the data best needs it for the error events of all hypotheses at once, because the one it picks depends on the data.
+
+We fix notation for the whole chapter. Let $\cZ$ be a measurable space with a probability measure $P$, and let the sample $S = (Z_1,\dots,Z_m)$ consist of independent points with law $P$. A \term{class} is a set $\cF$ of measurable functions from $\cZ$ to $\{0,1\}$. We identify a set with its indicator function, so that a family of sets is a class, and for $f\in\cF$ we write
+\[
+  Pf = \E f(Z_1) \qquad\text{and}\qquad P_Sf = \frac1m\sum_{i=1}^m f(Z_i)
+\]
+for the probability of the event $\{f=1\}$ and its frequency in the sample. The question of this chapter is when the \term{uniform deviation}\index{uniform convergence} $\sup_{f\in\cF}\abs{P_Sf-Pf}$ is small with high probability, and how large $m$ must be for that.
+
+Learning is the special case $\cZ = \cX\times\{0,1\}$. A \term{hypothesis} is a measurable function $h\colon\cX\to\{0,1\}$, and a distribution $D$ on $\cX\times\{0,1\}$ generates labeled examples $(x,y)$. The \term{risk} of $h$ is $L_D(h) = \Pr_{(x,y)\sim D}[h(x)\ne y]$, and its \term{empirical risk} $L_S(h)$ on a sample $S = ((x_1,y_1),\dots,(x_m,y_m))$ is the fraction of examples with $h(x_i)\ne y_i$. In the notation above, $L_D(h) = Pf$ and $L_S(h) = P_Sf$ for the loss $f(x,y) = \ind[h(x)\ne y]$. Given a hypothesis class $\cH$, an \term{empirical risk minimizer}\index{empirical risk minimization} returns some $\hat h\in\cH$ with $L_S(\hat h) = \min_{h\in\cH}L_S(h)$.\sidenote{The minimum exists: on a sample of size $m$ the empirical risk takes at most $m+1$ values.} Uniform deviations matter because of the following lemma, which we shall use three times.
+
+\begin{lemma}[Representative samples]\label[lemma]{lem:vc:erm}
+Let $\eps\ge0$. If a sample $S$ satisfies $\abs{L_S(h)-L_D(h)}\le\eps$ for every $h\in\cH$, then every empirical risk minimizer $\hat h$ satisfies $L_D(\hat h)\le\inf_{h\in\cH}L_D(h)+2\eps$.
+\end{lemma}
+
+\begin{proof}
+Let $h\in\cH$. The assumption applied to $\hat h$, the minimality of $L_S(\hat h)$, and the assumption applied to $h$ give $L_D(\hat h)\le L_S(\hat h)+\eps\le L_S(h)+\eps\le L_D(h)+2\eps$. Take the infimum over $h$.
+\end{proof}
+
+\begin{aside}[Measurability]
+A supremum over an uncountable class need not be a random variable. \textcite{VapnikChervonenkis1971} assumed that it is, and so shall we, in a concrete form: every class $\cF$ in this chapter contains a countable subclass $\cF_0$ such that each $f\in\cF$ is a pointwise limit of functions in $\cF_0$. By dominated convergence, every supremum over $\cF$ below then equals the supremum over $\cF_0$. Countable classes, half-lines, orthants, and half-spaces qualify: use rational parameters, moving the boundary slightly outward.
+\end{aside}
+
+\subsection{Finite classes: count, then add}\label{sec:vc:finite}
+
+For a single function, the deviation of a frequency from its probability is controlled by an inequality of \textcite{Hoeffding1963}.
+
+\begin{lemma}[Hoeffding's inequality]\label[lemma]{lem:vc:hoeffding}\index{Hoeffding's inequality}
+Let $X_1,\dots,X_n$ be independent random variables with $a_i\le X_i\le b_i$ for real numbers $a_i<b_i$, and let $t>0$. Then
+\[
+  \Pr\Big[\,\Big|\sum_{i=1}^n(X_i-\E X_i)\Big|\ge t\,\Big]\le 2\exp\Big(-\frac{2t^2}{\sum_{i=1}^n(b_i-a_i)^2}\Big).
+\]
+\end{lemma}
+
+For finitely many functions, add the failure probabilities.
+
+\begin{theorem}[Finite classes]\label{thm:vc:finite}
+Let $\cF$ be a finite class, let $m\ge1$, and let $\eps>0$. Then
+\begin{enumerate}
+\item $\Pr\big[\max_{f\in\cF}\abs{P_Sf-Pf}>\eps\big]\le2\abs{\cF}e^{-2m\eps^2}$, and
+\item $\Pr\big[\text{some } f\in\cF \text{ has } P_Sf=0 \text{ and } Pf>\eps\big]\le\abs{\cF}e^{-\eps m}$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+(i) For a fixed $f$, the number $mP_Sf$ is a sum of $m$ independent variables with values in $[0,1]$, each with mean $Pf$, so \cref{lem:vc:hoeffding} with $t = m\eps$ bounds the probability that $\abs{P_Sf-Pf}\ge\eps$ by $2e^{-2m\eps^2}$. A union bound over the $\abs{\cF}$ functions finishes the proof.
+
+(ii) If $\eps\ge1$, then no $f$ has $Pf>\eps$. Otherwise a fixed $f$ with $Pf>\eps$ has $P_Sf = 0$ with probability $(1-Pf)^m\le(1-\eps)^m\le e^{-\eps m}$, and a union bound over the at most $\abs{\cF}$ such functions finishes the proof.
+\end{proof}
+
+For a finite hypothesis class $\cH$, apply part (i) to the losses $\ind[h(x)\ne y]$, choose $\eps$ so that $2\abs{\cH}e^{-2m\eps^2} = \delta$, and use \cref{lem:vc:erm}: with probability at least $1-\delta$, every empirical risk minimizer satisfies
+\begin{equation}\label{eq:vc:occam}
+  L_D(\hat h)\le\min_{h\in\cH}L_D(h)+\sqrt{\frac2m\ln\frac{2\abs{\cH}}{\delta}} .
+\end{equation}
+Part (ii) gives more when some hypothesis has risk zero: with probability at least $1-\delta$, every hypothesis that makes no error on the sample has risk at most $\frac1m\ln\frac{\abs{\cH}}{\delta}$. The price of a class is the logarithm of its size, essentially the number of bits needed to name one of its members.\sidenote{\textcite{BlumerEtAl1987} turned this observation into a principle and called it Occam's razor: a learner that explains its data by a short description generalizes.}\index{Occam's razor} For the uncountable class of half-lines, \eqref{eq:vc:occam} says nothing; yet its uniform deviation does tend to zero, and that is the oldest theorem of the subject.
+
+\subsection{The empirical distribution function}\label{sec:vc:gc}
+
+Let $X_1,X_2,\dots$ be independent real random variables with common distribution function $F(t) = \Pr[X_1\le t]$, and let $F_m(t) = \frac1m\abs{\{i\le m: X_i\le t\}}$ be the empirical distribution function of the first $m$ of them. In the language above, $F_m(t)-F(t)$ is the deviation $P_Sf-Pf$ for the indicator $f$ of the half-line $(-\infty,t]$. \textcite{Glivenko1933} and \textcite{Cantelli1933} proved that these deviations vanish uniformly.\sidenote{The two papers carry the same title and appear in the same 1933 volume of the \emph{Giornale dell'Istituto Italiano degli Attuari}.}
+
+\begin{theorem}[Glivenko--Cantelli]\label{thm:vc:gc}\index{Glivenko--Cantelli theorem}
+For every distribution function $F$, $\sup_{t\in\R}\abs{F_m(t)-F(t)}\to0$ almost surely.
+\end{theorem}
+
+The textbook proof replaces the line by a finite grid.
+
+\begin{proof}
+The plan is to control the supremum by finitely many points, placed so that $F$ rises by at most $1/k$ between neighbors, and to use monotonicity in between. Write $F(t^-) = \Pr[X_1<t]$ and $F_m(t^-)$ for the left limits. Fix an integer $k\ge2$. For $1\le j\le k-1$ let $t_j = \inf\{t: F(t)\ge j/k\}$, and put $t_0 = -\infty$ and $t_k = +\infty$, with the conventions $F(t_0) = F_m(t_0) = 0$ and $F(t_k^-) = F_m(t_k^-) = 1$. Right-continuity gives $F(t_j)\ge j/k$, and $F(t)<j/k$ for $t<t_j$ gives $F(t_j^-)\le j/k$; hence
+\[
+  F(t_j^-)-F(t_{j-1})\le\frac1k \qquad (1\le j\le k).
+\]
+Now let $t_{j-1}\le t<t_j$. Since $F$ and $F_m$ are nondecreasing, the last display gives
+\[
+  F_m(t)-F(t)\le F_m(t_j^-)-F(t_{j-1})\le F_m(t_j^-)-F(t_j^-)+\frac1k ,
+\]
+and in the same way $F_m(t)-F(t)\ge F_m(t_{j-1})-F(t_{j-1})-1/k$. Let $\Delta_{m,k}$ be the largest of the $2(k-1)$ numbers $\abs{F_m(t_j)-F(t_j)}$ and $\abs{F_m(t_j^-)-F(t_j^-)}$ with $1\le j\le k-1$; the end points contribute nothing. The intervals $[t_{j-1},t_j)$ cover the line, so $\sup_t\abs{F_m(t)-F(t)}\le\Delta_{m,k}+1/k$. By the strong law of large numbers, applied to the indicators of the events $\{X_i\le t_j\}$ and $\{X_i<t_j\}$, the number $\Delta_{m,k}$ tends to $0$ almost surely as $m\to\infty$. Hence $\limsup_m\sup_t\abs{F_m(t)-F(t)}\le1/k$ almost surely, and intersecting these events over $k\ge2$ proves the theorem.
+\end{proof}
+
+\subsection{Each class its own argument}\label{sec:vc:cases}
+
+The grid proof uses two facts about the line. Half-lines are nested, so a function squeezed between two grid points is controlled by them; and the quantiles of $F$ say where to put the grid. In $\R^d$ the first fact survives for orthants, at a price.
+
+\begin{aside}[The grid argument in $\R^d$]
+Order $\R^d$ coordinatewise, let $F(t) = \Pr[X_1\le t]$ and $F(t^-) = \Pr[X_1<t]$, and define $F_m$ likewise. On each axis choose $k-1$ quantile points of the marginal law, as above, so that each open gap between consecutive points has marginal probability at most $1/k$; they cut $\R^d$ into $k^d$ boxes. For $t$ in a box with corners $a\le b$, monotonicity in each coordinate traps $F_m(t)-F(t)$ between $F_m(a)-F(b^-)$ and $F_m(b^-)-F(a)$, and $F(b^-)-F(a)\le d/k$, because $X_1<b$ and $X_1\not\le a$ force some coordinate of $X_1$ strictly inside its gap. The strong law at the $2(k+1)^d$ corner events finishes the proof. Every step uses the order of $\R^d$.
+\end{aside}
+
+For half-planes, disks, or polygons there is no order to exploit, and for some classes uniform convergence is false.
+
+\begin{example}[Convex sets]\label[example]{exa:vc:convex}
+Let $P$ be the uniform distribution on the unit circle in $\R^2$, and let $\cC$ be the class of convex subsets of the plane. A point of the circle is not a convex combination of other points of the closed disk, so every finite set of points of the circle is the intersection of the circle with its own convex hull. Taking for $C$ the convex hull of the sample gives $P_S(C) = 1$ and $P(C) = 0$: for every sample, $\sup_{C\in\cC}\abs{P_S(C)-P(C)} = 1$.
+\end{example}
+
+The same failure occurs for the class of finite subsets of $\R$ under every distribution without atoms. Over convex sets, uniform convergence does hold when $P$ has a density \parencite{RangaRao1962}; so the answer depends on the class and the distribution together. Size is not the issue: half-lines and finite sets both form uncountable classes, and only the first is good.
+
+Before Vapnik and Chervonenkis, results of this kind were proved one class at a time, each with its own device. Three questions had no answer. Which classes enjoy uniform convergence under every distribution, and why? How many samples suffice? And is uniform convergence necessary for learning, or could a class without it be learned by a cleverer method?
+
+%==============================================================================
+\section{The move: count patterns, not hypotheses}\label{sec:vc:move}
+
+Look at a class from the point of view of the sample. On points $x_1<\dots<x_m$ of the line, the uncountably many half-lines leave only $m+1$ patterns of labels: a half-line contains the first $j$ points and none of the others, for some $j$ between $0$ and $m$. Every estimate computed from the sample sees a hypothesis only through its pattern; two hypotheses with the same pattern are, for the sample, the same hypothesis. So the union bound of \cref{thm:vc:finite} ought to run over patterns, not over hypotheses.
+
+One obstacle stands in the way: the probability $Pf$ depends on $f$ everywhere, not only on the sample.\sidenote{The ghost sample lives only inside the proof: a sample is compared with a distribution by comparing it with another sample.} The second half of the move removes it. Replace $Pf$ by the frequency $P_{S'}f$ in a second, independent sample $S'$ of the same size, a \term{ghost sample}\index{ghost sample} that is never drawn. If $P_Sf$ is far from $Pf$, then with probability at least $1/2$ the ghost frequency is close to $Pf$ and therefore far from $P_Sf$. The event that the two samples disagree somewhere on the class depends on each $f$ only through its pattern on $2m$ points, and there are finitely many such patterns. Grothendieck's advice to stoop low applies literally: the decisive objects are a finite table of zeros and ones, and a sample that does not exist.
+
+\begin{definition}[Patterns, growth function, VC dimension]\label[definition]{def:vc:vcdim}
+Let $\cF$ be a nonempty class of functions from $\cZ$ to $\{0,1\}$. The set of \term{patterns} of $\cF$ on a sequence $C = (z_1,\dots,z_n)$ of points of $\cZ$ is
+\[
+  \cF|_C = \{(f(z_1),\dots,f(z_n)) : f\in\cF\}\subseteq\{0,1\}^n .
+\]
+The \term{growth function} of $\cF$ is $\vcGrowth_{\cF}(n) = \max_C\abs{\cF|_C}$, the maximum over all sequences of length $n$. A set of $n$ distinct points is \term{shattered} by $\cF$ if $\cF$ realizes all $2^n$ patterns on it. The \term{Vapnik--Chervonenkis dimension} $\vcdim(\cF)$ is the largest size of a shattered set, or $\infty$ if there are shattered sets of every finite size.
+\end{definition}
+\index{growth function}\index{shattering}\index{VC dimension}
+
+Since $\vcGrowth_{\cF}(n)\le\min\{2^n,\abs{\cF}\}$, a finite class has VC dimension at most $\log_2\abs{\cF}$; since a sequence with a repeated point carries fewer than $2^n$ patterns, the VC dimension is the largest $n$ with $\vcGrowth_{\cF}(n) = 2^n$. Subsets of shattered sets are shattered.\sidenote{\textcite{VapnikChervonenkis1971} stated their results with the first $n$ such that $\vcGrowth_{\cF}(n)<2^n$, which is one more than the VC dimension. Some texts on empirical processes keep this normalization and call it the VC index.}
+
+\begin{example}\label[example]{exa:vc:examples}
+(a) Half-lines $(-\infty,t]$ on $\R$: on $n$ distinct points the patterns are the $n+1$ initial segments, so $\vcGrowth(n) = n+1$ and the VC dimension is $1$.
+(b) Intervals $[a,b]$: the patterns are the empty one and the blocks of consecutive points, so $\vcGrowth(n) = 1+n+\binom n2$; no interval contains two points without the point between them, so the VC dimension is $2$.
+(c) Finite subsets of $\R$, and convex subsets of the plane: the first class shatters every finite set, the second every finite set on a circle (\cref{exa:vc:convex}); both have infinite VC dimension.
+(d) The functions $x\mapsto\ind[\sin(\theta x)>0]$, $\theta\in\R$, shatter $\{10^{-1},\dots,10^{-n}\}$ for every $n$ (Exercise~\ref{exr:vc:sine}): one real parameter, infinite VC dimension. Counting parameters is not counting patterns.
+\end{example}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=0.4cm,y=0.4cm,
+    one/.style={circle,fill=sea,inner sep=0pt,minimum size=4.4pt},
+    zero/.style={circle,draw=sea,fill=white,line width=0.55pt,inner sep=0pt,minimum size=4.4pt}]
+  \node[anchor=base,font=\small] at (2.5,1.6) {half-lines};
+  \foreach \j in {1,...,4}{\node[font=\scriptsize,text=muted] at (\j,0.75) {$x_{\j}$};}
+  \foreach \r in {0,...,4}{
+    \foreach \j in {1,...,4}{
+      \ifnum\j>\r\relax \node[zero] at (\j,-\r) {};
+      \else \node[one] at (\j,-\r) {};
+      \fi
+    }
+  }
+  \node[anchor=base,font=\small] at (17.5,1.6) {intervals};
+  \foreach \c in {0,1,2}{
+    \foreach \j in {1,...,4}{\node[font=\scriptsize,text=muted] at (10+5*\c+\j,0.75) {$x_{\j}$};}
+  }
+  \foreach \a/\b [count=\n from 0] in {0/0,1/1,2/2,3/3,4/4,1/2,2/3,3/4,1/3,2/4,1/4}{
+    \pgfmathtruncatemacro{\col}{div(\n,4)}
+    \pgfmathtruncatemacro{\row}{mod(\n,4)}
+    \foreach \j in {1,...,4}{
+      \pgfmathtruncatemacro{\inside}{and(\j>=\a,\j<=\b)}
+      \ifnum\inside=1\relax \node[one] at (10+5*\col+\j,-\row) {};
+      \else \node[zero] at (10+5*\col+\j,-\row) {};
+      \fi
+    }
+  }
+\end{tikzpicture}
+\caption{Patterns on four points $x_1<x_2<x_3<x_4$ of the line. Each row lists the labels from left to right, and a filled dot is the label $1$. Half-lines leave $5 = \binom40+\binom41$ patterns and intervals leave $11 = \binom40+\binom41+\binom42$, so both meet the bound of \cref{thm:vc:sauer} with equality.}
+\label{fig:vc:patterns}
+\end{figure}
+
+Counting patterns would be of little use if infinite classes typically had exponentially many. They do not: either a class shatters arbitrarily large sets, or its growth function is bounded by a polynomial whose degree is its VC dimension. Nothing lies in between.
+
+\begin{theorem}[Sauer--Shelah--Perles lemma]\label{thm:vc:sauer}\index{Sauer--Shelah--Perles lemma}
+If $\vcdim(\cF) = d<\infty$, then for every $n\ge1$
+\[
+  \vcGrowth_{\cF}(n)\le\sum_{i=0}^d\binom ni\le(n+1)^d ,
+\]
+and $\vcGrowth_{\cF}(n)\le(en/d)^d$ when $n\ge d\ge1$.
+\end{theorem}
+
+With patterns in place of hypotheses, \cref{thm:vc:finite} becomes a theorem about every class.
+
+\begin{theorem}[Vapnik--Chervonenkis inequality]\label{thm:vc:vc}
+For every class $\cF$, every probability measure $P$, every $m\ge1$, and every $\eps>0$,
+\begin{equation}\label{eq:vc:vc}
+  \Pr\Big[\sup_{f\in\cF}\abs{P_Sf-Pf}>\eps\Big]\le4\,\vcGrowth_{\cF}(2m)\,e^{-m\eps^2/8} .
+\end{equation}
+\end{theorem}
+
+Set this beside \cref{thm:vc:finite}: the size of the class has become the number of its patterns on $2m$ points, and the constants have become worse.\sidenote{\Cref{thm:vc:vc} is Theorem~2 of \textcite{VapnikChervonenkis1971}, with the same constants; their Theorem~1 had the weaker bound $n^{d+1}+1$. They announced their results in 1968; the paper with proofs was received in May 1969 and appeared in 1971.} The sharp count of \cref{thm:vc:sauer} was found independently by \textcite{Sauer1972}, answering a question of Erd\H{o}s, and by \textcite{Shelah1972}, who credits it jointly to Micha Perles and used it in model theory. Both theorems are proved in \cref{sec:vc:after1}.
+
+What did one have to notice? First, that the union bound for finite classes is a union over what a class does on the data, not over what it is. Second, that a probability can be exchanged for a frequency on fresh data at the price of a constant factor, after which every event of interest lives on finitely many points. Third, that the number of patterns has a gap: it is everything or it is polynomial. The first two observations make the theory possible; the third makes one integer the right invariant, and \cref{sec:vc:after2} will show that the problem depends on this integer from both sides.
+
+%==============================================================================
+\section{After: one inequality for every class}\label{sec:vc:after1}
+
+\subsection{Counting patterns}\label{sec:vc:counting}
+
+The Sauer--Shelah--Perles lemma follows from a stronger and more symmetric statement. Say that a family $\cS$ of subsets of a finite set $U$ \term{shatters} a set $T\subseteq U$ if every subset of $T$ has the form $A\cap T$ with $A\in\cS$; a nonempty family shatters the empty set.
+
+\begin{lemma}[\textcite{Pajor1985}]\label[lemma]{lem:vc:pajor}\index{Pajor's lemma}
+Every finite family $\cS$ of subsets of a finite set $U$ shatters at least $\abs{\cS}$ subsets of $U$.
+\end{lemma}
+
+\begin{proof}
+The plan is to induct on $\abs U$, splitting $\cS$ according to one element. If $U$ is empty, then $\cS$ is either empty, and there is nothing to prove, or equal to $\{\emptyset\}$, which shatters $\emptyset$. Otherwise fix $u\in U$ and split $\cS$ into two families of subsets of $U\setminus\{u\}$,
+\[
+  \cS_0 = \{A\in\cS: u\notin A\}\qquad\text{and}\qquad \cS_1 = \{A\setminus\{u\}: A\in\cS,\ u\in A\}.
+\]
+Removing $u$ is injective on the sets that contain $u$, so $\abs{\cS} = \abs{\cS_0}+\abs{\cS_1}$. Let $\cT_0$ and $\cT_1$ be the collections of sets shattered by $\cS_0$ and by $\cS_1$; by induction, $\abs{\cT_0}\ge\abs{\cS_0}$ and $\abs{\cT_1}\ge\abs{\cS_1}$.
+
+Two kinds of sets are shattered by $\cS$. The first kind are the sets $T\in\cT_0\cup\cT_1$: since $u\notin T$, we have $(A\setminus\{u\})\cap T = A\cap T$, so every set $A\cap T$ with $A$ in $\cS_0$ or in $\cS_1$ also arises from a member of $\cS$. The second kind are the sets $T\cup\{u\}$ with $T\in\cT_0\cap\cT_1$: given $B\subseteq T$, some $A\in\cS_0$ has $A\cap(T\cup\{u\}) = A\cap T = B$, and some $A\in\cS$ containing $u$ has $(A\setminus\{u\})\cap T = B$, hence $A\cap(T\cup\{u\}) = B\cup\{u\}$. Sets of the first kind avoid $u$ and sets of the second kind contain it, so the number of sets shattered by $\cS$ is at least
+\[
+  \abs{\cT_0\cup\cT_1}+\abs{\cT_0\cap\cT_1} = \abs{\cT_0}+\abs{\cT_1}\ge\abs{\cS_0}+\abs{\cS_1} = \abs{\cS} . \qedhere
+\]
+\end{proof}
+
+\begin{proof}[Proof of \cref{thm:vc:sauer}]
+Let $C = (z_1,\dots,z_n)$. Suppose first that the points are distinct, and identify each pattern $v\in\cF|_C$ with the set $\{z_i: v_i = 1\}$. A set shattered by this family of sets is shattered by $\cF$, so it has at most $d$ elements, and \cref{lem:vc:pajor} gives
+\[
+  \abs{\cF|_C}\le\abs{\{T\subseteq C: \abs{T}\le d\}} = \sum_{i=0}^d\binom ni .
+\]
+If $C$ repeats a point, then its patterns are determined by those on its $n'<n$ distinct points, and the bound for $n'$ is smaller. For the two estimates, compare term by term. For $0\le i\le d$ we have $\binom ni\le n^i/i!\le\binom di n^i$, so the binomial theorem bounds the sum by $(1+n)^d$. For $n\ge d\ge1$, multiply by $(d/n)^d$, which is at most $(d/n)^i$ for $i\le d$:
+\[
+  \Big(\frac dn\Big)^d\sum_{i=0}^d\binom ni\le\sum_{i=0}^n\binom ni\Big(\frac dn\Big)^i = \Big(1+\frac dn\Big)^n\le e^d . \qedhere
+\]
+\end{proof}
+
+
+\subsection{The ghost sample and the swaps}\label{sec:vc:ghost}
+
+The proof of \cref{thm:vc:vc} has two steps, one for each half of the move.\index{symmetrization}
+
+\begin{lemma}[Ghost sample]\label[lemma]{lem:vc:ghost}
+Let $S$ and $S'$ be independent samples of size $m$ from $P$, and let $\eps>0$ satisfy $m\eps^2\ge2$. Then
+\[
+  \Pr\Big[\sup_{f\in\cF}\abs{P_Sf-Pf}>\eps\Big]\le2\Pr\Big[\sup_{f\in\cF}\abs{P_Sf-P_{S'}f}>\frac\eps2\Big].
+\]
+\end{lemma}
+
+\begin{proof}
+Fix a sample $s$ with $\sup_f\abs{P_sf-Pf}>\eps$, and choose $f_s\in\cF$ with $\abs{P_sf_s-Pf_s}>\eps$. The frequency $P_{S'}f_s$ is an average of $m$ independent indicators with mean $Pf_s$, so its variance is at most $1/(4m)$, and Chebyshev's inequality and the assumption $m\eps^2\ge2$ give
+\[
+  \Pr\Big[\abs{P_{S'}f_s-Pf_s}>\frac\eps2\Big]\le\frac{1/(4m)}{\eps^2/4} = \frac1{m\eps^2}\le\frac12 .
+\]
+On the complementary event the triangle inequality gives $\abs{P_sf_s-P_{S'}f_s}>\eps-\eps/2 = \eps/2$. So every such $s$ satisfies $\Pr[\sup_f\abs{P_sf-P_{S'}f}>\eps/2]\ge1/2$. Since $S$ and $S'$ are independent, integrating this bound over the samples $s$ in the event on the left proves the lemma.
+\end{proof}
+
+\begin{lemma}[Random swaps]\label[lemma]{lem:vc:swap}
+Let $S$ and $S'$ be independent samples of size $m$ from $P$, and let $\eps>0$. Then
+\[
+  \Pr\Big[\sup_{f\in\cF}\abs{P_Sf-P_{S'}f}>\frac\eps2\Big]\le2\,\vcGrowth_{\cF}(2m)\,e^{-m\eps^2/8} .
+\]
+\end{lemma}
+
+\begin{proof}
+The plan is to use a symmetry that the double sample has for free, and then to hold the $2m$ points fixed. Write $S = (Z_1,\dots,Z_m)$ and $S' = (Z'_1,\dots,Z'_m)$. For $\sigma\in\{-1,1\}^m$, exchange $Z_i$ and $Z'_i$ for each $i$ with $\sigma_i = -1$. The pairs $(Z_i,Z'_i)$ are independent, and each has the same law as $(Z'_i,Z_i)$, so the exchange does not change the law of $(S,S')$; it turns $P_Sf-P_{S'}f$ into $\frac1m\sum_i\sigma_i(f(Z_i)-f(Z'_i))$. Now let $\sigma$ be uniformly random and independent of the samples, and write $\Pr_\sigma$ for the probability over $\sigma$ with the samples held fixed. Then
+\[
+  \Pr\Big[\sup_{f}\abs{P_Sf-P_{S'}f}>\frac\eps2\Big] = \E\,\Pr_\sigma\Big[\sup_{f}\Big|\sum_{i=1}^m\sigma_i\big(f(Z_i)-f(Z'_i)\big)\Big|>\frac{m\eps}2\Big].
+\]
+Fix the samples. The sum depends on $f$ only through its pattern on the $2m$ points $Z_1,\dots,Z_m,Z'_1,\dots,Z'_m$, and there are at most $\vcGrowth_{\cF}(2m)$ patterns. For one pattern, the terms $\sigma_i(f(Z_i)-f(Z'_i))$ are independent, have mean zero, and lie in $[-1,1]$, so \cref{lem:vc:hoeffding} with $t = m\eps/2$ bounds the probability that the sum exceeds $m\eps/2$ in absolute value by
+\[
+  2\exp\Big(-\frac{2(m\eps/2)^2}{4m}\Big) = 2e^{-m\eps^2/8} .
+\]
+A union bound over the patterns bounds $\Pr_\sigma$ by $2\vcGrowth_{\cF}(2m)e^{-m\eps^2/8}$ for every pair of samples, and therefore bounds its expectation.
+\end{proof}
+
+\begin{proof}[Proof of \cref{thm:vc:vc}]
+If $m\eps^2<2$, then the right side of \eqref{eq:vc:vc} is at least $4e^{-1/4}>1$, because $\vcGrowth_{\cF}\ge1$, and there is nothing to prove. Otherwise \cref{lem:vc:ghost,lem:vc:swap} bound the left side by $2\cdot2\vcGrowth_{\cF}(2m)e^{-m\eps^2/8}$.
+\end{proof}
+
+The swaps are a symmetry that every pair of independent samples has, whatever $P$ is.\sidenote{The double sample is exchangeable, the free symmetry exploited in \cref{ch:conformal}.} Vapnik and Chervonenkis used all $(2m)!$ permutations of the double sample and a hypergeometric tail bound, a computation they omitted as simple but long; swapping within pairs needs only Hoeffding's inequality.
+
+\subsection{The old theorems in a line each}\label{sec:vc:old}
+
+With a polynomial growth function, the bound of \cref{thm:vc:vc} is summable in $m$.
+
+\begin{corollary}[Uniform law of large numbers]\label[corollary]{cor:vc:ulln}
+Let $Z_1,Z_2,\dots$ be independent with law $P$, let $S_m = (Z_1,\dots,Z_m)$, and suppose that $\vcGrowth_{\cF}(n)\le(n+1)^d$ for all $n$, as \cref{thm:vc:sauer} guarantees when $\vcdim(\cF)\le d$. Then for every $m\ge1$ and $\eps>0$
+\[
+  \Pr\Big[\sup_{f\in\cF}\abs{P_{S_m}f-Pf}>\eps\Big]\le4(2m+1)^d\,e^{-m\eps^2/8} ,
+\]
+and $\sup_{f\in\cF}\abs{P_{S_m}f-Pf}\to0$ almost surely.
+\end{corollary}
+
+\begin{proof}
+The inequality is \cref{thm:vc:vc} with $\vcGrowth_{\cF}(2m)\le(2m+1)^d$. For fixed $\eps$ its right side is summable in $m$, so by the Borel--Cantelli lemma, almost surely only finitely many $m$ have a deviation above $\eps$. Let $\eps$ run through $1/k$, $k\in\N$.
+\end{proof}
+
+The Glivenko--Cantelli theorem, whose grid proof filled a paragraph in \cref{sec:vc:gc}, is now the case $d=1$.
+
+\begin{proof}[Second proof of \cref{thm:vc:gc}]
+Half-lines satisfy $\vcGrowth(n) = n+1$ (\cref{exa:vc:examples}), so \cref{cor:vc:ulln} applies with $d = 1$ to their indicators, for which $P_{S_m}f-Pf = F_m(t)-F(t)$.
+\end{proof}
+
+The new proof is shorter for a reason: one count has replaced the grid, the quantiles, and the left limits. It also gives more, an exponential rate valid for every $F$, and it is how Vapnik and Chervonenkis derived Glivenko's theorem. The multivariate theorem, whose skeleton needed $k^d$ boxes, costs one more sentence.
+
+\begin{corollary}[Multivariate Glivenko--Cantelli]\label[corollary]{cor:vc:orthants}
+For independent random vectors $X_1,X_2,\dots$ in $\R^d$ with a common law, and $F$ and $F_m$ as in the aside of \cref{sec:vc:cases}, $\Pr[\sup_t\abs{F_m(t)-F(t)}>\eps]\le4(2m+1)^de^{-m\eps^2/8}$ and $\sup_t\abs{F_m(t)-F(t)}\to0$ almost surely.
+\end{corollary}
+
+\begin{proof}
+On $n$ points, the orthant $\{x: x\le t\}$ leaves the pattern of the intersection of the $d$ sets $\{x: x_j\le t_j\}$. For each $j$ these sets leave at most $n+1$ patterns, by \cref{exa:vc:examples} applied to the $j$th coordinates, so orthants leave at most $(n+1)^d$ patterns, and \cref{cor:vc:ulln} applies.
+\end{proof}
+
+\subsection{Half-spaces}\label{sec:vc:halfspaces}
+
+For half-spaces the old methods had no grid to offer. The new method needs one combinatorial fact, found by Radon in 1921.\sidenote{Radon's motivation was a proof of Helly's theorem on intersecting convex sets.}\index{Radon's theorem}
+
+\begin{lemma}[\textcite{Radon1921}]\label[lemma]{lem:vc:radon}
+Every set of $d+2$ points in $\R^d$ can be split into two parts whose convex hulls intersect.
+\end{lemma}
+
+\begin{proof}
+Let the points be $x_1,\dots,x_{d+2}$. The $d+2$ vectors $(x_i,1)\in\R^{d+1}$ are linearly dependent, so there are reals $\lambda_i$, not all zero, with $\sum_i\lambda_ix_i = 0$ and $\sum_i\lambda_i = 0$. Let $I = \{i:\lambda_i>0\}$ and let $J$ be its complement. Both are nonempty, because the $\lambda_i$ sum to zero and are not all zero. Put $\Lambda = \sum_{i\in I}\lambda_i = \sum_{j\in J}(-\lambda_j)>0$. Then
+\[
+  \sum_{i\in I}\frac{\lambda_i}{\Lambda}\,x_i = \sum_{j\in J}\frac{-\lambda_j}{\Lambda}\,x_j
+\]
+is a convex combination of the points indexed by $I$ and also of the points indexed by $J$.
+\end{proof}
+
+\begin{proposition}\label[proposition]{prop:vc:halfspaces}\index{half-space!VC dimension of}
+The class of closed half-spaces $\{x\in\R^d: \ip{w,x}+b\ge0\}$, with $w\in\R^d$ and $b\in\R$, has VC dimension $d+1$.
+\end{proposition}
+
+\begin{proof}
+The points $0,e_1,\dots,e_d$ are shattered: given labels $y_0,\dots,y_d\in\{0,1\}$, take $b = y_0-\frac12$ and $w_i = 2y_i-1-b$; then $b$ and $\ip{w,e_i}+b = 2y_i-1$ have the signs that the labels require. No set of $d+2$ points is shattered. Indeed, split it as in \cref{lem:vc:radon} into parts $I$ and $J$ whose convex hulls share a point $p$, and label $I$ by $1$ and $J$ by $0$. A closed half-space with these labels contains the points of $I$, hence their convex combination $p$; its complement, an open half-space, contains the points of $J$, hence also $p$. This is impossible.
+\end{proof}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+    pin/.style={circle,fill=sea,inner sep=0pt,minimum size=5pt},
+    pout/.style={circle,draw=sea,fill=white,line width=0.6pt,inner sep=0pt,minimum size=5pt}]
+  \coordinate (A) at (0,0); \coordinate (B) at (2.3,0.25);
+  \coordinate (C) at (2.0,1.9); \coordinate (D) at (0.2,1.6);
+  \draw[sea,line width=0.8pt,name path=ac] (A) -- (C);
+  \draw[muted,dashed,line width=0.6pt,name path=bd] (B) -- (D);
+  \fill[seadeep,name intersections={of=ac and bd}] (intersection-1) circle (1.3pt);
+  \node[pin] at (A) {}; \node[pin] at (C) {};
+  \node[pout] at (B) {}; \node[pout] at (D) {};
+  \node[font=\small] at (1.15,-0.55) {(a)};
+  \begin{scope}[xshift=4.3cm]
+    \coordinate (P) at (0,0); \coordinate (Q) at (2.4,0.15);
+    \coordinate (R) at (1.0,1.95); \coordinate (X) at (1.15,0.7);
+    \draw[muted,dashed,line width=0.6pt] (P) -- (Q) -- (R) -- cycle;
+    \node[pout] at (P) {}; \node[pout] at (Q) {}; \node[pout] at (R) {};
+    \node[pin] at (X) {};
+    \node[font=\small] at (1.2,-0.55) {(b)};
+  \end{scope}
+\end{tikzpicture}
+\caption{Radon partitions of four points in the plane. In (a) the points are in convex position and the two diagonals cross; in (b) one point lies in the triangle of the other three. In both, the filled points and the open points have intersecting convex hulls, so no half-plane contains the filled points and misses the open ones.}
+\label{fig:vc:radon}
+\end{figure}
+
+By \cref{prop:vc:halfspaces,cor:vc:ulln}, the frequencies of all closed half-spaces in $\R^d$ converge uniformly, almost surely, under every distribution, and a deviation above $\eps$ has probability at most $4(2m+1)^{d+1}e^{-m\eps^2/8}$: no grid, and no assumption on $P$. Each new class costs one finite computation, a shattered set for the lower bound and an obstruction such as a Radon partition for the upper bound (Exercises~\ref{exr:vc:dims} and~\ref{exr:vc:dudley}).
+
+%==============================================================================
+\section{After: the fundamental theorem}\label{sec:vc:after2}
+
+Uniform convergence was the tool; learning is the goal. For binary classification the tool is also necessary, and the VC dimension decides learnability by every method, not only by empirical risk minimization.
+
+\begin{definition}[Learners and learnability]\label[definition]{def:vc:pac}
+A \term{learner} is a map $A$ that assigns to each finite sample $S$ of labeled examples a hypothesis $A(S)\colon\cX\to\{0,1\}$, which need not belong to $\cH$. The class $\cH$ is \term{PAC learnable} if there are a learner $A$ and a function $m_{\cH}\colon(0,1)^2\to\N$ with the following property: for all $\eps,\delta\in(0,1)$, every distribution $D$ on $\cX\times\{0,1\}$ such that some $h^\star\in\cH$ has $L_D(h^\star) = 0$, and every $m\ge m_{\cH}(\eps,\delta)$,
+\[
+  \Pr_{S\sim D^m}\big[L_D(A(S))>\eps\big]\le\delta .
+\]
+The learner is an \term{agnostic PAC learner} if the same holds for every distribution $D$, with $\inf_{h\in\cH}L_D(h)+\eps$ in place of $\eps$. The class has the \term{uniform convergence property} if for all $\eps,\delta\in(0,1)$ there is $m_0$ such that $\Pr_{S\sim D^m}[\sup_{h\in\cH}\abs{L_S(h)-L_D(h)}>\eps]\le\delta$ for every distribution $D$ and every $m\ge m_0$.
+\end{definition}
+\index{PAC learning}
+
+The PAC model is due to \textcite{Valiant1984}.\sidenote{Valiant also asked the learner to run in polynomial time. This chapter counts examples only.} Lower bounds come from shattered sets, where a learner that has seen half the points knows nothing about the other half.\sidenote{A learner that flips coins of its own is covered by the next theorem too: run its proof for each outcome of the coins and average.}
+
+\begin{theorem}[No free lunch]\label{thm:vc:nfl}\index{no-free-lunch theorem}
+Let $\cH$ shatter a set $C\subseteq\cX$ of $2m$ points, and let $A$ be a learner. Then some distribution $D$ on $C\times\{0,1\}$ with $L_D(h^\star) = 0$ for some $h^\star\in\cH$ satisfies $\E_{S\sim D^m}[L_D(A(S))]\ge\frac14$, and hence $\Pr[L_D(A(S))\ge\frac18]\ge\frac17$.
+\end{theorem}
+
+\begin{proof}
+The plan is to choose the labels at random, so that the learner must guess the labels of the points it has not seen. For $g\colon C\to\{0,1\}$ let $D_g$ be the law of $(x,g(x))$ with $x$ uniform on $C$. Since $C$ is shattered, some $h\in\cH$ agrees with $g$ on $C$, and $L_{D_g}(h) = 0$. Now let $g$ be uniformly random, independent of the sample points $x_1,\dots,x_m$, and hold these points fixed. At least $m$ points of $C$ are not among them. At each such point $x$ the label $g(x)$ is uniform and independent of the labeled sample, hence of the hypothesis $A(S)$, so $A(S)$ errs at $x$ with probability $1/2$. Each point of $C$ has probability $1/(2m)$ under $D_g$, and averaging over the sample points gives
+\[
+  \E_g\,\E_S\big[L_{D_g}(A(S))\big]\ge\frac1{2m}\cdot m\cdot\frac12 = \frac14 .
+\]
+So some $g$ has $\E_S[L_{D_g}(A(S))]\ge1/4$; let $D = D_g$. Finally, the risk $L = L_D(A(S))$ lies in $[0,1]$, so $\E L\le\Pr[L\ge\frac18]+\frac18\big(1-\Pr[L\ge\frac18]\big)$, which rearranges to $\Pr[L\ge\frac18]\ge(\frac14-\frac18)/(1-\frac18) = \frac17$.
+\end{proof}
+
+
+\begin{theorem}[Fundamental theorem of statistical learning]\label{thm:vc:fundamental}\index{fundamental theorem of statistical learning}
+For a class $\cH$ of functions from $\cX$ to $\{0,1\}$ the following are equivalent:
+\begin{enumerate}
+\item $\cH$ has finite VC dimension;
+\item $\cH$ has the uniform convergence property;
+\item every empirical risk minimizer is an agnostic PAC learner for $\cH$;
+\item $\cH$ is PAC learnable.
+\end{enumerate}
+Moreover, suppose that $\vcdim(\cH) = d<\infty$. For every distribution $D$, every $m\ge1$, and every $\delta\in(0,1)$, with probability at least $1-\delta$ every empirical risk minimizer satisfies
+\begin{equation}\label{eq:vc:erm}
+  L_D(\hat h)\le\inf_{h\in\cH}L_D(h)+2\sqrt{\frac8m\Big(d\ln(2m+1)+\ln\frac4\delta\Big)} ;
+\end{equation}
+and for every learner $A$ and every $m\le d/2$, some distribution $D$ with $L_D(h^\star) = 0$ for some $h^\star\in\cH$ has $\Pr[L_D(A(S))\ge\frac18]\ge\frac17$.
+\end{theorem}
+
+\begin{proof}
+The plan is to prove the implications in a circle. Two of them carry the weight: (i) implies (ii) by the Vapnik--Chervonenkis inequality, and (iv) implies (i) by the no-free-lunch theorem.
+
+(i) implies (ii). The pattern of the loss $\ell_h(x,y) = \ind[h(x)\ne y]$ on a sample is the pattern of $h$ with the coordinates of label $1$ flipped, so the losses have the growth function of $\cH$. The inequality of \cref{cor:vc:ulln} then bounds the probability of a uniform deviation above $\eps$ by $4(2m+1)^de^{-m\eps^2/8}$, which tends to $0$ at a rate that does not depend on $D$.
+
+(ii) implies (iii). Apply \cref{lem:vc:erm} with $\eps/2$ in place of $\eps$.
+
+(iii) implies (iv). Empirical risk minimizers exist. If some $h^\star\in\cH$ has risk zero, then $\inf_hL_D(h) = 0$, so an agnostic PAC learner is a PAC learner.
+
+(iv) implies (i). If the VC dimension were infinite, then for every $m$ some set of $2m$ points would be shattered, and \cref{thm:vc:nfl} would defeat every learner with $m$ examples at accuracy $\eps<1/8$ and confidence $1-\delta>6/7$.
+
+For the quantitative statements, choose $\eps$ so that $4(2m+1)^de^{-m\eps^2/8} = \delta$ in the bound of (i), which produces the square root in \eqref{eq:vc:erm}, and apply \cref{lem:vc:erm}; for $m\le d/2$, apply \cref{thm:vc:nfl} to $2m$ points of a shattered set of size $d$.
+\end{proof}
+
+For excess risk $\eps$, the bound \eqref{eq:vc:erm} asks for about $d\log(d/\eps)/\eps^2$ examples, and more than $d/2$ are needed. The exact order is known.
+
+\begin{theorem}[Optimal sample sizes]\label{thm:vc:sharp}
+Let $2\le\vcdim(\cH) = d<\infty$, and let $m^{\mathrm{re}}$ and $m^{\mathrm{ag}}$ be the smallest sample sizes with which some learner achieves accuracy $\eps$ with confidence $1-\delta$ in the PAC sense and in the agnostic sense. If $\eps$ and $\delta$ are below absolute constants, then $m^{\mathrm{re}}$ and $m^{\mathrm{ag}}$ lie within absolute constant factors of $(d+\ln(1/\delta))/\eps$ and of $(d+\ln(1/\delta))/\eps^2$, respectively.
+\end{theorem}
+
+We prove neither upper bound.\sidenote{The PAC upper bound is due to \textcite{Hanneke2016}, who closed a logarithmic gap that had stood for decades with a majority vote of classifiers trained on overlapping subsamples. In the agnostic case, removing the logarithm from \eqref{eq:vc:erm} needs chaining, a multiscale refinement of the union bound.} The PAC lower bound combines a term $\ln(1/\delta)/\eps$ from \textcite{BlumerEtAl1989} with a term $d/\eps$ from \textcite{EhrenfeuchtEtAl1989}, and the agnostic bounds are collected by \textcite[Theorem~6.8]{ShalevShwartzBenDavid2014}.
+
+\begin{proofsketch}[Sketch of the term $d/\eps$ in the PAC lower bound]
+Let $\eps\le1/8$ and let $\{x_0,\dots,x_{d-1}\}$ be shattered. Put mass $1-8\eps$ on $x_0$, labeled $0$, and mass $8\eps/(d-1)$ on each other point, labeled by a uniformly random $g$ as in \cref{thm:vc:nfl}. A sample of size $m\le(d-1)/(32\eps)$ has on average at most $8\eps m\le(d-1)/4$ draws of rare points, so at least $3(d-1)/4$ rare points go unseen on average, and the learner errs on each with probability $1/2$. The risk on the rare points has mean at least $3\eps$ and never exceeds $8\eps$, so, averaging as in \cref{thm:vc:nfl}, some $g$ makes it exceed $\eps$ with probability at least $2/7$. This is, in essence, the construction of \textcite{EhrenfeuchtEtAl1989}; we omit the two-point argument for the term $\ln(1/\delta)/\eps$.
+\end{proofsketch}
+
+So the VC dimension is not merely a convenient sufficient condition: up to constants it is the quantity on which the problem depends, and the three questions that closed \cref{sec:vc:before} have one answer.
+
+%==============================================================================
+\section{Costs and limits}\label{sec:vc:costs}
+
+\paragraph{Where did the difficulty go?} Into two lemmas, each paid for once. The ghost-sample lemma is where the unknown distribution leaves the problem; it costs a factor $2$, a halving of $\eps$, and the condition $m\eps^2\ge2$, and with the swaps it makes the constants of \cref{thm:vc:vc} poor (Exercise~\ref{exr:vc:rates}). The Sauer--Shelah--Perles lemma is where an infinite class becomes polynomially many patterns. After that, every class costs one combinatorial computation, usually short, as for half-spaces, and sometimes research, as for ReLU networks with $W$ weights and $L$ layers, whose VC dimension \textcite{BartlettEtAl2019} showed to be $O(WL\log W)$, and $\Omega(WL\log(W/L))$ for some architectures. Removing the logarithmic factors cost more: chaining in the agnostic case, a new algorithm in the realizable one. Still, the move is a bargain and not a renaming: the analytic difficulty is paid once, and what remains for each class is a finite question about patterns.
+
+\paragraph{What did not dissolve.} Four things. First, the bounds are worst cases over all distributions, and for modern deep learning they are silent. \textcite{ZhangEtAl2017} showed that networks which generalize on natural images, trained in the same way, also fit training sets with random labels; a bound that depends only on the networks the training procedure can reach must hold for those labels too, where the test error is no better than chance. \textcite{NagarajanKolter2019} gave examples where gradient descent generalizes, yet even uniform convergence over the networks it actually outputs gives vacuous bounds.
+
+Second, the equivalences of \cref{thm:vc:fundamental} can fail beyond binary classification. With infinitely many labels the Natarajan dimension, the natural analogue of the VC dimension, fails: \textcite{BrukhimEtAl2022} built a class of Natarajan dimension one that is not learnable, showed that the DS dimension of Daniely and Shalev-Shwartz characterizes learnability, and needed learners beyond empirical risk minimization. In Vapnik's general setting, \textcite{ShalevShwartzEtAl2010} gave stochastic convex optimization problems that are learnable although uniform convergence and some empirical risk minimizers fail; stability takes the place of uniform convergence there.
+
+Third, a combinatorial invariant may not exist at all. \textcite{BenDavidEtAl2019} showed that learnability of a simple problem, choosing from samples a finite subset of the line of nearly maximal probability, is independent of the axioms of set theory, and that no finitary combinatorial dimension characterizes learnability in their setting.
+
+Fourth, the VC dimension measures a passive learner fed random examples. It says nothing about running time, and nothing about an adversary who chooses the examples: thresholds on the line have VC dimension one, yet an adversary who presents points one at a time can force a mistake in every round. \Cref{ch:littlestone} finds the right invariant for that game.
+
+%==============================================================================
+\section{The move, distilled}\label{sec:vc:distilled}
+
+\begin{move}{The right invariant}
+\movepart{In one sentence} When a union bound must run over an infinite set, find the finite shadow that the data can see, and measure the problem by how fast that shadow grows.
+\movepart{Triggers} A proof that works for finite families and fails only because of cardinality; an estimate that sees each object only through finitely many evaluations; a population quantity that could be replaced by its copy on fresh data; infinite families of equal size that behave differently.
+\movepart{Recipe} (1) Restrict the family to a finite sample and count what survives. (2) Replace each population quantity by its copy on a ghost sample, at a constant cost, so that every event depends only on the finite shadow. (3) Use the free symmetry of the doubled sample to reduce to one fixed pattern. (4) Prove a gap theorem for the count, and name the integer at which the gap opens. (5) Turn a large shattered set into a matching lower bound, so that the invariant characterizes the problem.
+\movepart{Anti-pattern} Counting parameters: one real parameter can shatter arbitrarily large sets (\cref{exa:vc:examples}). More generally, a ``capacity'' defined so that an upper bound goes through, with no lower bound to show that the problem depends on it.
+\end{move}
+
+\dissolutiontest{The Glivenko--Cantelli theorem becomes a one-line corollary, its multivariate version a two-sentence one; the finite-class theorem is, up to constants, the case $\vcGrowth_{\cF}(2m)\le\abs{\cF}$.}{No order on the domain, no continuity or density of $P$, and no knowledge of $P$ at all: every bound holds for every distribution.}{Finite classes, empirical distribution functions in every dimension, half-spaces, and PAC learnability by every method are governed by one integer.}{Necessity of finite VC dimension (no free lunch), sample sizes that are optimal up to constants, $\eps$-nets in geometry, and uniform laws for classes without order.}
+
+The next chapter applies the same move to a different game. When an adversary chooses the examples one at a time, shattered sets give way to shattered trees, and the Littlestone dimension of \cref{ch:littlestone} replaces the VC dimension; thresholds, the easiest class of this chapter, become unlearnable there. Other threads meet here too. \textcite{Cover1965} counted the ways in which a hyperplane through the origin that avoids $N$ points of $\R^d$, every $d$ or fewer of them linearly independent, can split them into a positive and a negative side: $2\sum_{k<d}\binom{N-1}{k}$, which is $\binom{N-1}{d}$ less than the bound of \cref{thm:vc:sauer} for VC dimension $d$; his induction on dimension is in the spirit of \cref{ch:dimension}. The swap symmetry of the double sample is the free symmetry that \cref{ch:conformal} turns into prediction sets; and in the language of \cref{ch:pseudorandom}, \cref{thm:vc:vc} says that a random sample is a good sampler for every function of a VC class at once.
+
+%==============================================================================
+\begin{exercises}
+\item \consolidation Show that the VC dimension is $2k$ for unions of at most $k$ intervals on $\R$, $4$ for axis-parallel rectangles in $\R^2$, and $d$ for the half-spaces $\{x\in\R^d:\ip{w,x}\ge0\}$.\label{exr:vc:dims}
+
+\item \consolidation\hard (Shifting.) For a family $\cS$ of subsets of $\{1,\dots,n\}$, the \emph{down-shift at $i$} replaces each $A\in\cS$ containing $i$ by $A\setminus\{i\}$, unless that set already belongs to $\cS$. Show that down-shifts preserve $\abs{\cS}$ and create no new shattered sets, and that finitely many of them make the family closed under taking subsets. Deduce \cref{thm:vc:sauer} again, and show that the sets of size at most $d$ attain the bound. \hint{A family closed under taking subsets shatters each of its members.}\label{exr:vc:shifting}
+
+\item \consolidation (Rates.) (a) Deduce from \cref{cor:vc:ulln} that, with probability at least $1-\delta$, $\sup_t\abs{F_m(t)-F(t)}\le\sqrt{(8/m)\ln(4(2m+1)/\delta)}$. (b) Run the grid proof of \cref{thm:vc:gc} with \cref{lem:vc:hoeffding} in place of the strong law and $k = \ceil{2/\eps}$ to show $\Pr[\sup_t\abs{F_m(t)-F(t)}>\eps]\le4k\,e^{-m\eps^2/2}$. Which bound is better, and what did generality cost?\label{exr:vc:rates}
+
+\item \consolidation\hard Show that the functions $x\mapsto\ind[\sin(\theta x)>0]$, $\theta\in\R$, shatter $\{10^{-1},\dots,10^{-n}\}$ for every $n$. \hint{For labels $y_1,\dots,y_n$ take $\theta = \pi\big(1+\sum_{i=1}^n(1-y_i)10^i\big)$, and reduce $\theta\cdot10^{-j}$ modulo $2\pi$.}\label{exr:vc:sine}
+
+\item \consolidation\hard Let $V$ be a $k$-dimensional vector space of real functions on a set $\cX$. Show that $\{\ind[g\ge0]: g\in V\}$ has VC dimension at most $k$; deduce the upper bound of \cref{prop:vc:halfspaces} without Radon's theorem, and show that closed balls in $\R^d$ have VC dimension at most $d+2$. \hint{If $k+1$ points were shattered, then some nonzero vector would be orthogonal to every vector $(g(x_1),\dots,g(x_{k+1}))$ with $g\in V$.}\label{exr:vc:dudley}
+
+\item \transfer\hard (Rademacher averages.) Let $\sigma_1,\dots,\sigma_m$ be independent uniform signs, independent of $S$, and let $\vcRad_m(\cF)$ be the expectation of $\sup_{f\in\cF}\frac1m\sum_{i}\sigma_if(Z_i)$. (a) With a ghost sample and swaps, show that $\E\sup_{f\in\cF}(Pf-P_Sf)\le2\vcRad_m(\cF)$. (b) Show that $\E\max_{v\in V}\sum_i\sigma_iv_i\le\sqrt{2m\ln\abs{V}}$ for finite nonempty $V\subseteq[-1,1]^m$, and (c) conclude that $\E\sup_{f\in\cF}(Pf-P_Sf)\le2\sqrt{2\ln\vcGrowth_{\cF}(m)/m}$. \hint{For (b), bound $\E\exp(\lambda\max_v\sum_i\sigma_iv_i)$ by a sum over $V$, and use $\cosh x\le e^{x^2/2}$.}\label{exr:vc:rademacher}
+
+\item \transfer\hard (Nets.) A sample $S$ is an \emph{$\eps$-net} for $\cF$ if every $f\in\cF$ with $Pf>\eps$ has $P_Sf>0$. (a) Show that if $m\ge8/\eps$, then $S$ fails to be an $\eps$-net with probability at most $2\vcGrowth_{\cF}(2m)2^{-\eps m/2}$. (b) Deduce a version of the $\eps$-net theorem of \textcite{HausslerWelzl1987}: if $\vcdim(\cF) = d$, then $O\big(\frac1\eps(d\log\frac1\eps+\log\frac1\delta)\big)$ samples form an $\eps$-net with probability at least $1-\delta$; and deduce that every learner that outputs a hypothesis of $\cH$ with no errors on the sample is then a PAC learner. \hint{Use the ghost event $P_{S'}f\ge\eps/2$; under swaps, a pattern with $r$ ones lands entirely in $S'$ with probability at most $2^{-r}$.}\label{exr:vc:nets}
+
+\item \transfer\hard (Scale-sensitive dimension.) For a class $\cF$ of functions from $\cX$ to $[0,1]$ and $\gamma>0$, points $x_1,\dots,x_n$ are \emph{$\gamma$-shattered} if there are reals $r_1,\dots,r_n$ such that for every $b\in\{0,1\}^n$ some $f\in\cF$ has $f(x_i)\ge r_i+\gamma$ when $b_i = 1$ and $f(x_i)\le r_i-\gamma$ when $b_i = 0$. The largest such $n$ is the \emph{fat-shattering dimension} $\vcfat_\gamma(\cF)$.\index{fat-shattering dimension} (a) Let $\cM$ be the class of nondecreasing functions from $\R$ to $[0,1]$. Show that $\vcfat_\gamma(\cM) = \floor{1/(2\gamma)}$ for $0<\gamma\le1/2$: finite at every scale, unbounded as $\gamma\to0$. (b) \textcite{AlonEtAl1997} proved that empirical means converge to true means uniformly over a class of $[0,1]$-valued functions, and uniformly over distributions, if and only if every $\vcfat_\gamma$ is finite. Which step of the proof of \cref{thm:vc:vc} fails for real-valued classes, and why must a scale enter? \hint{For points in increasing order, a pattern with $b_i = 1$ and $b_{i+1} = 0$ forces $r_{i+1}\ge r_i+2\gamma$, and $r_i = (2i-1)\gamma$ works.}\label{exr:vc:fat}
+
+
+\item \research\harder (The combinatorial shadow of large networks.) The VC dimension of a ReLU network with $W$ weights and $L$ layers is $O(WL\log W)$ \parencite{BartlettEtAl2019}, so for networks with more weights than examples \cref{thm:vc:fundamental} promises nothing. (a) Use \cref{thm:vc:nfl} to explain why a class that shatters sets of size $2m$ admits no distribution-free guarantee from $m$ examples. (b) Open problem: find a quantity, computable from the data and the training procedure, that is small for networks trained on natural data, bounds their test error, and admits a lower bound in the spirit of \cref{thm:vc:nfl}. By \textcite{NagarajanKolter2019}, uniform convergence over the outputs of the algorithm cannot always play this role; no such invariant is known.\label{exr:vc:networks}
+
+\item \research\harder (Sample compression.)\index{sample compression} A \emph{compression scheme of size $k$} for $\cH$ maps every finite sample labeled by some $h\in\cH$ to a subsequence of at most $k$ of its examples, from which a fixed reconstruction map produces a hypothesis that labels the whole sample correctly. (a) Give schemes of size $1$ for the thresholds $\ind[x\ge t]$ on $\R$ and of size $4$ for axis-parallel rectangles. (b) Show that a scheme of size $k$ yields a PAC learner with $O\big(\frac1\eps(k\log\frac1\eps+\log\frac1\delta)\big)$ examples, as Littlestone and Warmuth observed. (c) Answering their question whether the converse holds, \textcite{MoranYehudayoff2016} proved, via an approximate minimax theorem (compare \cref{ch:lpduality}), that every class of VC dimension $d$ has a scheme of size exponential in $d$. Whether size $O(d)$ always suffices, a question of Floyd and Warmuth recorded there, is open as far as we know: decide it, or settle it for a family of classes of your choice.\label{exr:vc:compression}
+\end{exercises}
+
+%==============================================================================
+\notesandrefs
+The paper of \textcite{VapnikChervonenkis1971} is short and still the best place to see the move whole. It also proves a result this chapter omits: under a fixed distribution, uniform convergence holds if and only if the expected logarithm of the number of patterns on $m$ random points grows sublinearly in $m$. The counting lemma has three independent sources, \textcite{Sauer1972}, \textcite{Shelah1972} with Perles, and, in a slightly weaker form, Vapnik and Chervonenkis; \cref{lem:vc:pajor} is due to \textcite{Pajor1985}, and its inductive proof, like the shifting proof of Exercise~\ref{exr:vc:shifting}, is standard.
+
+\textcite{BlumerEtAl1989} connected PAC learning with the VC dimension, and the name and arrangement of \cref{thm:vc:fundamental} follow \textcite{ShalevShwartzBenDavid2014}, the best textbook to read next. Rademacher averages, scale-sensitive dimensions, and compression schemes (Exercises~\ref{exr:vc:rademacher}, \ref{exr:vc:fat}, and~\ref{exr:vc:compression}) refine the invariant; stability measures an algorithm instead of a class.
+
+\printchapterbib
+\end{refsection}

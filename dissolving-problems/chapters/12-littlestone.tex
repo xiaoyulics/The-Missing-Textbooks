@@ -1,0 +1,383 @@
+% Chapter 12 -- The Adversary's Best Tree (key: littlestone)
+\casechapter{The Adversary's Best Tree}{Littlestone dimension, online learning, and privacy}{The right invariant}{ch:littlestone}
+\begin{refsection}[chapters/12-littlestone.bib]
+% Notation for this chapter (local to the refsection).
+\newcommand{\littlestoneLdim}{\operatorname{Ldim}}
+\newcommand{\littlestoneVC}{\operatorname{VC}}
+\newcommand{\littlestoneM}{\operatorname{M}}
+\newcommand{\littlestoneErr}{\operatorname{err}}
+\newcommand{\littlestoneLogstar}{\log^{*}}
+% Labels of lemmas, propositions, corollaries and definitions carry their type
+% explicitly, \label[lemma]{...}, so that \cref prints the right name.
+
+\begin{chaptersummary}
+A learner sees points one at a time and must predict each label before it is revealed. Counting hypotheses bounds its mistakes from above and the VC dimension of \cref{ch:vc} from below, but both fail on thresholds on an interval: their VC dimension is one, an adversary forces a mistake in every round, and the same thresholds later blocked learning under differential privacy. The move is to measure a class by the depth of the deepest binary tree of points that it shatters, the adversary's best strategy written down. The optimal mistake bound becomes an identity, regret bounds reach infinite classes, and online learnability, private learnability, replicability, and Shelah's stability in model theory turn out to be finiteness of one number.
+\end{chaptersummary}
+
+\section{Before: counting, and an adversary's trick}\label{sec:littlestone:before}
+
+\subsection{The mistake-bound game}\label{sec:littlestone:game}
+
+In a paper that reached the journal \emph{Machine Learning} in September 1987, Nick Littlestone studied learners that must commit to a prediction before they see the answer \parencite{Littlestone1988}.\sidenote{The paper's main subject is an efficient linear-threshold algorithm, Winnow, whose number of mistakes grows only logarithmically with the number of irrelevant attributes. The general theory of this chapter occupies one section of it.} Fix a set $\cX$ of points and a nonempty class $\cH$ of functions from $\cX$ to $\{0,1\}$, the \term{hypotheses}. The game runs in rounds $t=1,2,\dots$: an adversary presents a point $x_t\in\cX$, the learner predicts a label $\hat y_t\in\{0,1\}$, and the adversary reveals the true label $y_t$. The adversary obeys one rule, \term{realizability}: at every moment some hypothesis in $\cH$ agrees with all the labels revealed so far.\sidenote{Without this rule the adversary could contradict every prediction. \Cref{sec:littlestone:agnostic} drops the rule and compares the learner with the best hypothesis instead.}\index{mistake bound}
+
+A \term{deterministic learner} $A$ computes $\hat y_t$ from the examples of the earlier rounds and the new point $x_t$. Because the adversary can simulate $A$, it may as well fix the whole sequence in advance; and it never needs to commit to a target, since at the end every hypothesis that agrees with all the labels can serve as one.\sidenote{Littlestone also showed that a learner with mistake bound $M$ can be turned into an algorithm that identifies the target exactly with at most $M+1$ equivalence queries, and conversely.}
+
+\begin{definition}[Mistake bound]\label[definition]{def:littlestone:mistake}
+The \term{mistake bound} $\littlestoneM(A,\cH)$ of a deterministic learner $A$ is the supremum, over all $T$ and all realizable sequences $(x_1,y_1),\dots,(x_T,y_T)$, of the number of rounds with $\hat y_t\ne y_t$. The \term{optimal mistake bound} is $\littlestoneM(\cH)=\inf_A\littlestoneM(A,\cH)$, the infimum over all deterministic learners. Both numbers may be infinite.
+\end{definition}
+
+The hypotheses that agree with every example seen so far form the \term{version space}.\index{version space} For a set $V$ of hypotheses, a point $x$, and a label $r$, write
+\[
+  V_{(x,r)} \defeq \{h\in V : h(x)=r\}
+\]
+for the part of $V$ that gives $x$ the label $r$; after the example $(x_t,y_t)$ the version space $V$ becomes $V_{(x_t,y_t)}$. The first algorithm everyone tries lets the version space vote. The \term{halving algorithm} predicts the label that the majority of the current version space gives to $x_t$, and the label $1$ on a tie.\index{halving algorithm} Littlestone traces the idea to earlier work on predicting recursive functions and on version spaces.
+
+\begin{proposition}[Halving]\label[proposition]{prop:littlestone:halving}
+If the class $\cH$ is finite, then the halving algorithm makes at most $\floor{\log_2\abs{\cH}}$ mistakes on every realizable sequence.
+\end{proposition}
+
+\begin{proof}
+The version space is never empty, because it contains every hypothesis that agrees with the whole sequence. When the algorithm errs, the hypotheses that agreed with its prediction, at least half of the version space, are eliminated. After $k$ mistakes the version space has between $1$ and $2^{-k}\abs{\cH}$ members, so $2^k\le\abs{\cH}$; and $k$ is an integer.
+\end{proof}
+
+The bound measures a class by its size, and size is the wrong measure. The zero function and the indicators of single points of an infinite set form an infinite class, yet the learner that predicts $0$ until its first mistake errs at most once, since that mistake reveals the target. The VC dimension of \cref{ch:vc} gives a lower bound, because an adversary who presents a shattered set and contradicts every prediction forces one mistake per point; but the lower bound can be wildly off.
+
+\begin{proposition}[Thresholds on an interval]\label[proposition]{prop:littlestone:interval}
+For $\theta\in[0,1]$ let $h_\theta(x)=1$ if $x\ge\theta$ and $h_\theta(x)=0$ otherwise, and let $\cH=\{h_\theta:\theta\in[0,1]\}$, a class of functions on $\cX=[0,1]$. The VC dimension of $\cH$ is $1$, but for every deterministic learner and every $T$ some realizable sequence of length $T$ makes the learner err in all $T$ rounds. Hence $\littlestoneM(\cH)=\infty$.
+\end{proposition}
+
+\begin{proof}
+For the VC dimension, take two points $x<x'$. A threshold that gives $x$ the label $1$ satisfies $\theta\le x<x'$ and so gives $x'$ the label $1$ as well; hence no pair is shattered, while the single point $1/2$ is.
+
+For the mistakes, the adversary runs a binary search on the unknown threshold. It keeps an interval $(a,b]\subseteq(0,1]$, initially $(0,1]$, such that every $h_\theta$ with $\theta\in(a,b]$ agrees with all the labels announced so far. In each round it presents the midpoint $x=(a+b)/2$, waits for the prediction $\hat y$, and announces the opposite label $1-\hat y$. If it announces $1$, then it replaces the interval by $(a,x]$, whose thresholds satisfy $\theta\le x$ and so give $x$ the label $1$. If it announces $0$, then it replaces the interval by $(x,b]$, whose thresholds satisfy $\theta>x$ and so give $x$ the label $0$. The new interval is nonempty and lies inside the old one, so the property survives. After $T$ rounds every threshold in the final interval agrees with all $T$ labels, and the learner has erred $T$ times.
+\end{proof}
+
+The proof is clever and entirely local to its example: it uses the order of $[0,1]$, the midpoint, and nested intervals. On $\{1,\dots,N\}$ the same search forces $\floor{\log_2(N+1)}$ mistakes and halving matches it from above, two arguments for the two sides of one number. Against a learner that flips coins the adversary must fix its label without seeing the coin of the current round, so it cannot be sure to contradict the prediction, and the argument must be redone with random labels. And none of this says which other classes behave like thresholds.
+
+\subsection{Privacy: the same villain}\label{sec:littlestone:privacy-before}
+
+Some two decades later the thresholds returned in a different theory. Differential privacy, introduced by \textcite{DworkMcSherryNissimSmith2006}, asks that the distribution of an algorithm's output change little when one record of its input changes.\index{differential privacy}
+
+\begin{definition}[Differential privacy and private learning]\label[definition]{def:littlestone:dp}
+Two samples $S,S'\in(\cX\times\{0,1\})^n$ are \term{neighbours} if they differ in exactly one example. A randomized algorithm $A$ that maps samples to hypotheses is \term{$(\eps,\delta)$-differentially private} if
+$\Pr[A(S)\in E]\le e^{\eps}\Pr[A(S')\in E]+\delta$
+for all neighbours $S,S'$ and every event $E$; it is \term{purely} private if $\delta=0$. A learner on $n$ examples is \term{$(\alpha,\beta)$-accurate} for $\cH$ if, for every distribution $P$ on $\cX$ and every $h^\star\in\cH$, when $S$ consists of $n$ independent draws from $P$ labelled by $h^\star$, the output $f$ satisfies $\littlestoneErr_P(f)\defeq\Pr_{x\sim P}[f(x)\ne h^\star(x)]\le\alpha$ with probability at least $1-\beta$. It is \term{proper} if its outputs lie in $\cH$.
+\end{definition}
+
+The relaxation $\delta>0$ is called approximate privacy. The first general positive result was again a counting bound. \Textcite{KasiviswanathanLeeNissimRaskhodnikovaSmith2011} learned every finite class with pure privacy from $O(\log\abs{\cH})$ examples, for fixed accuracy and privacy parameters, by the \term{exponential mechanism}: output each $h\in\cH$ with probability proportional to $e^{-\eps m_S(h)/2}$, with $m_S(h)$ the number of examples of $S$ that $h$ mislabels. Changing one example changes every exponent by at most $\eps/2$, which gives privacy, and a union bound over the $\abs{\cH}$ hypotheses gives accuracy, just as in Occam's razor.\index{private learning}
+
+For the thresholds on $\{1,\dots,N\}$ this gives a purely private learner with $O(\log N)$ examples, and \textcite{FeldmanXiao2015} showed that pure privacy cannot do better. Approximate privacy helps enormously, but not completely. \Textcite{BunNissimStemmerVadhan2015} gave a proper $(\eps,\delta)$-private learner for these thresholds with $2^{(1+o(1))\littlestoneLogstar N}$ examples, and proved that every proper private learner needs $\Omega(\littlestoneLogstar N)$; here $\littlestoneLogstar N$ is the number of times $\log_2$ must be applied to $N$ before the result is at most $1$. So no proper private learner exists for thresholds on an infinite ordered domain, although a constant number of examples suffices without privacy. Whether improper learners could do better was left open.\sidenote{The function $\littlestoneLogstar$ grows so slowly that $\littlestoneLogstar N\le5$ for every $N\le2^{65536}$. The bound matters in principle rather than in practice: its force is that thresholds on an infinite domain cannot be learned properly and privately at all.}
+
+The two theories had the same shape. Each had a counting bound in $\log\abs{\cH}$, valid for every finite class and useless for infinite ones; each had the VC dimension as a necessary condition that is not sufficient; and each had thresholds as its standing counterexample. Neither could say which infinite classes are learnable, nor why the same counterexample kept appearing.
+
+\section{The move: write the adversary's strategy down}\label{sec:littlestone:move}
+
+Look again at the adversary of \cref{prop:littlestone:interval}. Its next point depends only on the labels it has announced, so its whole strategy fits in a binary tree: the root is the first point, the two children of a node are the next points after the labels $0$ and $1$, and a path from the root spells out a sequence of examples. The adversary gains one mistake per level, provided that every path is consistent with some hypothesis. Littlestone made this tree the definition (\cref{fig:littlestone:tree}).\index{mistake tree}
+
+\begin{definition}[Mistake trees and the Littlestone dimension]\label[definition]{def:littlestone:ldim}
+Let $d\ge0$ be an integer. A \term{mistake tree} of depth $d$ is a family $(x_u)$ of points of $\cX$ indexed by the binary strings $u$ of length less than $d$; the point $x_u$ sits at the node reached from the root by following $u$, where $0$ means left and $1$ means right, and $x_\varnothing$ is the root. A \term{branch} is a string $y=y_1\cdots y_d\in\{0,1\}^d$. It visits the nodes $x_\varnothing,x_{y_1},x_{y_1y_2},\dots,x_{y_1\cdots y_{d-1}}$ and gives the $i$th of them the label $y_i$. A class $\cH$ \term{shatters} the tree if every branch is realized: for every $y\in\{0,1\}^d$ some $h\in\cH$ satisfies $h(x_{y_1\cdots y_{i-1}})=y_i$ for $1\le i\le d$. The \term{Littlestone dimension} $\littlestoneLdim(\cH)$ is the largest depth of a mistake tree shattered by $\cH$. It is $\infty$ if $\cH$ shatters trees of every depth, and it is $-1$ for the empty class.
+\end{definition}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  level distance=10mm,
+  level 1/.style={sibling distance=36mm},
+  level 2/.style={sibling distance=18mm},
+  pt/.style={circle,draw=sea,fill=seafoam,thick,minimum size=7mm,inner sep=0pt},
+  lf/.style={rectangle,draw=sandline,fill=sand,rounded corners=1pt,inner sep=2.5pt,font=\small},
+  edge from parent/.style={draw=seadeep,thick},
+  lab/.style={font=\scriptsize,text=muted}]
+\node[pt] {$2$}
+  child { node[pt] {$3$}
+    child { node[lf] {$000$} edge from parent node[lab,left] {$0$} }
+    child { node[lf] {$001$} edge from parent node[lab,right] {$1$} }
+    edge from parent node[lab,above left] {$0$} }
+  child { node[pt] {$1$}
+    child { node[lf] {$011$} edge from parent node[lab,left] {$0$} }
+    child { node[lf] {$111$} edge from parent node[lab,right] {$1$} }
+    edge from parent node[lab,above right] {$1$} };
+\end{tikzpicture}
+\caption{A mistake tree of depth $2$ over the points $1,2,3$, shattered by the four thresholds. Internal nodes are points the adversary presents; edges are the labels it announces; each leaf shows a threshold, as its labels of $1,2,3$, that agrees with every label on the way down. It is the binary search of \cref{prop:littlestone:interval}, written down.}\label{fig:littlestone:tree}
+\end{figure}
+
+The tree of depth $0$ has no nodes and one empty branch, so every nonempty class shatters it; a class has Littlestone dimension $0$ exactly when it consists of one function. Cutting a shattered tree at a smaller depth leaves it shattered, and the dimension is monotone in the class. A shattered set of $d$ points is the special case of a tree of depth $d$ whose nodes at each depth carry the same point.\sidenote{Model theorists also call the Littlestone dimension the thicket dimension \parencite{ChaseFreitag2019}.}
+
+The new object is humble: not a property of the class, such as its size or its patterns on a fixed set, but the game plan of the opponent, a binary tree of points. Grothendieck's advice to stoop low applies almost literally. In hindsight the definition is forced, since an adversary who adapts must be described by a tree, and the VC dimension sees only the trees whose levels are constant.
+
+What did one have to notice? The proof of \cref{prop:littlestone:halving} is a potential argument: $\log_2\abs{V}$ drops by at least one at each mistake of the halving algorithm. This potential bounds the mistakes from above, but it is no lower bound, as the singletons show. Littlestone replaced it by a potential that is both, the depth of the deepest tree that the version space shatters. Two facts about gluing trees make this work.
+
+\begin{lemma}[Gluing]\label[lemma]{lem:littlestone:glue}
+Let $V$ be a nonempty set of hypotheses and $x$ a point.
+\begin{enumerate}
+\item If $V_{(x,0)}$ and $V_{(x,1)}$ both shatter trees of depth $k\ge0$, then $V$ shatters a tree of depth $k+1$ with root $x$.
+\item If $V$ shatters a tree of depth $k+1$ with root $x$, then $V_{(x,r)}$ shatters the subtree below the edge labelled $r$, for $r=0,1$.
+\item If $\littlestoneLdim(V)=d$ is finite, then one of $V_{(x,0)}$ and $V_{(x,1)}$ has Littlestone dimension at most $d-1$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+(i) Put $x$ at the root, a tree shattered by $V_{(x,0)}$ below the edge $0$, and a tree shattered by $V_{(x,1)}$ below the edge $1$. A branch that starts with the label $r$ continues as a branch of the subtree below the edge $r$, and a hypothesis of $V_{(x,r)}$ that realizes the continuation also gives $x$ the label $r$.
+
+(ii) A hypothesis that realizes a branch starting with the label $r$ lies in $V_{(x,r)}$ and realizes the rest of the branch in the subtree.
+
+(iii) If both parts had dimension at least $d$, both would shatter trees of depth exactly $d$, because a shattered tree can be cut, and part (i) would give $\littlestoneLdim(V)\ge d+1$. An empty part causes no trouble, since its dimension $-1$ is at most $d-1$.
+\end{proof}
+
+Parts (i) and (ii) say that $\littlestoneLdim(V)\ge k+1$ exactly when some point splits $V$ into two parts of dimension at least $k$. This recursion will reappear, under another name, in model theory.
+
+\section{After: the mistake bound is the depth of a tree}\label{sec:littlestone:after-online}
+
+\subsection{Littlestone's theorem and its corollaries}\label{sec:littlestone:theorem}
+
+The \term{Standard Optimal Algorithm}, as Littlestone called it, keeps the version space $V_t$ at the start of round $t$ and predicts the label $r$ for which $(V_t)_{(x_t,r)}$ has the larger Littlestone dimension, choosing $1$ on a tie. It differs from the halving algorithm only in what it counts: it keeps the side with the deeper tree, not the side with more hypotheses, and the difference matters (Exercise~\ref{ex:littlestone:halving}).\index{Standard Optimal Algorithm}
+
+\begin{theorem}[\textcite{Littlestone1988}]\label{thm:littlestone:main}
+For every nonempty class $\cH$, the optimal mistake bound equals the Littlestone dimension: $\littlestoneM(\cH)=\littlestoneLdim(\cH)$, where both sides may be infinite. If $\littlestoneLdim(\cH)$ is finite, then the Standard Optimal Algorithm attains it.\index{Littlestone dimension}
+\end{theorem}
+
+\begin{proof}
+The plan is to get the lower bound by walking down a shattered tree and the upper bound by showing that each mistake of the Standard Optimal Algorithm lowers the dimension of the version space.
+
+\emph{The adversary.} Let $d$ be an integer with $0\le d\le\littlestoneLdim(\cH)$, let $\cH$ shatter a tree of depth $d$, and let $A$ be a deterministic learner. Present the root; whatever $A$ predicts, announce the other label and move to the child along the edge of that label; repeat for $d$ rounds. The labels form a branch, which some hypothesis realizes because the tree is shattered, so the sequence is realizable and $A$ has erred $d$ times. Hence $\littlestoneM(A,\cH)\ge d$ for every learner and every such $d$.
+
+\emph{The algorithm.} Let $d=\littlestoneLdim(\cH)$ be finite, and run the Standard Optimal Algorithm on a realizable sequence. The version space is never empty, because it contains every hypothesis consistent with the whole sequence, so its dimension is at least $0$; and the dimension never increases, because version spaces shrink. If the algorithm errs in round $t$, then the true label is the one it did not choose, so the dimension of the next version space is the smaller of the dimensions of the two parts of $V_t$, and part (iii) of \cref{lem:littlestone:glue} puts it at most $\littlestoneLdim(V_t)-1$. Starting at $d$ and never going below $0$, the dimension allows at most $d$ mistakes.
+\end{proof}
+
+Littlestone stated the theorem for finite classes and deterministic learners; the proof never uses finiteness.\sidenote{The name came later: \textcite{BenDavidPalShalevShwartz2009}, who extended the theory to infinite classes and to the agnostic setting, wrote ``Littlestone's dimension''.} It is a min--max theorem, the best learner against the best adversary, and it needs no convexity because the game has perfect information; compare \cref{ch:lpduality}.
+
+To re-prove the results of \cref{sec:littlestone:before} we need one tree, the binary search of \cref{fig:littlestone:tree}, in general form.
+
+\begin{definition}[Threshold sequences]\label[definition]{def:littlestone:thresholds}
+A class $\cH$ contains a \term{threshold sequence} of length $k\ge1$ if there are points $x_1,\dots,x_k$ and hypotheses $h_0,\dots,h_k$ in $\cH$ with $h_i(x_j)=1$ exactly when $j>i$.
+\end{definition}
+
+On the points $x_1,\dots,x_k$ the hypothesis $h_i$ reads $i$ zeros followed by ones, so the restrictions are the $k+1$ thresholds on an ordered set of $k$ points.\index{threshold functions}
+
+\begin{lemma}[Binary search is a shattered tree]\label[lemma]{lem:littlestone:binary}
+If $\cH$ contains a threshold sequence of length $k$, then $\littlestoneLdim(\cH)\ge\floor{\log_2(k+1)}$.
+\end{lemma}
+
+\begin{proof}
+Let $x_1,\dots,x_k$ and $h_0,\dots,h_k$ form the sequence. For integers $a,s\ge0$ with $a+2^s-1\le k$, let $B(a,s)$ be the balanced search tree of depth $s$ on the points $x_{a+1},\dots,x_{a+2^s-1}$: for $s\ge1$ its root is $x_m$ with $m=a+2^{s-1}$, its subtree below the edge $1$ is $B(a,s-1)$, and its subtree below the edge $0$ is $B(m,s-1)$. We show by induction on $s$ that $h_a,\dots,h_{a+2^s-1}$ shatter $B(a,s)$; for $a=0$ and $s=\floor{\log_2(k+1)}$, which satisfy $2^s-1\le k$, this is the lemma. If $s=0$, then the tree has no nodes and $h_a$ realizes its empty branch. If $s\ge1$, then the hypotheses $h_a,\dots,h_{m-1}$ give the root $x_m$ the label $1$, because $m>i$ for each of them, and by induction they shatter $B(a,s-1)$; the hypotheses $h_m,\dots,h_{a+2^s-1}$ give $x_m$ the label $0$ and shatter $B(m,s-1)$. Part (i) of \cref{lem:littlestone:glue} glues the two subtrees under the root.
+\end{proof}
+
+\begin{corollary}[The old results, re-proved]\label[corollary]{cor:littlestone:old}
+\leavevmode
+\begin{enumerate}
+\item Every class satisfies $\littlestoneVC(\cH)\le\littlestoneLdim(\cH)$.
+\item If $\cH$ is finite, then $\littlestoneLdim(\cH)\le\log_2\abs{\cH}$, so $\littlestoneM(\cH)\le\floor{\log_2\abs{\cH}}$.
+\item The $k+1$ thresholds on an ordered set of $k$ points have Littlestone dimension and optimal mistake bound $\floor{\log_2(k+1)}$.
+\item The thresholds on $[0,1]$ of \cref{prop:littlestone:interval} have infinite Littlestone dimension and optimal mistake bound.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+(i) If $\cH$ shatters $\{z_1,\dots,z_d\}$, then it shatters the tree whose nodes at depth $i$ all carry $z_{i+1}$.
+
+(ii) Two different branches of a shattered tree part at some node and give it different labels, so the hypotheses realizing them differ; a tree of depth $d$ therefore needs $2^d$ hypotheses. \Cref{thm:littlestone:main} turns this into the mistake bound.
+
+(iii) \Cref{lem:littlestone:binary} gives the lower bound, and part (ii) gives the upper bound, since $\abs{\cH}=k+1$ and the dimension is an integer.
+
+(iv) The points $j/(k+1)$ with $1\le j\le k$ and the thresholds $h_\theta$ with $\theta=(i+\frac12)/(k+1)$ and $0\le i\le k$ form a threshold sequence of length $k$, for every $k$; apply \cref{lem:littlestone:binary,thm:littlestone:main}.
+\end{proof}
+
+Compare these proofs with their counterparts. Part (ii) replaces the halving argument of \cref{prop:littlestone:halving} by two lines and attaches the bound to a better algorithm; part (iv) replaces the adversary of \cref{prop:littlestone:interval} by one line; part (iii) replaces two separate arguments. The point is not the number of lines. In the old setting each lower bound was a strategy to be invented; here it is a tree to be exhibited, and \cref{thm:littlestone:main} turns every tree into a lower bound against every deterministic learner. With fair coins, the same tree defeats randomized learners.
+
+\begin{proposition}[Randomized learners]\label[proposition]{prop:littlestone:random}
+Let $d\le\littlestoneLdim(\cH)$ be finite. For every randomized learner, some realizable sequence of length $d$, fixed in advance, makes the expected number of mistakes at least $d/2$.
+\end{proposition}
+
+\begin{proof}
+Take a tree of depth $d$ shattered by $\cH$ and a branch $y$ chosen uniformly at random. In round $i$ present the node $x_{y_1\cdots y_{i-1}}$ and reveal the label $y_i$. Everything the learner has seen before predicting in round $i$, together with its coins, is independent of the fair bit $y_i$, so it errs in round $i$ with probability $1/2$. The expected number of mistakes, averaged over the branches, is $d/2$, so some branch gives at least $d/2$; every branch is realizable because the tree is shattered.
+\end{proof}
+
+Since the Standard Optimal Algorithm is deterministic, randomization changes the optimal mistake bound by at most a factor of two.
+
+Exercise~\ref{ex:littlestone:compute} computes a few more values: the indicators of single points have dimension $1$, the parities on $\F_2^n$ have $\littlestoneVC=\littlestoneLdim=n$, and the affine subspaces of dimension at most $d$ of $\F^n$ have dimension $d+1$ even when $\F$ is infinite. Intervals and half-planes contain the thresholds on a line and have infinite dimension.
+
+\subsection{Agnostic learning: the optimal algorithm as a committee}\label{sec:littlestone:agnostic}
+
+Drop realizability. The adversary now chooses an arbitrary sequence $(x_1,y_1),\dots,(x_T,y_T)$, the learner may randomize, and its \term{regret} is its expected number of mistakes minus the number of mistakes of the best hypothesis in hindsight. Randomization is essential: against a deterministic learner the adversary contradicts every prediction, and even for the two constant functions the regret is then at least $T/2$.\index{regret!agnostic online learning}
+
+For a finite class the classical answer treats each hypothesis as an expert and runs the exponential-weights algorithm Hedge, which we use as a black box (\cref{ch:regret}; \cite{CesaBianchiLugosi2006}).
+
+\begin{lemma}[Hedge]\label[lemma]{lem:littlestone:hedge}
+Let $N\ge1$ experts suffer losses $\ell_{t,i}\in[0,1]$ in rounds $t=1,\dots,T$. Let $\eta=\sqrt{8\ln N/T}$, and let $p_t$ be the distribution on the experts with $p_{t,i}$ proportional to $\exp\bigl(-\eta\sum_{s<t}\ell_{s,i}\bigr)$. For every sequence of loss vectors,
+\[
+  \sum_{t=1}^T\sum_{i=1}^N p_{t,i}\,\ell_{t,i}\;\le\;\min_{1\le i\le N}\sum_{t=1}^T\ell_{t,i}+\sqrt{\tfrac{T}{2}\ln N}.
+\]
+\end{lemma}
+
+For finite $\cH$ this gives regret $\sqrt{(T/2)\ln\abs{\cH}}$, a counting bound once more. For infinite classes \textcite{BenDavidPalShalevShwartz2009} built a finite committee of experts that imitates every hypothesis, out of the Standard Optimal Algorithm. Fix $T$ and a set $I\subseteq\{1,\dots,T\}$. The expert $E_I$ runs the algorithm on its own predictions: it keeps a set $V$ of hypotheses, initially $\cH$; in round $t$ it computes the label $r_t$ that the algorithm would predict from $V$ at $x_t$, predicts $1-r_t$ if $t\in I$ and $r_t$ otherwise, and replaces $V$ by $V_{(x_t,\hat y)}$, with $\hat y$ its own prediction. The expert never looks at the true labels, so its predictions depend only on the points.
+
+\begin{lemma}[\textcite{BenDavidPalShalevShwartz2009}]\label[lemma]{lem:littlestone:experts}
+Let $\littlestoneLdim(\cH)=d$ be finite and let $x_1,\dots,x_T$ be points. For every $h\in\cH$ some set $I$ with $\abs{I}\le d$ makes the expert $E_I$ predict $h(x_t)$ in every round $t$.
+\end{lemma}
+
+\begin{proof}
+Run the Standard Optimal Algorithm on the realizable sequence $(x_t,h(x_t))_{t\le T}$, and let $I$ be the set of rounds in which it errs, so that $\abs{I}\le d$ by \cref{thm:littlestone:main}. By induction on $t$, the expert $E_I$ and this run hold the same set $V$ at the start of round $t$ and compute the same label $r_t$. If $t\notin I$, then the run was right, so $r_t=h(x_t)$ and $E_I$ predicts $r_t$. If $t\in I$, then the run was wrong, so $r_t=1-h(x_t)$ and $E_I$ predicts $1-r_t=h(x_t)$. In both cases $E_I$ predicts $h(x_t)$, and both replace $V$ by $V_{(x_t,h(x_t))}$.
+\end{proof}
+
+\begin{theorem}[\textcite{BenDavidPalShalevShwartz2009}]\label{thm:littlestone:agnostic}
+Let $\littlestoneLdim(\cH)=d$ with $1\le d\le T$. Some randomized learner satisfies, for every sequence $(x_1,y_1),\dots,(x_T,y_T)$,
+\[
+  \E\bigl[\#\{t:\hat y_t\ne y_t\}\bigr]\;\le\;\min_{h\in\cH}\#\{t:h(x_t)\ne y_t\}+\sqrt{\tfrac{d}{2}\,T\ln\tfrac{eT}{d}}.
+\]
+\end{theorem}
+
+\begin{proof}
+The plan is to run Hedge on the committee of \cref{lem:littlestone:experts}. The experts are the $E_I$ with $\abs{I}\le d$, so there are $N=\sum_{j=0}^d\binom{T}{j}$ of them, and the loss of $E_I$ in round $t$ is $1$ if it mispredicts $y_t$ and $0$ otherwise. In round $t$ the learner draws an expert from $p_t$ and announces its prediction, so it errs with probability $\sum_I p_{t,I}\ell_{t,I}$. \Cref{lem:littlestone:hedge} bounds the expected number of mistakes by the loss of the best expert plus $\sqrt{(T/2)\ln N}$, and \cref{lem:littlestone:experts} says that the best expert does at least as well as every $h\in\cH$. To bound $N$, multiply it by $(d/T)^d$, use $(d/T)^d\le(d/T)^j$ for $j\le d$, which holds because $d\le T$, extend the sum to all $j$, and apply the binomial theorem and $1+u\le e^u$:
+\[
+  \Bigl(\frac{d}{T}\Bigr)^{d}N\le\sum_{j=0}^{T}\binom{T}{j}\Bigl(\frac{d}{T}\Bigr)^{j}=\Bigl(1+\frac{d}{T}\Bigr)^{T}\le e^{d}.
+\]
+Hence $\ln N\le d\ln(eT/d)$.
+\end{proof}
+
+\Textcite{BenDavidPalShalevShwartz2009} also showed that when $d$ divides $T$ every learner has regret at least $\sqrt{dT/8}$ on some sequence, by walking down a shattered tree and presenting each node $T/d$ times with fresh random labels. So a class of infinite dimension has regret linear in $T$, and agnostic online learnability is again decided by the Littlestone dimension. \Textcite{AlonEtAl2021} showed that the optimal regret is of order $\sqrt{dT}$, without the factor $\sqrt{\ln T}$.
+
+\section{After: privacy, stability, and logic measure the same tree}\label{sec:littlestone:after-hub}
+
+\subsection{Thresholds inside every deep tree}\label{sec:littlestone:shelah}
+
+The converse of \cref{lem:littlestone:binary}, that deep trees contain long threshold sequences, is a theorem of model theory and the bridge to the rest of this section.
+
+\begin{theorem}[\textcite{Shelah1978}; \textcite{Hodges1997}]\label{thm:littlestone:shelah}
+Let $\cH$ be a class of hypotheses.
+\begin{enumerate}
+\item If $\cH$ contains a threshold sequence of length $k$, then $\littlestoneLdim(\cH)\ge\floor{\log_2(k+1)}$.
+\item If $\littlestoneLdim(\cH)\ge2^{t+1}-1$ for an integer $t\ge0$, then $\cH$ contains a threshold sequence of length $t+1$.
+\end{enumerate}
+Consequently, $\littlestoneLdim(\cH)$ is finite if and only if the lengths of the threshold sequences in $\cH$ are bounded.
+\end{theorem}
+
+Part (i) is \cref{lem:littlestone:binary}. Part (ii) is a Ramsey argument on trees; we follow the combinatorial proof that \textcite{AlonLivniMalliarisMoran2019} gave for readers outside model theory. A \term{subtree} of depth $h$ of a tree is defined recursively: a leaf is a subtree of depth $0$, and a subtree of depth $h\ge1$ consists of an internal node $v$, a subtree of depth $h-1$ of the part of the tree below the edge $0$ of $v$, and a subtree of depth $h-1$ of the part below the edge $1$ of $v$. A subtree may skip levels, and its nodes keep their points. A class that shatters a tree shatters each of its subtrees, because a branch of the subtree extends to a branch of the tree that passes through the same nodes and leaves each of them along an edge with the same label.
+
+\begin{lemma}[Ramsey for trees]\label[lemma]{lem:littlestone:ramsey}
+Let $p,q\ge1$ be integers, and colour each internal node of a tree of depth $p+q-1$ red or blue. Then the tree has a subtree of depth $p$ whose internal nodes are all red, or a subtree of depth $q$ whose internal nodes are all blue.
+\end{lemma}
+
+\begin{proof}
+We use induction on $p+q$. Suppose that the root is red; the blue case is symmetric, with $p$ and $q$ exchanged. If $p=1$, then the root and one leaf below each of its edges form a red subtree of depth $1$. If $p>1$, then each of the two trees below the root has depth $(p-1)+q-1$, so by induction each contains a red subtree of depth $p-1$ or a blue subtree of depth $q$. If one of them contains a blue subtree of depth $q$, then we are done. Otherwise the root and the two red subtrees form a red subtree of depth $p$.
+\end{proof}
+
+\begin{proof}[Proof of \cref{thm:littlestone:shelah}(ii)]
+We prove, by induction on $t$, the stronger statement that a class shattering a tree of depth $2^{t+1}-1$ contains a threshold sequence of length $t+1$ whose points are points of the tree. If $t=0$, then the tree has one node $z$, and two hypotheses with $h_0(z)=1$ and $h_1(z)=0$ form the sequence with $x_1=z$.
+
+Let $t\ge1$. Fix a hypothesis $g\in\cH$ and colour a node red if $g$ gives its point the label $1$, and blue otherwise. Since $2^{t+1}-1=2^t+2^t-1$, \cref{lem:littlestone:ramsey} with $p=q=2^t$ gives a monochromatic subtree $S$ of depth $2^t$, which $\cH$ shatters; let $z$ be the point at its root.
+
+\emph{The red case.} Here $g$ will label every point $1$, and $z$ will be the first point. The part $S_0$ of $S$ below the edge $0$ of its root has depth $2^t-1$ and is shattered by $\cH_{(z,0)}$, by part (ii) of \cref{lem:littlestone:glue}. The induction hypothesis gives points $x_2,\dots,x_{t+1}$ of $S_0$ and hypotheses $h_1,\dots,h_{t+1}$ in $\cH_{(z,0)}$ with $h_i(x_j)=1$ exactly when $j>i$. Put $x_1=z$ and $h_0=g$. The hypothesis $g$ gives every point of the red subtree $S$ the label $1$, and every $h_i$ with $i\ge1$ gives $z$ the label $0$, so the extended family is a threshold sequence of length $t+1$.
+
+\emph{The blue case.} Symmetrically, $g$ will label every point $0$ and $z$ will be the last point. The part $S_1$ below the edge $1$ is shattered by $\cH_{(z,1)}$, and the induction hypothesis gives points $x_1,\dots,x_t$ of $S_1$ and hypotheses $h_0,\dots,h_t$ in $\cH_{(z,1)}$ with $h_i(x_j)=1$ exactly when $j>i$. Put $x_{t+1}=z$ and $h_{t+1}=g$: every $h_i$ with $i\le t$ gives $z$ the label $1$, and $g$ gives every point of $S$ the label $0$.
+\end{proof}
+
+The exponential loss in part (ii) comes from the Ramsey step. \Textcite{Shelah1978} proved the qualitative statement as part of his unstable formula theorem, and a quantitative version is in the book of \textcite{Hodges1997}.\index{order property}
+
+\subsection{Private learning}\label{sec:littlestone:private}
+
+In 2018 Alon, Livni, Malliaris, and Moran answered the question left open by \textcite{BunNissimStemmerVadhan2015}, and the answer was a Littlestone dimension.\sidenote{STOC 2019; its closing question, whether the converse holds, is answered by \cref{thm:littlestone:blm}.}
+
+\begin{theorem}[\textcite{AlonLivniMalliarisMoran2019}]\label{thm:littlestone:almm}
+There are absolute constants $c,c'>0$ with the following property. Let $\littlestoneLdim(\cH)\ge d$, where $d$ may be infinite. If a $(1/16,1/16)$-accurate learner for $\cH$ on $m\ge2$ examples is $(0.1,\delta)$-differentially private with $\delta\le c/(m^2\log m)$, then $m\ge c'\littlestoneLogstar d$. In particular, a class of infinite Littlestone dimension, such as the thresholds on $\N$ or on $[0,1]$, cannot be learned privately even by improper learners.
+\end{theorem}
+
+\begin{proofsketch}
+By \cref{thm:littlestone:shelah}(ii) the class contains a threshold sequence of length about $\log_2 d$, so it suffices to show that the thresholds on $k$ points need $\Omega(\littlestoneLogstar k)$ examples. For a learner on $m$ examples, the hypergraph Ramsey theorem gives a set of points, about as large as the $m$-fold iterated logarithm of $k$, on which the learner is homogeneous: the probability that the output labels a point $1$ depends, up to a small error, only on the position of the point among the sample points. This is where $\littlestoneLogstar$ enters. Accuracy forces a jump in these probabilities between two consecutive positions; moving one sample point through the gap gives one output distribution per position, privacy keeps these distributions close to each other while each locates the moved point, and a binary-search argument bounds their number by $2^{O(m^2\log^2m)}$.
+\end{proofsketch}
+
+\begin{theorem}[\textcite{BunLivniMoran2020}; \textcite{GhaziGolowichKumarManurangsi2021}]\label{thm:littlestone:blm}
+If $\littlestoneLdim(\cH)=d$ is finite, then for all $\alpha,\beta\in(0,\frac12)$ and $\eps,\delta\in(0,1)$ the class $\cH$ has an $(\alpha,\beta)$-accurate, $(\eps,\delta)$-differentially private learner on $O_d\bigl(\log(1/(\beta\delta))/(\alpha\eps)\bigr)$ examples, the constant depending only on $d$. In the proof of \textcite{BunLivniMoran2020} the constant is doubly exponential in $d$; \textcite{GhaziGolowichKumarManurangsi2021} gave a proper learner with $\tilde O(d^6)$ examples for fixed accuracy and privacy parameters.\index{global stability}
+\end{theorem}
+
+\begin{proofsketch}
+The engine is the Standard Optimal Algorithm, and the new idea is \term{global stability}: for every realizable distribution, some single hypothesis of small error is output with probability at least an $\eta>0$ that depends only on $d$. Run the algorithm on independent samples. When two runs often disagree, take a point where they do, guess its label with a fair coin, and append the guess to the sample of the run that disagrees with it; this forces one more mistake on that run, and the guess is right with probability $1/2$. A run makes at most $d$ mistakes, so after at most $d$ levels of such contests some fixed hypothesis appears with probability bounded below in terms of $d$. A globally stable learner becomes private in a standard way: run it on disjoint subsamples, release the frequent outputs with a private histogram, and choose among them with the exponential mechanism.
+\end{proofsketch}
+
+Together the two theorems show that a class is learnable by an approximately private algorithm, with privacy parameters in the range of \cref{thm:littlestone:almm}, exactly when it has a finite mistake bound; the journal version of the two papers \parencite{AlonBunLivniMalliarisMoran2022} states the equivalence in this form. Pure privacy is different: \textcite{FeldmanXiao2015} showed that it needs $\Omega(d)$ examples for a class of Littlestone dimension $d$, so for the thresholds on $\{1,\dots,N\}$ the gap between pure and approximate privacy is the gap between $\log N$ and a function of $\littlestoneLogstar N$.
+
+\subsection{Replicability}\label{sec:littlestone:replicability}
+
+\Textcite{ImpagliazzoLeiPitassiSorrell2022} asked for learners whose results can be reproduced. A randomized learner $A(S;\rho)$ with internal randomness $\rho$ is \term{$r$-replicable} if, for every distribution of the examples, two independent samples $S_1,S_2$ and one shared $\rho$ give $A(S_1;\rho)=A(S_2;\rho)$ with probability at least $1-r$.\index{replicability}\sidenote{Impagliazzo, Lei, Pitassi, and Sorrell called the notion reproducibility; the later papers cited here call it replicability. A topological obstruction to a relative, list replicability, appears in the exercises of \cref{ch:kneser}.} For most values of the randomness, one hypothesis must then appear with high probability, a cousin of global stability.
+
+\begin{theorem}\label{thm:littlestone:replicable}
+For classes of binary hypotheses, replicable PAC learnability, approximately private PAC learnability, and finiteness of the Littlestone dimension are equivalent.
+\end{theorem}
+
+\Textcite{GhaziKumarManurangsi2021} introduced pseudo-global stability, equivalent to replicability, and turned such learners into private ones; \textcite{BunEtAl2023} extended this to general statistical tasks and gave a constructive converse for tasks with finitely many outputs; \textcite{KalavasisKarbasiMoranVelegkas2023} proved the equivalence for binary classification on arbitrary domains, through the Littlestone dimension.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  hub/.style={rectangle,rounded corners=2pt,draw=sea,fill=seafoam,thick,align=center,inner sep=5pt},
+  sat/.style={rectangle,rounded corners=2pt,draw=sandline,fill=sand,align=center,font=\footnotesize,inner sep=3pt,text width=30mm},
+  link/.style={draw=seadeep,thick}]
+\node[hub] (L) at (0,0) {$\littlestoneLdim(\cH)<\infty$};
+\node[sat] (on) at (0,1.75) {finite\\ mistake bound\\ \textcolor{muted}{Littlestone 1988}};
+\node[sat] (ag) at (3.9,1.05) {sublinear regret\\ \textcolor{muted}{Ben-David et al.\ 2009}};
+\node[sat] (dp) at (3.9,-1.05) {approximately\\ private learning\\ \textcolor{muted}{Alon et al.\ 2019;\\ Bun et al.\ 2020}};
+\node[sat] (rep) at (0,-1.8) {replicable\\ learning\\ \textcolor{muted}{2021--2023}};
+\node[sat] (gs) at (-3.9,-1.05) {globally stable\\ learning\\ \textcolor{muted}{Bun et al.\ 2020}};
+\node[sat] (thr) at (-3.9,1.05) {bounded threshold\\ sequences;\\ stable formulas\\ \textcolor{muted}{Shelah 1978}};
+\foreach \n in {on,ag,dp,rep,gs,thr} \draw[link] (L) -- (\n);
+\end{tikzpicture}
+\caption{The hub. A class has each property in the outer boxes, proved equivalent by the work named there, exactly when its Littlestone dimension is finite. Exponential universal rates (\cref{sec:littlestone:universal}) need only the absence of an infinite tree.}\label{fig:littlestone:hub}
+\end{figure}
+
+\subsection{Stability in model theory, and a regularity lemma}\label{sec:littlestone:model}
+
+Model theorists had met the same tree by 1978, a decade before Littlestone. Shelah's $2$-rank of a formula $\varphi(x;y)$ is defined by the recursion after \cref{lem:littlestone:glue}, and \textcite{ChaseFreitag2019} pointed out that it is the Littlestone dimension of the class of functions $a\mapsto\varphi(b;a)$, one for each $b$. It is finite exactly when $\varphi$ is \term{stable} in the sense of \textcite{Shelah1978}, that is, when $\varphi$ lacks the order property, the logician's name for arbitrarily long threshold sequences; the stable theories of classification theory thus supply many natural classes of finite Littlestone dimension.\index{stability (model theory)}
+
+The finite shadow of stability concerns graphs. A \term{half-graph} of size $k$ has vertices $a_1,\dots,a_k$ and $b_1,\dots,b_k$ with $a_i$ adjacent to $b_j$ exactly when $i\le j$; it gives a threshold sequence in the class of neighbourhoods (Exercise~\ref{ex:littlestone:halfgraph}). Szemerédi's regularity lemma (\cref{ch:graphon}) must allow irregular pairs because of half-graphs, as several researchers observed independently \parencite{MalliarisShelah2014}. Malliaris and Shelah showed that half-graphs are the only reason.\index{half-graph}\index{stable regularity lemma}
+
+\begin{theorem}[\textcite{MalliarisShelah2014}]\label{thm:littlestone:stable-reg}
+For every $k$ there is a constant $c$ such that, for every sufficiently small $\eps>0$, every sufficiently large finite graph without vertices $a_i,b_i$ ($i<k$) with $a_i$ adjacent to $b_j$ and $a_j$ not adjacent to $b_i$ whenever $i<j$ has an equitable partition into at most $(3+\eps)(8/\eps)^{c}$ parts in which every pair of parts $(A,B)$ is $\eps$-homogeneous: for one fixed truth value, all but fewer than $\eps\abs{A}$ vertices of $A$ have that adjacency relation to all but fewer than $\eps\abs{B}$ vertices of $B$.
+\end{theorem}
+
+There are no irregular pairs, and the number of parts is polynomial in $1/\eps$ instead of a tower, which general graphs require (\cref{ch:graphon}). The graphs with the best regularity lemma are those whose neighbourhoods form a class of bounded Littlestone dimension.
+
+\subsection{Universal rates: the infinite tree}\label{sec:littlestone:universal}
+
+\Textcite{BousquetHannekeMoranVanHandelYehudayoff2021} asked how fast the expected error can decay for each fixed realizable distribution, with constants depending on the distribution. Under mild measurability assumptions, a class with at least three hypotheses is learnable at an exponential rate, with expected error at most $Ce^{-cn}$ after $n$ examples, exactly when it has no \term{infinite Littlestone tree}, a family $(x_u)$ indexed by all finite binary strings whose finite branches are all realized; otherwise the optimal rate is $1/n$ or arbitrarily slow.\index{universal learning rates} The thresholds on $\N$ have infinite dimension but no infinite tree (Exercise~\ref{ex:littlestone:naturals}).\sidenote{The thresholds on $[0,1]$ have one, the dyadic binary search of \cref{prop:littlestone:interval} continued forever; their optimal universal rate is $1/n$.} The right invariant depends on the order of the quantifiers.
+
+\section{Costs and limits}\label{sec:littlestone:costs}
+
+\paragraph{Where did the difficulty go?} Into two places. First, into the definition: the Littlestone dimension is the value of a game, a supremum over trees, and the Standard Optimal Algorithm must compute it for every version space it meets. That computation is hard, at least as hard as computing the VC dimension \parencite{FrancesLitman1998}, so the online theory is information-theoretic, not algorithmic. Second, into Ramsey theory: the bridge of \cref{thm:littlestone:shelah} loses an exponential, the private lower bound of \cref{thm:littlestone:almm} a tower, and the learner of \textcite{BunLivniMoran2020} needed doubly exponentially many examples. These costs are paid once. After that, every online lower bound is a tree to be drawn, the Standard Optimal Algorithm attains every optimal mistake bound, and every impossibility result for approximately private or replicable learning is a long threshold sequence to be found.
+
+\paragraph{What did not dissolve.} The invariant decides, but it does not help when the answer is no, and for many natural classes, such as thresholds, intervals, and half-spaces, the answer is no; positive results need structure that the invariant does not see, such as margins (Exercise~\ref{ex:littlestone:perceptron}). For private learning the gap between $\Omega(\littlestoneLogstar d)$ and $\tilde O(d^6)$ is a tower (Exercise~\ref{ex:littlestone:research-sample}). The equivalences are statistical: the reductions run the Standard Optimal Algorithm and say nothing about learners that are efficient in time. And the invariant changes with the setting, as pure privacy and universal rates show.
+
+\paragraph{Other seas.} The theory extends to margin-based prediction \parencite{BenDavidPalShalevShwartz2009}, and \textcite{AlonEtAl2021} proved an adversarial law of large numbers for classes of finite Littlestone dimension, the online analogue of uniform convergence in \cref{ch:vc}. In model theory, stability is the older and larger sea.
+
+\section{The move, distilled}\label{sec:littlestone:distilled}
+
+\begin{move}{The right invariant}
+\movepart{In one sentence} When an adversary decides how hard a problem is, measure the problem by the depth of the adversary's best strategy tree, not by counting objects or by patterns on a set fixed in advance.
+\movepart{Triggers} A counting bound, valid for finite cases and useless for infinite ones; a static invariant that is necessary but not sufficient; lower bounds reinvented for each example; one counterexample returning in unrelated settings.
+\movepart{Recipe} Write the interaction as a game of perfect information, and a strategy of the adversary as a tree whose branches obey the rules. Define the invariant as the depth of the deepest admissible tree. Prove a gluing lemma; it yields the matching algorithm, which keeps the side with the deeper tree. Translate other notions into trees, usually by a Ramsey argument on trees.
+\movepart{Anti-pattern} Defining the invariant as the optimum itself. The optimal mistake bound is tautologically right; the Littlestone dimension earns its keep because trees bound it independently of all algorithms. A tree invariant without a gluing lemma is only a lower bound.
+\end{move}
+
+\dissolutiontest{Halving, the threshold lower bounds, $\littlestoneVC\le\littlestoneM$, and the randomized lower bound take a line or two; a lower bound is a tree.}{Finite classes (halving) and deterministic learners (adversary arguments) are no longer needed.}{Mistake bounds, regret, private learning, replicability, global stability, and Shelah's stability measure one number.}{Regret $O(\sqrt{dT\log T})$ for infinite classes; private learnability characterized; regularity for stable graphs; universal rates.}
+
+The move is the one of \cref{ch:vc}, played against a stronger opponent: in the statistical game the sample is drawn before a label is seen and shattered sets are the right certificates, while in the online game the adversary adapts and shattered trees are. The gap between the two invariants, $1$ against $\infty$ for the thresholds, is what an adversary gains over a random sample. The regret bound reduces to the Hedge algorithm of \cref{ch:regret}, and the stable regularity lemma ties the tree to \cref{ch:graphon}, whose regularity lemma tolerates irregular pairs because half-graphs exist.
+
+\begin{exercises}
+\item \consolidation Show that the Littlestone dimension is $1$ for the indicators of single points of an infinite set together with the zero function; $k$ for the indicators of subsets of at most $k$ points of that set; $n$ for the parities $x\mapsto\ip{a}{x}$ on $\F_2^n$; and $d+1$ for the indicators of affine subspaces of dimension at most $d$ of $\F^n$, for a field $\F$ and $n>d$. \hint{Points along a branch of a shattered tree are distinct. For affine subspaces, predict $1$ exactly on the affine hull of the points labelled $1$ so far.}\label{ex:littlestone:compute}
+\item \consolidation\hard Show that complementing every hypothesis does not change the Littlestone dimension, and that $\littlestoneLdim(\cH\cup\cH')\le\littlestoneLdim(\cH)+\littlestoneLdim(\cH')+1$ for classes of finite dimension, with equality for $\cH=\{f\}$ and $\cH'=\{g\}$ when $f\ne g$. \hint{Induct on $\littlestoneLdim(\cH)+\littlestoneLdim(\cH')$, allowing the value $-1$, and apply part (iii) of \cref{lem:littlestone:glue} to both classes at the root of a shattered tree.}
+\item \consolidation\hard (Halving is not optimal.) Construct a finite class of Littlestone dimension $2$ on which the halving algorithm can be forced to make $3$ mistakes, however it breaks ties. \hint{Put a small class of large dimension and a large class of small dimension on the two sides of one point $x$: say four thresholds on three further points where $h(x)=0$, and five indicators of single points of five more points where $h(x)=1$, each function being $0$ on the other block.}\label{ex:littlestone:halving}
+\item \consolidation\hard (a) Show that intervals on the line and half-planes in the plane have infinite Littlestone dimension, although their VC dimensions are $2$ and $3$. (b) Show that every class of Littlestone dimension $2$ contains a threshold sequence of length $2$, so part (ii) of \cref{thm:littlestone:shelah} is not sharp. \hint{For (b), let $y$ and $z$ be the children of the root $x$ below the edges $0$ and $1$; if $y\ne z$, examine the pairs $(x,y)$, $(z,x)$, $(y,z)$.}
+\item \transfer\hard (Margins instead of trees.) Labels are $\pm1$, points lie in the unit ball of $\R^n$, and a sequence $(x_t,y_t)$ is realizable with margin $\gamma\in(0,1]$ if some unit vector $w$ satisfies $y_t\ip{w}{x_t}\ge\gamma$ for all $t$. (a) Show that the perceptron, which starts with $w_1=0$, predicts the sign of $\ip{w_t}{x_t}$ (with $+1$ for $0$), and adds $y_tx_t$ to $w_t$ after a mistake, makes at most $1/\gamma^2$ mistakes on such sequences \parencite{Novikoff1962}. (b) Show that a mistake tree whose branches are all realizable with margin $\gamma$ has depth at most $1/\gamma^2$, although half-planes through the origin in $\R^2$ have infinite Littlestone dimension. \hint{For (a), compare the growth of $\ip{w_t}{w}$ and of $\norm{w_t}^2$ over the mistakes. For (b), use the adversary half of the proof of \cref{thm:littlestone:main}.}\label{ex:littlestone:perceptron}
+\item \transfer (Infinite trees.) Let $\cH$ be the thresholds $h_s(x)=\ind[x\ge s]$, $s\in\{1,2,\dots\}$, on $\cX=\{1,2,\dots\}$. (a) Show that $\littlestoneLdim(\cH)=\infty$. (b) Show that $\cH$ has no infinite Littlestone tree. (c) Find a deterministic learner that makes finitely many mistakes on every infinite realizable sequence, and explain why no learner has a uniform bound. \hint{For (b), follow the edge $1$ at the root. For (c), predict $1$ exactly at the points at least as large as the smallest point labelled $1$ so far.}\label{ex:littlestone:naturals}
+\item \transfer (Stable graphs.) Let $G$ be a bipartite graph with parts $A$ and $B$, and regard the neighbourhoods of the vertices of $B$ as a class $\cH_G$ of functions on $A$. (a) Show that a half-graph of size $k$ gives a threshold sequence of length $k-1$ in $\cH_G$. (b) Show that if $\littlestoneLdim(\cH_G)\ge2^{t+1}-1$, then $G$ contains a half-graph of size $t+1$. (c) Conclude that a family of bipartite graphs omits half-graphs of some fixed size if and only if the classes $\cH_G$ have bounded Littlestone dimension. \hint{In (a), use the points $a_k,\dots,a_2$ and the neighbourhoods of $b_k,\dots,b_1$.}\label{ex:littlestone:halfgraph}
+\item \transfer\hard (The same move for many labels.) Let $\cH$ be a class of functions from $\cX$ to a set $\cY$ of labels, possibly infinite. In a multiclass mistake tree every internal node carries a point and its two downward edges carry two different labels. Prove that the optimal deterministic mistake bound of $\cH$ is the largest depth of a multiclass tree whose branches are all realized. \hint{Two different labels whose parts have large dimension already give a deeper tree, so at most one label can keep the dimension of the version space; predict it.}
+\item \research (The price of privacy.) For fixed accuracy and privacy parameters, approximately private learning of a class of VC dimension $v$ and Littlestone dimension $d$ needs a number of examples of order at least $v$, as without privacy, and at least $\littlestoneLogstar d$, by \cref{thm:littlestone:almm}, and at most $\tilde O(d^6)$, by \cref{thm:littlestone:blm}. \Textcite{BunLivniMoran2020} asked whether $\poly(v,\littlestoneLogstar d)$ examples always suffice. The question was open when the papers of this chapter appeared; survey the later literature, then attack it for a family of classes of your choice, for instance classes of VC dimension $1$.\label{ex:littlestone:research-sample}
+\item \research\harder (Another member of the club.) Most boxes in \cref{fig:littlestone:hub} name a property $P$ of learners such that a class has a $P$-learner exactly when its Littlestone dimension is finite. Propose another stability property, for example a bound on the mutual information between the sample and the output, and decide which of the two implications hold. \hint{Test the property on the thresholds on $\{1,\dots,N\}$: a property in the club must become more expensive as $N$ grows.}
+\end{exercises}
+
+\notesandrefs
+
+Section~3 of \textcite{Littlestone1988} contains halving, mistake trees, the Standard Optimal Algorithm, and the inequality between the VC dimension and the optimal mistake bound, with a class of nine functions on eight points on which halving is not optimal; the paper credits the mistake-counting model and the halving idea to earlier work. \Textcite{BenDavidPalShalevShwartz2009} named the dimension and extended the theory to infinite classes, randomized learners, and the agnostic setting, and \textcite{AlonEtAl2021} made their regret bound optimal.
+
+\Textcite{FeldmanXiao2015} characterized pure private learning through communication complexity. The equivalence of private and online learnability was proved by \textcite{AlonLivniMalliarisMoran2019} and \textcite{BunLivniMoran2020}, whose arXiv version records that an earlier, singly exponential sample bound was corrected to a doubly exponential one; \textcite{AlonBunLivniMalliarisMoran2022} is the journal version of both. On the model-theoretic side, \textcite{Shelah1978} contains the unstable formula theorem and \textcite{Hodges1997} a quantitative form; our proof of \cref{thm:littlestone:shelah} follows the appendix of \textcite{AlonLivniMalliarisMoran2019}.
+
+\printchapterbib
+\end{refsection}

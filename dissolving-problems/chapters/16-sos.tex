@@ -1,0 +1,374 @@
+% Chapter 16 -- Proofs Are Algorithms (key sos)
+% Some labels carry an explicit cleveref type, \label[lemma]{...}; this is harmless.
+\newcommand{\sosPE}{\widetilde{\mathbb{E}}}
+\newcommand{\sosProves}[1]{\mathrel{\vdash_{#1}}}
+\newcommand{\sosGW}{\alpha_{\mathrm{GW}}}
+\newcommand{\sosR}{\mathcal{R}}
+
+\casechapter{Proofs Are Algorithms}{The sum-of-squares method}{Proofs to algorithms}{ch:sos}
+\begin{refsection}[chapters/16-sos.bib]
+
+\begin{chaptersummary}
+Some problems are solved in principle long before they are solved in practice: a short argument shows that the data determine the answer, yet finding it seems to need a new algorithm, with a new analysis, for each problem, as for robust estimation of a mean in high dimensions. The sum-of-squares method closes the gap. If the argument that the answer is determined uses only low-degree polynomial inequalities, then a semidefinite program finds a pseudo-distribution that obeys the same argument, and averaging over it yields the answer. The identifiability proof becomes both the algorithm and its analysis, and the Goemans--Williamson algorithm for max-cut reappears as the case of degree two.
+\end{chaptersummary}
+
+\section{Before: one algorithm per problem}\label{sec:sos:before}
+
+An estimation problem has a statistical layer, whether the data determine the answer, and a computational layer, whether the answer can be found in polynomial time. For many problems of statistics and machine learning the first layer has a short proof and the second resisted for years. Two problems show the pattern: estimating a mean when some of the data are adversarial, and approximating a maximum cut.
+
+\subsection{Estimating a mean when some data lie}\label{sec:sos:robust-before}
+
+In 1964 Huber proposed to model gross errors by contamination: each observation comes from the intended distribution with probability $1-\eps$ and from an arbitrary one otherwise \parencite{Huber1964}.\sidenote{Huber worked in one dimension and derived minimax estimators of location for this model, among them the $M$-estimators that bear his name.} We use a stronger model that is simpler to state. Start from points $Y_1,\dots,Y_n\in\R^d$, the \term{inliers}, and let an adversary who sees them replace up to $\eps n$ of them by arbitrary points. The result $X_1,\dots,X_n$ is an \term{$\eps$-corruption} of $Y$: there is a set $T$ of at most $\eps n$ indices with $X_i=Y_i$ for every $i\notin T$, and $T$ is not revealed.\index{contamination model} Write $\mu=\frac1n\sum_iY_i$ and $\Cov(Y)=\frac1n\sum_i(Y_i-\mu)(Y_i-\mu)^{\mathsf T}$ for the mean and covariance of the inliers, and $P\preceq Q$ when $Q-P$ is positive semidefinite.
+
+\begin{problem}[Robust mean estimation]\label[problem]{prob:sos:robust}
+Given $\eps\in(0,\frac12)$ and an $\eps$-corruption $X_1,\dots,X_n$ of points $Y_1,\dots,Y_n\in\R^d$ with $\Cov(Y)\preceq I$, compute, in time polynomial in $n$ and $d$, a vector $\hat\mu$ with $\norm{\hat\mu-\mu}$ as small as possible.
+\end{problem}
+
+\index{robust mean estimation}The assumption $\Cov(Y)\preceq I$ bounds the variance of the inliers in every direction and is the only assumption on them. Samples from a distribution with covariance at most $I$ satisfy it up to a constant factor, after a few are discarded and counted as corrupted, once $n$ is a large enough polynomial in $d$ and $1/\eps$ \parencite{DiakonikolasKane2023}.
+
+No estimator can guarantee error below about $\sqrt\eps$ (Exercise~\ref{ex:sos:lower}), and exhaustive search achieves $O(\sqrt\eps)$ (\cref{lem:sos:ident}); in one dimension so does a trimmed mean, which discards the $\eps n$ largest and smallest observations. In $d$ dimensions the natural generalizations fail. The coordinatewise and geometric medians are fast, but their error grows like $\eps\sqrt d$ even for Gaussian inliers (Exercise~\ref{ex:sos:lower} treats the first). Tukey's median \parencite{Tukey1975}, the point of greatest halfspace depth, has the optimal error $O(\eps)$ for Gaussian inliers, but computing it is NP-hard when the dimension is part of the input \parencite{DiakonikolasKane2023}.\index{Tukey median}\sidenote{The halfspace depth of a point is the smallest number of data points in a closed halfspace that contains it; Tukey's median maximizes it.} Before 2016 every known estimator was computationally inefficient or lost a factor that grows with the dimension \parencite{Diakonikolas2016}.
+
+In 2016 two groups found polynomial-time algorithms whose error does not grow with the dimension, or barely does. Diakonikolas, Kamath, Kane, Li, Moitra, and Stewart introduced the \term{filter}, and a method based on convex programming \parencite{Diakonikolas2016}; Lai, Rao, and Vempala removed outliers and projected recursively onto directions of large variance \parencite{Lai2016}.\sidenote{Both papers appeared at FOCS 2016; the two groups worked independently.} The filter rests on a spectral observation: if the empirical covariance is small in every direction, then the outliers cannot have moved the mean much, and if it is large in some direction, then the outliers are responsible and visible along it.\index{filter (robust statistics)}
+
+\begin{aside}[A filter for bounded covariance, in outline]
+Keep weights $c_i\in[0,1]$, initially $1$. Repeat: compute the weighted mean $\mu_c$ and covariance $\Sigma_c$; if the top eigenvalue $\lambda$ of $\Sigma_c$ is at most a suitable constant $C$, output $\mu_c$; otherwise take a top unit eigenvector $u$, form the scores $\tau_i=\ip{X_i-\mu_c}{u}^2$, and multiply each $c_i$ by $1-\tau_i/\max_{c_j>0}\tau_j$. The analysis needs three facts. \emph{Certificate:} if little weight has been removed and $\lambda\le C$, then $\norm{\mu_c-\mu}=O(\sqrt\eps)$. \emph{Progress:} if $\lambda>C$, then the inliers carry less than half of the total score $\sum_ic_i\tau_i$, so each round removes more weight from outliers than from inliers. \emph{Termination:} each round sets a weight to zero, and the outliers have total weight at most $\eps n$, so the inliers lose at most $\eps n$. Progress is the delicate fact: the inliers' scores are measured around $\mu_c$, so bounding them needs an estimate of $\norm{\mu_c-\mu}$ in terms of $\lambda$ at every round.
+\end{aside}
+
+The analysis is a potential argument with constants tuned to the assumption, and another assumption needs another filter: for Gaussian inliers a filter reaches error $O(\eps\sqrt{\log(1/\eps)})$ through an analysis specific to the Gaussian \parencite{Diakonikolas2016}, and exploiting bounded fourth moments would require finding directions of large fourth moment, for which no efficient algorithm is known on general data. Tensor decomposition, dictionary learning, and the clustering of Gaussian mixtures likewise had their own algorithms and their own perturbation analyses \parencite{BarakKelnerSteurer2015,HopkinsLi2018}.
+
+\subsection{Rounding a relaxation of max-cut}\label{sec:sos:gw-before}
+
+Given a graph $G$ on $[n]$ with nonnegative edge weights $w_{ij}$, the \term{max-cut} problem asks for a partition of the vertices that maximizes the total weight of the edges between the parts.\index{max-cut} Encode a partition by signs $x\in\{\pm1\}^n$; the weight of the cut is
+\[
+  f_G(x)=\sum_{ij\in E} w_{ij}\,\frac{1-x_ix_j}{2}.
+\]
+A uniformly random $x$ cuts each edge with probability $\frac12$ and so achieves half of the optimum, and $\frac12$ was the best guarantee known until Goemans and Williamson announced $0.878$ in 1994 \parencite{GoemansWilliamson1995}.\index{Goemans--Williamson algorithm}\sidenote{The announcement was at STOC 1994; we cite the journal version.}
+
+\begin{aside}[Goemans and Williamson's argument, in outline]
+(i) Replace each sign $x_i$ by a unit vector $v_i\in\R^n$ and maximize $\sum_{ij\in E}w_{ij}(1-\ip{v_i}{v_j})/2$, a relaxation because a cut gives the feasible vectors $v_i=x_ie_1$. (ii) Gram matrices of unit vectors are the positive semidefinite matrices with unit diagonal, so this is a semidefinite program; solve it and recover vectors by a Cholesky factorization. (iii) Cut by a random hyperplane: $x_i=\sgn\ip{v_i}{r}$ for a random direction $r$. (iv) The hyperplane separates $v_i$ and $v_j$ with probability $\arccos\ip{v_i}{v_j}/\pi$, which a one-variable inequality compares, edge by edge, with $(1-\ip{v_i}{v_j})/2$.
+\end{aside}
+
+Steps (iii) and (iv) are the heart of the argument; steps (i) and (ii) were an inspired choice, which said nothing about the relaxation for the next problem or how to strengthen one that failed. In both stories a short argument shows that the answer is there (\cref{lem:sos:ident} below for the mean, the feasibility of cuts for max-cut), and a separate, longer argument finds it. The sum-of-squares method asks whether the short argument can do both jobs.
+
+\section{The move: let the proof run}\label{sec:sos:move}
+
+The move begins by inspecting the short argument. For robust estimation it compares two data sets that agree on most indices.\index{identifiability}
+
+\begin{lemma}[Identifiability]\label[lemma]{lem:sos:ident}
+Let $0\le\eta<1$, and let $Y_1,\dots,Y_n$ and $Z_1,\dots,Z_n$ be points of $\R^d$ with $\Cov(Y)\preceq I$ and $\Cov(Z)\preceq I$ such that $Y_i=Z_i$ for all but at most $\eta n$ indices $i$. Then the means of the two sequences differ in norm by at most $2\sqrt\eta/(1-\eta)$.
+\end{lemma}
+
+\begin{proof}
+The plan is to express the difference of the means through the few indices where the sequences differ, and to bound that sum by the Cauchy--Schwarz inequality. Let $D$ be the set of indices with $Y_i\ne Z_i$, let $\mu_Y$ and $\mu_Z$ be the means, and let $v=\mu_Z-\mu_Y$. If $v=0$, then there is nothing to prove. Averaging $Z_i-Y_i$ over all $i$ gives $v$, and only the indices in $D$ contribute. Write $Z_i-Y_i=(Z_i-\mu_Z)-(Y_i-\mu_Y)+v$ and move the terms containing $v$ to the left:
+\[
+  \Bigl(1-\frac{\abs D}{n}\Bigr)v=\frac1n\sum_{i\in D}(Z_i-\mu_Z)-\frac1n\sum_{i\in D}(Y_i-\mu_Y).
+\]
+Take the inner product with $v$. By the Cauchy--Schwarz inequality, $\abs D\le\eta n$, and the covariance bound,
+\[
+  \Bigl|\frac1n\sum_{i\in D}\ip{Z_i-\mu_Z}{v}\Bigr|
+  \le\Bigl(\frac{\abs D}{n}\Bigr)^{1/2}\Bigl(\frac1n\sum_{i=1}^n\ip{Z_i-\mu_Z}{v}^2\Bigr)^{1/2}
+  \le\sqrt\eta\,\norm v,
+\]
+and the same bound holds for the sum over the $Y_i$. Hence $(1-\eta)\norm v^2\le2\sqrt\eta\norm v$; divide by $\norm v>0$.
+\end{proof}
+
+Apply the lemma to the data. Every sequence $Z$ that agrees with $X$ except on at most $\eps n$ indices and has $\Cov(Z)\preceq I$ agrees with $Y$ except on at most $2\eps n$ indices, so its mean is within $2\sqrt{2\eps}/(1-2\eps)$ of $\mu$, and such a $Z$ exists, since $Y$ is one. The statistics of \cref{prob:sos:robust} are settled; what remains is a search over exponentially many choices of the indices to keep.
+
+Now look at what the proof used: linear identities and the Cauchy--Schwarz inequality, applied to both sequences alike. It used $D$ only through an indicator whose square is itself and whose sum is small, and it never used that $Z$ is a particular sequence. Given a probability distribution over admissible candidates $Z$, the proof applies to each, so the average of their means is close to $\mu$. Such a distribution is as hard to find as one candidate; but the proof touched only low-degree polynomials in the candidate, so it applies to every object that behaves like a distribution on them. Here Grothendieck's advice to stoop low applies, for the object we need is humble: a table of numbers that claims to be the low-degree moments of a distribution over solutions and that the squares of low-degree polynomials cannot expose as fake. Such tables form a convex set with a semidefinite description, so we can find one.
+
+\subsection{Sums of squares and pseudo-expectations}\label{sec:sos:defs}
+
+A sum of squares of polynomials is nonnegative; the converse fails. Hilbert proved in 1888 that nonnegative polynomials are sums of squares only in one variable, in degree two, and for quartics in two variables, and that every other case has exceptions \parencite{Hilbert1888}; the first explicit exception, $x^4y^2+x^2y^4-3x^2y^2+1$, is due to \textcite{Motzkin1967} (Exercise~\ref{ex:sos:motzkin}).\index{Motzkin polynomial} The algorithmic point came a century later. A polynomial of degree $2t$ is a sum of squares exactly when it equals $m^{\mathsf T}Qm$ for some $Q\succeq0$, with $m$ the vector of monomials of degree at most $t$, so finding the squares is a semidefinite program. Shor used this to bound polynomial minimization problems from below in 1987 \parencite{Shor1987}, and around 2000 Nesterov, Parrilo, and Lasserre built hierarchies of semidefinite relaxations from it \parencite{Nesterov2000,Parrilo2000,Lasserre2001}.\index{semidefinite programming}\sidenote{Parrilo worked with sums of squares and Lasserre with the dual objects, sequences of moments; the two hierarchies are dual semidefinite programs, and the method is named after either.}
+
+We work with polynomials in real variables $x=(x_1,\dots,x_N)$ and a system $\cA$ of equations $f_1=0,\dots,f_m=0$. Inequalities become equations with extra variables, $g\ge0$ as $g=y^2$ and $P\succeq0$ as $P=BB^{\mathsf T}$, so equations suffice.
+
+\begin{definition}[Sum-of-squares proof]\label[definition]{def:sos:proof}
+Let $D$ be even. A \term{sum-of-squares proof} of degree $D$ that $p\ge0$ from $\cA$ is an identity
+\[
+  p=\sum_j s_j^2+\sum_{k=1}^m f_k r_k
+\]
+of polynomials in which every $s_j$ has degree at most $D/2$ and every product $f_kr_k$ has degree at most $D$. We then write $\cA\sosProves{D}p\ge0$, and $\cA\sosProves{D}p\le q$ for $\cA\sosProves{D}q-p\ge0$. For every integer $D\ge0$, even or odd, we write $\cA\sosProves{D}p=q$ when $p-q=\sum_k f_kr_k$ with every $f_kr_k$ of degree at most $D$. A \term{refutation} of degree $D$ is a proof of degree $D$ that $-1\ge0$.
+\end{definition}
+
+\index{sum-of-squares proof}The second sum certifies that $p$ agrees with a sum of squares wherever the equations hold.\sidenote{The degree governs the cost: the semidefinite program behind a proof of degree $D$ in $N$ variables has size about $N^{D}$.} When $\cA$ is empty we write $\sosProves{D}$. The first example is the Cauchy--Schwarz inequality, which is Lagrange's identity
+\begin{equation}\label{eq:sos:lagrange}
+  \Bigl(\sum_i a_i^2\Bigr)\Bigl(\sum_i b_i^2\Bigr)-\Bigl(\sum_i a_ib_i\Bigr)^2=\frac12\sum_{i,j}(a_ib_j-a_jb_i)^2,
+\end{equation}
+valid for all polynomials $a_1,\dots,a_m$ and $b_1,\dots,b_m$: a sum-of-squares proof of degree $2\max_{i,j}\deg(a_ib_j)$.
+
+\begin{definition}[Pseudo-expectation]\label[definition]{def:sos:pe}
+Let $D$ be even. A \term{pseudo-expectation} of degree $D$ is a linear functional $\sosPE$ on the polynomials of degree at most $D$ such that $\sosPE[1]=1$ and $\sosPE[s^2]\ge0$ for every polynomial $s$ of degree at most $D/2$. It \term{satisfies} $\cA$ if $\sosPE[f_kr]=0$ for every $k$ and every polynomial $r$ with $\deg(f_kr)\le D$. On vectors and matrices of polynomials, $\sosPE$ acts entrywise.
+\end{definition}
+
+\index{pseudo-expectation}The expectation of a distribution on the solutions of $\cA$ with finite moments of order $D$ is a pseudo-expectation of degree $D$ satisfying $\cA$; the converse fails, and that is the point. \Cref{def:sos:pe} says that the moment matrix $(\sosPE[x^\alpha x^\beta])_{\alpha,\beta}$, indexed by the monomials of degree at most $D/2$, is positive semidefinite and that certain linear combinations of its entries vanish, so the pseudo-expectations satisfying $\cA$ form a convex set with a semidefinite description. When $\cA$ contains $x_i^2=x_i$ for every $i$, a pseudo-expectation satisfying $\cA$ can be written $\sosPE[p]=\sum_{x\in\{0,1\}^N}\nu(x)p(x)$ for a signed weight $\nu$ that may be negative but gives nonnegative mass to squares of low-degree polynomials; hence the name \term{pseudo-distribution}, which we use for the same object.\index{pseudo-distribution}\sidenote{The prefix is meant as in pseudorandomness (\cref{ch:pseudorandom}): an object that passes every test in a restricted class.}
+
+\begin{remark}[Finding pseudo-expectations]\label[remark]{rem:sos:solve}
+For $m$ equations in $N$ variables, finding a pseudo-expectation of degree $D$ that satisfies them is a semidefinite feasibility problem of size polynomial in $(m+N)^D$, solvable to high accuracy in polynomial time for constant $D$ under boundedness conditions. We treat its output as exact, which hides genuine issues of bit complexity (\cref{sec:sos:costs}).
+\end{remark}
+
+\subsection{The recipe}\label{sec:sos:recipe}
+
+The move can now be stated. Encode the unknown object and everything it must satisfy as a system $\cA$ of polynomial equations. Prove identifiability: every solution of $\cA$ has its parameter $\theta$ near the truth. If that proof is a sum-of-squares proof of degree $D$, then every pseudo-expectation of degree $D$ that satisfies $\cA$ obeys the same conclusion, and we can compute one; in the simplest case, rounding is reading off $\sosPE[\theta]$ (\cref{fig:sos:pipeline}). Treating a pseudo-distribution as a distribution over solutions, reasoned about only with low-degree sums of squares, was developed by \textcite{BarakKelnerSteurer2015} for dictionary learning and tensor decomposition; \textcite{BarakSteurer2014} survey the wider program and \textcite{Hopkins2018} develops it for statistical inference.\sidenote{Pseudo-distributions enlarge the set of distributions as graphons enlarge the set of graphs (\cref{ch:graphon}) and integrable functions the Riemann-integrable ones (\cref{ch:lebesgue}). A completion adds limits; this relaxation adds objects that are limits of nothing and serve only to make the set convex and finitely described.}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw=sea!60, fill=seafoam, rounded corners=2pt, align=center, font=\footnotesize,
+    text width=27mm, minimum height=8mm, inner sep=2pt},
+  oldbox/.style={draw=sandline, fill=sand, rounded corners=2pt, align=center, font=\footnotesize,
+    text width=27mm, minimum height=8mm, inner sep=2pt},
+  arr/.style={-{Stealth[length=1.8mm]}, sea, line width=0.6pt},
+  oldarr/.style={-{Stealth[length=1.8mm]}, sandline, line width=0.6pt},
+  lab/.style={font=\scriptsize, text=muted, align=center}]
+\node[font=\footnotesize\scshape, text=muted, anchor=west] at (-1.45,2.45) {before};
+\node[oldbox] (o1) at (0,1.85) {the data};
+\node[oldbox] (o2) at (4.2,1.85) {an algorithm designed for the problem};
+\node[oldbox] (o3) at (8.4,1.85) {an analysis designed for the algorithm};
+\draw[oldarr] (o1) -- (o2);
+\draw[oldarr] (o2) -- (o3);
+\node[font=\footnotesize\scshape, text=muted, anchor=west] at (-1.45,0.62) {after};
+\node[box] (n1) at (0,0) {equations $\cA$ for the hidden object};
+\node[box] (n3) at (4.2,0) {a pseudo-expectation $\sosPE$ satisfying $\cA$};
+\node[box] (n4) at (8.4,0) {the estimate $\sosPE[\theta]$};
+\node[box] (n2) at (4.2,-1.45) {a low-degree proof that solutions have $\theta$ near the truth};
+\draw[arr] (n1) -- node[lab, above] {solve\\an SDP} (n3);
+\draw[arr] (n3) -- node[lab, above] {read off} (n4);
+\draw[arr] (n1.south) |- node[lab, pos=0.75, below] {identifiability} (n2.west);
+\draw[arr] (n2.east) -| node[lab, pos=0.25, below] {soundness} (n4.south);
+\end{tikzpicture}
+\caption{The move. Before, each problem received its own algorithm and its own analysis. After, a semidefinite program solves the constraints generically, and the identifiability proof, which was needed anyway, is the analysis: by soundness (\cref{lem:sos:sound}) it applies to the pseudo-expectation as it applies to every true solution.}
+\label{fig:sos:pipeline}
+\end{figure}
+
+\section{After: pseudo-distributions at work}\label{sec:sos:after}
+
+\subsection{Reasoning with pseudo-expectations}\label{sec:sos:calculus}
+
+Everything rests on one observation.
+
+\begin{lemma}[Soundness]\label[lemma]{lem:sos:sound}
+If $\cA\sosProves{D}p\ge0$ and $\sosPE$ is a pseudo-expectation of degree $D$ that satisfies $\cA$, then $\sosPE[p]\ge0$.
+\end{lemma}
+
+\begin{proof}
+Apply $\sosPE$ to the identity of \cref{def:sos:proof}: each $\sosPE[s_j^2]$ is nonnegative because $\deg s_j\le D/2$, and each $\sosPE[f_kr_k]$ vanishes because $\deg(f_kr_k)\le D$.
+\end{proof}
+
+So every theorem about distributions over solutions whose proof is a low-degree sum-of-squares argument is a theorem about pseudo-distributions. This bridge is all the move needs, and the following rules supply the arguments.
+
+\begin{lemma}[Rules of inference]\label[lemma]{lem:sos:rules}
+Let $\cA$ be a system of polynomial equations and $p$, $q$, $r$ polynomials.
+\begin{enumerate}
+\item Proofs of degree $D$ may be added and multiplied by nonnegative constants, and each is also a proof of every larger even degree.
+\item If $\cA\sosProves{D}p\ge0$ and $\cA\sosProves{D'}q\ge0$, then $\cA\sosProves{D+D'}pq\ge0$. If $\cA\sosProves{D}p=q$ and $\deg r\le D'$, then $\cA\sosProves{D+D'}pr=qr$.
+\item If $\cA$ contains $w^2=w$, then $\cA\sosProves{2}w=w^2$ and $\cA\sosProves{2}1-w=(1-w)^2$; in particular $0\le w\le1$ at degree $2$.
+\item For polynomials $a_1,\dots,a_m,b_1,\dots,b_m$ and every even $D\ge2\max_{i,j}\deg(a_ib_j)$, we have $\sosProves{D}(\sum_i a_ib_i)^2\le(\sum_ia_i^2)(\sum_ib_i^2)$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+Part (i) is immediate from \cref{def:sos:proof}. For (ii), multiply the identities $p=\sum_js_j^2+\sum_kf_kr_k$ and $q=\sum_lt_l^2+\sum_kf_kr_k'$: the product of the two sums of squares is $\sum_{j,l}(s_jt_l)^2$ with $\deg(s_jt_l)\le(D+D')/2$, and every other term is some $f_k$ times a polynomial, of total degree at most $D+D'$; equalities are multiplied the same way. For (iii), $w-w^2$ and $(1-w)-(1-w)^2$ both equal $-(w^2-w)$. Part (iv) is \eqref{eq:sos:lagrange}.
+\end{proof}
+
+The next lemma is the pseudo-distribution's version of the nonnegativity of a variance; it converts the bounds that soundness gives into bounds on estimates.
+
+\begin{lemma}[Cauchy--Schwarz for pseudo-expectations]\label[lemma]{lem:sos:cs}
+Let $\sosPE$ be a pseudo-expectation of degree $D$, and let $p$ and $q$ be polynomials of degree at most $D/2$. Then $\sosPE[pq]^2\le\sosPE[p^2]\,\sosPE[q^2]$. In particular $\sosPE[q]^2\le\sosPE[q^2]$, and $\norm{\sosPE[v]}^2\le\sosPE[\norm v^2]$ for every vector $v$ of polynomials of degree at most $D/2$.
+\end{lemma}
+
+\begin{proof}
+For every real $t$ the square $(tp-q)^2$ has degree at most $D$, so $0\le\sosPE[(tp-q)^2]=t^2\sosPE[p^2]-2t\sosPE[pq]+\sosPE[q^2]$. If $\sosPE[p^2]>0$, then this quadratic in $t$ has nonpositive discriminant, which is the claim. If $\sosPE[p^2]=0$, then the right side is linear in $t$ and nonnegative for all $t$, so $\sosPE[pq]=0$. Taking $p=1$ gives the second statement; applying it to each coordinate of $v$ and summing gives the third.
+\end{proof}
+
+Soundness says that a refutation rules out pseudo-expectations. Over the Boolean cube the converse also holds, by the separating-hyperplane argument behind linear programming duality.
+
+\begin{theorem}[Duality on the cube]\label{thm:sos:duality}
+Let $\cA$ be a system of polynomial equations in $x_1,\dots,x_n$ that contains $x_i^2=x_i$ for every $i$, and let $D\ge2$ be even. Then exactly one of the following holds: $\cA$ has a refutation of degree $D$, or some pseudo-expectation of degree $D$ satisfies $\cA$.
+\end{theorem}
+
+\begin{proof}[Proof that not both hold]
+If both held, then soundness applied to the refutation would give $\sosPE[-1]\ge0$, whereas $\sosPE[-1]=-1$.
+\end{proof}
+
+\begin{proofsketch}[Sketch of the converse]
+Let $K$ be the convex cone of polynomials $p$ of degree at most $D$ with $\cA\sosProves{D}p\ge0$, and suppose that $-1\notin K$. The Boolean axioms make $1$ an interior point of $K$: modulo the axioms every polynomial of degree at most $D$ is a combination of monomials $x_S=x_{S_1}x_{S_2}$ with disjoint $S_1,S_2$ of size at most $D/2$, and $1\pm x_S=\frac12(x_{S_1}\pm x_{S_2})^2+\frac12(1-x_{S_1})^2+\frac12(1-x_{S_2})^2$ modulo the axioms. Hence $-1$ is not even in the closure of $K$, and the separating hyperplane theorem (\cref{ch:lpduality}) gives a linear functional $L\ge0$ on $K$ with $L(-1)<0$. Normalized by $L(1)=1$, it is a pseudo-expectation satisfying $\cA$, because $K$ contains the squares of degree at most $D$ and both $\pm fr$ for every equation $f=0$ of $\cA$ with $\deg(fr)\le D$. We omit the routine details.
+\end{proofsketch}
+
+\subsection{Max-cut is degree two}\label{sec:sos:gw}
+
+For the system $\{x_i^2=1:i\in[n]\}$, whose solutions are the cuts, a pseudo-expectation of degree $2$ is determined by the numbers $\sosPE[x_i]$ and $M_{ij}=\sosPE[x_ix_j]$. The matrix $M$ has unit diagonal, since $\sosPE[x_i^2]=\sosPE[1]=1$, and it is positive semidefinite, since $c^{\mathsf T}Mc=\sosPE[(\sum_ic_ix_i)^2]\ge0$ for every $c\in\R^n$. Conversely, every positive semidefinite $M$ with unit diagonal arises from the functional with $\sosPE[x_i]=0$ and $\sosPE[x_ix_j]=M_{ij}$, because then $\sosPE[(c_0+\sum_ic_ix_i)^2]=c_0^2+c^{\mathsf T}Mc$. Maximizing $\sosPE[f_G]=\sum_{ij\in E}w_{ij}(1-M_{ij})/2$ is therefore exactly the semidefinite program of Goemans and Williamson: steps (i) and (ii) of their argument have become a definition. For the triangle with unit weights, $M_{ij}=-\frac12$ for $i\ne j$ is admissible and gives $\sosPE[f_G]=\frac94$, more than the maximum cut $2$; this pseudo-distribution is no distribution. To turn a pseudo-distribution into a cut, sample the simplest distribution with its second moments, a Gaussian, and take signs.\index{Gaussian rounding}\marginaside{\centering\begin{tikzpicture}[scale=0.78]
+\fill[seamist] (0,0) -- (-70:1.25) arc (-70:-15:1.25) -- cycle;
+\fill[seamist] (0,0) -- (110:1.25) arc (110:165:1.25) -- cycle;
+\draw[muted, line width=0.4pt] (0,0) circle (1.25);
+\draw[muted, dashed, line width=0.5pt] (-70:1.45) -- (110:1.45);
+\draw[muted, dashed, line width=0.5pt] (-15:1.45) -- (165:1.45);
+\draw[-{Stealth[length=1.6mm]}, seadeep, line width=0.7pt] (0,0) -- (20:1.05) node[right, font=\scriptsize] {$u_1$};
+\draw[-{Stealth[length=1.6mm]}, seadeep, line width=0.7pt] (0,0) -- (75:1.05) node[above, font=\scriptsize] {$u_2$};
+\draw[sea, line width=0.5pt] (20:0.42) arc (20:75:0.42);
+\node[font=\scriptsize, sea] at (47.5:0.64) {$\theta$};
+\node[font=\scriptsize, muted] at (110:1.72) {$u_1^\perp$};
+\node[font=\scriptsize, muted] at (165:1.8) {$u_2^\perp$};
+\end{tikzpicture}\par\raggedright Sheppard's formula: the signs of $\ip{u_1}{h}$ and $\ip{u_2}{h}$ differ when the direction of $h$ falls in a shaded sector.}
+
+\begin{lemma}[Sheppard's formula]\label[lemma]{lem:sos:sheppard}
+Let $(g_1,g_2)$ be a centered jointly Gaussian pair with $\E g_1^2=\E g_2^2=1$ and $\E g_1g_2=\rho$. Then $\Pr[\sgn g_1\ne\sgn g_2]=\arccos(\rho)/\pi$.
+\end{lemma}
+
+\begin{proof}
+Let $\theta=\arccos\rho\in[0,\pi]$, choose unit vectors $u_1,u_2\in\R^2$ at angle $\theta$, so that $\ip{u_1}{u_2}=\rho$, and let $h$ be a standard Gaussian vector in $\R^2$. The pair $(\ip{u_1}{h},\ip{u_2}{h})$ is centered Gaussian with the covariance of $(g_1,g_2)$, hence has its distribution. The direction of $h$ is uniform on the circle, by rotation invariance, and $h$ lies on the line $u_1^\perp$ or $u_2^\perp$ with probability zero. The two signs differ exactly when $h$ lies in one of the two opposite sectors between these lines that have angle $\theta$, shaded in the margin figure, which happens with probability $2\theta/(2\pi)$.
+\end{proof}
+
+\index{Sheppard's formula}The formula is due to \textcite{Sheppard1899}.\sidenote{Sheppard's formula reappears in the Fourier analysis of voting rules in \cref{ch:fourier}, where it gives the noise stability of majority.}
+
+\begin{theorem}[\textcite{GoemansWilliamson1995}]\label{thm:sos:gw}
+Let $\sosPE$ be a pseudo-expectation of degree $2$ satisfying $\{x_i^2=1:i\in[n]\}$, let $M=\sosPE[xx^{\mathsf T}]$, let $g$ be a Gaussian vector with mean $0$ and covariance $M$, and let $\hat x_i=\sgn g_i$. Then $\E f_G(\hat x)\ge\sosGW\,\sosPE[f_G]$, where
+\[
+  \sosGW=\min_{0<\theta\le\pi}\frac{2}{\pi}\,\frac{\theta}{1-\cos\theta}>0.878.
+\]
+In particular, if $\sosPE$ maximizes $\sosPE[f_G]$, then the random cut $\hat x$ has expected weight at least $\sosGW$ times the weight of a maximum cut.
+\end{theorem}
+
+\begin{proof}
+The matrix $M$ is positive semidefinite with unit diagonal, so $g$ exists, each pair $(g_i,g_j)$ is jointly Gaussian with unit variances, and the signs are defined with probability one. Fix an edge $ij$ and write $M_{ij}=\cos\theta$ with $\theta\in[0,\pi]$. By \cref{lem:sos:sheppard} the edge is cut with probability $\theta/\pi$. If $\theta=0$, then both $\theta/\pi$ and $(1-\cos\theta)/2$ vanish; otherwise the definition of $\sosGW$ gives
+\[
+  \frac{\theta}{\pi}=\frac2\pi\,\frac{\theta}{1-\cos\theta}\cdot\frac{1-\cos\theta}{2}\ge\sosGW\,\frac{1-M_{ij}}{2}.
+\]
+Multiply by $w_{ij}\ge0$ and sum over the edges: $\E f_G(\hat x)\ge\sosGW\sum_{ij\in E}w_{ij}(1-M_{ij})/2=\sosGW\,\sosPE[f_G]$. For the last statement, the point mass at a maximum cut is a pseudo-expectation satisfying the system. The minimum defining $\sosGW$ exists because $\theta/(1-\cos\theta)$ is continuous on $(0,\pi]$ and tends to infinity as $\theta\to0$; its value is $0.87856\ldots$ (Exercise~\ref{ex:sos:gw}).
+\end{proof}
+
+Set this beside the outline in \cref{sec:sos:gw-before}: steps (i) and (ii) are now a definition and the remark that point masses are pseudo-distributions, step (iii) is ``sample a Gaussian with the pseudo-moments'', and only the computation of step (iv) remains. The change of status matters more than the saving: the relaxation is the first member of a hierarchy, and a stronger relaxation is the same object at a higher degree.
+
+\subsection{Robust mean estimation from its identifiability proof}\label{sec:sos:robust}
+
+Return to \cref{prob:sos:robust} and give the unknown sequence variables: scalars $w_1,\dots,w_n$, where $w_i=1$ will mean that index $i$ is kept, vectors $X_1',\dots,X_n'\in\R^d$, and a $d\times d$ matrix $B$. The mean $\mu'=\frac1n\sum_iX_i'$ and covariance $\Sigma'=\frac1n\sum_i(X_i'-\mu')(X_i'-\mu')^{\mathsf T}$ are polynomials in these variables. For $\eps>0$ with $\eps n$ an integer, let $\sosR_\eps(X)$ be the system
+\[
+  \begin{gathered}
+  w_i^2=w_i\quad\text{and}\quad w_i(X_i'-X_i)=0\qquad(i\in[n]),\\
+  \sum_{i=1}^nw_i=(1-\eps)n,\qquad \Sigma'+BB^{\mathsf T}=I,
+  \end{gathered}
+\]
+in which the vector and matrix equations hold entrywise. The last equation says that $\Sigma'\preceq I$, with $BB^{\mathsf T}$ as the certificate. The system is satisfiable: take $X_i'=Y_i$, $B=(I-\Cov(Y))^{1/2}$, and $w$ the indicator of a set of $(1-\eps)n$ indices outside $T$.
+
+The proof of \cref{lem:sos:ident} ended by dividing by $\norm v$, which a sum-of-squares proof cannot do; we square instead, and the rest survives line by line. Let $v=\mu'-\mu$, a vector of polynomials of degree one ($\mu$ is unknown to the algorithm but available to the proof).
+
+\begin{lemma}[Identifiability, in degree six]\label[lemma]{lem:sos:sosident}
+Let $\eps>0$ with $\eps n$ an integer, let $X$ be an $\eps$-corruption of points $Y_1,\dots,Y_n$ with mean $\mu$ and $\Cov(Y)\preceq I$, and let $v=\mu'-\mu$. Then
+\[
+  \sosR_\eps(X)\sosProves{6}(1-4\eps)\norm v^4\le8\eps\norm v^2.
+\]
+\end{lemma}
+
+\begin{proof}
+The plan is to transcribe the proof of \cref{lem:sos:ident}, with the indicator of the agreement set replaced by a polynomial, and to square where that proof divided. Let $g_i=1$ if $i\notin T$ and $g_i=0$ if $i\in T$; these are numbers, which the proof may use although the algorithm never sees them. Put $z_i=g_iw_i$, the indicator of ``kept and uncorrupted'', and $\delta=\frac1n\sum_i(1-z_i)$. Every statement below is a consequence of $\sosR_\eps(X)$ of degree at most $6$, obtained by the rules of \cref{lem:sos:rules}.
+
+\emph{Boolean bookkeeping.} Since $g_i^2=g_i$ and $w_i^2=w_i$, we have $z_i^2=z_i$, so $1-z_i=(1-z_i)^2$ and $\delta=\frac1n\sum_i(1-z_i)^2$ at degree $2$. The equation $\sum_iw_i=(1-\eps)n$ gives $\delta=\eps+\frac1n\sum_{i\in T}w_i$, and by \cref{lem:sos:rules}(iii) applied to each $1-w_i$,
+\begin{equation}\label{eq:sos:delta}
+  2\eps-\delta=\Bigl(\eps-\frac{\abs T}{n}\Bigr)+\frac1n\sum_{i\in T}(1-w_i)^2
+\end{equation}
+at degree $2$, a nonnegative constant plus a sum of squares. Finally $g_i(X_i-Y_i)=0$ for every $i$, so $z_i(X_i'-Y_i)=g_i\,w_i(X_i'-X_i)$, and $z_i(X_i'-Y_i)=0$ follows from the axioms at degree $2$.
+
+\emph{The decomposition.} Since $v=\frac1n\sum_i(X_i'-Y_i)$, we have $\norm v^2=\frac1n\sum_i\ip{X_i'-Y_i}{v}$. Drop the terms with the factor $z_i$, which vanish at degree $3$, and in the others write $X_i'-Y_i=(X_i'-\mu')-(Y_i-\mu)+v$. With the polynomials
+\[
+  a=\frac1n\sum_{i=1}^n(1-z_i)\ip{X_i'-\mu'}{v}\quad\text{and}\quad b=\frac1n\sum_{i=1}^n(1-z_i)\ip{Y_i-\mu}{v},
+\]
+this gives, at degree $3$, the analogue of the identity in the proof of \cref{lem:sos:ident}:
+\begin{equation}\label{eq:sos:decomp}
+  (1-\delta)\norm v^2=a-b.
+\end{equation}
+
+\emph{Cauchy--Schwarz.} Apply \cref{lem:sos:rules}(iv) to the polynomials $(1-z_i)/\sqrt n$ and $\ip{X_i'-\mu'}{v}/\sqrt n$, and replace $\frac1n\sum_i(1-z_i)^2$ by $\delta$; this gives $a^2\le\delta\, v^{\mathsf T}\Sigma'v$ at degree $6$. The covariance equation gives $\norm v^2-v^{\mathsf T}\Sigma'v=\norm{B^{\mathsf T}v}^2$, a sum of squares of degree $4$, and multiplying by the sum of squares $\delta$ gives $\delta\,v^{\mathsf T}\Sigma'v\le\delta\norm v^2$ at degree $6$. Hence $a^2\le\delta\norm v^2$. The same argument with $Y$ in place of $X'$, and the constant matrix $(I-\Cov(Y))^{1/2}$ in place of $B$, gives $b^2\le\delta\norm v^2$.
+
+\emph{Squaring instead of dividing.} Square \eqref{eq:sos:decomp}, as \cref{lem:sos:rules}(ii) allows because both sides have degree $3$; use $(a-b)^2=2a^2+2b^2-(a+b)^2\le2a^2+2b^2$; and multiply \eqref{eq:sos:delta} by the square $4\norm v^2$. These steps give
+\[
+  (1-\delta)^2\norm v^4\le4\delta\norm v^2\le8\eps\norm v^2.
+\]
+Finally, $(1-\delta)^2-(1-4\eps)=\delta^2+2(2\eps-\delta)$, so by \eqref{eq:sos:delta}
+\[
+  (1-\delta)^2\norm v^4-(1-4\eps)\norm v^4=\bigl(\delta\norm v^2\bigr)^2+2(2\eps-\delta)\norm v^4\ge0
+\]
+at degree $6$. The last two displays prove the lemma.
+\end{proof}
+
+\begin{theorem}[Robust mean estimation by sum of squares]\label{thm:sos:robust}
+Let $0<\eps\le\frac18$ with $\eps n$ an integer, and let $X$ be an $\eps$-corruption of points $Y_1,\dots,Y_n$ with mean $\mu$ and $\Cov(Y)\preceq I$. For every pseudo-expectation $\sosPE$ of degree $6$ satisfying $\sosR_\eps(X)$, the vector $\hat\mu=\sosPE[\mu']$ satisfies
+\[
+  \norm{\hat\mu-\mu}\le\Bigl(\frac{8\eps}{1-4\eps}\Bigr)^{1/2}\le4\sqrt\eps.
+\]
+\end{theorem}
+
+\begin{proof}
+Let $c=\sosPE[\norm v^2]$, which is nonnegative because $\norm v^2$ is a sum of squares of degree $2$. Soundness applied to \cref{lem:sos:sosident} gives $(1-4\eps)\,\sosPE[\norm v^4]\le8\eps c$, and \cref{lem:sos:cs} with $q=\norm v^2$, of degree $2\le3$, gives $\sosPE[\norm v^4]\ge c^2$. Since $\eps\le\frac18$, the factor $1-4\eps$ is at least $\frac12$; hence $(1-4\eps)c^2\le8\eps c$, and either $c=0$ or $c\le8\eps/(1-4\eps)\le16\eps$. Finally $\sosPE[v]=\hat\mu-\mu$, because $\sosPE$ is linear and $\sosPE[1]=1$, and \cref{lem:sos:cs} gives $\norm{\hat\mu-\mu}^2\le\sosPE[\norm v^2]=c$.
+\end{proof}
+
+With \cref{rem:sos:solve}, the theorem is an algorithm: compute a pseudo-expectation of degree $6$ satisfying $\sosR_\eps(X)$, a semidefinite program of size polynomial in $n$ and $d$, and output $\sosPE[\mu']$; its error is optimal up to the constant (Exercise~\ref{ex:sos:lower}). Beside the filter of \cref{sec:sos:robust-before}, the certificate reappears as \cref{lem:sos:sosident}, which is \cref{lem:sos:ident} transcribed, while progress, termination, the threshold, and the self-referential estimate have no counterpart: the analysis is the statistical proof, a squaring step, and five lines of rounding. The price is speed, for a filter needs only a sequence of eigenvector computations.
+
+\subsection{Beyond second moments}\label{sec:sos:beyond}
+
+The proof of \cref{lem:sos:sosident} used the covariance bound only to control $a$ and $b$. Higher moments control them better, by H\"older's inequality: if the inliers have bounded $k$-th moments, then an $\eps$-fraction of them can shift the mean by only $O(\eps^{1-1/k})$. The method can use this if the moment bound itself has a low-degree proof.
+
+\begin{definition}[Certifiably bounded moments]\label[definition]{def:sos:certmom}
+Let $k$ be even and $M>0$. Points $Y_1,\dots,Y_n\in\R^d$ with mean $\mu$ have \term{$M$-certifiably bounded $k$-th moments} if the polynomial $M\norm u^k-\frac1n\sum_i\ip{Y_i-\mu}{u}^k$ in the variables $u=(u_1,\dots,u_d)$ is a sum of squares of polynomials.
+\end{definition}
+
+\index{certifiable moments}Bounded moments make this polynomial nonnegative; certifiability asks for a certificate. For $k=2$ the two coincide, since nonnegative quadratic forms are sums of squares, but for $k\ge4$ certifiability is a real assumption. Samples from a Gaussian with covariance at most $I$ satisfy it for every even $k$, with $M$ depending only on $k$, once $n$ is large enough \parencite{Kothari2018,HopkinsLi2018}.
+
+\begin{theorem}[after \textcite{Kothari2018} and \textcite{HopkinsLi2018}]\label{thm:sos:moments}
+For every even $k\ge2$ there are constants $c_k>0$ and $C_k$ such that the following holds. Let $X$ be an $\eps$-corruption of points $Y_1,\dots,Y_n$ with mean $\mu$ and $M$-certifiably bounded $k$-th moments, where $\eps\le c_k$. Then a sum-of-squares relaxation of degree $O(k)$, solvable in time polynomial in $n$ and $d$ for each fixed $k$, yields an estimate $\hat\mu$ with $\norm{\hat\mu-\mu}\le C_kM^{1/k}\eps^{1-1/k}$.
+\end{theorem}
+
+\begin{proofsketch}
+Replace the covariance equation of $\sosR_\eps(X)$ by the requirement that the $X_i'$ have $M$-certifiably bounded $k$-th moments, written as a polynomial identity in a formal vector $u$ whose sum of squares has Gram matrix $CC^{\mathsf T}$, for a matrix $C$ of new variables. In the proof of \cref{lem:sos:sosident}, bound $a$ and $b$ by H\"older's inequality, $\bigl(\frac1n\sum_i(1-z_i)\beta_i\bigr)^k\le\delta^{k-1}\frac1n\sum_i\beta_i^k$, which has a sum-of-squares proof using $(1-z_i)^2=1-z_i$ (for $k=4$ by iterating Cauchy--Schwarz, Exercise~\ref{ex:sos:fourth}). With $(a-b)^k\le2^{k-1}(a^k+b^k)$, a nonnegative binary form and hence a sum of squares, this gives $(1-\delta)^k\norm v^{2k}\le2^k\delta^{k-1}M\norm v^k$, and analogues of \cref{lem:sos:cs} for higher powers finish as in \cref{thm:sos:robust}. The general H\"older inequality, these analogues, and the degree bookkeeping are in the cited papers.
+\end{proofsketch}
+
+For $k=2$ this is \cref{thm:sos:robust}; for larger $k$ the error improves, and the algorithm stays the same. The template also reaches other problems. \textcite{Klivans2018} gave the first polynomial-time algorithm for linear regression in which both covariates and responses may be corrupted, assuming the covariates \term{certifiably hypercontractive}: their higher moments are bounded by their second moments, with a sum-of-squares certificate (Exercise~\ref{ex:sos:regression} treats the noiseless case).\index{certifiable hypercontractivity} \textcite{HopkinsLi2018} and \textcite{Kothari2018} learned mixtures of $r$ spherical Gaussians with means separated by $r^\gamma$, for each fixed $\gamma>0$, in polynomial time, where earlier methods needed separation about $r^{1/4}$. \textcite{BarakKelnerSteurer2015} recovered $n\times m$ dictionaries with $m=O(n)$ from samples with up to $m^{1-\gamma}$ nonzero coefficients in polynomial time, where earlier methods needed at most about $\sqrt n$. Each algorithm is read off from a low-degree identifiability proof, though for mixtures and dictionaries rounding takes real work, because solutions are unique only up to a permutation of the components.
+
+\section{Costs and limits}\label{sec:sos:costs}
+
+\paragraph{Where did the difficulty go?} Into three places. The first is the proof, which must be written in a restricted language: it may add, multiply, and use identities and squares, but it may not divide (we squared instead), split into cases by the sign of a polynomial, take a maximum, or appeal to compactness or to a union bound over exponentially many events. Translating a proof may be routine, as for the mean, or a research problem, and assumptions must be translated too: \cref{thm:sos:moments} needs a certificate for the moment bound, not merely its truth. The second place is rounding: when the solutions form several clusters, as for mixtures and tensor decompositions, a pseudo-distribution may average over them, and extracting one takes a separate argument (Exercise~\ref{ex:sos:tensor}). The third place is the running time, polynomial for fixed degree but with exponents that rule out practical use already at degree six. The solver and the soundness lemma are paid once; each application pays for a low-degree identifiability proof, which was needed anyway. When that proof transcribes with little change, as in \cref{sec:sos:robust}, the move is a bargain; when it is much harder than the classical proof, the difficulty has moved rather than dissolved.
+
+\paragraph{What did not dissolve.} Sum of squares is complete in the limit but weak at low degree, and only low degrees are affordable. Over the cube every infeasible system $f_1=\dots=f_m=0$ has a refutation of degree about $n$, namely $-1=-\sum_k(hf_k)f_k$ modulo the axioms, where $h$ is the multilinear polynomial equal to $1/\sum_kf_k^2$ on the cube; and some true statements need degree that high. \textcite{Grigoriev2001} proved that the knapsack equation $x_1+\dots+x_n=r$ in Boolean variables, unsolvable when $r$ is not an integer, has no refutation of degree below a linear function of $n$ when $r$ is near $n/2$ (Exercise~\ref{ex:sos:knapsack} treats degree two).\sidenote{The same obstacle appears in max-cut: on the complete graph $K_5$ the degree-4 relaxation still reports a cut of weight $\frac{25}4>6$, as if $x_1+\dots+x_5=0$ had a solution in $\{\pm1\}^5$ (Exercise~\ref{ex:sos:maxcut4}).} Planted clique marks the boundary for average-case problems.\index{planted clique} Degree two certifies that a random graph on $n$ vertices has no clique much larger than $\sqrt n$ (Exercise~\ref{ex:sos:clique}), and \textcite{Barak2016} proved that degree $d=o(\log n)$ does not do much better: on a random graph the degree-$d$ relaxation still believes in a clique of size $n^{1/2-c(d/\log n)^{1/2}}$, whereas the largest clique has about $2\log_2n$ vertices. No known polynomial-time algorithm does better, and such lower bounds are now read as evidence of computational hardness. For max-cut, \textcite{Khot2007} showed that if the Unique Games Conjecture holds, then approximating max-cut within a fixed ratio above $\sosGW$ is NP-hard.\index{Unique Games Conjecture}\sidenote{The conjecture asserts that for a certain constraint satisfaction problem with permutation constraints it is NP-hard to distinguish nearly satisfiable instances from instances in which only a small fraction of the constraints can be satisfied.} Whether some constant degree achieves a fixed ratio above $\sosGW$ on every graph is open; an affirmative answer would refute the conjecture unless $\mathrm{P}=\mathrm{NP}$ \parencite{BarakSteurer2014}. Finally, the running time of \cref{rem:sos:solve} is not automatic: \textcite{ODonnell2017} observed that a low-degree proof may exist yet need coefficients too large to be found, and \textcite{RaghavendraWeitz2017} gave a sufficient condition that rules this out, which holds for max-CSPs and max-clique, and showed that Boolean constraints alone do not suffice.
+
+\paragraph{Other seas.} The practical robust estimators are filters and their fast descendants \parencite{DiakonikolasKane2023}, for which sum of squares supplies proofs of possibility and identifiability arguments to imitate. \textcite{Hopkins2016} replaced some sum-of-squares algorithms by fast spectral algorithms designed from the proofs, some running in nearly linear time, and \textcite{Hopkins2018} develops the low-degree polynomial heuristic for predicting computational thresholds. Flag algebras, which turn density inequalities for graph limits into semidefinite programs (\cref{ch:graphon}), are another sum-of-squares method.
+
+\section{The move, distilled}\label{sec:sos:distilled}
+
+\begin{move}{Proofs to algorithms}
+\movepart{In one sentence} If the proof that the data determine the answer uses only low-degree polynomial reasoning, then the proof is an algorithm: search over the pseudo-distributions that obey it, and read the answer off their moments.
+\movepart{Triggers} A short identifiability argument built from linear identities, Cauchy--Schwarz, or H\"older; a search over hidden subsets, labels, or components that is exponential if done directly; a family of problems whose algorithms each need their own analysis; a relaxation that seems to have been guessed.
+\movepart{Recipe} (1) Write the hidden object and its constraints as polynomial equations, with variables for what is unknown, such as which points are good and what they are. (2) Prove that every solution has its parameter near the truth. (3) Rewrite the proof as a sum-of-squares proof, squaring where it divides and checking that each assumption it uses is certifiable. (4) Compute a pseudo-expectation of the degree of the proof. (5) Round: output the pseudo-expectation of the parameter when solutions are essentially unique, and design a rounding when they are not.
+\movepart{Anti-pattern} Calling an algorithm ``based on sum of squares'' without exhibiting the low-degree proof; leaning on an assumption that is true but not certifiable; averaging a pseudo-distribution whose solutions are symmetric and obtaining the center of the symmetry; quoting a running time of $n^{O(D)}$ without checking the bit complexity.
+\end{move}
+
+\dissolutiontest{An efficient robust mean estimator is analyzed by its identifiability proof, a squaring step, and five lines of rounding; the filter's progress and termination arguments disappear. Goemans and Williamson's relaxation steps become a definition.}{Partly: no algorithm is designed for the assumption at hand, and higher moments need no new filter, but the assumptions must be certifiable.}{Max-cut, robust mean estimation, robust regression, mixtures, and dictionary learning become one template: polynomial constraints, a low-degree identifiability proof, a pseudo-distribution, a rounding.}{Error $O(\eps^{1-1/k})$ under certifiable $k$-th moments; regression with corrupted covariates; mixtures of $r$ Gaussians with separation $r^\gamma$; dictionaries with $m^{1-\gamma}$ nonzero coefficients.}
+
+The move is a relaxation in the spirit of the completions of \cref{ch:lebesgue,ch:graphon}: enlarge the space of objects until the problem becomes convex, and keep the theorems whose proofs survive. Its engine is duality (\cref{ch:lpduality}): on the cube, a pseudo-distribution exists exactly when no low-degree refutation does (\cref{thm:sos:duality}), as a feasible point of a linear program exists exactly when no Farkas certificate does. Like the algorithmic local lemma of \cref{ch:compression}, the move turns an existence proof into a construction, here by convexity rather than by resampling. And a pseudo-distribution is to low-degree sum-of-squares tests what a pseudorandom distribution is to a class of statistical tests (\cref{ch:pseudorandom}): indistinguishable from the real thing by every test in the class, and useful because the class is small.
+
+\begin{exercises}
+\item\label{ex:sos:motzkin} \consolidation\hard (a) Show that $3x^4+y^4-4x^3y$ is a sum of squares of polynomials. (b) Show that Motzkin's polynomial $x^4y^2+x^2y^4-3x^2y^2+1$ is nonnegative on $\R^2$ but is not a sum of squares of polynomials. \hint{For (a), factor out $(x-y)^2$. For (b), use the arithmetic--geometric mean inequality for $x^4y^2$, $x^2y^4$, and $1$. If the polynomial is $\sum_jq_j^2$, then every monomial $x^ay^b$ of every $q_j$ has $(a,b)$ in the triangle with vertices $(0,0)$, $(2,1)$, $(1,2)$, since otherwise one outside it maximizing a suitable linear function of $(a,b)$ has a square that cannot cancel; compare the coefficients of $x^2y^2$.}
+
+\item\label{ex:sos:gw} \consolidation (a) Show that the minimum defining $\sosGW$ is attained at the unique solution $\theta^*\in(0,\pi)$ of $\tan(\theta/2)=\theta$, that $\sosGW=2/(\pi\sin\theta^*)$, and that $\theta^*\approx2.3311$ and $\sosGW\approx0.87857$. (b) Suppose that $\sosPE[f_G]\ge(1-\eta)W$, where $W=\sum_{ij\in E}w_{ij}$. Show that the rounding of \cref{thm:sos:gw} gives $\E f_G(\hat x)\ge(1-\sqrt\eta)W$. \hint{For (b), an edge with $M_{ij}=2s-1$ stays uncut with probability $\frac2\pi\arcsin\sqrt s\le\sqrt s$; apply Cauchy--Schwarz over the edges.}
+
+\item\label{ex:sos:lower} \consolidation (a) Let $Y$ consist of $n$ points at $0\in\R$ and $Y'$ of $(1-\eps)n$ points at $0$ and $\eps n$ points at $1/\sqrt\eps$. Show that $\Cov(Y)\preceq1$ and $\Cov(Y')\preceq1$, that some $X$ is an $\eps$-corruption of both, and conclude that no estimator achieves error below $\sqrt\eps/2$ on every instance of \cref{prob:sos:robust}. (b) Let $0<\eps<\frac12$, let $t$ be large, and let $\ind=(1,\dots,1)$. Show that the coordinatewise median of the distribution $(1-\eps)N(0,I_d)+\eps\,\delta_{t\ind}$ is $m\ind$, where $\Phi(m)=1/(2-2\eps)$, and that its distance from the inlier mean is $(1+o(1))\,\eps\sqrt{\pi d/2}$ as $\eps\to0$.
+
+\item\label{ex:sos:fourth} \consolidation\hard Suppose that the inliers have certifiably bounded fourth moments, with constant $M$. Replace the covariance equation of $\sosR_\eps(X)$ by the identity $M\norm u^4-\frac1n\sum_i\ip{X_i'-\mu'}{u}^4=\norm{C^{\mathsf T}(u\otimes u)}^2$ in a formal vector $u\in\R^d$, with $C$ a $d^2\times d^2$ matrix of new variables (equate coefficients). (a) Show that the new system is satisfiable. (b) With $a$, $b$, $\delta$ as in the proof of \cref{lem:sos:sosident}, show that it proves $a^4\le\delta^3M\norm v^4$ and $b^4\le\delta^3M\norm v^4$ at constant degree. (c) Deduce $(1-8\eps)\norm v^8\le128M\eps^3\norm v^4$, and conclude that $\norm{\sosPE[\mu']-\mu}\le4M^{1/4}\eps^{3/4}$ for $\eps\le\frac1{16}$ and every pseudo-expectation of large enough constant degree satisfying the new system. \hint{First $a^2\le\delta\cdot\frac1n\sum_i(1-z_i)\ip{X_i'-\mu'}{v}^2$; then square and apply Cauchy--Schwarz again. For (c), use $(a-b)^4\le8(a^4+b^4)$ and $(1-\delta)^4\ge1-4\delta$.}
+
+\item\label{ex:sos:knapsack} \consolidation Let $n\ge3$ be odd, and let $\cA$ consist of $x_i^2=x_i$ for $i\in[n]$ and $x_1+\dots+x_n=n/2$. (a) Show that $\cA$ has no solution. (b) Show that the functional with $\sosPE[x_i]=\sosPE[x_i^2]=\frac12$ and $\sosPE[x_ix_j]=(n-2)/(4n-4)$ for $i\ne j$ is a pseudo-expectation of degree $2$ satisfying $\cA$. (c) Conclude that $\cA$ has no refutation of degree $2$.
+
+\item\label{ex:sos:regression} \transfer\hard (Robust regression without noise.) Let $(x_i,y_i)\in\R^d\times\R$ for $i\in[n]$, with $\eps n$ an integer, and suppose that for some $G\subseteq[n]$ with $\abs G\ge(1-\eps)n$ and some $\beta$ we have $y_i=\ip{\beta}{x_i}$ for $i\in G$, that $\Sigma_G=\frac1n\sum_{i\in G}x_ix_i^{\mathsf T}$ is invertible, and that $\kappa(u^{\mathsf T}\Sigma_Gu)^2-\frac1n\sum_{i\in G}\ip{x_i}{u}^4$ is a sum of squares in $u$. Let $\cA$ consist of $w_i^2=w_i$, $\sum_iw_i=(1-\eps)n$, and $w_i(y_i-\ip{b}{x_i})=0$, in variables $w\in\R^n$ and $b\in\R^d$. (a) Show that if $\eps\kappa<1$, then every solution has $b=\beta$. (b) Show that $\cA\sosProves{6}(1-\eps\kappa)(u^{\mathsf T}\Sigma_Gu)^2\le0$ for $u=b-\beta$. (c) Conclude that if $\eps\kappa<1$, then $\sosPE[b]=\beta$ for every pseudo-expectation of degree $6$ satisfying $\cA$. This is a noiseless case of the setting of \textcite{Klivans2018}. \hint{Imitate the proof of \cref{lem:sos:sosident} with $z_i=w_i$ for $i\in G$; note that $z_i\ip{u}{x_i}=0$ follows from the axioms.}
+
+\item\label{ex:sos:tensor} \transfer (Identifiability without uniqueness.) Let $a_1,\dots,a_r$ be orthonormal vectors in $\R^d$ and $T(x)=\sum_i\ip{a_i}{x}^4$. (a) Show that $\{\norm x^2=1\}\sosProves{4}T(x)\le1$. (b) Let $\sosPE$ be a pseudo-expectation of degree $4$ satisfying $\norm x^2=1$ with $\sosPE[T(x)]=1$. Show that the range of $\sosPE[xx^{\mathsf T}]$ lies in the span of the $a_i$. (c) Show by an example with $r=2$ that neither $\sosPE[x]$ nor a top eigenvector of $\sosPE[xx^{\mathsf T}]$ need be close to some $\pm a_i$, and explain what this says about rounding in tensor decomposition. \hint{With $S=\sum_i\ip{a_i}{x}^2$, write $\norm x^4-T=(\norm x^2-S)(\norm x^2+S)+(S^2-T)$, and note that $\norm x^2-S$ is the squared length of a projection of $x$.}
+
+\item\label{ex:sos:clique} \transfer Let $G$ be a graph on $[n]$ with signed adjacency matrix $A$ ($A_{ij}=1$ for an edge, $A_{ij}=-1$ for a non-edge with $i\ne j$, $A_{ii}=0$), and let $\cA_k$ consist of $x_i^2=x_i$ for every $i$, $x_ix_j=0$ for every non-edge $ij$, and $\sum_ix_i=k$. (a) Show that the solutions of $\cA_k$ are the indicator vectors of the $k$-vertex cliques. (b) Show that $\cA_k\sosProves{2}k^2-k\le\norm Ak$, so degree $2$ refutes $\cA_k$ when $k>1+\norm A$. (c) The Paley graph on $\F_q$, for a prime $q\equiv1\pmod4$, joins $x$ and $y$ when $x-y$ is a nonzero square; granting that its signed adjacency matrix has eigenvalues $0$ and $\pm\sqrt q$, show that degree $2$ certifies that it has no clique with more than $1+\sqrt q$ vertices.
+
+\item\label{ex:sos:maxcut4} \research The degree-$4$ relaxation of max-cut is exact on the $5$-cycle (value $4$, against $(25+5\sqrt5)/8$ at degree $2$) and on the Petersen graph (value $12$, against $\frac{25}2$), but on $K_5$ it still gives $\frac{25}4$ instead of $6$; check these values with a semidefinite programming solver. Is there a constant $D$ such that degree $D$ approximates max-cut within a factor larger than $\sosGW$ on every graph? This is open, and an affirmative answer would refute the Unique Games Conjecture unless $\mathrm{P}=\mathrm{NP}$. A first step is to search for graphs on which the ratio of the maximum cut to the degree-$4$ value is small.
+
+\item\label{ex:sos:ml} \research Choose an identifiability theorem from statistics or machine learning, such as identifiability of independent component analysis from fourth cumulants or Kruskal's uniqueness theorem for tensor decompositions. Decide whether its standard proof can be written as a sum-of-squares proof of constant degree, and locate the steps that resist: divisions, case splits on signs, maxima, compactness, and assumptions that are true but not certifiable. No general criterion is known for which identifiability proofs have low-degree versions; in each case a translation or an identified obstruction is progress.
+\end{exercises}
+
+\notesandrefs
+Hilbert's theorem is in \textcite{Hilbert1888} and Motzkin's example in \textcite{Motzkin1967}. The computational use of sums of squares begins with \textcite{Shor1987}, and \textcite{Nesterov2000}, \textcite{Parrilo2000}, and \textcite{Lasserre2001} built the hierarchies, from the sides of squares and of moments; Grigoriev's lower bounds, such as \textcite{Grigoriev2001}, treat sum of squares as a proof system. \textcite{GoemansWilliamson1995} introduced semidefinite rounding and \textcite{Khot2007} explain why it may be optimal. \textcite{BarakSteurer2014} survey sum of squares as a candidate optimal algorithm; \textcite{BarakKelnerSteurer2015} treat pseudo-distributions as distributions over solutions; \textcite{Barak2016} prove the planted clique bound; \textcite{Hopkins2016} derive fast spectral algorithms; and \textcite{ODonnell2017} and \textcite{RaghavendraWeitz2017} examine bit complexity.
+
+Robust statistics in Huber's sense begins with \textcite{Huber1964}, and the halfspace median with \textcite{Tukey1975}. The efficient estimators of 2016 are \textcite{Diakonikolas2016} and \textcite{Lai2016}, and \textcite{DiakonikolasKane2023} is the standard monograph. The sum-of-squares approach to robust estimation and clustering is due to \textcite{Kothari2018} and \textcite{HopkinsLi2018}, and to regression to \textcite{Klivans2018}; \cref{lem:sos:sosident} is the bounded-covariance case of their arguments, at the lowest degree we could manage. \textcite{Hopkins2018} develops the method for statistical inference.
+
+\printchapterbib
+\end{refsection}

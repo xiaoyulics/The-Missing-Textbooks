@@ -1,0 +1,284 @@
+\casechapter{The Dynamics Behind Duality}{No-regret learning}{Replace existence by dynamics}{ch:regret}
+\begin{refsection}[chapters/06-regret.bib]
+
+\newcommand{\rgone}{\mathbf{1}}
+\newcommand{\rgerr}{\operatorname{err}}
+
+\begin{chaptersummary}
+\Cref{ch:lpduality} proved von Neumann's minimax theorem by separating a point from a cone, and with it the existence of voting classifiers and of hardcore distributions; none of these proofs says how to find what it promises. This chapter replaces the existence proofs by a process. Two players repeat the game: one of them updates a probability vector by multiplying weights, which keeps its regret (the gap to the best fixed action in hindsight) of the order of the square root of the number of rounds, and the other answers with best responses. The time averages are then equilibria up to an error that tends to zero, so the minimax theorem becomes a corollary of a regret bound. The same template, read in other games, gives AdaBoost and a solver for linear programs that needs only a best-response oracle; fed independent samples instead of an opponent, a learner with small regret becomes stochastic gradient descent, with its guarantee for the population risk.
+\end{chaptersummary}
+
+\section{Before: equilibria without a way to reach them}\label{sec:regret:before}
+
+\Cref{ch:lpduality} proved three existence theorems: optimal mixed strategies for every finite zero-sum game (\cref{thm:lpduality:minimax}), a voting classifier that fits a sample whenever weak learning succeeds on every reweighting of it (\cref{thm:lpduality:boosting}), and a hardcore distribution for every mildly hard function (\cref{thm:lpduality:hardcore}). All three came from the separating hyperplane, through linear programming duality, and none of the proofs constructs anything.
+
+For a game written down as a matrix, one can solve a linear program. In the other two theorems, however, the matrix is not available: it has a column for every hypothesis that a weak learner might return, or for every small circuit. What is available is a \term{best-response oracle}. Given a distribution on the examples, the weak learner returns one good hypothesis; given a candidate hardcore distribution, a small circuit is the response that refutes it. An algorithm worth having must reach an equilibrium through such responses, one at a time.\index{best-response oracle}
+
+\subsection{Fictitious play}
+
+The oldest procedure of this kind is \term{fictitious play}: in every round each player plays a best response to the empirical frequencies of the opponent's past moves. \textcite{Brown1951} proposed it, and \textcite{Robinson1951} proved that it converges: the payoffs that the empirical frequencies guarantee tend to the value of the game.\sidenote{Julia Robinson, who proved this convergence theorem, is better known for her work on Hilbert's tenth problem.}\index{fictitious play} How fast is another matter. Karlin conjectured in 1959 that the error is $O(t^{-1/2})$ after $t$ rounds, and \textcite{DaskalakisPan2014} disproved the strong form of the conjecture, in which ties between best responses may be broken adversarially: on the $n\times n$ identity game, fictitious play can then converge as slowly as $t^{-1/n}$. The weakness is visible in the rule itself. A deterministic best response to the past can be exploited by an opponent who anticipates it (Exercise~\ref{ex:regret:ftl}).
+
+\subsection{Boosting by hand}
+
+\textcite{Schapire1990} answered a question of Kearns and Valiant by showing that every weak learner can be boosted to arbitrary accuracy. The construction is a recursion, sketched in the aside below. \textcite{Freund1995} found a more efficient scheme, boost-by-majority, which however needs to know the advantage $\gamma$ of the weak learner in advance. Each scheme came with its own analysis.\index{boosting}
+
+\begin{aside}[Schapire's majority of three]
+Train $h_1$ on the target distribution $D$. Train $h_2$ on the distribution $D_2=\frac12D(\cdot\mid h_1\text{ right})+\frac12D(\cdot\mid h_1\text{ wrong})$, under which $h_1$ is right exactly half the time, and $h_3$ on $D$ conditioned on the event $h_1\ne h_2$. If each $h_j$ errs with probability at most $\eps$ on the distribution it was trained on, then the majority of the three errs under $D$ with probability at most $3\eps^2-2\eps^3$, which is less than $\eps$ when $0<\eps<\frac12$. Applied recursively, with each $h_j$ itself a majority of three, the construction drives the error down at the price of a ternary tree of weak hypotheses, each trained on its own filtered distribution, and of an analysis that follows the error through the recursion.
+\end{aside}
+
+\subsection{Packing, covering, and prediction}
+
+Linear programs with special structure had iterative solvers of their own. \textcite{PlotkinShmoysTardos1995} approximated packing and covering programs by repeatedly solving a simpler problem under exponentially weighted penalties, with a running time governed by a \term{width} parameter, and \textcite{GrigoriadisKhachiyan1995} approximated the value of a matrix game in time sublinear in the number of its entries. In learning theory, \textcite{LittlestoneWarmuth1994} showed how to predict almost as well as the best of $n$ experts by keeping one weight per expert and shrinking the weight of every expert that errs (Exercise~\ref{ex:regret:wm}). Each of these works proved its own potential-function bound, and nothing in their statements suggested that they were one idea.
+
+\subsection{What was missing}
+
+The existence proofs of \cref{ch:lpduality} give no procedure. The procedures (fictitious play, recursive boosting, penalty methods) each carry a separate analysis, and no good worst-case rate is known for fictitious play. What was missing was a single reason why simple iterative reweighting finds equilibria, and a statement that would turn each existence theorem of \cref{ch:lpduality} into an algorithm without a new proof.
+
+\section{The move: let the players learn}\label{sec:regret:move}
+
+The move is to replace a proof that an equilibrium exists by a process that converges to one. The process needs only that one player can learn in a strong sense (against every sequence of moves of the opponent, its average loss approaches that of the best fixed move in hindsight) and that the other can answer each move with a best response.
+
+\begin{definition}[Prediction with expert advice]\label{def:regret:experts}
+There are $n$ actions (\term{experts}) and $T$ rounds. In round $t$ a learner chooses $p_t$ in the set $\Delta_n$ of probability vectors in $\R^n$; then an adversary, who may know $p_1,\dots,p_t$, chooses a loss vector $\ell_t\in[0,1]^n$, and the learner suffers $\ip{p_t}{\ell_t}=\sum_ip_t(i)\ell_t(i)$. The \term{regret} of the learner is
+\[
+R_T=\sum_{t=1}^T\ip{p_t}{\ell_t}-\min_{1\le i\le n}\sum_{t=1}^T\ell_t(i).
+\]
+\end{definition}\index{regret}\index{prediction with expert advice}
+
+Regret compares the learner with the best \emph{fixed} action, chosen with hindsight, and an algorithm is \term{no-regret} if $R_T/T\to0$ for every sequence of losses. That such algorithms exist is a surprise: the adversary sees the learner's distribution before choosing the losses, and a deterministic learner, one that puts all its weight on one action, can be made, as soon as $n\ge2$, to lose in every round while some action loses in at most half of the rounds (Exercise~\ref{ex:regret:ftl}). The remedy is to keep weights.
+
+\begin{definition}[Hedge]\label{def:regret:hedge}
+Fix a rate $\eta>0$. Start with weights $w_1(i)=1$ for every action $i$. In round $t$ play $p_t=w_t/\sum_jw_t(j)$, and after seeing $\ell_t$ set $w_{t+1}(i)=w_t(i)\,e^{-\eta\ell_t(i)}$.
+\end{definition}\index{Hedge}\index{multiplicative weights}
+
+The weight of each action is multiplied by $e^{-\eta}$ raised to its loss: actions that did badly lose weight geometrically, and nothing else about the problem is used. This is the humble object of the chapter, a list of $n$ numbers and a multiplication.\sidenote{The multiplicative weights update surveyed by \textcite{AroraHazanKale2012} multiplies by $1-\eta\ell_t(i)$ instead of $e^{-\eta\ell_t(i)}$; for small $\eta$ the two agree to first order.} Its power comes from the following claim, which is the move in one line: \emph{if one player has regret $o(T)$ against every opponent, and the other best-responds or also has regret $o(T)$, then the time averages of play are equilibria up to an error that tends to zero} (\cref{thm:regret:minimax} and Exercise~\ref{ex:regret:twohedges}). Existence of the equilibrium becomes a corollary of the convergence, and the process is an algorithm that needs, from the other side, one best response per round.
+
+In hindsight the move is natural. An optimal mixed strategy is a distribution that no fixed alternative beats, and a learner with small regret does, on average over time, as well as every fixed alternative. What a reader of \cref{ch:lpduality} had to notice is that the certificate there, the optimal mixed strategy, can be a time average of play.\index{time average}
+
+The idea has a long history. \textcite{Hannan1957} constructed strategies for repeated games whose average loss approaches that of the best fixed action in hindsight, and the approachability theorem of \textcite{Blackwell1956} gives another route to them. In prediction the multiplicative form is due to \textcite{LittlestoneWarmuth1994}, whose weighted majority algorithm was first presented in 1989, and, independently, to Vovk's aggregating algorithm of 1990 \parencite[see][]{CesaBianchiLugosi2006}; \textcite{FreundSchapire1997} named it Hedge and derived AdaBoost from it.\sidenote{AdaBoost is short for adaptive boosting: unlike the schemes of \cref{sec:regret:before}, it does not need to know the advantage $\gamma$ of the weak learner in advance.} \textcite{FreundSchapire1999} used it to play and solve games, and \textcite{AroraHazanKale2012} collected its many rediscoveries, in optimization, game theory, and complexity theory, as one meta-algorithm.
+
+\section{After: the minimax theorem from a regret bound}\label{sec:regret:minimax}
+
+The regret of Hedge is controlled by one inequality about bounded random variables.
+
+\begin{lemma}[\textcite{Hoeffding1963}]\label{lem:regret:hoeffding}
+If a random variable $X$ takes values in $[0,1]$ and $s\in\R$, then $\ln\E e^{sX}\le s\,\E X+s^2/8$.
+\end{lemma}
+
+\begin{proof}
+Let $\mu=\E X$. The function $x\mapsto e^{sx}$ is convex, so on $[0,1]$ it lies below its chord: $e^{sx}\le1-x+xe^s$. Taking expectations, $\ln\E e^{sX}\le\varphi(s)$ with $\varphi(s)=\ln(1-\mu+\mu e^s)$. Now $\varphi(0)=0$, and $\varphi'(s)=r(s)$ with $r(s)=\mu e^s/(1-\mu+\mu e^s)\in[0,1]$, so $\varphi'(0)=\mu$, and $\varphi''(s)=r(s)(1-r(s))\le\frac14$. Taylor's theorem with the Lagrange remainder gives $\varphi(s)\le\mu s+s^2/8$.
+\end{proof}
+
+\begin{theorem}[Regret of Hedge]\label{thm:regret:hedge}
+For every $\eta>0$ and every sequence of loss vectors in $[0,1]^n$, Hedge satisfies, for every action $i$,
+\begin{equation}\label{eq:regret:hedge}
+\sum_{t=1}^T\ip{p_t}{\ell_t}-\sum_{t=1}^T\ell_t(i)\le\frac{\ln n}{\eta}+\frac{\eta T}8 .
+\end{equation}
+If $n\ge2$ and $\eta=\sqrt{8\ln n/T}$, then $R_T\le\sqrt{(T\ln n)/2}$.
+\end{theorem}
+
+\begin{proof}
+The plan is to follow the total weight $\Phi_t=\sum_iw_t(i)$, which starts at $\Phi_1=n$, and to bound it from above by the losses of Hedge and from below by the loss of action $i$.
+
+\emph{Upper bound.} Since $w_{t+1}(i)=w_t(i)e^{-\eta\ell_t(i)}$, the ratio $\Phi_{t+1}/\Phi_t$ equals $\sum_ip_t(i)e^{-\eta\ell_t(i)}$, the expectation of $e^{-\eta\ell_t(I)}$ for a random action $I$ with distribution $p_t$. \Cref{lem:regret:hoeffding}, with $s=-\eta$, bounds its logarithm by $-\eta\ip{p_t}{\ell_t}+\eta^2/8$. Summing over $t$,
+\[
+\ln\Phi_{T+1}\le\ln n-\eta\sum_{t=1}^T\ip{p_t}{\ell_t}+\frac{\eta^2T}8 .
+\]
+\emph{Lower bound.} The total weight is at least the weight of action $i$, so $\ln\Phi_{T+1}\ge\ln w_{T+1}(i)=-\eta\sum_t\ell_t(i)$.
+
+Combining the two bounds and dividing by $\eta$ gives \eqref{eq:regret:hedge}. With $\eta=\sqrt{8\ln n/T}$ both terms on the right equal $\sqrt{(T\ln n)/8}$, and their sum is $\sqrt{(T\ln n)/2}$.
+\end{proof}
+
+The bound holds for every sequence of losses, even one chosen adaptively, because Hedge is deterministic: $p_t$ is a function of $\ell_1,\dots,\ell_{t-1}$. In this form, through Hoeffding's lemma, the bound is standard \parencite{CesaBianchiLugosi2006}. When $n=1$ the regret is zero. With a rate that does not depend on $T$ the bound grows linearly in $T$; tuned to the horizon, or restarted as in Exercise~\ref{ex:regret:doubling}, Hedge is no-regret. The order $\sqrt{T\ln n}$ cannot be improved in general (Exercise~\ref{ex:regret:lower} proves this for $n=2$).
+
+Now let the row player of a zero-sum game run Hedge. In this chapter the row player pays: for a matrix $A$, the row player chooses $p\in\Delta_m$, the column player chooses $q\in\Delta_n$, and the row player loses $p^\top Aq$. \Cref{thm:lpduality:minimax}, applied to $A^\top$, is then the statement $\min_p\max_qp^\top Aq=\max_q\min_pp^\top Aq$. We prove it again, from \cref{thm:regret:hedge} alone, as \textcite{FreundSchapire1999} observed one can.\index{minimax theorem}
+
+\begin{theorem}[Minimax theorem by dynamics]\label{thm:regret:minimax}
+Let $A$ be a real $m\times n$ matrix with entries in $[0,1]$. Let the row player run Hedge with losses $\ell_t=Aq_t$ for $T$ rounds, and let the column player answer each $p_t$ with a best response $q_t=e_j$, where $j$ maximizes $(p_t^\top A)_j$. If $R_T$ is the regret of the row player, then the averages $\bar p=\frac1T\sum_tp_t$ and $\bar q=\frac1T\sum_tq_t$ satisfy
+\[
+\max_{q\in\Delta_n}\bar p^\top Aq\le\min_{p\in\Delta_m}p^\top A\bar q+\frac{R_T}T .
+\]
+Consequently $\min_p\max_qp^\top Aq=\max_q\min_pp^\top Aq$, for every real matrix $A$.
+\end{theorem}
+
+\begin{proof}
+Bound the left side by the average of the best-response payoffs, which is the average loss of Hedge; then apply the definition of regret, and note that the losses of a fixed row, averaged over the rounds, form $A\bar q$, whose smallest entry is $\min_pp^\top A\bar q$:
+\[
+\max_q\bar p^\top Aq\le\frac1T\sum_{t=1}^T\max_qp_t^\top Aq=\frac1T\sum_{t=1}^T\ip{p_t}{\ell_t}\le\min_pp^\top A\bar q+\frac{R_T}T .
+\]
+For the consequence, let $v^+=\min_p\max_qp^\top Aq$ and $v^-=\max_q\min_pp^\top Aq$. The easy half $v^-\le v^+$ was proved in \cref{ch:lpduality}. For the other half, the inequality just proved gives
+\[
+v^+\le\max_q\bar p^\top Aq\le\min_pp^\top A\bar q+\frac{R_T}T\le v^-+\frac{R_T}T .
+\]
+With the rate $\eta=\sqrt{8\ln m/T}$, \cref{thm:regret:hedge} gives $R_T/T\le\sqrt{\ln m/(2T)}$ (when $m=1$ the regret is zero), which tends to $0$ as $T$ grows; so $v^+\le v^-$. Finally, an affine change $A\mapsto aA+b\rgone\rgone^\top$ with $a>0$ maps both sides of the theorem in the same way, so the restriction to entries in $[0,1]$ is no loss.
+\end{proof}
+
+\begin{corollary}\label{cor:regret:approx}
+Let $\eps>0$, let $A$ be an $m\times n$ matrix with entries in $[0,1]$, and run the dynamics of \cref{thm:regret:minimax} for $T=\max\{1,\lceil\ln m/(2\eps^2)\rceil\}$ rounds with the rate $\eta=\sqrt{8\ln m/T}$ (every rate if $m=1$). Then the averages $\bar p$ and $\bar q$ are optimal for their players up to an additive $\eps$. Each round costs one best response, that is, one product $p_t^\top A$.
+\end{corollary}
+
+\begin{proof}
+Write $v$ for the common value. By \cref{thm:regret:hedge} and the choice of $T$, $R_T/T\le\sqrt{\ln m/(2T)}\le\eps$, so the theorem gives $\max_q\bar p^\top Aq\le\min_pp^\top A\bar q+\eps$, and the left side is at least $v$ while the right side, minus $\eps$, is at most $v$. So $\max_q\bar p^\top Aq\le v+\eps$ and $\min_pp^\top A\bar q\ge v-\eps$.
+\end{proof}
+
+Compare this with the proof in \cref{ch:lpduality}: there is no separating hyperplane, no closed cone, and no lemma of Farkas. The analytic content is a second-order Taylor bound on a logarithmic moment generating function, and the proof returns, with the theorem, an algorithm. The difficulty did not vanish; it moved into \cref{lem:regret:hoeffding} and into the potential $\Phi_t$, and \cref{sec:regret:costs} says what it costs.
+
+\section{After: existence statements become algorithms}\label{sec:regret:algorithms}
+
+The template of \cref{thm:regret:minimax} is: one player runs Hedge, the other best-responds, and the averages certify themselves. Read in other games, it turns each existence theorem of \cref{ch:lpduality} into an algorithm.
+
+\subsection{AdaBoost}
+
+Let $(x_1,y_1),\dots,(x_m,y_m)$ be examples, with $x_i$ in a set $\cX$ and labels $y_i\in\{-1,1\}$, and let a weak learner, given a distribution $D$ on $\{1,\dots,m\}$, return $h:\cX\to\{-1,1\}$ with weighted error $\rgerr_D(h)=\sum_iD(i)\ind[h(x_i)\ne y_i]$. \textcite{FreundSchapire1997} proposed the following procedure, \term{AdaBoost}, which we write in the later notation with labels $\pm1$. Start with the uniform distribution $D_1$. In round $t$, obtain $h_t$ from the weak learner on $D_t$, with error $\eps_t=\rgerr_{D_t}(h_t)\in(0,\frac12)$, set $\alpha_t=\frac12\ln\frac{1-\eps_t}{\eps_t}$, and reweight:
+\[
+D_{t+1}(i)=\frac{D_t(i)\,e^{-\alpha_ty_ih_t(x_i)}}{Z_t},\qquad Z_t=\sum_iD_t(i)\,e^{-\alpha_ty_ih_t(x_i)} .
+\]
+After $T$ rounds, output $H(x)=\sgn\bigl(\sum_t\alpha_th_t(x)\bigr)$, with $\sgn(0)=1$.\index{AdaBoost}
+
+This is Hedge played by the examples, with a rate that changes from round to round: the weight of an example is multiplied by $e^{-\alpha_t}$ when it is classified correctly and by $e^{\alpha_t}$ when it is not, which after normalization is the update of Hedge with the loss $\ind[h_t(x_i)=y_i]$ and the rate $2\alpha_t$. The weight moves to the examples that the hypotheses found so far get wrong, and the weak learner plays the opponent. It need not best-respond: the analysis uses only the error of its answer. (If some $\eps_t=0$, then $h_t$ is already correct on every example, and we stop and output $h_t$.)
+
+\begin{theorem}[\textcite{FreundSchapire1997}]\label{thm:regret:adaboost}
+The fraction of examples on which $H$ errs is at most $\prod_{t=1}^T2\sqrt{\eps_t(1-\eps_t)}$. If $\eps_t\le\frac12-\gamma$ in every round, for some $\gamma>0$, then it is at most $e^{-2\gamma^2T}$, and $H$ is correct on every example once $T>\ln m/(2\gamma^2)$.
+\end{theorem}
+
+\begin{proof}
+Write $F=\sum_t\alpha_th_t$. Unrolling the reweighting gives $D_{T+1}(i)=e^{-y_iF(x_i)}/\bigl(m\prod_tZ_t\bigr)$. If $H$ errs on example $i$, then $y_iF(x_i)\le0$ and $e^{-y_iF(x_i)}\ge1$. So the fraction of errors is at most
+\[
+\frac1m\sum_ie^{-y_iF(x_i)}=\sum_iD_{T+1}(i)\prod_tZ_t=\prod_tZ_t .
+\]
+Splitting $Z_t$ over correctly and incorrectly classified examples gives $Z_t=(1-\eps_t)e^{-\alpha_t}+\eps_te^{\alpha_t}=2\sqrt{\eps_t(1-\eps_t)}$ by the choice of $\alpha_t$. If $\eps_t=\frac12-\gamma_t$, then $2\sqrt{\eps_t(1-\eps_t)}=\sqrt{1-4\gamma_t^2}\le e^{-2\gamma_t^2}$, because $1-u\le e^{-u}$. With $\gamma_t\ge\gamma$ the product is at most $e^{-2\gamma^2T}$, which is below $1/m$, and so forces zero errors, once $T>\ln m/(2\gamma^2)$.
+\end{proof}
+
+The number of rounds is the number of hypotheses that \cref{thm:lpduality:boosting} found by sampling from a mixture that the minimax theorem provided without construction. AdaBoost constructs a voting classifier with the same guarantee, and it never needs the whole matrix of examples against hypotheses: one call to the weak learner per round suffices. The hardcore lemma (\cref{thm:lpduality:hardcore}) has the same fate. Impagliazzo's own proof was already an iteration of this kind, and \textcite{BarakHardtKale2009} derive the lemma from multiplicative weights over the inputs, with each update followed by an approximate projection, in relative entropy, onto the distributions of density $\delta$.
+
+\subsection{Linear programs from a best-response oracle}
+
+The same template solves linear feasibility problems that are too large to write down. Let $P\subseteq\R^d$ be a convex set over which optimization is easy, and let $A\in\R^{m\times d}$ and $b\in\R^m$. We look for $x\in P$ with $Ax\ge b$. An \term{oracle} receives $p\in\Delta_m$ and returns some $x\in P$ with $p^\top(Ax-b)\ge0$ whenever such a point exists; it reports failure otherwise. The \term{width} is a number $\rho>0$ with $\abs{a_i^\top x-b_i}\le\rho$ for every row $a_i^\top$ of $A$ and every point $x$ that the oracle returns.\index{width}
+
+\begin{theorem}[Feasibility by multiplicative weights]\label{thm:regret:lp}
+Let $\eps>0$, and let $T$ be a positive integer with $T\ge2\rho^2\ln m/\eps^2$. Run Hedge over the $m$ constraints with rate $\eta=\sqrt{8\ln m/T}$ (every rate works if $m=1$) and losses $\ell_t(i)=\frac12+(a_i^\top x_t-b_i)/(2\rho)$, where $x_t$ is the oracle's answer to $p_t$. If the oracle fails in some round, then no $x\in P$ satisfies $Ax\ge b$. Otherwise the average $\bar x=\frac1T\sum_tx_t$ lies in $P$ and satisfies $a_i^\top\bar x\ge b_i-\eps$ for every $i$.
+\end{theorem}
+
+\begin{proof}
+If the oracle fails on $p_t$, then every $x\in P$ has $p_t^\top(Ax-b)<0$, which is impossible when $Ax\ge b$, because $p_t\ge0$. Suppose the oracle never fails. The losses lie in $[0,1]$ by the definition of the width, and $\ip{p_t}{\ell_t}=\frac12+p_t^\top(Ax_t-b)/(2\rho)\ge\frac12$. \Cref{thm:regret:hedge} (when $m=1$ the regret is zero) gives, for every constraint $i$,
+\[
+\frac T2\le\sum_t\ip{p_t}{\ell_t}\le\sum_t\ell_t(i)+\sqrt{\frac{T\ln m}2}=\frac T2+\frac{T(a_i^\top\bar x-b_i)}{2\rho}+\sqrt{\frac{T\ln m}2} .
+\]
+Rearranged, $a_i^\top\bar x-b_i\ge-2\rho\sqrt{\ln m/(2T)}\ge-\eps$, by the choice of $T$. The average lies in $P$ because $P$ is convex.
+\end{proof}
+
+The oracle plays the role of the column player; like the weak learner, it need not best-respond, since the proof uses only $p_t^\top(Ax_t-b)\ge0$. The failing distribution $p_t$ plays the role of the dual certificate of \cref{ch:lpduality}: a nonnegative combination of the constraints that no point of $P$ satisfies.\sidenote{If no point of $P$ satisfies $Ax\ge b-\eps\rgone$, then the oracle must fail within $T$ rounds, so the dynamics are certain to find such a certificate; Farkas's lemma in \cref{ch:lpduality} only asserts that one exists.} \textcite{PlotkinShmoysTardos1995} developed this scheme for packing and covering programs, where the oracle is a simple combinatorial problem; \textcite{AroraHazanKale2012} present it in the form given here. The price is the factor $\rho^2/\eps^2$ in the number of rounds, and much of the art in applications consists of keeping the width small (Exercise~\ref{ex:regret:setcover}).
+
+\subsection{From regret to generalization}
+
+The last application turns the move around: instead of solving a game, a learner with small regret against an arbitrary sequence of losses solves a statistical problem, because an i.i.d.\ sequence is one particular sequence. Here the actions form a convex set and the losses are convex functions, and the learner is gradient descent.\sidenote{The tuned step of \cref{thm:regret:ogd} needs $T$ in advance; \textcite{Zinkevich2003} used steps proportional to $1/\sqrt t$, which avoid this at the price of a slightly larger constant.}\index{online gradient descent}
+
+\begin{lemma}[Projection]\label{lem:regret:projection}
+Let $K\subseteq\R^d$ be a nonempty closed convex set. Every $y\in\R^d$ has a unique nearest point $\Pi_K(y)$ in $K$, and $\norm{\Pi_K(y)-u}\le\norm{y-u}$ for every $u\in K$.
+\end{lemma}
+
+\begin{proof}
+The nearest-point argument in the proof of \cref{lem:lpduality:separation}, which does not use that the given point lies outside $K$, shows that a nearest point $z$ to $y$ exists and satisfies $(u-z)^\top(z-y)\ge0$ for every $u\in K$. If $z'$ is another nearest point, then adding this inequality for $u=z'$ to the same inequality for $z'$ in place of $z$ and $u=z$ gives $-\norm{z-z'}^2\ge0$; so the nearest point is unique, and we write $z=\Pi_K(y)$. Expanding $\norm{y-u}^2=\norm{(y-z)+(z-u)}^2$ gives $\norm{y-z}^2+\norm{z-u}^2+2(z-y)^\top(u-z)\ge\norm{z-u}^2$.
+\end{proof}
+
+\begin{theorem}[\textcite{Zinkevich2003}]\label{thm:regret:ogd}
+Let $D,G>0$, let $K$ be a nonempty closed convex set of diameter at most $D$, and let $f_1,\dots,f_T$ be convex functions on $\R^d$, revealed one at a time. Online gradient descent starts at some $x_1\in K$ and sets $x_{t+1}=\Pi_K(x_t-\eta g_t)$, where $g_t$ is a subgradient of $f_t$ at $x_t$. If $\norm{g_t}\le G$ for every $t$, then for every $u\in K$,
+\[
+\sum_{t=1}^T\bigl(f_t(x_t)-f_t(u)\bigr)\le\frac{D^2}{2\eta}+\frac{\eta G^2T}2 ,
+\]
+and with $\eta=D/(G\sqrt T)$ the right side is $DG\sqrt T$.
+\end{theorem}
+
+\begin{proof}
+The plan is to charge each term to the decrease of the distance to $u$. The subgradient inequality gives $f_t(x_t)-f_t(u)\le g_t^\top(x_t-u)$. \Cref{lem:regret:projection}, and then the expansion of a square, give
+\[
+\norm{x_{t+1}-u}^2\le\norm{x_t-\eta g_t-u}^2=\norm{x_t-u}^2-2\eta\,g_t^\top(x_t-u)+\eta^2\norm{g_t}^2 .
+\]
+Hence $g_t^\top(x_t-u)\le\bigl(\norm{x_t-u}^2-\norm{x_{t+1}-u}^2\bigr)/(2\eta)+\eta G^2/2$. Summing over $t$, the distances telescope, and $\norm{x_1-u}\le D$.
+\end{proof}
+
+Now let the losses be random. Let $K$ be as in \cref{thm:regret:ogd}, let $\cZ$ be a set with a probability distribution, and let $\ell(x,z)$ be a loss that is convex in $x\in\R^d$ for every $z$, and measurable and integrable in $z$ for every $x$, with population risk $L(x)=\E_z\ell(x,z)$.\index{online-to-batch conversion}
+
+\begin{theorem}[Online-to-batch conversion]\label{thm:regret:otb}
+Let $z_1,\dots,z_T$ be independent samples from this distribution, and let an online algorithm choose $x_t\in K$ as a measurable function of $z_1,\dots,z_{t-1}$, with regret at most $R_T$ against the losses $f_t=\ell(\cdot,z_t)$ for every sequence of samples: $\sum_t\bigl(f_t(x_t)-f_t(u)\bigr)\le R_T$ for every $u\in K$. Then $\bar x=\frac1T\sum_tx_t$ satisfies $\E L(\bar x)\le L(u)+R_T/T$ for every $u\in K$.
+\end{theorem}
+
+\begin{proof}
+Convexity of $L$ gives $L(\bar x)\le\frac1T\sum_tL(x_t)$. Because $x_t$ depends only on $z_1,\dots,z_{t-1}$ and $z_t$ is independent of them, $\E L(x_t)=\E\ell(x_t,z_t)$. So, with the regret bound for the comparator $u$ in the middle step,
+\[
+\E L(\bar x)\le\frac1T\E\sum_t\ell(x_t,z_t)\le\frac1T\E\sum_t\ell(u,z_t)+\frac{R_T}T=L(u)+\frac{R_T}T .\qedhere
+\]
+\end{proof}
+
+\begin{corollary}\label{cor:regret:sgd}
+Let $G>0$. If every $\ell(\cdot,z)$ has, at each point of $K$, a subgradient of norm at most $G$, then stochastic gradient descent (online gradient descent on the losses $\ell(\cdot,z_t)$, using such subgradients and $\eta=D/(G\sqrt T)$, followed by averaging) satisfies $\E L(\bar x)-L(u)\le DG/\sqrt T$ for every $u\in K$.
+\end{corollary}
+
+The corollary needs no uniform convergence over $K$, no covering numbers, and no capacity measure:\sidenote{Compare the uniform convergence arguments of \cref{ch:vc}, which control every point of a class at once.} the regret bound holds against every sequence, and independence enters through one exchange of expectations. \textcite{CesaBianchiConconiGentile2004} turned such conversions into high-probability bounds with martingale inequalities. The bound $DG/\sqrt T$ involves the dimension only through $D$ and $G$.
+
+\section{Costs and limits}\label{sec:regret:costs}
+
+\paragraph{Where did the difficulty go?} Into the potential argument of \cref{thm:regret:hedge} and, behind it, \cref{lem:regret:hoeffding}: one convexity bound and one second-order Taylor estimate, paid once and reused in every application. The bargain is real, because each application then costs a choice of game and of oracle. But the difficulty also reappears as a price that is paid again in every application: the number of rounds. Dynamics reach accuracy $\eps$ in order $\ln m/\eps^2$ rounds, or $\rho^2\ln m/\eps^2$ with width $\rho$, and the regret lower bound for two actions (Exercise~\ref{ex:regret:lower}) shows that no analysis through worst-case regret alone can remove the factor $1/\eps^2$. Interior-point methods need a number of iterations that grows with $\eps$ only like $\log(1/\eps)$, each of them far more expensive. Dynamics win when the matrix is huge and is accessed only through best responses, and lose when high accuracy is required. The online-to-batch conversion pays a different price: its guarantee is in expectation, and for the average iterate rather than the last.
+
+\paragraph{What did not dissolve.} The last iterate. \Cref{thm:regret:minimax} is about averages, and the actual strategies need not converge: when both players of matching pennies run Hedge from non-uniform initial weights, the strategies spiral away from the equilibrium while their averages approach it (\cref{fig:regret:spiral}). In continuous time, the corresponding regularized learning dynamics in zero-sum games with a fully mixed equilibrium are recurrent: almost every trajectory returns arbitrarily close to its starting point, infinitely often \parencite{MertikopoulosPapadimitriouPiliouras2018}. Simultaneous gradient play on $\min_x\max_yxy$ diverges, while optimistic variants converge in the last iterate for bilinear games \parencite{DaskalakisIlyasSyrgkanisZeng2018}. Beyond zero-sum games the dynamics prove less: when every player of a general game has small regret, the empirical distribution of play approaches the set of \emph{coarse correlated} equilibria, not the set of Nash equilibria \parencite{CesaBianchiLugosi2006}. Reaching correlated equilibria requires the stronger notion of internal or swap regret \parencite{HartMasColell2000}. For nonconvex games, such as the training of generative adversarial networks, no general guarantee is known.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[>=Stealth]
+\draw[sandline] (0,0) rectangle (3.6,3.6);
+\draw[muted,line width=0.3pt,dashed] (1.8,0)--(1.8,3.6) (0,1.8)--(3.6,1.8);
+\draw[sea,line width=0.5pt] (2.52,1.44) -- (2.56,1.55) -- (2.59,1.66) -- (2.60,1.78) -- (2.60,1.90) -- (2.59,2.02) -- (2.56,2.13) -- (2.51,2.24) -- (2.45,2.34) -- (2.38,2.42) -- (2.29,2.49) -- (2.19,2.55) -- (2.08,2.60) -- (1.96,2.63) -- (1.84,2.64) -- (1.71,2.64) -- (1.58,2.63) -- (1.46,2.60) -- (1.35,2.55) -- (1.25,2.49) -- (1.16,2.42) -- (1.08,2.33) -- (1.02,2.23) -- (0.97,2.11) -- (0.94,1.99) -- (0.92,1.86) -- (0.92,1.73) -- (0.93,1.60) -- (0.96,1.47) -- (1.00,1.35) -- (1.06,1.24) -- (1.13,1.15) -- (1.22,1.06) -- (1.32,1.00) -- (1.44,0.94) -- (1.57,0.91) -- (1.70,0.88) -- (1.84,0.88) -- (1.98,0.88) -- (2.11,0.91) -- (2.24,0.95) -- (2.35,1.00) -- (2.46,1.07) -- (2.55,1.16) -- (2.62,1.26) -- (2.68,1.38) -- (2.72,1.51) -- (2.75,1.65) -- (2.77,1.79) -- (2.76,1.93) -- (2.74,2.08) -- (2.71,2.21) -- (2.66,2.34) -- (2.59,2.45) -- (2.51,2.55) -- (2.41,2.63) -- (2.29,2.70) -- (2.17,2.75) -- (2.03,2.78) -- (1.88,2.80) -- (1.73,2.81) -- (1.58,2.80) -- (1.43,2.77) -- (1.30,2.73) -- (1.17,2.67) -- (1.07,2.59) -- (0.97,2.49) -- (0.90,2.38) -- (0.83,2.26) -- (0.79,2.12) -- (0.76,1.97) -- (0.75,1.81) -- (0.75,1.65) -- (0.77,1.50) -- (0.81,1.35) -- (0.86,1.22) -- (0.92,1.10) -- (1.01,0.99) -- (1.11,0.90) -- (1.24,0.83) -- (1.37,0.78) -- (1.52,0.74) -- (1.68,0.71) -- (1.84,0.71) -- (2.01,0.71) -- (2.16,0.74) -- (2.31,0.78) -- (2.45,0.83) -- (2.57,0.91) -- (2.67,1.00) -- (2.76,1.11) -- (2.83,1.24) -- (2.88,1.39) -- (2.91,1.54) -- (2.93,1.71) -- (2.94,1.88) -- (2.93,2.05) -- (2.90,2.21) -- (2.86,2.36) -- (2.79,2.50) -- (2.72,2.62) -- (2.62,2.72) -- (2.50,2.81) -- (2.37,2.87) -- (2.22,2.92) -- (2.05,2.96) -- (1.88,2.98) -- (1.70,2.98) -- (1.53,2.97) -- (1.36,2.94) -- (1.21,2.90) -- (1.07,2.83) -- (0.94,2.75) -- (0.84,2.66) -- (0.76,2.54) -- (0.69,2.40) -- (0.64,2.25) -- (0.60,2.08) -- (0.58,1.90) -- (0.58,1.72);
+\draw[seadeep,line width=1.1pt] (2.52,1.44) -- (2.54,1.49) -- (2.56,1.55) -- (2.57,1.61) -- (2.58,1.66) -- (2.58,1.72) -- (2.58,1.78) -- (2.57,1.84) -- (2.56,1.90) -- (2.54,1.95) -- (2.52,2.00) -- (2.49,2.05) -- (2.46,2.09) -- (2.43,2.13) -- (2.39,2.16) -- (2.35,2.19) -- (2.30,2.22) -- (2.26,2.24) -- (2.21,2.26) -- (2.16,2.27) -- (2.11,2.28) -- (2.07,2.28) -- (2.02,2.28) -- (1.98,2.28) -- (1.93,2.27) -- (1.89,2.25) -- (1.86,2.23) -- (1.82,2.21) -- (1.79,2.19) -- (1.77,2.16) -- (1.74,2.13) -- (1.72,2.10) -- (1.71,2.07) -- (1.69,2.04) -- (1.69,2.01) -- (1.68,1.97) -- (1.68,1.95) -- (1.68,1.92) -- (1.69,1.89) -- (1.70,1.86) -- (1.71,1.84) -- (1.73,1.82) -- (1.74,1.80) -- (1.76,1.79) -- (1.78,1.78) -- (1.80,1.77) -- (1.82,1.76) -- (1.84,1.76) -- (1.86,1.76) -- (1.88,1.76) -- (1.89,1.76) -- (1.91,1.77) -- (1.92,1.78) -- (1.94,1.79) -- (1.95,1.81) -- (1.96,1.82) -- (1.96,1.84) -- (1.97,1.85) -- (1.97,1.87) -- (1.97,1.89) -- (1.97,1.90) -- (1.96,1.91) -- (1.95,1.93) -- (1.94,1.94) -- (1.93,1.95) -- (1.92,1.96) -- (1.90,1.97) -- (1.89,1.98) -- (1.87,1.98) -- (1.86,1.98) -- (1.84,1.99) -- (1.83,1.98) -- (1.81,1.98) -- (1.80,1.97) -- (1.79,1.97) -- (1.77,1.96) -- (1.76,1.95) -- (1.75,1.93) -- (1.74,1.92) -- (1.74,1.91) -- (1.73,1.89) -- (1.73,1.88) -- (1.73,1.86) -- (1.73,1.85) -- (1.73,1.84) -- (1.74,1.82) -- (1.74,1.81) -- (1.75,1.80) -- (1.76,1.79) -- (1.77,1.78) -- (1.78,1.77) -- (1.79,1.77) -- (1.80,1.76) -- (1.81,1.76) -- (1.83,1.76) -- (1.84,1.76) -- (1.85,1.76) -- (1.86,1.77) -- (1.87,1.77) -- (1.88,1.78) -- (1.89,1.79) -- (1.89,1.80) -- (1.90,1.81) -- (1.91,1.82) -- (1.91,1.83) -- (1.91,1.84) -- (1.91,1.85) -- (1.91,1.86) -- (1.91,1.87) -- (1.90,1.88) -- (1.90,1.89) -- (1.89,1.90) -- (1.88,1.90) -- (1.87,1.91) -- (1.86,1.92) -- (1.85,1.92) -- (1.84,1.92) -- (1.83,1.93) -- (1.82,1.93) -- (1.81,1.93);
+\fill[seadeep] (1.8,1.8) circle (1.3pt);
+\fill[sea] (2.52,1.44) circle (1.3pt);
+\node[font=\footnotesize,anchor=north] at (1.8,0) {probability of heads, row player};
+\node[font=\footnotesize,anchor=south,rotate=90] at (0,1.8) {column player};
+\end{tikzpicture}
+\caption{Hedge against Hedge in matching pennies (the row player pays when the coins match), with rate $\eta=0.15$, for 240 rounds from non-uniform initial weights, which give the starting point marked on the right; from uniform weights, which form the equilibrium, nothing would move. The strategies (thin curve) spiral outward, away from the equilibrium at the center; their running averages (thick curve) approach it.}\label{fig:regret:spiral}
+\end{figure}
+
+\paragraph{Other seas.} \textcite{Blackwell1956} extended the minimax theorem to vector payoffs: a closed convex set can be approached by the average payoff exactly when every half-space containing it can be forced in one round. Approachability and no-regret learning turn out to be equivalent, and the equivalence yields an efficient algorithm for the calibrated forecasts of \textcite{FosterVohra1998} \parencite{AbernethyBartlettHazan2011}. Online convex optimization \parencite{Hazan2016} unifies Hedge and online gradient descent as instances of mirror descent with different geometries. In algorithm design, multiplicative weights combined with fast linear-system solvers gave faster approximate maximum-flow algorithms \parencite{ChristianoEtAl2011}.
+
+\section{The move, distilled}\label{sec:regret:distilled}
+
+\begin{move}{Replace existence by dynamics}
+\movepart{In one sentence} When a theorem asserts that an equilibrium, a certificate, or a mixture exists, find a game in which it is an optimal strategy, let one player run a no-regret algorithm against best responses, and read the object off the time averages.
+\movepart{Triggers} An existence proof by minimax or duality whose matrix is too large to write down; a best-response oracle that is easy to call; a guarantee that holds on average; a potential function that decreases by a fixed amount whenever something is still wrong.
+\movepart{Recipe} Write the existence statement as the value of a zero-sum game; give the player with few pure strategies multiplicative weights; implement the other player as a best-response oracle; bound the regret; average the play; translate the regret bound into an accuracy, and the number of rounds into a running time.
+\movepart{Anti-pattern} Claiming that the iterates converge when only their averages do; using a no-regret bound against a fixed distribution where an adaptive adversary is needed, or reading a regret bound as a risk bound when the data are not independent; ignoring the width, which can make the number of rounds as large as the problem.
+\end{move}
+
+\dissolutiontest{The minimax theorem from a regret bound in half a page, with no separation theorem; the AdaBoost analysis in five lines instead of a recursion.}{Boosting without knowing the advantage $\gamma$; risk bounds for convex Lipschitz losses without uniform convergence or a capacity measure.}{Weighted Majority, the approximate solution of games, AdaBoost, penalty methods for packing and covering, and stochastic gradient descent become one dynamic: multiplicative weights or gradient steps, played against best responses or against independent samples.}{Algorithms for the existence statements of \cref{ch:lpduality} (voting classifiers and approximate solutions of large linear programs), and risk bounds for stochastic gradient descent.}
+
+This chapter completes the move of \cref{ch:lpduality}. There, duality turned a family of min--max theorems into one theorem; here the theorem becomes a process, and its certificates become time averages. The same exchange of existence for a process returns in Part IV. \Cref{ch:compression} turns the Lov\'asz local lemma into a resampling algorithm, and \cref{ch:sos} turns proofs into algorithms. The regret viewpoint also organizes the online learning of \cref{ch:littlestone}, where the experts are the members of a hypothesis class.
+
+\begin{exercises}
+\item \consolidation (Unknown horizon.) The rate in \cref{thm:regret:hedge} needs $T$ in advance. Let $n\ge2$. Restart Hedge at the rounds $1,2,4,8,\dots$, tuning the rate to the length $2^k$ of each block, and show that $R_T\le\frac{\sqrt2}{\sqrt2-1}\sqrt{(T\ln n)/2}$ for every $T$. \hint{The regret over a union of blocks is at most the sum of the regrets over the blocks.}\label{ex:regret:doubling}
+
+\item \consolidation Let both players of a game with entries in $[0,1]$ run Hedge, the row player on losses $Aq_t$ and the column player on losses $\rgone-A^\top p_t$. Show that $\bar p$ and $\bar q$ are optimal up to $(R^{\mathrm{row}}_T+R^{\mathrm{col}}_T)/T$.\label{ex:regret:twohedges}
+
+\item \consolidation (Follow the leader.) The learner of \cref{def:regret:experts} plays, in every round, an action with the smallest total loss so far, breaking ties toward action $1$. With $n=2$ and the losses $(\frac12,0)$, $(0,1)$, $(1,0)$, $(0,1)$, $(1,0),\dots$, show that its regret is at least $\frac T2-1$. Explain why fictitious play is this rule applied to a game.\label{ex:regret:ftl}
+
+\item \consolidation\hard (A lower bound.) Let $\sigma_1,\dots,\sigma_T$ be independent uniform signs, and give the two actions losses $\ell_t=(\frac{1+\sigma_t}2,\frac{1-\sigma_t}2)$. Show that every learner has expected loss $T/2$, that the better action has loss $\frac T2-\frac12\abs{\sum_t\sigma_t}$, and that $\E\abs{\sum_t\sigma_t}\ge\sqrt{T/3}$. Conclude that every learner has expected regret at least $\sqrt{T/12}$ against some sequence. \hint{Use H\"older's inequality in the form $\E S^2\le(\E\abs S)^{2/3}(\E S^4)^{1/3}$, and compute $\E S^4\le3T^2$.}\label{ex:regret:lower}
+
+\item \consolidation (AdaBoost.) (a) Show that $\alpha_t=\frac12\ln\frac{1-\eps_t}{\eps_t}$ minimizes $Z_t$ over $\alpha\in\R$. (b) Show that $h_t$ has weighted error exactly $\frac12$ under $D_{t+1}$, so the weak learner cannot return $h_t$, or $-h_t$, in the next round.\label{ex:regret:adaboost}
+
+\item \consolidation (Weighted Majority.) Each of $n$ experts predicts a bit in every round. The learner predicts with the weighted majority of the experts and halves the weight of every expert that errs. Show that if the best expert makes $k$ mistakes, then the learner makes at most $(k+\log_2n)/\log_2\frac43\le2.41\,(k+\log_2n)$ mistakes \parencite{LittlestoneWarmuth1994}.\label{ex:regret:wm}
+
+\item \transfer (Boosting from every learner with small regret.) In the setting of \cref{thm:lpduality:boosting}, let a learner over the $m$ examples receive, in round $t$, the loss $\ell_t(i)=\ind[h_t(x_i)=y_i]$, where $h_t\in\cH$, returned by the weak learner on the learner's distribution $p_t$, has $\rgerr_{p_t}(h_t)\le\frac12-\gamma$. Show that $\ip{p_t}{\ell_t}\ge\frac12+\gamma$, deduce that every example is classified correctly by at least a $\frac12+\gamma-R_T/T$ fraction of $h_1,\dots,h_T$, and conclude that with Hedge at the rate $\sqrt{8\ln m/T}$ the unweighted majority vote of $h_1,\dots,h_T$ is correct on every example once $T>\ln m/(2\gamma^2)$.\label{ex:regret:boostanylearner}
+
+\item \transfer (Fractional set cover.) Sets $S_1,\dots,S_k$ cover a universe of $m$ elements, and some fractional cover has total weight at most $B$. Apply \cref{thm:regret:lp} with $P=\{x\ge0:\sum_jx_j=B\}$ and one constraint $\sum_{j:e\in S_j}x_j\ge1$ for each element $e$. Describe the oracle, show that the width is at most $B$, and bound the number of rounds needed for a cover of every element to within $\eps$. Why is a small width worth working for?\label{ex:regret:setcover}
+
+\item \transfer\hard (Approachability by online gradient descent.) A player chooses $p$ from a simplex and an opponent chooses $q$, producing a vector payoff $r(p,q)\in\R^k$ with $\norm{r(p,q)}\le1$. Let $S\subseteq\R^k$ be a nonempty closed convex set inside the ball of radius $\beta$ about the origin, with support function $h_S(\theta)=\max_{s\in S}\theta^\top s$. Suppose that for every $\theta$ with $\norm\theta\le1$ some $p_\theta$ satisfies $\theta^\top r(p_\theta,q)\le h_S(\theta)$ for every $q$. Show that the player can make the distance from the average payoff to $S$ at most $2(1+\beta)/\sqrt T$ after $T$ rounds, against every opponent \parencite{Blackwell1956,AbernethyBartlettHazan2011}. \hint{Use $\dist(x,S)=\max_{\norm\theta\le1}\bigl(\theta^\top x-h_S(\theta)\bigr)$, run \cref{thm:regret:ogd} on the convex functions $\theta\mapsto h_S(\theta)-\theta^\top r_t$ over the unit ball, and play $p_{\theta_t}$.}\label{ex:regret:approach}
+
+\item \research\harder (Last-iterate convergence.) Consider $\min_x\max_yxy$ over $x,y\in\R$. (a) Show that simultaneous gradient descent--ascent, $x_{t+1}=x_t-\eta y_t$ and $y_{t+1}=y_t+\eta x_t$, multiplies $x_t^2+y_t^2$ by $1+\eta^2$ in every step. (b) Show that the optimistic variant $x_{t+1}=x_t-2\eta y_t+\eta y_{t-1}$, $y_{t+1}=y_t+2\eta x_t-\eta x_{t-1}$ converges to $(0,0)$ for $0<\eta<\frac12$. \hint{Write $z_t=x_t+iy_t$ and find the roots of the characteristic polynomial $\lambda^2-(1+2i\eta)\lambda+i\eta$.} (c) Open-ended: for which classes of nonconvex--nonconcave games, such as those arising in training generative adversarial networks, do simple first-order dynamics converge in the last iterate? No general answer is known \parencite{DaskalakisIlyasSyrgkanisZeng2018}.\label{ex:regret:lastiterate}
+\end{exercises}
+
+\notesandrefs
+
+The game-theoretic side of this chapter starts with fictitious play \parencite{Brown1951,Robinson1951}, with the no-regret strategies of \textcite{Hannan1957}, and with the approachability theorem of \textcite{Blackwell1956}. The multiplicative-weights form comes from \textcite{LittlestoneWarmuth1994}, from Vovk's aggregating algorithm, and from \textcite{FreundSchapire1997}, and the use of Hedge to prove and to approximate the minimax theorem from \textcite{FreundSchapire1999}. \textcite{CesaBianchiLugosi2006} is the standard monograph on prediction with expert advice, including lower bounds, approachability, and calibration, and \textcite{AroraHazanKale2012} survey multiplicative weights as a meta-algorithm across optimization and complexity theory.
+
+On the algorithmic side, \textcite{PlotkinShmoysTardos1995} and \textcite{GrigoriadisKhachiyan1995} are early examples of the templates of \cref{thm:regret:lp} and of \cref{cor:regret:approx}, respectively. Boosting began with \textcite{Schapire1990} and \textcite{Freund1995}, and AdaBoost appeared in \textcite{FreundSchapire1997}. Online convex optimization took its present form in \textcite{Zinkevich2003}, after earlier gradient methods for online prediction, and is surveyed by \textcite{Hazan2016}; online-to-batch conversions with high probability are in \textcite{CesaBianchiConconiGentile2004}.
+
+\printchapterbib
+\end{refsection}

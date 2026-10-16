@@ -1,0 +1,352 @@
+\casechapter{If It Failed, You Could Compress Randomness}{Entropy compression and the algorithmic local lemma}{Encoding}{ch:compression}
+\begin{refsection}[chapters/15-compression.bib]
+
+% Notation local to this chapter.
+\newcommand{\compressionVbl}{\operatorname{vbl}}
+\newcommand{\compressionFix}{\textsc{Fix}}
+\newcommand{\compressionSolve}{\textsc{Solve}}
+\newcommand{\compressionCat}[1]{\mathrm{Cat}_{#1}}
+\newcommand{\compressionBin}{\operatorname{bin}}
+
+\begin{chaptersummary}
+The Lov\'asz local lemma promises that many rare bad events, each entangled with only a few others, can all be avoided at once. Its proof bounds a probability that may be exponentially small, so for sixteen years it gave no way to find the object it promised, and the algorithms that followed needed much stronger hypotheses and long analyses. In 2009 Robin Moser analyzed the naive algorithm, which resamples whatever is violated, and showed that a long run would let us describe the random bits it used in fewer bits than were drawn. Few bit strings admit such a description, so long runs are rare. A one-page count replaced the old analyses, and the same move gives short proofs far from the local lemma, from sequences without repetitions to lower bounds for sorting.
+\end{chaptersummary}
+
+\section{Before: a lemma that only knew existence}\label{sec:compression:before}
+
+The probabilistic method proves that an object exists by showing that a random object has the required property with positive probability.\index{probabilistic method} Two regimes are easy. If bad events $A_1,\dots,A_m$ have total probability less than $1$, then the union bound shows that with positive probability none of them occurs. If they are mutually independent and each has probability less than $1$, then none occurs with probability $\prod_i(1-\Pr[A_i])>0$. Between the two regimes lies much of combinatorics: many bad events, each rare, each entangled with a few others. The local lemma was made for this middle ground.
+
+\subsection{The local lemma}\label{sec:compression:lll}
+
+Let $A_1,\dots,A_m$ be events in a probability space. A graph $G$ on the vertex set $[m]$ is a \term{dependency graph}\index{dependency graph} for them if, for every $i$, the event $A_i$ is independent of every event that can be formed, by unions, intersections, and complements, from the events $A_j$ with $j\ne i$ and $j$ not adjacent to $i$. Write $\Gamma(i)$ for the set of neighbors of $i$ in $G$.
+
+\textcite{ErdosLovasz1975} introduced the lemma, with the symmetric condition $4pd\le1$, in a study of 3-chromatic hypergraphs.\sidenote{A hypergraph is \emph{3-chromatic} if its vertices can be colored with three colors, but not with two, so that no edge is monochromatic.} The general form below is due to Lov\'asz and was published by \textcite{Spencer1977}, who used it for lower bounds on Ramsey numbers.\index{local lemma}
+
+\begin{theorem}[Local lemma]\label{thm:compression:lll}
+Let $G$ be a dependency graph for events $A_1,\dots,A_m$. If numbers $x_1,\dots,x_m\in[0,1)$ satisfy
+\begin{equation}\label{eq:compression:lll}
+\Pr[A_i]\le x_i\prod_{j\in\Gamma(i)}(1-x_j)\qquad\text{for every } i,
+\end{equation}
+then the probability that none of the events occurs is at least $\prod_{i=1}^m(1-x_i)$, which is positive.
+\end{theorem}
+
+\begin{corollary}[Symmetric local lemma]\label{cor:compression:symmetric}
+Suppose that every event $A_i$ has probability at most $p$ and that every vertex of the dependency graph has at most $d$ neighbors. If $ep(d+1)\le1$, then with positive probability none of the events occurs.
+\end{corollary}
+
+\begin{proof}
+If $d=0$, then the events are mutually independent and each has probability at most $1/e<1$, so the claim holds. If $d\ge1$, then put $x_i=1/(d+1)$ for every $i$. Since $(1+1/d)^d\le e$, each product $x_i\prod_{j\in\Gamma(i)}(1-x_j)$ is at least $\frac{1}{d+1}\bigl(\frac{d}{d+1}\bigr)^d\ge\frac{1}{e(d+1)}\ge p$, and \cref{thm:compression:lll} applies.
+\end{proof}
+
+The proof of the theorem shows the character of the old mathematics: a clean induction on conditional probabilities, in a probability space that never moves.
+
+\begin{proof}[Proof of \cref{thm:compression:lll}]
+The plan is to show, by induction on the size of $S$, that conditioning on the avoidance of a set $S$ of events never pushes the probability of another event above its budget $x_i$. For $S\subseteq[m]$ let $B_S$ be the event that no $A_j$ with $j\in S$ occurs; $B_\emptyset$ is the whole space. For $s\ge0$ let $P(s)$ be the statement that every $S$ with $|S|\le s$ satisfies
+\[
+\Pr[B_S]\ge\prod_{j\in S}(1-x_j)\qquad\text{and}\qquad\Pr[A_i\mid B_S]\le x_i\ \text{ for every } i\notin S.
+\]
+For $s=0$ the first inequality is an equality, and the second says $\Pr[A_i]\le x_i$, which follows from \eqref{eq:compression:lll} because each factor $1-x_j$ is at most $1$.
+
+Assume $P(s-1)$ and let $|S|=s$. Pick $j\in S$. The second inequality of $P(s-1)$ gives
+\[
+\Pr[B_S]=\Pr[B_{S\setminus\{j\}}]\,\bigl(1-\Pr[A_j\mid B_{S\setminus\{j\}}]\bigr)\ge\Pr[B_{S\setminus\{j\}}]\,(1-x_j),
+\]
+and the first inequality of $P(s-1)$ for $S\setminus\{j\}$ turns this into the first inequality for $S$. In particular $\Pr[B_S]>0$, so the conditional probabilities below are defined.
+
+Now fix $i\notin S$ and split $S$ into its neighbors $S_1=S\cap\Gamma(i)$ and the rest $S_2=S\setminus S_1$. The event $B_{S_2}$ is formed from events $A_j$ with $j$ neither equal nor adjacent to $i$, so $\Pr[A_i\mid B_{S_2}]=\Pr[A_i]$ by the definition of a dependency graph. If $S_1$ is empty, then $S_2=S$ and the claim is $\Pr[A_i]\le x_i$, proved above. Otherwise list $S_1=\{j_1,\dots,j_r\}$ and write
+\[
+\Pr[A_i\mid B_S]=\frac{\Pr[A_i\cap B_{S_1}\mid B_{S_2}]}{\Pr[B_{S_1}\mid B_{S_2}]}.
+\]
+The numerator is at most $\Pr[A_i\mid B_{S_2}]=\Pr[A_i]$, which is at most $x_i\prod_{j\in\Gamma(i)}(1-x_j)$. The denominator is the product over $l=1,\dots,r$ of the numbers $1-\Pr[A_{j_l}\mid B_{S_2\cup\{j_1,\dots,j_{l-1}\}}]$. Each conditioning set has fewer than $s$ elements and does not contain $j_l$, so $P(s-1)$ bounds the denominator below by $\prod_{j\in S_1}(1-x_j)$, which is at least $\prod_{j\in\Gamma(i)}(1-x_j)$ because $S_1\subseteq\Gamma(i)$. Dividing gives $\Pr[A_i\mid B_S]\le x_i$.
+
+The first inequality of $P(m)$, for $S=[m]$, is the theorem.
+\end{proof}
+
+\subsection{Satisfiability, and the missing algorithm}\label{sec:compression:ksat}
+
+A \term{$k$-CNF formula}\index{satisfiability} $\Phi$ on the variables $x_1,\dots,x_n$ is a conjunction of $m$ clauses $C_1,\dots,C_m$. Each clause is a disjunction of $k$ literals, which are variables or negated variables, on $k$ distinct variables; the set of these variables is $\compressionVbl(C)$. An assignment \term{violates} a clause if it makes all its literals false, and it satisfies $\Phi$ if it violates no clause; finding such an assignment is the problem $k$-SAT. Because the variables of a clause are distinct, exactly one of the $2^k$ assignments to $\compressionVbl(C)$ violates $C$. This small fact will carry the main proof of the chapter. Two clauses $C_i$ and $C_j$ with $i\ne j$ are \term{neighbors} if they share a variable; $\Gamma(C)$ is the set of neighbors of $C$, and $\Gamma^+(C)=\Gamma(C)\cup\{C\}$.
+
+\begin{corollary}\label{cor:compression:ksat-lll}
+Let $\Phi$ be a $k$-CNF formula in which every clause has at most $d$ neighbors. If $e(d+1)\le2^k$, then $\Phi$ is satisfiable.
+\end{corollary}
+
+\begin{proof}
+Give the variables independent uniform values, and let $A_C$ be the event that the clause $C$ is violated, so that $\Pr[A_C]=2^{-k}$. The event $A_C$ is determined by the values on $\compressionVbl(C)$, and the events $A_D$ with $D\notin\Gamma^+(C)$ are determined by values outside $\compressionVbl(C)$. Independence of the variables therefore makes the neighbor relation a dependency graph, and Corollary~\ref{cor:compression:symmetric} with $p=2^{-k}$ applies.
+\end{proof}
+
+The proof gives a probability and nothing else, and the probability can be tiny. If the $m$ clauses use pairwise disjoint sets of variables, then a uniformly random assignment satisfies $\Phi$ with probability exactly $(1-2^{-k})^m$, so drawing assignments until one works takes exponentially many trials. Nobody would do that. One would repair each violated clause by resampling its variables, and with disjoint clauses a repair disturbs nothing else. When clauses overlap, a repair can violate a neighbor, whose repair can violate another, and nothing in the proof of \cref{thm:compression:lll} says whether this cascade ends. The proof manipulates conditional probabilities in a fixed probability space; it never meets a process.
+
+For sixteen years nobody knew how to find, in polynomial time, the objects that the lemma promised. \textcite{Beck1991} gave the first algorithm, for two-coloring hypergraphs in which each edge of size $k$ meets at most about $2^{k/48}$ other edges; his method adapts to $k$-SAT. It was constructive, but the exponent was a forty-eighth of the existential one. \textcite{Alon1991} simplified the procedure, made it parallel, and raised the exponent to $1/8$. Later refinements kept Beck's architecture and raised the exponent further; by 2008 it stood at about $1/2$, still far from the $2^k/e$ of Corollary~\ref{cor:compression:ksat-lll}. \Textcite{MoserTardos2010} survey this history.
+
+\begin{aside}[The shape of the old algorithms]
+Beck's method and its descendants work in three stages. (i) Assign values to the variables one at a time, at random or by a derandomized rule, and as soon as a clause is in danger, with many literals false and none true, freeze its remaining variables. (ii) Prove that, with high probability, the clauses not yet satisfied fall into connected components of size $O(\log m)$ in the dependency graph, by a union bound over trees of clauses that are far apart in the dependency graph, so that their dangers are independent; counting such trees costs a factor polynomial in $d$ per clause. (iii) Solve each component by exhaustive search or by another round of the procedure; a solution exists because the clauses of a component keep many free variables, so the existential lemma applies. The small exponents are what is left of $k$ after these stages: freezing gives away a constant fraction of every clause, the tree count a power of $d$, and the leftover formula must still satisfy the existential condition. The thresholds are tuned by hand for each problem, and the analyses are long; Beck's paper runs to twenty-three pages.
+\end{aside}
+
+Two questions stood open in 2008. Can the objects of the local lemma be found in polynomial time under the lemma's own hypothesis? And is there one algorithm, rather than a method to be adapted, that does so for every application?
+
+\subsection{A second witness: sequences without repetitions}\label{sec:compression:thue}
+
+A \term{repetition}\index{nonrepetitive sequence} of size $h\ge1$ in a sequence is a block of $2h$ consecutive terms whose two halves are equal, such as $2323$ in $12323$. A sequence is \term{nonrepetitive} if it contains no repetition. Every binary sequence of length four contains a repetition, but \textcite{Thue1906} constructed arbitrarily long nonrepetitive sequences over three symbols.\index{Thue's theorem}\sidenote{Thue's construction is explicit: it iterates a substitution that replaces each symbol by a block and preserves nonrepetitiveness \parencite{GrytczukKozikMicek2013}.}
+
+In the list version, each position $i$ comes with its own set $L_i$ of allowed symbols, and one asks how large the lists must be to guarantee a nonrepetitive sequence $s_1\dots s_n$ with $s_i\in L_i$ for every $i$. Thue's substitutions do not seem to help here. A direct application of the local lemma shows that lists of some fixed size suffice, and bringing the size down to four took a stronger tool: \textcite{GrytczukPrzybyloZhu2011} used an enhanced local lemma of Pegden's, in a twelve-page paper. Whether lists of size three suffice is still open; \textcite{GrytczukKozikMicek2013} state it as a conjecture.
+
+In both stories the local lemma, or a strengthening of it, delivers existence and nothing more.
+
+\section{The move: if it failed, you could compress randomness}\label{sec:compression:move}
+
+\subsection{Too few descriptions}\label{sec:compression:descriptions}
+
+The move rests on one counting principle, a union bound in disguise: each possible description accounts for at most one outcome, so outcomes that all admit short descriptions are rare.\index{encoding lemma}
+
+\begin{lemma}[Encoding lemma]\label{lem:compression:encoding}
+Let $R$ be uniformly distributed on a finite set $\Omega$, and let $B\subseteq\Omega$. If there is an injective map from $B$ into a set with at most $2^{-s}|\Omega|$ elements, then $\Pr[R\in B]\le2^{-s}$.
+\end{lemma}
+
+\begin{proof}
+An injective map does not decrease cardinality, so $|B|\le2^{-s}|\Omega|$; divide by $|\Omega|$.
+\end{proof}
+
+In use, $\Omega$ is the set $\{0,1\}^N$ of bit strings of length $N$, and the injective map is an encoder whose outputs are bit strings of length at most $N-s$. There are $2^{N-s+1}-1$ such strings, so the probability that a uniformly random $N$-bit string has a description at least $s$ bits shorter than itself is less than $2^{1-s}$. Random strings are \term{incompressible}. The lemma is a triviality, and that is the point: all the work in this chapter goes into building an encoder and proving that a decoder can invert it.
+
+A first example shows the shape. Suppose there were only $K$ primes $p_1,\dots,p_K$. Every integer $n$ with $1\le n\le N$ is a product $p_1^{e_1}\cdots p_K^{e_K}$ with each exponent at most $\log_2N$, so the map $n\mapsto(e_1,\dots,e_K)$ sends $\{1,\dots,N\}$ injectively into a set of $(\lfloor\log_2N\rfloor+1)^K$ elements, which is smaller than $N$ when $N$ is large. Too many integers, too few descriptions: there are infinitely many primes. Applied to the $\pi(N)$ primes up to $N$, the same count gives $N\le(\log_2N+1)^{\pi(N)}$, that is, $\pi(N)\ge\log_2N/\log_2(\log_2N+1)$ for $N\ge2$.
+
+\textcite{Kolmogorov1965} proposed to measure the information in an individual string by the length of a shortest program that prints it on a fixed universal computer.\sidenote{Thirty-two years earlier the same Kolmogorov had axiomatized probability; see \cref{ch:kolmogorov}.}\index{Kolmogorov complexity} Solomonoff and Chaitin found the notion independently, and \textcite{LiVitanyi2008} tell its history. Counting shows that most strings have complexity close to their length, and the \term{incompressibility method}\index{incompressibility method} proves a statement by showing that a counterexample would make an incompressible string compressible. We need only the counting: each description below comes from an explicit encoder and is inverted by an explicit decoder.
+
+\subsection{Repair locally}\label{sec:compression:algorithm}
+
+Return to a $k$-CNF formula $\Phi$, with its clauses listed in a fixed order and each list $\Gamma^+(C)$ ordered as well. The algorithm below is the most naive repair procedure.\index{resampling algorithm} It takes its random bits, in order, from one infinite sequence of independent uniform bits. The initial assignment uses the first $n$ bits, and each \term{resampling} of a clause $C$ uses the next $k$ bits, which become the new values of the variables of $C$ in increasing order of their indices.
+
+\begin{definition}[Moser's algorithm]\label{def:compression:moser}
+\compressionSolve: assign random values to all variables. Then, for $C=C_1,C_2,\dots,C_m$ in turn, if $C$ is violated, call \compressionFix$(C)$. When the loop ends, output the assignment.
+
+\compressionFix$(C)$: resample $C$. Then, as long as some clause of $\Gamma^+(C)$ is violated, call \compressionFix$(D)$ for the first violated clause $D$ of the list $\Gamma^+(C)$. When every clause of $\Gamma^+(C)$ is satisfied, return.
+\end{definition}
+
+The calls made by \compressionSolve{} are the \term{root calls}; the others are recursive. A root call can start a cascade: resampling $C$ may violate a neighbor $D$, fixing $D$ may violate a neighbor of $D$ that is not a neighbor of $C$, and so on, with no evident reason to stop. The old analyses tried to prove that cascades are short. The move is not to analyze the cascade at all, but to write it down.
+
+\subsection{What the record must contain}\label{sec:compression:record}
+
+Run the algorithm until right after its $t$-th resampling, and keep three things: the set of clauses for which a root call has begun, called the \term{roots} ($m$ bits, one per clause); a bit string called the \term{trace}, with one entry for each recursive call and each return; and the current assignment ($n$ bits). These items determine all $n+kt$ random bits consumed so far. The decoder reads the roots and the trace to learn which clause was resampled at each step, and then rewinds the run from the final assignment, one resampling at a time. Rewinding is possible because of the small fact noted in \cref{sec:compression:ksat}. A clause is resampled only when it is violated, and a violated clause has only one possible assignment of its variables, so knowing which clause was resampled tells us what its variables were just before, while their values just after are exactly the $k$ bits that the resampling consumed.\sidenote{The same move, under the name \emph{reconstruction}, analyzes randomness extractors in \cref{ch:pseudorandom}.}
+
+The record is cheap because the algorithm is local. Let $d$ be the largest number of neighbors of a clause. A recursive call \compressionFix$(D)$ comes from a call \compressionFix$(C)$ with $D\in\Gamma^+(C)$, so the trace can name $D$ by its position in the short list $\Gamma^+(C)$, which costs $\lceil\log_2(d+1)\rceil$ bits, rather than by its position among all $m$ clauses. With two more bits of bookkeeping per call, the record uses about $\lceil\log_2(d+1)\rceil+2$ bits per resampling, while the random input grows by $k$. Once $\lceil\log_2(d+1)\rceil+2<k$, a long run would compress the random bits it used (\cref{fig:compression:bookkeeping}), and the encoding lemma says that long runs are rare.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=1mm,y=1mm,font=\small,
+  blk/.style={draw=seadeep,line width=0.4pt,minimum height=6mm,inner sep=0pt,anchor=south west}]
+  \node[anchor=south west,inner sep=0pt] at (0,32) {random input: $n+kt$ bits};
+  \node[blk,fill=seamist,minimum width=26mm] at (0,24) {$\alpha_0$\enspace($n$ bits)};
+  \node[blk,fill=seafoam,minimum width=11mm] at (26,24) {$k$};
+  \node[blk,fill=seafoam,minimum width=11mm] at (37,24) {$k$};
+  \node[blk,fill=seafoam,minimum width=11mm] at (48,24) {$k$};
+  \node[anchor=south west,inner sep=0pt,minimum height=6mm,minimum width=8mm] at (59,24) {$\cdots$};
+  \node[blk,fill=seafoam,minimum width=11mm] at (67,24) {$k$};
+  \draw[decorate,decoration={brace,amplitude=1.4mm,mirror},muted] (26,23) -- (78,23)
+    node[midway,below=1.7mm,text=muted] {one block per resampling};
+  \node[anchor=south west,inner sep=0pt] at (0,8) {record: at most $m+n+(k-1)(t-1)$ bits};
+  \node[blk,fill=sand,minimum width=13mm] at (0,0) {roots};
+  \node[blk,fill=sand,minimum width=30mm] at (13,0) {trace};
+  \node[blk,fill=seamist,minimum width=26mm] at (43,0) {$\alpha_t$\enspace($n$ bits)};
+  \draw[-{Stealth[length=2mm]},sea,line width=0.6pt] (90,29) -- node[right] {run} (90,4);
+  \draw[-{Stealth[length=2mm]},sea,line width=0.6pt] (101,4) -- node[right] {rewind} (101,29);
+\end{tikzpicture}
+\caption{The bookkeeping behind \cref{thm:compression:moser}. A run that reaches its $t$-th resampling consumes $n+kt$ random bits. The record, made of the roots, the trace, and the final assignment $\alpha_t$, determines all of them. Its length is at most $m+n+(k-1)(t-1)$, so once $t\ge m$ it is shorter than the input it describes.}
+\label{fig:compression:bookkeeping}
+\end{figure}
+
+In hindsight the move is natural, and its object is humble. The algorithm is the one anyone would write, and the record is the log one prints when debugging it. What had to be noticed is that the analysis should be about information rather than probability. The old proofs fought the cascade of repairs; in the new proof each step of a cascade saves a bit, and a cascade that ran too long would save more bits than a random string can afford to lose. This is Grothendieck's advice to stoop low: the decisive object is a transcript.
+
+\section{After: Moser's theorem in one page}\label{sec:compression:moser}
+
+\begin{theorem}[\textcite{Moser2009}]\label{thm:compression:moser}
+Let $k\ge3$, and let $\Phi$ be a $k$-CNF formula with $n$ variables and $m$ clauses in which every clause has fewer than $2^{k-3}$ neighbors. For every $t\ge1$, the probability that \compressionSolve{} performs at least $t$ resamplings is less than $2^{m-t}$. Consequently \compressionSolve{} stops with probability $1$, its output satisfies $\Phi$, the expected number of resamplings is at most $m+1$, and $\Phi$ is satisfiable.
+\end{theorem}
+
+The constant $2^{k-3}$ is the one Moser presented in his talk at STOC 2009, as written up by \textcite{Fortnow2009}. His paper, which received a best paper award at that conference, analyzes a variant of the algorithm, with restarts, by a different count and needs $|\Gamma^+(C)|\le2^{k-5}$.\sidenote{The name \emph{entropy compression}\index{entropy compression} is due to \textcite{Tao2009}; \textcite{Fortnow2009} wrote the argument as a proof in Kolmogorov complexity.} The proof has three parts: what a call guarantees, how to read the log, and how to rewind.
+
+\begin{lemma}[What a call guarantees]\label{lem:compression:invariant}
+If a call \compressionFix$(C)$ returns, then at its return the clause $C$ is satisfied, and so is every clause that was satisfied when the call began. Consequently, if \compressionSolve{} stops, then its output satisfies $\Phi$.
+\end{lemma}
+
+\begin{proof}
+We argue by induction on the number of resamplings performed during the call, which is finite because the call returns. Let $E$ be a clause satisfied when the call begins. If $E\notin\Gamma^+(C)$, then $E$ shares no variable with $C$, so resampling $C$ leaves $E$ satisfied; each recursive call made by \compressionFix$(C)$ returns and performs fewer resamplings, so by induction it keeps every satisfied clause satisfied, and $E$ is still satisfied at the return. If $E\in\Gamma^+(C)$, then $E$ is satisfied at the return because the loop ends only when every clause of $\Gamma^+(C)$ is satisfied, and the same reason covers $C$ itself. For the consequence, induction on $j$ shows that after \compressionSolve{} has treated $C_1,\dots,C_j$, all of them are satisfied: each root call satisfies its clause and keeps the clauses treated before it satisfied.
+\end{proof}
+
+Fix $t\ge1$ and run \compressionSolve{} until right after its $t$-th resampling; if it stops earlier, there is nothing to record. Let $E_1,\dots,E_t$ be the clauses resampled, in order, let $\alpha_0$ be the initial assignment, and let $\alpha_i$ be the assignment right after the $i$-th resampling. The trace is written in chronological order: whenever a call \compressionFix$(C)$ calls \compressionFix$(D)$, write $1$ followed by the position of $D$ in the list $\Gamma^+(C)$, numbered from $0$ and written with exactly $k-3$ bits; whenever a call returns, write $0$.\sidenote{Without the zeros the decoder could not tell whether a named clause is a child of the current call or of one of its ancestors.} The hypothesis of \cref{thm:compression:moser} is used here and only here: $\Gamma^+(C)$ has at most $2^{k-3}$ elements, so $k-3$ bits suffice for a position.
+
+\begin{lemma}[Reading the log]\label{lem:compression:log}
+The roots and the trace determine the sequence $E_1,\dots,E_t$, and the trace has at most $(k-1)(t-1)$ bits.
+\end{lemma}
+
+\begin{proof}
+The decoder replays the stack of active calls. It starts by pushing the smallest root, which is $E_1$, and then reads the trace from left to right. A $1$ and the $k-3$ bits after it name a clause $D$ of $\Gamma^+(C)$, where $C$ is the clause on top of the stack; that clause $D$ is the next resampled clause, and it is pushed. A $0$ pops the stack. If the stack becomes empty, then the next larger root is the next resampled clause, because \compressionSolve{} makes its root calls in increasing order, and it is pushed. The decoder stops when it has named $t$ clauses. For the length, the first resampling belongs to a root call, so at most $t-1$ calls are recursive, each costing $k-2$ bits; and at most $t-1$ calls have returned, since the $t$-th has not. The total is at most $(t-1)(k-2)+(t-1)=(k-1)(t-1)$.
+\end{proof}
+
+\begin{lemma}[Rewinding]\label{lem:compression:rewind}
+For each $i$, the assignment $\alpha_{i-1}$ and the $i$-th block of $k$ random bits are determined by $E_i$ and $\alpha_i$. Consequently $E_1,\dots,E_t$ and $\alpha_t$ determine all $n+kt$ random bits consumed.
+\end{lemma}
+
+\begin{proof}
+A clause is resampled only when it is violated: \compressionSolve{} calls \compressionFix$(C)$ only for a violated $C$, the loop in \compressionFix{} calls only violated clauses, and a call resamples before doing anything else. So $\alpha_{i-1}$ gives the variables of $E_i$ the unique values that violate $E_i$. Outside $\compressionVbl(E_i)$ it agrees with $\alpha_i$, because a resampling changes only the variables of its clause. The $i$-th block of random bits is the restriction of $\alpha_i$ to $\compressionVbl(E_i)$, read in increasing order of the indices. Applying this for $i=t,t-1,\dots,1$ recovers every block and finally $\alpha_0$, which is the first $n$ bits.
+\end{proof}
+
+\begin{proof}[Proof of \cref{thm:compression:moser}]
+The plan is to count records. For $t\ge1$ let $B_t$ be the set of strings $R\in\{0,1\}^{n+kt}$ for which \compressionSolve, reading its random bits from $R$, reaches a $t$-th resampling; reaching it consumes exactly the $n+kt$ bits of $R$. The event that \compressionSolve{} performs at least $t$ resamplings depends only on the first $n+kt$ random bits, so its probability is $|B_t|/2^{n+kt}$. Send each $R\in B_t$ to its record: the roots, the trace, and $\alpha_t$. By Lemmas~\ref{lem:compression:log} and~\ref{lem:compression:rewind} this map is injective. There are at most $2^m$ sets of roots and $2^n$ assignments, and by the length bound of Lemma~\ref{lem:compression:log} there are fewer than $2^{(k-1)(t-1)+1}$ traces, since there are $2^{L+1}-1$ bit strings of length at most $L=(k-1)(t-1)$. The encoding lemma therefore gives
+\[
+\Pr[\text{at least $t$ resamplings}]<\frac{2^{m+n+(k-1)(t-1)+1}}{2^{n+kt}}=2^{m-t-k+2}\le2^{m-t-1},
+\]
+and the last inequality holds because $k\ge3$. This is the bound of the theorem, with a factor $2$ to spare.
+
+A run that never stops performs infinitely many resamplings, because \compressionSolve{} makes at most $m$ root calls, every pass through the loop of \compressionFix{} makes a call, and every call begins with a resampling. Letting $t\to\infty$ therefore shows that \compressionSolve{} stops with probability $1$, and when it stops, its output satisfies $\Phi$ by Lemma~\ref{lem:compression:invariant}; in particular $\Phi$ is satisfiable. Let $X$ be the number of resamplings. Then $\E X=\sum_{t\ge1}\Pr[X\ge t]$, and bounding the first $m$ terms by $1$ and the others by $2^{m-t}$ gives $\E X\le m+\sum_{t>m}2^{m-t}=m+1$.
+\end{proof}
+
+Set this proof beside the aside of \cref{sec:compression:ksat}. There is no freezing, no lemma about components, and no appeal to the existential lemma, and the hypothesis allows nearly $2^{k-3}$ neighbors instead of about $2^{k/48}$: the exponent $1/48$ has become $1-3/k$. The algorithm never uses $k$ or $d$, and the proof contains no conditional probability. It is also fast. Count $O(k)$ steps for checking a clause; the main loop checks each clause once, and a call scans its list $\Gamma^+(C)$ once before each recursive call it makes and once before it returns, so the expected running time is $O\bigl(n+(m+1)(d+2)k\bigr)$ once the lists $\Gamma^+(C)$ are built.
+
+The constant is not quite the local lemma's. Corollary~\ref{cor:compression:ksat-lll} allows $d+1\le2^k/e$, and we lost a factor $8/e$, because each call costs two bits of bookkeeping and the count saves one bit per call. Nothing essential is lost: counting the tree of calls more carefully recovers the condition $2^{-k}<d^d/(d+1)^{d+1}$, which is the symmetric local lemma with $x_i=1/(d+1)$ (Exercise~\ref{ex:compression:sharp}), and the next section recovers the general lemma.
+
+\section{After: the general lemma, repetitions, and primes}\label{sec:compression:beyond}
+
+\subsection{The general lemma, made algorithmic}\label{sec:compression:mt}
+
+\Textcite{MoserTardos2010} found the version of the move that matches the local lemma exactly, in the setting where the bad events are determined by independent random variables. Let $\cP$ be a finite set of mutually independent random variables and $\cA$ a finite set of events, each determined by the values of a subset $\compressionVbl(A)\subseteq\cP$. For $A\in\cA$ let $\Gamma(A)$ be the set of events $B\ne A$ with $\compressionVbl(A)\cap\compressionVbl(B)\neq\emptyset$; these sets are the neighborhoods of a dependency graph. The resampling algorithm samples every variable. Then, as long as some event of $\cA$ occurs, it chooses one such event by a rule fixed in advance and resamples its variables, giving each a fresh independent sample.\sidenote{Moser and Tardos received the 2020 G\"odel Prize for this work.}
+
+\begin{theorem}[\textcite{MoserTardos2010}]\label{thm:compression:mt}
+If $x\colon\cA\to(0,1)$ satisfies $\Pr[A]\le x(A)\prod_{B\in\Gamma(A)}(1-x(B))$ for every $A\in\cA$, then the resampling algorithm stops with probability $1$ at an assignment under which no event of $\cA$ occurs, and the expected number of resamplings of each event $A$ is at most $x(A)/(1-x(A))$. In particular the expected total number of resamplings is at most $\sum_{A\in\cA}x(A)/(1-x(A))$.
+\end{theorem}
+
+\begin{proofsketch}
+The plan is to charge each resampling to a witness of its past and to count witnesses with probabilities instead of bits. Let $C_1,C_2,\dots$ be the events resampled, in order. The \term{witness tree}\index{witness tree} $\tau(t)$ of step $t$ is built backward: its root is labeled $C_t$, and for $s=t-1,\dots,1$, if $C_s$ equals or shares a variable with the label of a vertex already present, then a child labeled $C_s$ is attached to such a vertex of maximum depth. Different steps have different witness trees, since $\tau(t)$ has one vertex labeled $C_t$ for each resampling of $C_t$ up to step $t$, and the children of a vertex have distinct labels. First, a fixed tree $\tau$ occurs as some $\tau(t)$ with probability at most $\prod_v\Pr[[v]]$, the product over its vertices of the probabilities of their labels. To see this, draw all future samples of every variable in advance in a table: if $\tau$ occurs, then each label $[v]$ holds on table entries determined by $\tau$ alone, and distinct vertices use distinct entries. Second, the branching process in which a vertex labeled $B$ receives, independently for each $C\in\Gamma(B)\cup\{B\}$, a child labeled $C$ with probability $x(C)$, started from a root labeled $A$, produces $\tau$ with probability $\frac{1-x(A)}{x(A)}\prod_v x([v])\prod_{C\in\Gamma([v])}(1-x(C))$, which by hypothesis is at least $\frac{1-x(A)}{x(A)}\prod_v\Pr[[v]]$. These probabilities add up to at most $1$, so summing the first fact over all trees with root $A$ gives the bound $x(A)/(1-x(A))$. The details take a few pages in \textcite{MoserTardos2010}.
+\end{proofsketch}
+
+The witness tree is a record of the part of the past that explains step $t$, the table argument is a rewinding, and the branching process is a count of records weighted by probability rather than by bits. The weights are what recover the local lemma's constant. For $k$-SAT with $e(d+1)\le2^k$ and $d\ge1$, the choice $x(A)=1/(d+1)$ bounds the expected total number of resamplings by $m/d$ (Exercise~\ref{ex:compression:numbers}).
+
+\subsection{Nonrepetitive sequences from lists of size four}\label{sec:compression:nonrep}
+
+\begin{theorem}[\textcite{GrytczukPrzybyloZhu2011}]\label{thm:compression:nonrep}
+For every $n\ge1$ and all sets $L_1,\dots,L_n$ with at least four elements each, there is a nonrepetitive sequence $s_1\dots s_n$ with $s_i\in L_i$ for every $i$.
+\end{theorem}
+
+The proof below is that of \textcite{GrytczukKozikMicek2013}. Keep four elements of each list and number them $1,\dots,4$. The \term{erasing algorithm} maintains a nonrepetitive sequence, initially empty. At each step, if the current sequence $s_1\dots s_j$ has length $j<n$, then it draws $r$ uniformly from $\{1,2,3,4\}$ and appends the $r$-th element of $L_{j+1}$. Since $s_1\dots s_j$ is nonrepetitive, every repetition in the new sequence uses its last term, so it is a suffix $xx$. If there is one, then the algorithm erases the second half of the shortest such suffix, that is, its last $h=|x|$ terms; in fact there is only one such suffix (Exercise~\ref{ex:compression:unique}), but the proof does not need this. What remains is a prefix of $s_1\dots s_j$, so it is nonrepetitive. The algorithm stops when the length reaches $n$.
+
+The \term{log} of a run is a word in the letters $U$ and $D$: each step contributes a $U$ for the appended term, followed by $h$ letters $D$, one for each erased term, with $h=0$ if nothing is erased. Read as a lattice path that goes up for $U$ and down for $D$, the log has height equal to the length of the current sequence after each step (\cref{fig:compression:dyck}).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=5mm,y=4mm,font=\small]
+  \draw[muted,line width=0.3pt] (0,0) -- (20.4,0);
+  \draw[sea,line width=0.8pt] (0,0) -- (1,1) -- (2,2) -- (3,3) -- (4,4) -- (5,3) -- (6,2) -- (7,3) -- (8,4)
+    -- (9,3) -- (10,4) -- (11,5) -- (12,6) -- (13,5) -- (14,4) -- (15,3) -- (16,4);
+  \draw[sea,dashed,line width=0.6pt] (16,4) -- (17,3) -- (18,2) -- (19,1) -- (20,0);
+  \foreach \x/\y in {0/0,1/1,2/2,3/3,4/4,5/3,6/2,7/3,8/4,9/3,10/4,11/5,12/6,13/5,14/4,15/3,16/4}
+    \fill[seadeep] (\x,\y) circle (1.3pt);
+  \node[above=1pt] at (4,4) {$12\,\underline{12}$};
+  \node[above=1pt] at (8,4) {$123\,\underline{3}$};
+  \node[above=1pt] at (12,6) {$123\,\underline{123}$};
+  \node[above=1pt] at (16,4) {$1234$};
+  \node[left,text=muted] at (0,0) {$0$};
+  \node[left,text=muted] at (0,4) {$4$};
+  \draw[muted,line width=0.3pt] (-0.15,4) -- (0.15,4);
+\end{tikzpicture}
+\caption{A run of the erasing algorithm with $n=6$, all lists equal to $\{1,2,3,4\}$, and choices $1,2,1,2,3,3,1,2,3,4$, drawn as its log: an up-step for each appended term and a down-step for each erased one, so that the height is the length of the current sequence. The labels show the three repetitions, whose underlined halves are erased, and the final sequence. The dashed down-steps complete the log to a Dyck word, which is how the proof of \cref{thm:compression:nonrep} counts logs.}
+\label{fig:compression:dyck}
+\end{figure}
+
+\begin{lemma}[Rewinding repetitions]\label{lem:compression:nonrep-rewind}
+After $M$ steps, the log and the current sequence determine the random choices $r_1,\dots,r_M$.
+\end{lemma}
+
+\begin{proof}
+It suffices to recover $r_M$ and the sequence before step $M$, and then to repeat. Let $s_1\dots s_l$ be the current sequence, and let $h$ be the number of letters $D$ after the last $U$ of the log. If $h=0$, then step $M$ appended $s_l$, so $r_M$ is the number of $s_l$ in $L_l$, and the sequence before the step was $s_1\dots s_{l-1}$. If $h\ge1$, then step $M$ erased the second half of a repetition whose first half is still present, as the last $h$ terms of the current sequence. So before the erasure the sequence was $s_1\dots s_l$ followed by a copy of $s_{l-h+1}\dots s_l$. Its last term, $s_l$, was appended at position $l+h$, so $r_M$ is the number of $s_l$ in $L_{l+h}$, and deleting that term gives the sequence before the step.
+\end{proof}
+
+\begin{proof}[Proof of \cref{thm:compression:nonrep}]
+The plan is to count logs with Catalan numbers.\index{Catalan number} Fix $M\ge1$, and call a sequence of choices $(r_1,\dots,r_M)\in\{1,2,3,4\}^M$ unfinished if the algorithm has not stopped after $M$ steps. For an unfinished sequence of choices, the log has $M$ letters $U$, every prefix of it has at least as many letters $U$ as $D$, since heights are lengths, and it ends at the length $l<n$ of the current sequence. Appending $l$ letters $D$ turns it into a \term{Dyck word}\index{Dyck word}: a word with $M$ letters of each kind, every prefix of which has at least as many letters $U$ as $D$. For each $l$ this is injective, and the number of Dyck words is the Catalan number $\compressionCat{M}=\binom{2M}{M}/(M+1)$, which is at most $4^M/(M+1)$. A current sequence of length $l$ takes one of four elements in each position, so it has at most $4^l$ possibilities. By Lemma~\ref{lem:compression:nonrep-rewind} the map from unfinished sequences of choices to pairs (log, current sequence) is injective, so the number of unfinished sequences of choices is at most
+\[
+\sum_{l=0}^{n-1}\compressionCat{M}\,4^l<\compressionCat{M}\,\frac{4^n}{3}\le\frac{4^{M+n}}{3(M+1)}.
+\]
+Dividing by $4^M$, the probability of being unfinished after $M$ steps is less than $4^n/(3(M+1))$, which is less than $1$ once $M+1\ge4^n/3$. For such $M$ some sequence of choices finishes, and the sequence it produces is nonrepetitive, has length $n$, and has its $i$-th term in $L_i$.
+\end{proof}
+
+The number four is used in one place. The logs grow like $4^M$, as fast as the random choices, and the argument survives only because of the factor $1/(M+1)$ in the Catalan numbers;\sidenote{In fact $\compressionCat{M}$ is asymptotic to $4^M/(\sqrt{\pi}\,M^{3/2})$, so the proof has a little more room than it uses.} the resulting probability bound decays only like $1/M$, which does not even give a finite expected running time. With lists of size five the bound decays exponentially, and the algorithm finishes after $O(n)$ steps in expectation (Exercise~\ref{ex:compression:five}); \textcite{GrytczukKozikMicek2013} remark that a more careful count gives linear expected time for size four as well. With lists of size three the count fails outright: the bound on the number of logs, of order $4^M/M^{3/2}$, exceeds the $3^M$ sequences of choices.
+
+\subsection{Incompressibility outside algorithms}\label{sec:compression:primes}
+
+The warm-up of \cref{sec:compression:descriptions} gave infinitely many primes. A better description gives a bound within a logarithmic factor of the truth, for infinitely many indices. Write $p_m$ for the $m$-th prime, and $\compressionBin(q)$ for the binary representation of a positive integer $q$, of length $\ell(q)=\lfloor\log_2q\rfloor+1$. A description of $m$ that can be followed by other data needs a \term{prefix-free code}\index{prefix-free code}, one in which no codeword is a prefix of another. One such code, discussed with many others by \textcite{LiVitanyi2008}, is the code $\delta(m)$ consisting of $\ell(\ell(m))-1$ zeros, then $\compressionBin(\ell(m))$, then $\compressionBin(m)$ without its leading $1$. A decoder counts the leading zeros, reads $\ell(m)$, and then reads $\ell(m)-1$ more bits. The length of $\delta(m)$ is $\ell(m)+2\ell(\ell(m))-2$, which is at most $\log_2m+2\log_2(\log_2m+1)+1$.
+
+\begin{proposition}\label{prop:compression:primes}
+For infinitely many $m$, the $m$-th prime satisfies $p_m<16\,m\,(\log_2m+1)^2$.
+\end{proposition}
+
+\begin{proof}
+The plan is to describe an integer by the index of its largest prime factor and the cofactor, and to look at integers that admit no short description. Fix $b\ge3$ and consider the $2^{b-1}$ integers $n$ with $2^{b-1}\le n<2^b$. For such $n$ let $p_m$ be its largest prime factor, let $q=n/p_m$, and let $E(n)$ be the string $\delta(m)$ followed by $\compressionBin(q)$. The map $E$ is injective: a decoder reads $\delta(m)$, which is prefix-free, takes the remaining bits as $\compressionBin(q)$, and computes $n=p_mq$. There are $2^{b-2}-1$ bit strings of length at most $b-3$, so more than $2^{b-2}$ of our integers satisfy $|E(n)|\ge b-2$; call them incompressible. For an incompressible $n$ we have $\ell(q)\le\log_2q+1=\log_2n-\log_2p_m+1<b-\log_2p_m+1$, and therefore
+\[
+b-2\le|\delta(m)|+\ell(q)<|\delta(m)|+b-\log_2p_m+1.
+\]
+Hence $\log_2p_m<|\delta(m)|+3\le\log_2m+2\log_2(\log_2m+1)+4$, which is the claimed bound.
+
+It remains to see that infinitely many indices $m$ arise in this way. If all of them were at most some $K$, then for every $b\ge3$ more than $2^{b-2}$ integers in $[2^{b-1},2^b)$ would have all their prime factors among $p_1,\dots,p_K$. They would be products $p_1^{e_1}\cdots p_K^{e_K}$ with every $e_i<b$, and there are at most $b^K$ such products, which is less than $2^{b-2}$ for large $b$, a contradiction.
+\end{proof}
+
+The prime number theorem gives $p_m\sim m\ln m$ as $m\to\infty$, so the proposition is weak as number theory. Its interest is how little it uses: that an integer is a prime times a cofactor, and that a typical integer has no short description. Better prefix codes give better bounds (Exercise~\ref{ex:compression:primes}).
+
+The same move proves lower bounds for algorithms. The outcomes of the comparisons made by a sorting algorithm describe the input order, so a typical order forces about $\log_2n!$ comparisons (Exercise~\ref{ex:compression:sorting}). With more work in the same spirit, \textcite{JiangLiVitanyi2000} proved that $p$-pass Shellsort makes $\Omega(pn^{1+1/p})$ comparisons on average, for every choice of increments.\sidenote{Shellsort sorts by running insertion sort on interleaved subsequences, with gaps that decrease from pass to pass.} And entropy compression keeps improving on the local lemma in combinatorics: \textcite{EsperetParreau2013} showed that every graph of maximum degree $\Delta$ has an \term{acyclic edge-coloring}\index{acyclic edge-coloring}, a proper coloring of its edges with no two-colored cycle, with $4(\Delta-1)$ colors, improving the bounds obtained from the local lemma.
+
+\section{Costs and limits}\label{sec:compression:costs}
+
+\paragraph{Where did the difficulty go?} Into the decoder. The encoding lemma is a triviality; everything rests on finding a process whose steps can be undone with little information, and a record that grows more slowly than the randomness consumed. For $k$-SAT the undoing rests on the unique violating assignment of a clause and the cheapness of the record on locality; for repetitions the erased half is a copy of what remains, and the logs are Dyck words. Is the price paid once? In the variable setting it is: \cref{thm:compression:mt} turns every application of the local lemma into an algorithm with the lemma's own parameters, and nobody using it designs an encoding. Beyond the local lemma the price recurs, since nonrepetitive sequences and acyclic edge-colorings each needed their own record. There the move is a template rather than a theorem, but a template with a fixed recipe, whose uses take a page rather than a paper.
+
+\paragraph{What did not dissolve.} The local lemma holds in every probability space with a dependency graph, but resampling needs bad events determined by few independent variables, and the natural bad events for random permutations or random perfect matchings are not of this kind. \Textcite{HarveyVondrak2015} showed that the algorithmic lemma survives whenever one can implement \emph{resampling oracles}, which exist in every setting of the lemma but are not always efficient; \textcite{AchlioptasIliopoulos2016} recast the method as random walks on flawed objects, with no probability space at all. Constants are delicate: \textcite{Shearer1985} determined exactly which probability bounds guarantee the conclusion of the lemma for a given dependency graph,\index{Shearer's bound} and \textcite{KolipakaSzegedy2011} showed that resampling works up to Shearer's bound. For satisfiability the lemma is essentially the truth, since \textcite{GebauerSzaboTardos2016} constructed unsatisfiable $k$-CNF formulas in which each variable occurs in at most $(2/e+o(1))\,2^k/k$ clauses, which the lopsided lemma shows to be optimal. The method finds one solution and says nothing about the set of all solutions; the known algorithms that approximately count solutions, or sample one nearly uniformly, need much stronger hypotheses \parencite{Moitra2019}. Its deterministic versions need extra conditions, such as constant $k$ \parencite{Moser2009,MoserTardos2010}. And whether lists of size three suffice for nonrepetitive sequences remains open.
+
+\paragraph{Other seas.} The witness trees of Moser and Tardos are a second bookkeeping, with probabilities instead of bits, and it is the one that recovers sharp constants. Going the other way, \textcite{Rosenfeld2020} gave a counting method that, for the nonrepetitive colorings he studies, matches entropy compression with shorter, non-algorithmic arguments: once compression has shown that failures are few, one can sometimes count the successes directly.
+
+\section{The move, distilled}\label{sec:compression:distilled}
+
+\begin{move}{Encoding}
+\movepart{In one sentence} To show that a randomized process stops, show that a long run would let you describe the random bits it used in fewer bits than it drew.
+\movepart{Triggers} A natural repair process whose termination resists probabilistic analysis; each step consumes fresh randomness and can be undone by someone told a little, such as which constraint was repaired; the possible histories are fewer than the random inputs, if only by a polynomial factor.
+\movepart{Recipe} (1) Write the naive local repair algorithm, consuming random bits in a fixed order. (2) Find what makes a step reversible. (3) Record each repaired object relative to the current one, with the bits needed to parse the record, and keep the final state. (4) Prove that a decoder recovers the random input. (5) Count the records, by bits, Catalan numbers, or trees, against the random inputs, and apply the encoding lemma. (6) For sharp constants, refine the count or weight the records by probabilities.
+\movepart{Anti-pattern} A record that is not injective, because it forgets the final state or cannot be parsed; a record that names objects globally, at $\log_2m$ bits each, and so saves nothing; or a count that treats variable-length strings as if they had a fixed length.
+\end{move}
+
+\dissolutiontest{Beck's twenty-three-page analysis, with exponent $1/48$, becomes a one-page count that allows $2^{k-3}-1$ neighbors (\cref{thm:compression:moser}); a twelve-page paper on lists of size four becomes a one-page proof (\cref{thm:compression:nonrep}).}{No conditional probabilities, freezing thresholds, or residual existential lemma; the algorithm needs neither $k$ nor $d$, and the choice of the event to resample is arbitrary (\cref{thm:compression:mt}).}{The local lemma in the variable setting and its algorithms, the list version of Thue's theorem, and the bounds on primes and sorting become one statement: there are too few short descriptions.}{Polynomial-time algorithms for essentially every application of the local lemma in the variable setting; theorems beyond the lemma's bounds, such as acyclic edge-colorings with $4(\Delta-1)$ colors.}
+
+The move recurs in \cref{ch:pseudorandom}, where Trevisan's extractor is analyzed by reconstruction: if the extractor fails a statistical test on a source string, then the string has a short description given the test, so few strings are bad. A cousin, sample compression, appears among the exercises of \cref{ch:vc}: a learner that rebuilds its hypothesis from a few sample points generalizes. Like the dimension arguments of \cref{ch:dimension}, these proofs bound a set by injecting it into a small space, there a vector space and here a set of short strings. Within Part IV the move pairs with \cref{ch:sos}: there the proof itself is the algorithm, while here the algorithm is naive and the proof is a count.
+
+\begin{exercises}
+\item\label{ex:compression:kraft} \consolidation (The two counts.) (a) Show that, for a fixed injective encoding, a uniformly random string in $\{0,1\}^N$ has a description of length at most $N-s$ with probability less than $2^{1-s}$. (b) Show that if the set of descriptions is prefix-free, then this probability is at most $2^{-s}$. \hint{Kraft's inequality: if no word of a set $W$ of bit strings is a prefix of another, then $\sum_{w\in W}2^{-|w|}\le1$.}
+
+\item\label{ex:compression:unique} \consolidation (One repetition at a time.) Let $w$ be a nonrepetitive sequence and $a$ a symbol such that $wa$ is not nonrepetitive. Show that $wa$ contains exactly one repetition, and that it is a suffix. \hint{If $xx$ and $yy$ are suffixes with $|x|<|y|$, treat the cases $2|x|\le|y|$ and $|y|<2|x|$ separately; in the second, write $y=ux$ and show that $x$ ends with $u$.}
+
+\item\label{ex:compression:global} \consolidation (Locality is the point.) Change \compressionFix{} so that, after resampling $C$, it loops as long as some clause of the whole formula is violated, each time calling \compressionFix$(D)$ for the first violated clause $D$ of the formula. Show that Lemma~\ref{lem:compression:invariant} still holds, and that the proof of \cref{thm:compression:moser} goes through if positions in the trace are written with $\lceil\log_2m\rceil$ bits and $\lceil\log_2m\rceil\le k-3$. Explain why the resulting theorem is worthless, by comparing it with the union bound.
+
+\item\label{ex:compression:numbers} \consolidation (Numbers.) Let every clause have at most $d$ neighbors. (a) For $k=10$, compare the largest $d$ allowed by \cref{thm:compression:moser} with the largest allowed by Corollary~\ref{cor:compression:ksat-lll}. (b) Deduce from \cref{thm:compression:mt} that if $d\ge1$ and $e(d+1)\le2^k$, then the resampling algorithm for $k$-SAT makes at most $m/d$ resamplings in expectation.
+
+\item\label{ex:compression:sharp} \consolidation\harder (The local lemma's constant, by counting.) Let every clause have at most $d$ neighbors. (a) Show that during a call \compressionFix$(C)$, the clauses $D$ for which \compressionFix$(D)$ is called directly are distinct, and that they are called in increasing order of their positions in $\Gamma^+(C)$. (b) Give every call $d+1$ slots, one for each position of the list $\Gamma^+(C)$ (padded if the list is shorter), and give \compressionSolve{} one slot per clause. Show that, up to the $t$-th resampling, the calls and their order are determined by the bit string of length $m+(d+1)t$ that lists the occupied slots of \compressionSolve{} and then those of each call, in chronological order. (c) Deduce that the probability of at least $t$ resamplings is at most $\binom{m+(d+1)t}{t}2^{-kt}$, and conclude that if $d\ge1$ and $2^{-k}<d^d/(d+1)^{d+1}$, then the expected number of resamplings is finite. Compare with Corollary~\ref{cor:compression:symmetric}. \hint{For (a), use Lemma~\ref{lem:compression:invariant}. For (c), use $\binom{a+b}{t}\le2^a\binom{b}{t}$ for $b\ge2t$, and $\binom{N}{K}\le N^N/\bigl(K^K(N-K)^{N-K}\bigr)$.}
+
+\item\label{ex:compression:five} \consolidation (Lists of size five.) Suppose every list has at least five elements, and the erasing algorithm draws from five of them. Show that it is unfinished after $M$ steps with probability less than $5^n(4/5)^M/(4(M+1))$, and deduce that it finishes after $O(n)$ steps in expectation.
+
+\item\label{ex:compression:hypergraph} \transfer (Two-coloring hypergraphs.) Let $k\ge4$, and let $H$ be a hypergraph whose edges have $k$ vertices each and in which every edge meets fewer than $2^{k-4}$ other edges. Adapt \compressionSolve{} and \compressionFix{} to color the vertices with two colors so that no edge is monochromatic, and prove the analogue of \cref{thm:compression:moser}. Where does the extra bit go?
+
+\item\label{ex:compression:sorting} \transfer (Sorting.) A deterministic comparison sort is run on each of the $n!$ orders of $n$ distinct keys. For an order $\pi$, let $c(\pi)$ be the number of comparisons made and $o(\pi)\in\{0,1\}^{c(\pi)}$ their outcomes. Show that $\pi\mapsto o(\pi)$ is injective and that its image is prefix-free. Deduce that at most $2^{-s}n!$ orders are sorted with at most $\log_2n!-s$ comparisons, and that the average number of comparisons is at least $\log_2n!$. \hint{For the average, apply Jensen's inequality to $\sum_\pi2^{-c(\pi)}\le1$.}
+
+\item\label{ex:compression:ramsey} \transfer (Ramsey numbers by encoding.) Let $k\ge3$ and $N=\lfloor2^{k/2}\rfloor$. Encode a graph on $[N]$ that has a clique or an independent set $S$ of size $k$ by the set $S$, one bit for its type, and the $\binom N2-\binom k2$ adjacencies not inside $S$. Use the encoding lemma to show that some graph on $[N]$ has neither, and conclude that the Ramsey number $R(k,k)$ exceeds $2^{k/2}$. How many bits does the encoding save, and how many does it spend on $S$?
+
+\item\label{ex:compression:primes} \transfer\hard (Better codes, better primes.) Replace $\delta(m)$ in the proof of Proposition~\ref{prop:compression:primes} by the code made of $\delta(\ell(m))$ followed by $\compressionBin(m)$ without its leading $1$. Show that this code is prefix-free, and deduce that $p_m<16\,m\,(\log_2m+1)\bigl(\log_2(\log_2m+1)+1\bigr)^2$ for infinitely many $m$. What does iterating the construction give, compared with $p_m\sim m\ln m$? \hint{Follow the proof of Proposition~\ref{prop:compression:primes} with the new length bound.}
+
+\item\label{ex:compression:thue3} \research (Lists of size three.) Whether every sequence of three-element lists admits a nonrepetitive choice is open, and the experiments of \textcite{GrytczukKozikMicek2013} suggest that the erasing algorithm behaves differently there. Explain where the proof of \cref{thm:compression:nonrep} fails for lists of size three, and look for records that exploit the rarity of long erasures: an erasure of $h$ terms means that $h$ random choices copied earlier terms. How slowly must the number of records grow for the count to close?
+
+\item\label{ex:compression:schoening} \research\harder (Random walks by compression.) The algorithm of \textcite{Schoning1999} for 3-SAT starts from a random assignment and, $3n$ times, flips a random variable of a violated clause; repeated $(4/3)^n$ times up to a polynomial factor, it finds a satisfying assignment of a satisfiable formula with high probability. Its analyses follow a biased random walk toward a fixed solution, while the satisfiability coding lemma of \textcite{PaturiPudlakZane1997} analyzes a different algorithm by encoding isolated solutions. Is there an encoding proof of a bound $(2-\delta)^n$ for Sch\"oning's walk, in which failed runs compress their random bits? Which convergence proofs in stochastic local search or stochastic optimization are encodings? The question is open-ended. \hint{Fix a solution and record, for each flip, whether it moved toward that solution.}
+\end{exercises}
+
+\notesandrefs
+
+The local lemma first appeared in \textcite{ErdosLovasz1975}; the general form and the symmetric condition $ep(d+1)\le1$ are due to Lov\'asz and were published by \textcite{Spencer1977}, and \textcite{Shearer1985} found the optimal condition for each dependency graph. \Textcite[Chapter~5]{AlonSpencer2008} is the standard textbook account, with many applications.
+
+The first algorithmic versions are \textcite{Beck1991} and \textcite{Alon1991}; \textcite{MoserTardos2010} survey the refinements that followed. Moser's paper \parencite{Moser2009} shared the best paper award at STOC 2009. According to \textcite{Fortnow2009}, Moser found the argument of \cref{sec:compression:moser} while preparing his talk, and Fortnow wrote it as a proof in Kolmogorov complexity; \textcite{Tao2009} named it \emph{entropy compression}. The general variable setting is due to \textcite{MoserTardos2010}, and \textcite{KolipakaSzegedy2011}, \textcite{HarveyVondrak2015}, and \textcite{AchlioptasIliopoulos2016} went up to Shearer's bound and beyond independent variables.
+
+\Textcite{Thue1906} proved the existence of long nonrepetitive sequences over three symbols. Lists of size four were first handled by \textcite{GrytczukPrzybyloZhu2011}; the proof of \cref{thm:compression:nonrep} is from \textcite{GrytczukKozikMicek2013}, who also apply it to games in which a second player tries to create repetitions. \Textcite{EsperetParreau2013} applied entropy compression to acyclic edge-coloring, and \textcite{Rosenfeld2020} gave a counting alternative.
+
+Kolmogorov's definition of complexity is in \textcite{Kolmogorov1965}, and \textcite{LiVitanyi2008} develop the incompressibility method at length. The Shellsort bound is \textcite{JiangLiVitanyi2000}, and the satisfiability coding lemma of \textcite{PaturiPudlakZane1997} is an encoding argument behind exponential-time algorithms for $k$-SAT.
+
+\printchapterbib
+\end{refsection}

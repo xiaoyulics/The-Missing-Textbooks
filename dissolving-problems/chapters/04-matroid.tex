@@ -1,0 +1,360 @@
+\casechapter{Why Greed Works}{Matroids and the exchange axiom}{Axiomatization}{ch:matroid}
+\begin{refsection}[chapters/04-matroid.bib]
+
+\begin{chaptersummary}
+A greedy algorithm takes the best item that still fits and never reconsiders. For minimum spanning trees, for heaviest sets of independent vectors, and for scheduling jobs against deadlines, greed is optimal, and each fact is traditionally proved by its own exchange argument. Whitney's matroid isolates the single property that the proofs share: a small independent set can always be enlarged from a larger one. Under this exchange axiom the three theorems become one theorem with a short proof, and the same proof shows that the axiom is not only sufficient for greed but necessary. Read as a linear-programming certificate, the proof gives Edmonds's matroid polytope and leads to his matroid intersection theorem; with the axiom weakened to diminishing returns, greed still earns the $1-1/e$ guarantee for submodular maximization.
+\end{chaptersummary}
+
+\section{Before: three greedy algorithms, three swaps}\label{sec:matroid:before}
+
+In the early 1920s the West Moravian power company was bringing electricity to the villages of southern Moravia, and through friends among its staff the young mathematician Otakar Bor\r{u}vka was asked how to lay out the network as cheaply as possible. His answer, published in 1926, was the first formulation and the first solution of the minimum spanning tree problem, together with a justification of the greedy method \parencite{Boruvka1926,GrahamHell1985}.\sidenote{Bor\r{u}vka later recalled that he published the construction at a time when graph theory did not yet exist as a subject \parencite[see the recollections quoted by][]{GrahamHell1985}.} Thirty years later \textcite{Kruskal1956} and \textcite{Prim1957} published the versions that textbooks teach, and both cite Bor\r{u}vka. This section presents three greedy algorithms of this kind, each with the kind of proof it traditionally receives.\index{greedy algorithm}
+
+\paragraph{Spanning trees.} Let $G=(V,E)$ be a connected graph with edge costs $c\colon E\to\R$. A \term{spanning tree} is a set of edges that connects all vertices and contains no cycle; a \term{forest} is a set of edges without cycles. We identify a subgraph with its edge set and write $T+e$ and $T-f$ for $T\cup\{e\}$ and $T\setminus\{f\}$.\index{minimum spanning tree} \term{Kruskal's algorithm} examines the edges in order of nondecreasing cost, breaking ties arbitrarily, and keeps an edge exactly when it closes no cycle with the edges already kept.\index{Kruskal's algorithm} Two facts about trees carry the classical proof. First, a forest on the vertex set $V$ with $m$ edges has exactly $\abs{V}-m$ connected components, because adding an edge that closes no cycle merges two components. Second, if $T$ is a spanning tree and $e\notin T$, then $T+e$ contains exactly one cycle, and deleting an edge of that cycle from $T+e$ leaves a spanning tree.
+
+\begin{theorem}[\textcite{Kruskal1956}]\label{thm:matroid:kruskal-old}
+For every connected graph and every cost function, Kruskal's algorithm returns a spanning tree of minimum cost.
+\end{theorem}
+
+\begin{proof}
+The plan is to compare the output with a cheapest tree that agrees with it for as long as possible, and to swap one edge. Let $n=\abs{V}$, and let $K$ be the output. It is a forest by construction. It is also connected: if it were not, then, because $G$ is connected, some edge $e$ of $G$ would join two components of $K$; when the algorithm examined $e$, its kept edges formed a subforest of $K$, so $e$ closed no cycle and would have been kept. Hence $K$ is a spanning tree, with $n-1$ edges by the first fact. List its edges $k_1,\dots,k_{n-1}$ in the order in which they were kept, so that $c(k_1)\le\dots\le c(k_{n-1})$.
+
+Suppose that $K$ is not of minimum cost. Among all spanning trees of minimum cost choose $T$ so that the initial run $k_1,\dots,k_{i-1}$ of edges of $K$ contained in $T$ is as long as possible. The run does not exhaust $K$, because a spanning tree that contains $K$ equals $K$; so $i\le n-1$ and $k_i\notin T$. The graph $T+k_i$ contains a unique cycle $C$, as in \cref{fig:matroid:kruskal}. Because $K$ has no cycle, $C$ has an edge $f$ outside $K$, and $f\in T$.
+
+We claim that $c(f)\ge c(k_i)$. Otherwise the algorithm examined $f$ before $k_i$, at a moment when its kept edges were among $k_1,\dots,k_{i-1}$. The set $\{k_1,\dots,k_{i-1},f\}$ lies in the tree $T$ and has no cycle, so $f$ closed no cycle with the kept edges, and the algorithm would have kept $f$; but $f\notin K$.
+
+Now $T'=T+k_i-f$ is a spanning tree, because $f$ lies on the unique cycle of $T+k_i$, and $c(T')=c(T)+c(k_i)-c(f)\le c(T)$. Thus $T'$ has minimum cost and contains $k_1,\dots,k_i$, which contradicts the choice of $T$.
+\end{proof}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  \coordinate (a) at (0,0);     \coordinate (b) at (1.5,0.7);
+  \coordinate (c) at (3,0);     \coordinate (d) at (3.7,-1.4);
+  \coordinate (e) at (2.1,-1.7);\coordinate (g) at (0.2,-1.5);
+  \coordinate (h) at (4.6,0.6);
+  \fill[seamist] (c)--(d)--(e)--cycle;
+  \draw[muted!45,thin] (g)--(e) (b)--(h) (a)--(e);
+  \draw[sea,very thick] (a)--(b) (b)--(c) (c)--(d) (a)--(g) (c)--(h);
+  \draw[sea,very thick] (d)--(e) node[midway,below right=-1pt] {$k_i$};
+  \draw[muted,very thick,dashed] (c)--(e) node[midway,left=1pt] {$f$};
+  \foreach \p in {a,b,c,d,e,g,h} \fill[ink] (\p) circle (1.6pt);
+  \node[right] at (5.3,0.3) {\small\textcolor{sea}{\rule[0.5ex]{1.4em}{1.2pt}}\ edges of $K$};
+  \node[right] at (5.3,-0.3) {\small\textcolor{muted}{- - -}\ the edge of $T$ not in $K$};
+  \node[right] at (5.3,-0.9) {\small\textcolor{seamist}{\rule[0.1ex]{1.4em}{6pt}}\ the cycle of $T+k_i$};
+\end{tikzpicture}
+\caption{Kruskal's swap. The greedy tree $K$ is solid; a cheapest tree $T$ consists of the solid edges other than $k_i$ and the dashed edge $f$, so it shares every edge of $K$ chosen before $k_i$. Adding $k_i$ to $T$ closes the shaded cycle, which must contain an edge $f$ outside $K$, and trading $f$ for $k_i$ does not raise the cost. Thin gray edges belong to neither tree.}
+\label{fig:matroid:kruskal}
+\end{figure}
+
+\paragraph{Independent vectors.} Now let $v_1,\dots,v_n$ be vectors in $\R^d$ with values $w_1,\dots,w_n\ge0$, and look for a linearly independent subfamily of maximum total value. The greedy algorithm examines the vectors in order of nonincreasing value and keeps a vector when it is not in the span of the vectors already kept. Its classical proof is the proof of \cref{thm:matroid:kruskal-old} with the vocabulary changed. The unique cycle of $T+k_i$ becomes the unique linear relation between a new vector and a basis; deleting an edge of the cycle becomes the replacement step of Steinitz's exchange lemma, which trades the new vector for one that occurs in that relation. The argument that the discarded vector is no more valuable than the new one is copied word for word.
+
+\paragraph{Deadlines.} A machine processes jobs $1,\dots,n$, each in one unit of time, in the time slots $1,2,3,\dots$. Job $j$ has a deadline $d_j\in\{1,2,\dots\}$ and a profit $p_j\ge0$, earned only if the job occupies a slot no later than $d_j$. Call a set $S$ of jobs \term{feasible} if its jobs can be placed in distinct slots, each no later than its deadline; the problem is to find a feasible set of maximum total profit. For a set $S$ and a time $t\ge0$ write $N_t(S)$ for the number of jobs of $S$ with deadline at most $t$.
+
+\begin{lemma}[Deadline counting]\label[lemma]{lem:matroid:edf}
+A set $S$ of jobs is feasible if and only if $N_t(S)\le t$ for every $t\ge0$.
+\end{lemma}
+
+\begin{proof}
+If $S$ is feasible, then its jobs with deadline at most $t$ occupy distinct slots among $1,\dots,t$, so there are at most $t$ of them. Conversely, suppose the counting condition holds, list $S$ as $j_1,\dots,j_m$ in order of nondecreasing deadline, and put $j_i$ in slot $i$. The jobs $j_1,\dots,j_i$ all have deadline at most $d_{j_i}$, so $i\le N_{d_{j_i}}(S)\le d_{j_i}$, and job $j_i$ is on time.
+\end{proof}
+
+The greedy algorithm examines the jobs in order of nonincreasing profit and accepts a job when the accepted set stays feasible, a condition that \cref{lem:matroid:edf} lets it test by counting. Its traditional proof of optimality is a third exchange argument, and its skeleton shows that it is the longest of the three.
+
+\begin{aside}[Skeleton of the classical scheduling proof]
+Let $G$ be the greedy set and let $O$ be an optimal set that contains the longest possible initial run $g_1,\dots,g_m$ of the jobs of $G$ in the order the algorithm accepted them. If $G\subseteq O$, then $G=O$, by the order argument in step (4) below. Otherwise let $g=g_{m+1}$. (1) The set $O+g$ is infeasible, since otherwise it would be optimal and would contain a longer run. (2) Let $t$ be the least time with $N_t(O+g)>t$; then $t\ge d_g$, and $N_t(O+g)=t+1$ because $O$ is feasible. (3) The feasible set $G$ contains at most $t$ of these $t+1$ jobs, so some job $o\in O\setminus G$ has $d_o\le t$. (4) The job $o$ is not more profitable than $g$: if the algorithm had examined $o$ before $g$, the jobs it held at that moment would have been among $g_1,\dots,g_m$, which together with $o$ form a subset of the feasible set $O$, and it would have accepted $o$. (5) The set $O+g-o$ passes the deadline counts: below $d_g$ it inherits them from $O$, between $d_g$ and $t$ from the minimality of $t$, and from $t$ on the removal of $o$ pays for the addition of $g$. (6) So $O+g-o$ is optimal and contains $g_1,\dots,g_{m+1}$, a contradiction.
+\end{aside}
+
+\paragraph{One argument, written three times.} Each of the three proofs has two parts. The first is a swap lemma about the objects at hand: the cycle of $T+k_i$, the linear relation of Steinitz's lemma, the tight deadline $t$ and the job $o$ found by counting. The second is generic: if the greedy algorithm rejected an item, then no feasible set contains that item together with all the items chosen before it; so the item swapped out of the optimal solution comes later in the greedy order than the item swapped in, and is worth no more. The generic part was rewritten each time, and the specific part was proved each time from scratch.
+
+The old setting also left the main question unasked. Greed fails for matchings: in the path with edges $ab$, $bc$, $cd$ of weights $2$, $3$, $2$, the greedy algorithm takes $bc$ and stops at weight $3$, while $\{ab,cd\}$ weighs $4$. Each classical proof shows that greed works for one structure, but none says what property separates forests, independent vectors, and feasible schedules from matchings, or whether such a property exists at all.
+
+\section{The move: keep only the exchange}\label{sec:matroid:move}
+
+In a paper presented to the American Mathematical Society in 1934 and published the following year, Hassler Whitney began with the columns of a matrix \parencite{Whitney1935}. Each set of columns is either linearly independent or not, and Whitney observed that the independent sets obey two simple laws: a subset of an independent set is independent, and when two independent sets have $p$ and $p+1$ columns, the smaller one can be enlarged to an independent set by some column of the larger one. He called every system obeying these two laws a \term{matroid} and studied matroids for their own sake.\index{matroid} Whitney had earlier studied separability and duality in graphs, and he observed that the forests of a graph obey the same two laws; he carried graph-theoretic words such as circuit over to matroids.\sidenote{Whitney also exhibited a matroid that comes from no matrix of real numbers. It is the Fano plane, whose seven points are its elements and whose independent sets are the sets of at most three points that do not contain a line.} Takeo Nakasawa found an equivalent axiom system independently in the same years \parencite{Nakasawa1935}, and algebra textbooks of around 1930 had already noticed that proofs about linear and algebraic dependence follow one pattern; \textcite[Section~39.10b]{Schrijver2003} traces these strands.
+
+\begin{definition}[Independence systems and matroids]\label[definition]{def:matroid:matroid}
+Let $E$ be a finite set. A family $\cI$ of subsets of $E$ is \term{hereditary} if $\emptyset\in\cI$ and every subset of a member of $\cI$ belongs to $\cI$. The pair $(E,\cI)$ is then an \term{independence system}, and the members of $\cI$ are its \term{independent sets}. A \term{matroid} is an independence system that satisfies the \term{exchange axiom}:
+\begin{equation}\label{eq:matroid:exchange}
+\text{if } A,B\in\cI \text{ and } \abs{A}<\abs{B}, \text{ then } A+x\in\cI \text{ for some } x\in B\setminus A.
+\end{equation}
+\end{definition}
+\index{independence system}\index{exchange axiom}
+
+\begin{example}[Five matroids]\label[example]{exa:matroid:five}
+\emph{Linear}: the elements of $E$ index vectors $v_e$ in a vector space, and a set $S$ is independent when the family $(v_e)_{e\in S}$ is linearly independent; a repeated vector gives a dependent pair, and the zero vector lies in no independent set. \emph{Graphic}: $E$ is the edge set of a graph with vertex set $V$, and the independent sets are the forests. \emph{Uniform}: the independent sets of $U_{k,n}$ are the subsets of an $n$-element set with at most $k$ elements. \emph{Partition}: $E$ is split into blocks $E_1,\dots,E_m$ with capacities $k_1,\dots,k_m$, and $S$ is independent when $\abs{S\cap E_j}\le k_j$ for every $j$. \emph{Scheduling}: $E$ is a set of unit jobs with deadlines, and the independent sets are the feasible sets. Each family is hereditary, for scheduling by \cref{lem:matroid:edf}. The exchange axiom is the real content: it is verified for the linear, graphic, and scheduling examples in \cref{prop:matroid:three} and for the other two in Exercise~\ref{ex:matroid:uniform}.
+\end{example}
+\index{matroid!linear}\index{matroid!graphic}\index{matroid!uniform}\index{matroid!partition}\index{matroid!scheduling}
+
+The matchings of a graph also form a hereditary family, but not a matroid: in the path of \cref{sec:matroid:before}, the sets $A=\{bc\}$ and $B=\{ab,cd\}$ are matchings, and neither edge of $B$ can be added to $A$. The failure of the exchange axiom is exactly where greed failed.
+
+For $X\subseteq E$, a \term{basis of $X$} is an independent subset of $X$ that is maximal under inclusion, and a basis of $E$ is called a basis of the system. The next lemma is the most useful reading of the exchange axiom.\index{basis}
+
+\begin{lemma}[No false summits]\label[lemma]{lem:matroid:summits}
+An independence system is a matroid if and only if, for every $X\subseteq E$, all bases of $X$ have the same number of elements.
+\end{lemma}
+
+\begin{proof}
+Suppose first that the exchange axiom holds, and let $A$ and $B$ be bases of $X$ with $\abs{A}<\abs{B}$. The axiom gives $x\in B\setminus A$ with $A+x\in\cI$; as $x\in X$, this contradicts the maximality of $A$ in $X$. Conversely, suppose that all bases of every set have the same size, and let $A,B\in\cI$ with $\abs{A}<\abs{B}$. Put $X=A\cup B$. Enlarging $B$ one element at a time inside $X$ produces a basis of $X$ with at least $\abs{B}$ elements, so every basis of $X$ has more than $\abs{A}$ elements. Hence $A$ is not a basis of $X$, and some $x\in X\setminus A=B\setminus A$ has $A+x\in\cI$.
+\end{proof}
+
+In a matroid the common size of the bases of $X$ is the \term{rank} $r(X)$; equivalently, $r(X)$ is the largest size of an independent subset of $X$.\index{rank function} For vectors, $r(X)$ is the dimension of the span of $\{v_e : e\in X\}$. For a graph on the vertex set $V$, $r(X)=\abs{V}-\kappa(X)$, where $\kappa(X)$ is the number of components of the graph $(V,X)$, because a basis of $X$ is a forest with the same components as $X$.
+
+\paragraph{Why this axiom.} Three observations make the choice look inevitable in hindsight, and they are what a reader of \cref{sec:matroid:before} had to notice. First, the specific half of each classical proof used the objects only to move an element from one feasible set to another. Kruskal's cycle swap and Steinitz's replacement step both follow from the exchange axiom (Exercise~\ref{ex:matroid:basis-exchange}), and conversely each of the three structures satisfies the axiom by an argument of a few lines (\cref{prop:matroid:three}). Everything else about cycles, spans, and deadlines was scaffolding.
+
+Second, \cref{lem:matroid:summits} says that the axiom is the statement ``greed works for weights $0$ and $1$.'' With weight $1$ on a set $X$ and weight $0$ elsewhere, the greedy algorithm simply grows an independent subset of $X$ until it cannot grow further, that is, it builds a basis of $X$; and the lemma says that every basis of $X$ is as large as an independent subset of $X$ can be. So the axiom is the simplest special case of the theorem we want. \Cref{sec:matroid:after1} obtains the general case by writing an arbitrary nonnegative weight function as a nonnegative combination of $0$--$1$ weights on nested sets.
+
+Third, the move follows Grothendieck's advice to stoop low. The definition mentions no weights, no order, and no algorithm, only two sets of different sizes; Whitney's motivation was an analogy between graphs and matrices, not optimization. The connection with greed came two decades later, with \textcite{Rado1957}, and the algorithmic theory with Edmonds in the 1960s.\sidenote{Edmonds applied the name ``greedy algorithm'' to Kruskal's procedure and announced its extension to all matroids by 1967, according to Lawler's account as reported by \textcite{GrahamHell1985}.}
+
+\section{After: one theorem behind three algorithms}\label{sec:matroid:after1}
+
+\begin{definition}[The greedy algorithm]\label[definition]{def:matroid:greedy}
+Let $(E,\cI)$ be an independence system and $w\colon E\to\R$ a weight function. List the elements as $e_1,\dots,e_n$ with $w(e_1)\ge w(e_2)\ge\dots\ge w(e_n)$, breaking ties arbitrarily, and write $E_i=\{e_1,\dots,e_i\}$ for $0\le i\le n$. Start with $A_0=\emptyset$. For $i=1,\dots,n$, let $A_i=A_{i-1}+e_i$ if this set is independent, and $A_i=A_{i-1}$ otherwise. The output is $A=A_n$.
+\end{definition}
+
+The algorithm needs only a test of independence, an \emph{oracle}: a union--find structure for forests, Gaussian elimination for vectors, deadline counting for jobs.\sidenote{With a union--find structure, Kruskal's algorithm runs in time $O(m\log m)$ on a graph with $m$ edges; sorting the edges dominates.} Since elements are only ever added, $A_i=A\cap E_i$. The generic half of the classical proofs now becomes a lemma, proved once and for all independence systems.
+
+\begin{lemma}[Greed holds a basis of every prefix]\label[lemma]{lem:matroid:prefix}
+In every independence system, for every weight function and every tie-breaking, the set $A\cap E_i$ is a basis of $E_i$ for each $i$. In particular, the output $A$ is a basis.
+\end{lemma}
+
+\begin{proof}
+The set $A\cap E_i=A_i$ is independent by construction. Suppose that some $e_j\in E_i\setminus A$ had $A_i+e_j\in\cI$. Since $j\le i$, the set $A_{j-1}+e_j$ is contained in $A_i+e_j$, so it is independent by heredity, and the algorithm would have added $e_j$ at step $j$. Hence no element of $E_i$ outside $A_i$ can be added to $A_i$.
+\end{proof}
+
+\begin{theorem}[\textcite{Rado1957}, \textcite{Gale1968}, and \textcite{Edmonds1971}]\label{thm:matroid:greedy}
+For an independence system $(E,\cI)$ the following are equivalent.
+\begin{enumerate}[label=(\alph*)]
+\item The system $(E,\cI)$ is a matroid.
+\item For every weight function $w\colon E\to\R_{\ge0}$, the greedy algorithm returns an independent set of maximum weight.
+\end{enumerate}
+Moreover, if $(E,\cI)$ is a matroid, then for every weight function $w\colon E\to\R$ the greedy algorithm returns a basis of maximum weight among all bases.
+\end{theorem}
+
+\begin{proof}
+We show first that (a) implies (b) and the final assertion. The plan is to slice $w$ into layers of weights $0$ and $1$, on each of which greed is optimal by \cref{lem:matroid:summits}. Fix the order $e_1,\dots,e_n$ used by the algorithm and its output $A$. Put $w(e_{n+1})=0$ and $\lambda_i=w(e_i)-w(e_{i+1})$ for $1\le i\le n$. For every set $S\subseteq E$,
+\begin{equation}\label{eq:matroid:layercake}
+w(S)=\sum_{i=1}^{n}\lambda_i\,\abs{S\cap E_i},
+\end{equation}
+because an element $e_j$ of $S$ lies in $E_i$ exactly when $i\ge j$, and $\sum_{i\ge j}\lambda_i$ telescopes to $w(e_j)$. The order makes $\lambda_i\ge0$ for $i<n$. By \cref{lem:matroid:prefix} and \cref{lem:matroid:summits}, $\abs{A\cap E_i}=r(E_i)$ for every $i$. For an independent set $B$, the set $B\cap E_i$ is an independent subset of $E_i$, so $\abs{B\cap E_i}\le r(E_i)$. If $w\ge0$, then $\lambda_n=w(e_n)\ge0$ as well, and comparing \cref{eq:matroid:layercake} for $B$ and for $A$ term by term gives $w(B)\le w(A)$; this is (b). If instead $w$ is arbitrary and $B$ is a basis, then $\abs{B\cap E_n}=\abs{B}=r(E)=\abs{A\cap E_n}$, so the terms with $i=n$ agree, and the remaining terms, whose coefficients are nonnegative, again give $w(B)\le w(A)$. As $A$ is a basis by \cref{lem:matroid:prefix}, this proves the final assertion.
+
+Now suppose that $(E,\cI)$ is not a matroid; we construct nonnegative weights on which greed fails. By \cref{lem:matroid:summits} some set $X$ has bases $A$ and $B$ with $\abs{A}<\abs{B}$. Let $k=\abs{A}$, and give weight $k+2$ to the elements of $A$, weight $k+1$ to the elements of $X\setminus A$, and weight $0$ to the rest. The algorithm examines the elements of $A$ first and accepts all of them, because every subset of $A$ is independent. It then rejects every element $x$ of $X\setminus A$, because the set it holds is still $A$ and $A+x\notin\cI$ by the maximality of $A$ in $X$. All later elements have weight $0$. So the output weighs $k(k+2)=(k+1)^2-1$, while $B$ weighs at least $(k+1)\abs{B}\ge(k+1)^2$.
+\end{proof}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \def\bw{0.72}
+  \foreach \i/\h/\kept in {1/3.0/1,2/2.4/1,3/2.4/0,4/1.5/1,5/1.0/0,6/0.4/1}{
+    \pgfmathsetmacro{\x}{(\i-1)*0.95}
+    \ifnum\kept=1
+      \fill[sea!80] (\x,0) rectangle ++(\bw,\h);
+    \else
+      \fill[seamist] (\x,0) rectangle ++(\bw,\h);
+    \fi
+    \node[below] at (\x+\bw/2,0) {\small $e_{\i}$};
+  }
+  \foreach \i/\h in {1/3.0,3/2.4,4/1.5,5/1.0,6/0.4}{
+    \pgfmathsetmacro{\xr}{(\i-1)*0.95+0.72}
+    \draw[ink,densely dashed,thin] (-0.15,\h) -- (\xr,\h);
+  }
+  \draw[ink!70] (-0.15,0) -- (5.6,0);
+  \draw[decorate,decoration={brace,amplitude=3pt,mirror},ink] (2.65,1.5) -- (2.65,2.4)
+     node[midway,right=3pt] {\small $\lambda_3$: weight $1$ on $E_3$};
+  \node[right,align=left] at (6.0,2.6) {\small\textcolor{sea}{\rule{0.9em}{0.9em}}\ kept by greed};
+  \node[right,align=left] at (6.0,2.0) {\small\textcolor{seamist}{\rule{0.9em}{0.9em}}\ rejected};
+\end{tikzpicture}
+\caption{The layer cake \cref{eq:matroid:layercake}. Sorted weights are drawn as columns. The dashed lines cut the region under the columns into horizontal layers, and the layer of thickness $\lambda_i$ covers exactly the columns of $E_i$ (here $\lambda_2=0$, because $e_2$ and $e_3$ weigh the same). In every layer the kept columns form a basis of $E_i$, hence $r(E_i)$ of them, which is the most that an independent set can place in that layer.}
+\label{fig:matroid:layercake}
+\end{figure}
+
+The forward half uses heredity for bookkeeping, in \cref{lem:matroid:prefix} and for the sets $B\cap E_i$, the exchange axiom only through \cref{lem:matroid:summits} applied to the prefixes $E_i$, and nonnegativity only for the bottom coefficient $\lambda_n$. Identity \cref{eq:matroid:layercake} writes $w$ on $E$ as $\sum_i\lambda_i\ind_{E_i}$, for $w\ge0$ a nonnegative combination of $0$--$1$ weights on nested sets, and the greedy output is optimal for every layer simultaneously (\cref{fig:matroid:layercake}). The converse half explains the path of \cref{sec:matroid:before}: with $A=\{bc\}$ and $X=\{ab,bc,cd\}$ it produces exactly the weights $3$ on $bc$ and $2$ on $ab$ and $cd$.\sidenote{A stronger form of the forward direction is due to \textcite{Gale1968}: the $i$th heaviest element of the greedy output is at least as heavy as the $i$th heaviest element of every independent set (Exercise~\ref{ex:matroid:gale}).}
+
+What remains of each classical proof is the verification of the exchange axiom.\index{matroid!graphic}\index{matroid!linear}\index{matroid!scheduling}
+
+\begin{proposition}\label[proposition]{prop:matroid:three}
+The linear, graphic, and scheduling families of \cref{exa:matroid:five} satisfy the exchange axiom \cref{eq:matroid:exchange}; hence they are matroids.
+\end{proposition}
+
+\begin{proof}
+We treat the three families in turn; in each case let $A$ and $B$ be independent with $\abs{A}<\abs{B}$, and we look for $x\in B\setminus A$ with $A+x$ independent.
+
+\emph{Linear.} If every $v_b$ with $b\in B$ lay in the span of $\{v_a: a\in A\}$, then $\abs{B}$ linearly independent vectors would lie in a space of dimension at most $\abs{A}<\abs{B}$. So some $b\in B$ has $v_b$ outside that span; then $b\notin A$, and $A+b$ is independent.
+
+\emph{Graphic.} The graphs $(V,A)$ and $(V,B)$ have $\abs{V}-\abs{A}$ and $\abs{V}-\abs{B}$ components, and the first number is larger. If every edge of $B$ joined two vertices of one component of $(V,A)$, then each component of $(V,B)$ would lie inside a component of $(V,A)$, and $(V,B)$ would have at least as many components as $(V,A)$. So some edge $b\in B$ joins two components of $(V,A)$; then $b\notin A$, and $A+b$ has no cycle.
+
+\emph{Scheduling.} Let $s$ be the largest integer $t\ge0$ with $N_t(B)\le N_t(A)$. It exists because $t=0$ qualifies, while every $t$ at least as large as all deadlines fails, since there $N_t(A)=\abs{A}<\abs{B}=N_t(B)$. Thus $N_t(A)<N_t(B)$ for all $t>s$. As $N_s(B)\le N_s(A)$ and $\abs{B}>\abs{A}$, the set $B$ has more jobs with deadline after $s$ than $A$ has, so some $x\in B\setminus A$ has $d_x>s$. The set $A+x$ passes the counts of \cref{lem:matroid:edf}: for $t<d_x$ we have $N_t(A+x)=N_t(A)\le t$, and for $t\ge d_x$, hence $t>s$, we have $N_t(A+x)=N_t(A)+1\le N_t(B)\le t$.
+\end{proof}
+
+\begin{corollary}[Kruskal's theorem, again]\label[corollary]{cor:matroid:kruskal}
+For every connected graph and every cost function, Kruskal's algorithm returns a spanning tree of minimum cost.
+\end{corollary}
+
+\begin{proof}
+In a connected graph the bases of the graphic matroid are the spanning trees, since a disconnected forest can be enlarged by an edge joining two of its components, while a spanning tree cannot be enlarged without closing a cycle. Kruskal's algorithm is the greedy algorithm for the weights $w=-c$. By \cref{prop:matroid:three} and the final assertion of \cref{thm:matroid:greedy}, its output maximizes $-c$, that is, minimizes $c$, over all spanning trees.
+\end{proof}
+
+\begin{corollary}\label[corollary]{cor:matroid:schedule}
+For unit jobs with deadlines and nonnegative profits, the greedy algorithm returns a feasible set of maximum total profit; and for vectors with nonnegative values, it returns a linearly independent set of maximum total value.
+\end{corollary}
+
+\begin{proof}
+Combine \cref{prop:matroid:three} with part (b) of \cref{thm:matroid:greedy}.
+\end{proof}
+
+Compare the bookkeeping. The proof of \cref{thm:matroid:kruskal-old} took four paragraphs and two facts about trees; the proof of \cref{cor:matroid:kruskal} takes three sentences, and the graph-specific work is the three-sentence graphic case of \cref{prop:matroid:three}. The scheduling skeleton of \cref{sec:matroid:before} needed six steps, a minimal violated deadline, and a counting argument to find the job to remove; now the counting is a five-sentence verification of the exchange axiom, and the rest is shared. The shortening has a reason, not just new notation: the order argument lives in \cref{lem:matroid:prefix}, the swap lives in the axiom, and the comparison of weights is the layer-cake identity, so no application repeats them. The theorem also says something no classical proof said: greed by weight succeeds for all weights only on matroids, and when it fails, the proof names the weights that defeat it.
+
+\section{After: the layer cake as a certificate}\label{sec:matroid:after2}
+
+The layer-cake identity is a certificate, and certificates are the business of linear programming (\cref{ch:lpduality}). Read that way, the greedy theorem yields results that no classical exchange proof could reach. We need one more property of the rank function.
+
+\begin{proposition}\label[proposition]{prop:matroid:rank}
+The rank function of a matroid satisfies $0\le r(X)\le\abs{X}$, $r(X)\le r(Y)$ for $X\subseteq Y$, and the \term{submodular inequality} $r(X\cup Y)+r(X\cap Y)\le r(X)+r(Y)$.
+\end{proposition}
+\index{submodular function}
+
+\begin{proof}
+The first two properties hold because $r(X)$ is the largest size of an independent subset of $X$. For the third, let $I$ be a basis of $X\cap Y$, and enlarge it one element at a time inside $X\cup Y$ to a basis $J$ of $X\cup Y$, so that $\abs{J}=r(X\cup Y)$ by \cref{lem:matroid:summits}. The set $J\cap X\cap Y$ is independent, lies in $X\cap Y$, and contains the basis $I$, so it equals $I$. As $J\cap X$ and $J\cap Y$ are independent subsets of $X$ and $Y$, we get $r(X)+r(Y)\ge\abs{J\cap X}+\abs{J\cap Y}=\abs{J}+\abs{J\cap X\cap Y}=r(X\cup Y)+r(X\cap Y)$.
+\end{proof}
+
+\subsection{The matroid polytope}\label{sec:matroid:polytope}
+
+For $x\in\R^E$ and $S\subseteq E$ write $x(S)=\sum_{e\in S}x_e$, and for a set $I$ let $\ind_I\in\{0,1\}^E$ be its indicator vector.\index{matroid polytope}
+
+\begin{theorem}[\textcite{Edmonds1970}]\label{thm:matroid:polytope}
+For a matroid $M=(E,\cI)$ with rank function $r$, the polytope
+\[
+P(M)=\{x\in\R^E : x\ge0 \text{ and } x(S)\le r(S) \text{ for every } S\subseteq E\}
+\]
+is the convex hull $Q(M)$ of the vectors $\ind_I$ with $I\in\cI$.
+\end{theorem}
+
+\begin{proof}
+The plan is to show that every linear function attains its maximum over $P(M)$ at an indicator vector, with the layer-cake coefficients as the dual certificate, and then to separate. The inclusion $Q(M)\subseteq P(M)$ holds because $\ind_I(S)=\abs{I\cap S}\le r(S)$ for $I\in\cI$ and $P(M)$ is convex.
+
+Fix $w\in\R^E$, order $E$ as the greedy algorithm does, let $A$ be its output, let $k$ be the number of elements of positive weight, and put $A'=A\cap E_k$, an independent set. If $k=0$, then $A'=\emptyset$ and $w^{\top}x\le0=w^{\top}\ind_{A'}$ for every $x\ge0$. Otherwise define $y_{E_i}=w(e_i)-w(e_{i+1})$ for $i<k$, $y_{E_k}=w(e_k)$, and $y_S=0$ for every other set $S$, so that $y\ge0$. For each element $e_j$ the sum $\sum_{S\ni e_j}y_S$ telescopes to $w(e_j)$ if $j\le k$ and vanishes if $j>k$; in both cases it is at least $w(e_j)$. Hence every $x\in P(M)$ satisfies, by $x\ge0$ and then by $y\ge0$,
+\[
+w^{\top}x\le\sum_{j}x_{e_j}\sum_{S\ni e_j}y_S=\sum_{S}y_S\,x(S)\le\sum_{S}y_S\,r(S).
+\]
+The numbers $y_{E_i}$ are the coefficients $\lambda_i$ of \cref{eq:matroid:layercake} for the weights $w^+=\max(w,0)$, whose order is the same. Since $r(E_i)=\abs{A\cap E_i}$ by \cref{lem:matroid:prefix}, identity \cref{eq:matroid:layercake} for $w^+$ turns the right side into $w^+(A)=w(A')$. So $\max_{P(M)}w^{\top}x\le w^{\top}\ind_{A'}\le\max_{Q(M)}w^{\top}x$ for every $w$.
+
+Finally, suppose that some $x^*\in P(M)$ lies outside $Q(M)$. Since $Q(M)$ is the convex hull of finitely many points, the separating hyperplane theorem gives $w$ with $w^{\top}x^*>\max_{Q(M)}w^{\top}x\ge\max_{P(M)}w^{\top}x$, which is absurd.
+\end{proof}
+
+The proof is the greedy theorem in the language of linear programming.\sidenote{Weak duality and the separating hyperplane theorem, the two tools of this proof, are the subject of \cref{ch:lpduality}.} The dual solution lives on the chain $E_1\subset E_2\subset\dots\subset E_k$, its values are the thicknesses of the layers in \cref{fig:matroid:layercake}, and it is integral whenever $w$ is. In polyhedral language, the defining system of $P(M)$ is totally dual integral \parencite[Chapter~40]{Schrijver2003}.
+
+\subsection{Two matroids at once}\label{sec:matroid:intersection}
+
+The common independent sets of two matroids need not form a matroid (the bipartite matchings below are an example), so greed alone cannot be trusted to find a largest one. Edmonds found that two matroids nevertheless behave like one.\index{matroid intersection}
+
+\begin{theorem}[Matroid intersection; \textcite{Edmonds1970}]\label{thm:matroid:intersection}
+Let $M_1=(E,\cI_1)$ and $M_2=(E,\cI_2)$ be matroids with rank functions $r_1$ and $r_2$. Then
+\[
+\max\{\abs{I} : I\in\cI_1\cap\cI_2\}=\min_{S\subseteq E}\bigl(r_1(S)+r_2(E\setminus S)\bigr),
+\]
+and $P(M_1)\cap P(M_2)$ is the convex hull of the indicator vectors of the common independent sets.
+\end{theorem}
+
+One inequality takes a line: a common independent set $I$ satisfies $\abs{I}=\abs{I\cap S}+\abs{I\setminus S}\le r_1(S)+r_2(E\setminus S)$ for every $S$. The reverse inequality is the substance. Edmonds proved it with linear programming, by uncrossing an optimal dual solution into two chains whose constraint matrix is totally unimodular; \textcite[Theorem~41.1]{Schrijver2003} gives a half-page inductive proof implicit in work of Brualdi, and polynomial algorithms find a largest common independent set.
+
+\begin{corollary}[K\H{o}nig's theorem]\label[corollary]{cor:matroid:konig}
+In a bipartite graph the largest size of a matching equals the smallest size of a vertex cover.
+\end{corollary}
+\index{Konig's theorem@K\H{o}nig's theorem}
+
+\begin{proof}
+Let the graph have sides $U$ and $W$ and edge set $E$. Let $M_U$ be the partition matroid on $E$ whose blocks are the sets of edges at the vertices $u\in U$, each with capacity $1$, and define $M_W$ in the same way. The common independent sets are the matchings, and $r_U(S)$ is the number of vertices of $U$ met by $S$. For each $S\subseteq E$, the vertices of $U$ met by $S$ together with the vertices of $W$ met by $E\setminus S$ cover every edge, and there are $r_U(S)+r_W(E\setminus S)$ of them. By \cref{thm:matroid:intersection} some $S$ makes this number equal to the largest size of a matching, so the smallest vertex cover is no larger than the largest matching. Conversely, the edges of a matching need distinct vertices to cover them.
+\end{proof}
+
+\Cref{ch:lpduality} derives K\H{o}nig's theorem from LP duality and total unimodularity; here it is one specialization of a statement about two matroids. Others come from pairing matroids of different kinds. A spanning tree whose edges have pairwise different colors is a common independent set, of size $\abs{V}-1$, of a graphic matroid and a partition matroid, and \cref{thm:matroid:intersection} decides when one exists (Exercise~\ref{ex:matroid:rainbow}). The theorem stops at two. A largest common independent set of three partition matroids is a largest three-dimensional matching, an NP-hard problem \parencite{Karp1972}, and the intersection of three matroid polytopes can have fractional vertices (Exercise~\ref{ex:matroid:polytope}).
+
+\subsection{Weaken the axiom, weaken the guarantee}\label{sec:matroid:submodular}
+
+A rank function is integral, vanishes on the empty set, and grows by at most one when an element is added, and by \cref{prop:matroid:rank} it is monotone and submodular; these properties characterize matroids (Exercise~\ref{ex:matroid:rank-axioms}). Keep only the last two. A set function $f$ on $E$ is \term{monotone} if $f(S)\le f(T)$ whenever $S\subseteq T$, and \term{submodular} if $f(S)+f(T)\ge f(S\cup T)+f(S\cap T)$ for all $S,T\subseteq E$. Coverage functions $f(S)=\abs{\bigcup_{e\in S}C_e}$, for finite sets $C_e$ indexed by $E$, are the basic example. Write $\Delta(e\mid S)=f(S+e)-f(S)$ for the marginal gain. Applying the submodular inequality to $S+e$ and $T$ shows that marginal gains diminish: $\Delta(e\mid S)\ge\Delta(e\mid T)$ whenever $S\subseteq T$ and $e\notin T$.
+
+Maximizing such an $f$ over sets of size at most $k$ includes maximum coverage, which is NP-hard, so exactness is gone.\sidenote{Maximum coverage asks for $k$ of the sets $C_e$ covering as many elements as possible. Deciding whether $k$ sets can cover everything is the set cover problem, one of the NP-complete problems of \textcite{Karp1972}.} The greedy algorithm starts from $S_0=\emptyset$ and sets $S_{i+1}=S_i+e$ for an element $e\notin S_i$ of largest marginal gain $\Delta(e\mid S_i)$.
+
+\begin{lemma}\label[lemma]{lem:matroid:submod-sum}
+For a submodular $f$ and sets $S,O\subseteq E$, we have $f(S\cup O)\le f(S)+\sum_{o\in O\setminus S}\Delta(o\mid S)$.
+\end{lemma}
+
+\begin{proof}
+List $O\setminus S$ as $o_1,\dots,o_m$. The difference $f(S\cup O)-f(S)$ telescopes into the gains $\Delta(o_j\mid S\cup\{o_1,\dots,o_{j-1}\})$, and each of these is at most $\Delta(o_j\mid S)$ because marginal gains diminish.
+\end{proof}
+
+\begin{theorem}[\textcite{NemhauserWolseyFisher1978}]\label{thm:matroid:nwf}
+Let $f$ be monotone and submodular with $f(\emptyset)=0$, and let $1\le k\le\abs{E}$. Then the greedy set $S_k$ satisfies
+\[
+f(S_k)\ge\Bigl(1-\bigl(1-\tfrac1k\bigr)^k\Bigr)\max_{\abs{O}\le k}f(O)\ge\Bigl(1-\frac1e\Bigr)\max_{\abs{O}\le k}f(O).
+\]
+\end{theorem}
+
+\begin{proof}
+Let $O$ be a maximizer and $\delta_i=f(O)-f(S_i)$; the plan is to show that each greedy step removes at least a $1/k$ fraction of the remaining gap $\delta_i$. Fix $i<k$, and let $e$ be the element that the algorithm adds to $S_i$. Every term of the sum below is at most the largest gain $\Delta(e\mid S_i)$, which is nonnegative by monotonicity, and there are at most $k$ terms. Hence, by monotonicity, then \cref{lem:matroid:submod-sum}, then the greedy choice,
+\[
+f(O)\le f(S_i\cup O)\le f(S_i)+\sum_{o\in O\setminus S_i}\Delta(o\mid S_i)\le f(S_i)+k\,\Delta(e\mid S_i).
+\]
+Since $\Delta(e\mid S_i)=\delta_i-\delta_{i+1}$, this reads $\delta_{i+1}\le(1-1/k)\,\delta_i$. Applying this for $i=0,\dots,k-1$, and using that the factor $1-1/k$ is nonnegative, gives $\delta_k\le(1-1/k)^k\delta_0=(1-1/k)^kf(O)$, because $f(\emptyset)=0$. Finally $(1-1/k)^k\le e^{-1}$ because $1-t\le e^{-t}$.
+\end{proof}
+
+For a matroid rank function the greedy algorithm is exact, because it builds a set of rank $\min(k,r(E))$; the factor $1-1/e$ is what survives when integrality and unit increments are dropped. The loss is unavoidable: for maximum coverage no polynomial-time algorithm achieves $1-1/e+\eps$ unless $\mathrm{P}=\mathrm{NP}$ \parencite{Feige1998}. Under a matroid constraint instead of a cardinality constraint the same greedy algorithm guarantees $1/2$ \parencite{FisherNemhauserWolsey1978}, and a continuous relaxation recovers $1-1/e$ \parencite{CalinescuChekuriPalVondrak2011}.
+
+\section{Costs and limits}\label{sec:matroid:costs}
+
+\paragraph{Where did the difficulty go?} Into the exchange axiom, which must now be checked for every new structure, and into the oracle that tests independence. For forests and vectors the check takes two or three sentences, from a fact the reader already owns, the count of components or the notion of dimension. For schedules it is a genuine counting argument, and for transversal matroids, whose independent sets are the sets of vertices on one side of a bipartite graph that some matching covers \parencite{EdmondsFulkerson1965}, it needs alternating paths (Exercise~\ref{ex:matroid:transversal}). The general theorem costs two paragraphs and is paid once. For a single application the saving is modest: Kruskal's theorem, with the general theorem counted in, is not much shorter than its classical proof. The bargain comes from what the classical proofs did not provide: the converse, which names the weights that defeat greed on every non-matroid; a transfer to each new matroid at the price of one exchange check; and the extensions to polytopes and polymatroids, which reuse the same layer-cake certificate, and to intersections and submodular functions. The axioms say nothing about the cost of the oracle. Deciding linear independence of real vectors in floating point, for instance, is a numerical problem that the matroid does not see.
+
+\paragraph{What did not dissolve.} The theory stops at two matroids: three already encode three-dimensional matching. It also covers one rule only, greed by weight for all weights, and many successful greedy algorithms follow other rules on families that are not matroids. To pick the most pairwise disjoint intervals, repeatedly take, among the intervals disjoint from those already taken, one that ends first; yet the disjoint families are not a matroid (the interval $[1,4]$ meets both $[0,2]$ and $[3,5]$), so greed by weight must fail for some weights, and the weighted problem is solved by dynamic programming instead. Prim's algorithm grows a tree from a fixed root, and its feasible sets are not hereditary; Huffman's code construction repeatedly merges the two rarest symbols. Greedoids \parencite{KorteLovasz1981} replace heredity by a weaker accessibility condition and cover Prim's trees, and \textcite{HelmanMoretShapiro1993} characterize exactly the set systems of this broader kind on which greed by weight optimizes every linear objective; the price is a longer list of axioms. For submodular functions, the proof of \cref{thm:matroid:nwf} uses monotonicity twice, in its first inequality and for the sign of the greedy gain, and without it greed has no guarantee.\sidenote{Let $B$ have $m\ge3$ elements, add one more element $a$, and put $f(S)=\abs{S\cap B}$ if $a\notin S$ and $f(S)=2$ if $a\in S$. The submodular inequality for $X$ and $Y$ is an equality when $a$ lies in both sets or in neither, and when $a$ lies in $X$ only it reads $2+\abs{Y\cap B}\ge2+\abs{X\cap Y\cap B}$; so $f$ is submodular. With $k=m$, greed takes $a$ first and ends with value $2$, while $f(B)=m$.} Unconstrained maximization of a nonnegative submodular function is handled by a randomized variant of greed that grows one set while shrinking another, and its factor $1/2$ matches a known lower bound in the model where $f$ is accessed only through its values \parencite{BuchbinderFeldmanNaorSchwartz2015}. Finally, the axiom does not settle online versions such as the matroid secretary problem of Exercise~\ref{ex:matroid:research-secretary}, whose central conjecture \parencite{BabaioffImmorlicaKleinberg2007} stood for nearly two decades; a 2026 preprint, not yet refereed, claims a proof \parencite{Singla2026}.
+
+\paragraph{Other seas.} Edmonds's own extension replaces the rank function by a monotone submodular $f$ with $f(\emptyset)=0$: a greedy vector maximizes linear functions over the \emph{polymatroid} $\{x\ge0 : x(S)\le f(S)\text{ for all }S\}$, with the layer-cake coefficients again as the dual certificate \parencite{Edmonds1970}. Submodular functions are often described as a discrete analogue of convex functions \parencite[Chapter~44]{Schrijver2003}. The structure theory of matroids, which Whitney began, has a life of its own \parencite{Oxley2011}.
+
+\section{The move, distilled}\label{sec:matroid:distilled}
+
+\begin{move}{Axiomatize the swap}
+\movepart{In one sentence} When several proofs of one phenomenon run through the same swap, make the swap an axiom, prove the phenomenon once, and ask whether the axiom is also necessary.
+\movepart{Triggers} Exchange arguments that look alike across unrelated objects; an algorithm that works on some structures and fails on similar ones for no visible reason.
+\movepart{Recipe} Set the classical proofs side by side and mark each use of the specific objects. State the weakest property, in terms of sets alone, that those uses need. Prove the general theorem from it, and test necessity by turning every violation into a counterexample. Check the property in each old example, where the old difficulty now lives, and look inside the general proof for a certificate, here the layer cake.
+\movepart{Anti-pattern} Axioms copied from the examples rather than distilled from the proofs, so that checking them is harder than proving the original theorem; or a sufficient axiom never tested for necessity, which explains the successes but not the failures.
+\end{move}
+
+\dissolutiontest{Kruskal's theorem: four paragraphs and two facts about trees become three sentences and a three-sentence exchange check; the six-step scheduling proof becomes a five-sentence check.}{Little for the three classical problems; in general only heredity and exchange are assumed, and maximum-weight bases need no sign condition on the weights.}{Spanning trees, independent vectors, and schedules obey one theorem; weighted greed is a sum of $0$--$1$ cases; K\H{o}nig's theorem is a case of matroid intersection.}{A characterization of when greed works, the matroid polytope, matroid intersection, and the $1-1/e$ guarantee for submodular maximization.}
+
+This is the second axiomatization of Part~I. In \cref{ch:kolmogorov} the axioms of probability forced hidden parameters into the open; here the axiom shows that one property was doing the work in three proofs, and the converse half shows that no other property could. The two moves share a test: an axiom earns its place when it is weak enough to check in each example and strong enough to make the general theorem short.
+
+The polytope and intersection theorems belong to the duality thread of the book. K\H{o}nig's theorem appears in \cref{ch:lpduality} as LP duality with a totally unimodular matrix and here as matroid intersection, and the layer-cake identity is a dual solution in disguise; the same thread continues with transport duality in \cref{ch:transport}. The rank function is the combinatorial shadow of dimension, the invariant that drives the linear-algebra method of \cref{ch:dimension}.
+
+\begin{exercises}
+\item \consolidation\label{ex:matroid:uniform} (a) Show that uniform and partition matroids (\cref{exa:matroid:five}) satisfy the exchange axiom, and compute their rank functions. (b) Show that the matchings of a simple graph form a matroid if and only if every connected component with at least one edge is a triangle or a star.
+
+\item \consolidation\label{ex:matroid:gale} (Domination.) In a matroid with weights $w\colon E\to\R$, let $a_1,\dots,a_r$ be the greedy output in the order of choice, and let $B=\{b_1,\dots,b_m\}$ be independent with $w(b_1)\ge\dots\ge w(b_m)$. Show that $m\le r$ and $w(a_i)\ge w(b_i)$ for $i\le m$ \parencite{Gale1968}. Deduce that a greedy basis maximizes $\sum_{e\in B}g(w(e))$ over all bases $B$ for every nondecreasing $g\colon\R\to\R$, and that Kruskal's tree minimizes every symmetric function of the edge costs that is nondecreasing in each cost, for instance the largest edge cost; \textcite{GrahamHell1985} trace this observation to \textcite{Prim1957}. \hint{Apply \cref{lem:matroid:prefix} to the prefix of elements of weight at least $w(b_i)$.}
+
+\item \consolidation\hard\label{ex:matroid:rank-axioms} (Rank axioms.) Let $r$ be an integer-valued function on the subsets of $E$ with $0\le r(X)\le\abs{X}$, monotone and submodular. Show that $\{X : r(X)=\abs{X}\}$ is the family of independent sets of a matroid whose rank function is $r$. \hint{For the exchange axiom, suppose that $r(A+b)=\abs{A}$ for every $b\in B\setminus A$, add the elements of $B\setminus A$ to $A$ one at a time, and use submodularity to keep the rank equal to $\abs{A}$.}
+
+\item \consolidation\label{ex:matroid:basis-exchange} (Basis exchange.) Let $T$ and $K$ be bases of a matroid and $x\in K\setminus T$. Show that $T+x-f$ is a basis for some $f\in T\setminus K$. Explain how this supplies the swap in the proof of \cref{thm:matroid:kruskal-old}, with $T$ the cheapest tree and $x=k_i$, and the replacement step of Steinitz's lemma. \hint{Start from $(T\cap K)+x$ and enlarge it from $T$ with the exchange axiom.}
+
+\item \consolidation\hard\label{ex:matroid:schedule-rank} (A min--max formula for deadlines.) Show that the largest number of jobs of a set $S$ that can be completed on time is $\min_{t\ge0}\bigl(t+\abs{\{j\in S: d_j>t\}}\bigr)$. \hint{For one inequality, take a basis $F$ of $S$ in the scheduling matroid, let $s$ be the largest $t$ with $N_t(F)=t$, and show that every job of $S$ with deadline after $s$ lies in $F$.}
+
+\item \consolidation\label{ex:matroid:polytope} (Polytopes.) (a) Describe $P(U_{2,3})$ by inequalities and check that its vertices are the indicator vectors of the sets with at most two elements. (b) For $i=1,2,3$ let $M_i$ be the matroid on $\{1,2,3\}$ whose independent sets are the sets not containing $\{1,2,3\}\setminus\{i\}$. Show that $(\frac12,\frac12,\frac12)$ is a vertex of $P(M_1)\cap P(M_2)\cap P(M_3)$, while every set independent in all three matroids has at most one element. Conclude that the polyhedral half of \cref{thm:matroid:intersection} fails for three matroids.
+
+\item \transfer\hard\label{ex:matroid:transversal} (Transversal matroids.)\index{matroid!transversal} Let $H$ be a bipartite graph with sides $E$ and $W$, and call $S\subseteq E$ independent if some matching of $H$ covers every vertex of $S$. Prove the exchange axiom. Recover the scheduling case of \cref{prop:matroid:three} by taking $W$ to be the time slots $1,\dots,D$, where $D$ is the largest deadline, and joining job $j$ to the slots $1,\dots,d_j$, and conclude that a firm that must staff jobs of different values with qualified workers can choose its most valuable staffable set greedily. \hint{If matchings $M_A$ and $M_B$ cover exactly $A$ and $B$ with $\abs{A}<\abs{B}$, some component of $M_A\triangle M_B$ is a path with more edges from $M_B$ than from $M_A$; switch along it.}
+
+\item \transfer\hard\label{ex:matroid:rainbow} (Rainbow spanning trees.) The edges of a connected graph are colored. Prove that the graph has a spanning tree whose edges have pairwise different colors if and only if, for every set $C$ of colors, deleting the edges with colors in $C$ leaves at most $\abs{C}+1$ components. \hint{Intersect the graphic matroid with the partition matroid of the color classes; in \cref{thm:matroid:intersection}, given $S$, consider the colors that occur in $E\setminus S$.}
+
+\item \transfer\label{ex:matroid:influence} (Influence in networks.) In the live-arc description of the independent cascade model of \textcite{KempeKleinbergTardos2003}, each arc $(u,v)$ of a directed graph is live independently with probability $p_{uv}$, and a seed set $S$ activates every vertex that can be reached from $S$ along live arcs. Let $\sigma(S)$ be the expected number of activated vertices. Show that $\sigma$ is monotone and submodular, and conclude that choosing $k$ seeds greedily, with $\sigma$ evaluated exactly, reaches at least a fraction $1-1/e$ of the best possible spread. \hint{For a fixed set of live arcs, the number of activated vertices is a coverage function.}
+
+\item \transfer\label{ex:matroid:weak} (Weak submodularity.) Let $f$ be monotone with $f(\emptyset)=0$, and suppose that for some $\gamma\in(0,1]$ we have $\sum_{x\in S}\Delta(x\mid L)\ge\gamma\bigl(f(L\cup S)-f(L)\bigr)$ for all disjoint $L,S\subseteq E$ with $\abs{S}\le k$. (a) Show that submodular functions satisfy this with $\gamma=1$. (b) Adapt the proof of \cref{thm:matroid:nwf} to show that $f(S_k)\ge(1-e^{-\gamma})\max_{\abs{O}\le k}f(O)$. (c) Let $X_1,X_2$ have unit variance and correlation $\rho\in(0,1)$, put $Z=(X_1-X_2)/\sqrt{2-2\rho}$, and on $E=\{1,2\}$ let $f(S)$ be the fraction of the variance of $Z$ explained by the best linear predictor built from $\{X_i: i\in S\}$. Show that for $k=2$ the condition fails for every $\gamma>1-\rho$, the smallest eigenvalue of the correlation matrix. \textcite{DasKempe2011} prove that, for standardized features, the smallest eigenvalue of their correlation matrix is always an admissible $\gamma$, which turns forward stepwise regression into a case of (b).
+
+\item \research\label{ex:matroid:research-ml} (When does greedy selection work in machine learning?) Features, training examples, and context tokens for a trained model are routinely chosen by forward selection: add the item that most improves a validation score. Let $f(S)$ be that improvement for the item set $S$. Exercise~\ref{ex:matroid:weak} shows that a positive ratio $\gamma$ yields a $1-e^{-\gamma}$ guarantee. Find a nonlinear model class and a checkable condition on the data or the network under which $\gamma$ is bounded away from $0$, or construct natural examples in which $\gamma\to0$ and forward selection is far from optimal. What is open: bounds of this kind are known for linear regression and a few related settings but not for neural networks, and it is unclear when a guarantee for such a set function transfers to test performance.
+
+\item \research\label{ex:matroid:research-secretary} (Greed online.) In the matroid secretary problem the elements of a matroid with hidden weights arrive in uniformly random order; each weight is revealed on arrival, and the element must be accepted or rejected at once, keeping the accepted set independent. For $U_{1,n}$ this is the classical secretary problem, in which the best element can be secured with probability tending to $1/e$ and no better. \textcite{BabaioffImmorlicaKleinberg2007} conjectured that every matroid admits an algorithm whose expected weight is a constant fraction of the optimum, and a 2026 preprint claims an algorithm that selects each element of the optimal basis with probability at least $1/4$ \parencite{Singla2026}. Check, simplify, or improve the claim. Is $1/e$ achievable for every matroid? Is there a structural characterization, in the spirit of \cref{thm:matroid:greedy}, of the families on which random-order algorithms achieve a constant fraction?
+\end{exercises}
+
+\notesandrefs
+
+The history of the minimum spanning tree problem is told by \textcite{GrahamHell1985}: Bor\r{u}vka's 1926 solution, Jarn\'ik's 1930 algorithm that Prim and Dijkstra later rediscovered, and repeated rediscoveries of Kruskal's construction. \textcite{Whitney1935} founded matroid theory; \textcite{Nakasawa1935} reached an equivalent axiom system independently, and his work remained little known for decades. \textcite[Section~39.10b]{Schrijver2003} traces the earlier strands, from Dedekind's lattices through the exchange lemmas of Grassmann and Steinitz to van der Waerden's \emph{Moderne Algebra}. \textcite{Oxley2011} is the standard text on the structure theory, and \textcite[Chapters~39--44]{Schrijver2003} covers the algorithmic and polyhedral side.
+
+\textcite[Section~40.1]{Schrijver2003} credits the direction from matroids to greed in \cref{thm:matroid:greedy} to \textcite{Rado1957} and the converse to \textcite{Gale1968} and \textcite{Edmonds1971}. The layer-cake proof given here is the dual construction behind Edmonds's polytope theorem, as presented by \textcite[Theorem~40.2]{Schrijver2003}. Edmonds's Calgary paper \parencite{Edmonds1970} contains the matroid polytope, both forms of the matroid intersection theorem, and polymatroids. Transversal matroids are due to \textcite{EdmondsFulkerson1965}, and the NP-hardness of three-dimensional matching to \textcite{Karp1972}.
+
+The $1-1/e$ analysis of greed for submodular functions is due to \textcite{NemhauserWolseyFisher1978}; the companion paper of \textcite{FisherNemhauserWolsey1978} treats matroid constraints. \textcite{Feige1998} showed that $1-1/e$ is the best polynomial-time factor for maximum coverage unless $\mathrm{P}=\mathrm{NP}$, \textcite{CalinescuChekuriPalVondrak2011} reached $1-1/e$ under a matroid constraint, and \textcite{BuchbinderFeldmanNaorSchwartz2015} settled the unconstrained non-monotone case. \textcite{KempeKleinbergTardos2003} and \textcite{DasKempe2011} brought the argument into network analysis and statistical learning. Greedoids are due to \textcite{KorteLovasz1981}, and the exact characterization of greedy structures to \textcite{HelmanMoretShapiro1993}. The matroid secretary problem was posed by \textcite{BabaioffImmorlicaKleinberg2007}; the claimed resolution of \textcite{Singla2026} was a recent, unrefereed preprint at the time of writing.
+
+
+\printchapterbib
+\end{refsection}
