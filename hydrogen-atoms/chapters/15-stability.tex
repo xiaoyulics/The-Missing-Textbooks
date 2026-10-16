@@ -1,0 +1,462 @@
+% Chapter 15 of The Hydrogen Atoms of Deep Learning: the edge of stability.
+\newcommand{\stabce}{c_{\mathrm{e}}}
+\newcommand{\stabcf}{c_{4}}
+
+\casechapter{The Edge of Stability}{Large step sizes and the catapult}{The two-parameter product model}{ch:stability}
+\begin{refsection}[chapters/15-stability.bib]
+
+\begin{chaptersummary}
+Gradient descent on a quadratic diverges when the step size exceeds two over the largest curvature, yet networks trained by full-batch gradient descent spend most of their training at exactly that curvature, and large first steps make the loss spike and the curvature fall. The product of two numbers, $\Loss(u,v)=\frac12(uv-y)^2$, is the smallest model whose minimizers differ in curvature. We prove that gradient descent almost never converges to a minimizer sharper than $2/\eta$; that it leaves a sharp region only through steps of large loss, because gradient flow conserves $u^2-v^2$; and that an invariant ellipse makes $4/\eta$ the exact boundary between the catapult and divergence. A heuristic derivation, checked against the exact map, predicts where a small catapult lands. The model has no progressive sharpening, so it shows the catapult but not the sustained edge of stability.
+\end{chaptersummary}
+
+\section{The phenomenon: sharpening to the edge}\label{sec:stability:phenomenon}
+
+Gradient descent on a quadratic with step size $\eta$ converges if and only if every curvature is below $2/\eta$; above that threshold the stiffest mode flips sign at every step and grows (\cref{ch:prologue}). The largest eigenvalue of the Hessian of the training loss,
+\[
+  S(\theta)=\lmax\bigl(\nabla^2\Lhat(\theta)\bigr),
+\]
+is called the \term{sharpness}\index{sharpness}, and the classical theory of optimization treats $\eta S<2$ as a constraint on the user: if the step size is below $2$ divided by the largest curvature met along the way, then the descent lemma guarantees that every step decreases the loss.\sidenote{Sharpness entered deep learning through generalization rather than optimization: \textcite{HochreiterSchmidhuber1997} argued that flat minima generalize better, and \textcite{KeskarEtAl2017} found that large-batch training lands in sharper minima and generalizes worse. This chapter is about optimization only.}
+
+For neural networks the constraint describes neither practice nor what training does. \Textcite{CohenEtAl2021} measured the sharpness along full-batch gradient descent for fully connected, convolutional and transformer networks, with the square loss and the cross-entropy loss, and found the same two-stage pattern almost everywhere.
+
+\begin{observation}[Progressive sharpening and the edge of stability; \textcite{CohenEtAl2021}]\label{obs:stability:eos}
+Train a neural network by full-batch gradient descent with a fixed step size $\eta$. (i) While $S(\theta_t)<2/\eta$, the sharpness tends to increase. (ii) Once it reaches $2/\eta$, it stops increasing and hovers at or slightly above $2/\eta$ for the rest of training, while the training loss continues to decrease over long time scales, although not monotonically.
+\end{observation}
+
+The first stage is \term{progressive sharpening}\index{progressive sharpening}, the second the \term{edge of stability}\index{edge of stability}. The observation is robust for full-batch gradient descent on standard architectures and data sets, and its scope is known in three directions. Progressive sharpening is weaker for wider networks and with the cross-entropy loss, whose sharpness can also fall late in training, when the margins grow \parencite{CohenEtAl2021}. With mini-batches the sharpness settles below $2/\eta$, at a level that depends on the batch size \parencite{JastrzebskiEtAl2020}. With adaptive optimizers it is the preconditioned sharpness that sits at an edge \parencite{CohenEtAl2022}. \Cref{fig:stability:mlp} shows the observation in a network small enough to train in seconds.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},hplot,width=82mm,height=54mm,xmin=0,xmax=900]
+\nextgroupplot[xlabel={time $\eta t$},ylabel={sharpness $S(\theta_t)$},ymin=0,ymax=15,legend style={at={(0.5,1.03)},anchor=south},legend columns=3]
+\addplot[theory] table[x=time,y=sA] {figures/data/15-stability-mlp.dat};
+\addplot[theory3] table[x=time,y=sB] {figures/data/15-stability-mlp.dat};
+\addplot[theory2] table[x=time,y=sC] {figures/data/15-stability-mlp.dat};
+\addplot[guide,sea,domain=0:900] {2/0.15};
+\addplot[guide,sandline!55!black,domain=0:900] {2/0.25};
+\addplot[guide,seadeep,domain=0:900] {2/0.4};
+\legend{$\eta=0.15$,$\eta=0.25$,$\eta=0.4$}
+\nextgroupplot[xlabel={time $\eta t$},ylabel={training loss $\Lhat(\theta_t)$},ymode=log,ymin=4e-4,ymax=2]
+\addplot[theory] table[x=time,y=lA] {figures/data/15-stability-mlp.dat};
+\addplot[theory3] table[x=time,y=lB] {figures/data/15-stability-mlp.dat};
+\addplot[theory2] table[x=time,y=lC] {figures/data/15-stability-mlp.dat};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Progressive sharpening and the edge of stability in a small network. A tanh network with two hidden layers of width $64$ is trained by full-batch gradient descent on the square loss, on $500$ Gaussian inputs in $\R^{10}$ labelled by a random two-layer teacher (seeds fixed in the script \texttt{15-stability-mlp.py}), with three step sizes. Left: the sharpness, computed every $5$ units of time by power iteration with Hessian--vector products; the dashed lines are at $2/\eta$. All three runs follow one curve until the sharpness reaches their own $2/\eta$; the run with $\eta=0.15$ is still sharpening at the end. Right: the training loss keeps falling at the edge, with occasional spikes.}
+\label{fig:stability:mlp}
+\end{figure}
+
+A second observation concerns the first steps of training with a large step size.
+
+\begin{observation}[The catapult; \textcite{LewkowyczEtAl2020}]\label{obs:stability:catapult}
+Let $\lambda_{\mathrm{init}}$ be the curvature at initialization. If $\eta<2/\lambda_{\mathrm{init}}$, wide networks train much as under gradient flow. If $2/\lambda_{\mathrm{init}}<\eta<\eta_{\max}$, the loss first grows for some steps, the curvature falls below $2/\eta$, and training then converges in a flatter region. Above $\eta_{\max}$ training diverges. In a two-layer linear model that Lewkowycz and coauthors solved, $\eta_{\max}=4/\lambda_{\mathrm{init}}$; for wide ReLU networks they measured $\eta_{\max}\approx12/\lambda_{\mathrm{init}}$.
+\end{observation}
+
+The \term{catapult}\index{catapult} is the name they gave to the loss spike that throws the parameters out of a sharp region.\sidenote{The idea that the step size selects among minima by their sharpness is older. \Textcite{WuMaE2018} showed that gradient descent can be linearly stable only at minima with $\eta S\le2$, and proposed this dynamical stability as the reason that gradient methods find flat minima. \Textcite{JastrzebskiEtAl2019} observed that the sharpness along the trajectory adapts to the step size early in training.} The two observations pose one question in two parts. The prologue's theorem says that gradient descent with $\eta S>2$ must diverge, and it does not. Where can gradient descent end up, given its step size, and how does it get there from a region that is too sharp for it? The model of this chapter answers both parts exactly, and the part of the phenomenon that it cannot reproduce, the sharpness that stays at $2/\eta$ for thousands of steps, points to what it leaves out.
+
+\section{The model: a product of two numbers}\label{sec:stability:model}
+
+\begin{definition}[The product model]\label[definition]{def:stability:model}
+Fix a label $y>0$ and a step size $\eta>0$. The \term{product model}\index{product model} is the loss
+\[
+  \Loss(u,v)=\tfrac12\,(uv-y)^2,\qquad \theta=(u,v)\in\R^2,
+\]
+trained by gradient descent $\theta_{t+1}=G(\theta_t)$, where $G(u,v)=(u-\eta zv,\;v-\eta zu)$ and $z=uv-y$.
+\end{definition}
+
+The model is a linear network $f(x)=vux$ with one hidden unit, input weight $u$ and output weight $v$, trained on the single example $(x,y)=(1,y)$; the number $z$ is its residual. The gradient is $\nabla\Loss=z\,(v,u)$, and the Hessian is
+\[
+  \nabla^2\Loss(u,v)=\begin{pmatrix} v^2 & uv+z\\ uv+z & u^2\end{pmatrix}.
+\]
+The minimizers form the hyperbola $\cM=\{uv=y\}$, with one branch in the positive and one in the negative quadrant. At a minimizer the Hessian $\bigl(\begin{smallmatrix}v^2&y\\y&u^2\end{smallmatrix}\bigr)$ has the eigenvalue $0$ along the tangent $(u,-v)$ of $\cM$ and the eigenvalue $u^2+v^2$ along the normal $(v,u)$, so the sharpness of a minimizer is $u^2+v^2$.
+
+Two quantities organize everything that follows: the \term{imbalance}\index{imbalance} $c=u^2-v^2$ and the trace $\tau=u^2+v^2=\tr\nabla^2\Loss$. Because $(u^2+v^2)^2=(u^2-v^2)^2+4(uv)^2$, they are related by
+\begin{equation}\label{eq:stability:tau}
+  \tau^2=c^2+4(z+y)^2 .
+\end{equation}
+On $\cM$ we have $z=0$, so the minimizer with imbalance $c$ has sharpness
+\begin{equation}\label{eq:stability:Lambda}
+  \Lambda(c)=\sqrt{c^2+4y^2}.
+\end{equation}
+Each branch of $\cM$ contains exactly one minimizer with each imbalance, the sharpness grows with $\abs c$, and the flattest minimizers are the balanced ones, $u=v=\pm\sqrt y$, with $\Lambda(0)=2y$. A quadratic analysis at a minimizer calls it stable for gradient descent when $\eta\Lambda(c)<2$, that is, when $\abs c<\stabce$, with the \term{edge imbalance}
+\[
+  \stabce=2\sqrt{\eta^{-2}-y^2}.
+\]
+Stable minimizers exist only when $\eta y<1$. Two more facts about the scales: away from $\cM$ the sharpness is not $\tau$ but $S(\theta)=\frac12\bigl(\tau+\sqrt{c^2+4(uv+z)^2}\bigr)$ (Exercise~\ref{ex:stability:hessian}); and the rescaling $(u,v)\mapsto(u,v)/\sqrt y$ turns the model with label $y$ and step $\eta$ into the model with label $1$ and step $\eta y$, so the dynamics depends on $\eta$ and $y$ only through the dimensionless step size $\eta y$ and on the initialization only through $\sqrt\eta\,(u,v)$.
+
+\begin{dictionary}
+the loss $\frac12(uv-y)^2$ & the square loss of a network on its training set\\
+the hyperbola $\cM$ of minimizers & the manifold of parameters that interpolate the data\\
+the imbalance $c=u^2-v^2$ & the differences $W_{\ell+1}^\top W_{\ell+1}-W_\ell W_\ell^\top$ between consecutive layers of a linear network, and their traces in a ReLU network, which gradient flow conserves\\
+$\Lambda(c)$, the sharpness of the minimizer with imbalance $c$ & the sharpness of the minimizer that gradient flow would reach from the current parameters\\
+the trace $\tau=u^2+v^2$ & the neural tangent kernel $\norm{\nabla_\theta f}^2$, the Gauss--Newton part of the Hessian\\
+the residual $z$, flipping sign at every step & the component of the iterate along the top eigenvector of the Hessian at the edge of stability\\
+the dimensionless step size $\eta y$ & the step size in units of the scale of the outputs
+\end{dictionary}
+
+\paragraph{What was thrown away.} Almost everything: the data (one example), the width and the depth (one hidden unit, two layers), the nonlinearity, and all directions of parameter space but two. What is kept is the smallest structure that the phenomenon needs. A quadratic has a constant Hessian, so its sharpness cannot respond to the dynamics; a one-parameter model has isolated minimizers, so there is nowhere flatter to go. Two parameters give a curve of minimizers along which the sharpness varies, and a Hessian that changes along the oscillation, because the third derivative of $\Loss$ is not zero. Both ingredients are present in every network with a continuum of interpolating parameters, which is every overparameterized network.
+
+\paragraph{What one had to notice.} Gradient flow on this loss conserves $c$, so it lands at the minimizer with the imbalance it started with, sharp or not. Gradient descent does not conserve $c$, and the only thing that changes it is the residual: each step multiplies $c$ by $1-\eta^2z^2$. To invent the model one had to see that an oscillation of the residual, which a quadratic would treat as the prelude to divergence, is the mechanism that moves the parameters along the valley to a flatter place.
+
+\section{The solution: where gradient descent can land}\label{sec:stability:landing}
+
+We begin with the baseline, a quadratic loss, in the form we shall need. Let $\Loss(\theta)=\frac12(\theta-\theta_\star)^\top H(\theta-\theta_\star)$, where $H$ is symmetric positive semidefinite with eigenvalues $\lambda_1\ge\dots\ge\lambda_p\ge0$ and orthonormal eigenvectors $e_1,\dots,e_p$.
+
+\begin{proposition}[Linear stability]\label[proposition]{prop:stability:quadratic}
+Gradient descent with step size $\eta$ on this quadratic converges from $\theta_0$ if and only if $\ip{\theta_0-\theta_\star,e_k}=0$ for every $k$ with $\eta\lambda_k\ge2$. Consequently it converges from every initialization if $\eta\lambda_1<2$; if $\eta\lambda_1\ge2$, it converges only from a proper affine subspace of $\R^p$, which is a Lebesgue-null set.
+\end{proposition}
+
+\begin{proof}
+By the normal-mode formula of \cref{ch:prologue}, $\ip{\theta_t-\theta_\star,e_k}=(1-\eta\lambda_k)^t\ip{\theta_0-\theta_\star,e_k}$. A geometric sequence with a nonzero first term converges if and only if its ratio lies in $(-1,1]$, which here means $0\le\eta\lambda_k<2$. So the iterates converge exactly when the components with $\eta\lambda_k\ge2$ vanish, that is, when $\theta_0$ lies in $\theta_\star+\operatorname{span}\{e_k\colon\eta\lambda_k<2\}$, an affine subspace that is proper when $\eta\lambda_1\ge2$.
+\end{proof}
+
+At every minimizer of the product model the Hessian has the eigenvalue $\Lambda(c)$ in the direction normal to $\cM$, so the quadratic approximation predicts that gradient descent is stable near the minimizer exactly when $\eta\Lambda(c)<2$. To see what gradient descent actually does we need its exact form, which is simple in the right coordinates.
+
+\begin{lemma}[Gradient descent in product coordinates]\label[lemma]{lem:stability:coordinates}
+Let $\theta=(u,v)$ and $\theta'=G(\theta)$, and write $a=u+v$ and $b=u-v$, so that $c=ab$. Then
+\begin{enumerate}
+\item $a'=(1-\eta z)\,a$ and $b'=(1+\eta z)\,b$;
+\item $c'=(1-\eta^2z^2)\,c=\bigl(1-2\eta^2\Loss(\theta)\bigr)\,c$;
+\item $z'=z\bigl(1-\eta\tau+\eta^2z(z+y)\bigr)$;
+\item $\tau'=\tau+\eta z^2(\eta\tau-4)-4\eta yz$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+Adding and subtracting the two coordinates of $G(\theta)$ gives (i): $u'+v'=(u+v)-\eta z(v+u)$ and $u'-v'=(u-v)+\eta z(u-v)$. Multiplying the two identities of (i) gives (ii). For (iii) and (iv), expand $u'v'=(u-\eta zv)(v-\eta zu)=uv-\eta z\tau+\eta^2z^2uv$ and $u'^2+v'^2=\tau-4\eta zuv+\eta^2z^2\tau$, and substitute $uv=z+y$.
+\end{proof}
+
+Each identity carries a message. By (i), the sum and the difference of the weights evolve by multiplication. By (ii), the imbalance changes only through the loss: the factor $\abs{1-2\eta^2\Loss(\theta)}$ is less than $1$ whenever $0<\Loss(\theta)<1/\eta^2$, so $\abs c$ can grow only at steps with $\Loss(\theta)>1/\eta^2$. By (iii), the residual is multiplied at each step by a factor that, near $\cM$, is close to $1-\eta\Lambda(c)$: it decays when $\eta\Lambda(c)<2$ and flips sign and grows when $\eta\Lambda(c)>2$. By (iv), during a large oscillation the trace falls if $\eta\tau<4$ and rises if $\eta\tau>4$; for $y=0$ this is the whole update, and it is the equation from which \textcite{LewkowyczEtAl2020} read off their threshold $4/\lambda_{\mathrm{init}}$. In the limit of small steps the factor in (ii) tends to $1$, and the imbalance is conserved.
+
+\begin{proposition}[Gradient flow conserves the imbalance]\label[proposition]{prop:stability:flow}
+Along gradient flow $\dot\theta=-\nabla\Loss(\theta)$ the imbalance $c$ is constant. If $u(0)+v(0)\ne0$, then $\theta(t)$ converges to the minimizer with imbalance $c(0)$ on the branch of $\cM$ on which $u+v$ has the sign of $u(0)+v(0)$, and the sharpness of the limit is $\Lambda(c(0))$. If $u(0)+v(0)=0$, then $\theta(t)$ converges to the origin, a saddle point.
+\end{proposition}
+
+\begin{proof}
+The plan is to show that $c$ is constant and $z$ decays, and then to identify the limit. Differentiating, $\dot c=2u\dot u-2v\dot v=-2uzv+2vzu=0$, $\dot z=\dot uv+u\dot v=-z\tau$, $\dot a=-za$ and $\dot b=zb$. Suppose first that $c\ne0$. Then $\tau\ge\abs c$ by \eqref{eq:stability:tau}, so $\abs{z(t)}\le\abs{z(0)}e^{-\abs ct}$, and $\tau(t)=(c^2+4(z(t)+y)^2)^{1/2}$ stays bounded. The speed $\abs{\dot\theta}=\abs z\sqrt\tau$ is therefore integrable, so $\theta(t)$ has a limit, at which $z=0$ and $u^2-v^2=c$. The two minimizers with imbalance $c$ differ in the sign of $a$, and $a(t)=a(0)\exp(-\int_0^tz)$ keeps its sign. Suppose next that $c=0$ and $a(0)\ne0$. Then $b=c/a=0$ for all $t$, so $u=v=a/2$, $z=a^2/4-y$, and the scalar equation $\dot a=-(a^2/4-y)a$ drives $a$ to $\pm2\sqrt y$, a balanced minimizer. Finally, if $a(0)=0$, then $a$ stays $0$, so $z=-b^2/4-y\le-y$ and $\dot b=zb$ gives $\abs{b(t)}\le\abs{b(0)}e^{-yt}$.
+\end{proof}
+
+So gradient flow ends wherever its imbalance points it, and when $\eta\Lambda(c(0))>2$ it ends at a minimizer where gradient descent is linearly unstable. To show that gradient descent almost never ends there, we need one fact from measure theory.
+
+\begin{lemma}[Preimages of null sets]\label[lemma]{lem:stability:null}
+Let $P\colon\R^n\to\R^n$ be a polynomial map whose Jacobian determinant $J=\det DP$ is not the zero polynomial. Then $P^{-1}(N)$ is a Lebesgue-null set for every null set $N\subseteq\R^n$.
+\end{lemma}
+
+\begin{proof}
+The plan is to discard the zero set of $J$, which is null, and to cover the rest by countably many open sets on which $P$ has a $C^1$ inverse, since such an inverse maps null sets to null sets. We use three facts.
+
+\emph{(a) The zero set of a nonzero polynomial $q$ on $\R^n$ is null.} For $n=1$ it is finite. For $n>1$, write $q(x',x_n)=\sum_kq_k(x')x_n^k$ with some $q_k$ not the zero polynomial. For $x'$ outside the zero set of $q_k$, which is null by induction, $x_n\mapsto q(x',x_n)$ is a nonzero polynomial with finitely many zeros, and Fubini's theorem shows that the zero set of $q$ is null.
+
+\emph{(b) A $C^1$ map $F$ from an open set $W\subseteq\R^n$ into $\R^n$ maps null sets to null sets.} Write $W$ as a countable union of closed cubes. On each such cube $Q$ the map $F$ is Lipschitz with constant $K_Q=\max_Q\norm{DF}_{\op}$, by the mean value inequality on the convex set $Q$. Let $N\subseteq W$ be null and $\delta>0$, and cover $N\cap Q$ by cubes $C_i$ of total volume less than $\delta$. Each $F(C_i\cap Q)$ has diameter at most $K_Q\sqrt n$ times the side of $C_i$, so it lies in a cube of volume $(2K_Q\sqrt n)^n\operatorname{vol}(C_i)$, and $F(N\cap Q)$ is covered by cubes of total volume less than $(2K_Q\sqrt n)^n\delta$. Hence $F(N\cap Q)$ is null, and so is $F(N)$, the countable union of these sets.
+
+\emph{(c) Local inverses.} Let $U=\{J\ne0\}$. By the inverse function theorem each point of $U$ has an open neighbourhood $W\subseteq U$ that $P$ maps diffeomorphically onto an open set. Because $\R^n$ has a countable base, countably many such sets $W_1,W_2,\dots$ cover $U$; write $\psi_i$ for the inverse of $P$ on $W_i$.
+
+Now $P^{-1}(N)\subseteq\{J=0\}\cup\bigcup_i\psi_i\bigl(N\cap P(W_i)\bigr)$. The first set is null by (a), and each $\psi_i(N\cap P(W_i))$ is null by (b).
+\end{proof}
+
+\begin{theorem}[Where gradient descent can land]\label{thm:stability:landing}
+Let $y>0$ and $\eta>0$, and let $\theta_t=G^t(\theta_0)$ be gradient descent on the product model.
+\begin{enumerate}
+\item For every $\theta_0$ and $t$, the imbalance is $c_t=c_0\prod_{s<t}\bigl(1-2\eta^2\Loss(\theta_s)\bigr)$.
+\item For every $\theta_0$ outside a Lebesgue-null set, either the iterates do not converge, or they converge to a minimizer $\theta_\infty$ with $\eta S(\theta_\infty)\le2$, that is, with $\abs{c_\infty}\le\stabce$.
+\item Suppose that $\eta y\le1$ and $\eta\Lambda(c_0)>2$. If $\theta_0$ lies outside the null set of (ii) and the iterates converge, then
+\[
+  \prod_{t\ge0}\bigl\lvert1-2\eta^2\Loss(\theta_t)\bigr\rvert=\frac{\abs{c_\infty}}{\abs{c_0}}\le\frac{\stabce}{\abs{c_0}}<1 .
+\]
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+Part (i) follows from \cref{lem:stability:coordinates}(ii) by induction on $t$.
+
+Part (ii) carries the weight. The plan is to show that convergence to a fixed point at which gradient descent is linearly unstable forces the iterates to land exactly on one of two curves after finitely many steps, and that the initializations whose orbits ever meet those curves form a null set. If $\theta_t\to\theta_\infty$, then $\theta_\infty=G(\theta_\infty)$ by continuity, so $z_\infty\cdot(v_\infty,u_\infty)=0$: the limit is a minimizer or the origin.
+
+\emph{A sharp minimizer.} Let $\theta_\infty\in\cM$ with $\eta S(\theta_\infty)>2$. By \cref{lem:stability:coordinates}(iii), $z_{t+1}=m_tz_t$ with $m_t=1-\eta\tau_t+\eta^2z_t(z_t+y)$. As $t\to\infty$, $z_t\to0$ and $\tau_t\to\tau(\theta_\infty)=S(\theta_\infty)$, so $m_t\to1-\eta S(\theta_\infty)<-1$, and there is a $T$ with $\abs{m_t}\ge1$ for all $t\ge T$. If $z_T$ were nonzero, then $\abs{z_t}\ge\abs{z_T}>0$ for all $t\ge T$, contradicting $z_t\to0$. Hence $z_T=0$, that is, $\theta_T\in\cM$.
+
+\emph{The origin.} Let $\theta_\infty=0$. By \cref{lem:stability:coordinates}(i), $a_{t+1}=(1-\eta z_t)a_t$, and $1-\eta z_t\to1+\eta y>1$ because $z_t\to-y$. The landing argument for a sharp minimizer, applied to $a_t$ in place of $z_t$, gives $a_T=0$ for some $T$: the iterate $\theta_T$ lies on the line $\cD=\{u+v=0\}$.
+
+\emph{The exceptional set is null.} The curves $\cM$ and $\cD$ are null, being graphs of continuous functions. The map $G$ is polynomial, and its Jacobian determinant $\det\bigl(I-\eta\nabla^2\Loss(u,v)\bigr)$ equals $1-\eta^2y^2-\eta u^2$ at $v=0$, so it is not the zero polynomial. By \cref{lem:stability:null} and induction on $T$, each set $G^{-T}(\cM\cup\cD)$ is null, and so is their union over $T\ge0$, which contains every initialization whose iterates converge to the origin or to a minimizer with $\eta S>2$. At the remaining limits $\eta S(\theta_\infty)\le2$, and since $S=\Lambda(c)$ on $\cM$, this means $\abs{c_\infty}\le\stabce$.
+
+For part (iii), part (ii) says that the limit is a minimizer with $\abs{c_\infty}\le\stabce$. By part (i) and the continuity of $c=u^2-v^2$, the partial products $\prod_{s<t}\abs{1-2\eta^2\Loss(\theta_s)}=\abs{c_t}/\abs{c_0}$ converge to $\abs{c_\infty}/\abs{c_0}$. Finally, $\eta\Lambda(c_0)>2$ means $\abs{c_0}>\stabce$.
+\end{proof}
+
+If $\eta y>1$, then every minimizer has $\eta S\ge2\eta y>2$, and part (ii) says that gradient descent from almost every initialization never converges. Part (ii) is a nonlinear version of \cref{prop:stability:quadratic}: the minimizers too sharp for the step size are reached only from a null set. For general smooth losses the same conclusion follows from the stable manifold theorem when the step size is small enough that $G$ is a diffeomorphism \parencite{LeeEtAl2016,LeeEtAl2019}; here no such condition is needed, because $G$ is polynomial and the landing argument replaces the stable manifold theorem.
+
+Parts (i) and (iii) say why the catapult is forced. Gradient flow from $\theta_0$ would end at sharpness $\Lambda(c_0)$. If $\eta\Lambda(c_0)>2$, gradient descent cannot end there, and the only way it can move its destination is through the factors $1-2\eta^2\Loss(\theta_t)$, which differ from $1$ only when the loss is not small. A run that starts near a sharp minimizer and converges must pass through a phase of large loss. \Cref{lem:stability:coordinates}(ii) also fixes the direction of travel: while $0<\Loss(\theta_t)<1/\eta^2$, the sharpness $\Lambda(c_t)$ of the flow's destination strictly decreases.\sidenote{\Textcite{KreislerEtAl2023} call $\Lambda(c_t)$ the sharpness of the gradient flow solution, and prove that it decreases monotonically along gradient descent for scalar linear networks of every depth, under conditions on the step size and the initialization.} Below the edge, by contrast, gradient descent lands almost where the flow lands.
+
+\begin{proposition}[Below the edge, gradient descent follows the flow]\label[proposition]{prop:stability:lazy}
+Let $\eta y<1$ and let $\theta_0$ satisfy $\eta\Lambda(c_0)<2$. Put $q=\max\{\eta\Lambda(c_0)-1,\,1-2\eta y\}$, which lies in $[0,1)$, and suppose that $\abs{z_0}\le(1-q)/(8\eta)$. Then $\abs{z_t}\le\bigl(\frac{1+q}2\bigr)^t\abs{z_0}$ for every $t$, $\abs{c_t}$ is nonincreasing, the iterates converge to a minimizer, and
+\[
+  \abs{c_0}\ \ge\ \abs{c_\infty}\ \ge\ \abs{c_0}\Bigl(1-\frac{2\eta^2z_0^2}{1-q}\Bigr).
+\]
+\end{proposition}
+
+\begin{proof}
+The plan is an induction showing that the residual contracts by the factor $\rho=(1+q)/2$ at every step, which keeps the iterates where the imbalance cannot grow. The number $q$ is at least $\abs{1-2\eta y}\ge0$ because $\Lambda(c_0)\ge2y$, and it is less than $1$ because $\eta\Lambda(c_0)<2$ and $\eta y>0$.
+
+Suppose that $\abs{c_t}\le\abs{c_0}$ and $\abs{z_t}\le\abs{z_0}$, as holds at $t=0$. Compare the factor $m_t$ of \cref{lem:stability:coordinates}(iii) with $m_t^0=1-\eta\Lambda(c_t)$. Since $2y\le\Lambda(c_t)\le\Lambda(c_0)$, we have $1-\eta\Lambda(c_0)\le m_t^0\le1-2\eta y$, so $\abs{m_t^0}\le q$. By \eqref{eq:stability:tau}, $\tau_t$ and $\Lambda(c_t)$ are the lengths of the vectors $(c_t,2(z_t+y))$ and $(c_t,2y)$, which differ by $(0,2z_t)$, so $\abs{\tau_t-\Lambda(c_t)}\le2\abs{z_t}$. Hence, using $\eta\abs{z_t}\le\eta\abs{z_0}\le\frac18$ and $\eta y<1$ in the last step,
+\[
+  \abs{m_t-m_t^0}\le\eta\abs{\tau_t-\Lambda(c_t)}+\eta^2\abs{z_t}\bigl(\abs{z_t}+y\bigr)\le\eta\abs{z_t}\bigl(2+\eta\abs{z_t}+\eta y\bigr)<4\eta\abs{z_t}\le\frac{1-q}{2}.
+\]
+Therefore $\abs{m_t}<q+\frac{1-q}2=\rho$, and $\abs{z_{t+1}}\le\rho\abs{z_t}\le\abs{z_0}$. Moreover $\eta^2z_t^2\le\frac1{64}$, so the factor $1-\eta^2z_t^2$ of \cref{lem:stability:coordinates}(ii) lies in $[0,1]$ and $\abs{c_{t+1}}\le\abs{c_t}\le\abs{c_0}$. This completes the induction.
+
+Consequently $\abs{z_t}\le\rho^t\abs{z_0}$. The step length $\abs{\theta_{t+1}-\theta_t}=\eta\abs{z_t}\sqrt{\tau_t}$ is at most a constant times $\rho^t$, since $\tau_t\le(c_0^2+4(\abs{z_0}+y)^2)^{1/2}$, so $(\theta_t)$ is a Cauchy sequence, and its limit has $z=0$. Finally, the factors $1-\eta^2z_t^2$ lie in $[0,1]$, and the inequality $\prod_t(1-x_t)\ge1-\sum_tx_t$ for numbers $x_t\in[0,1]$ gives
+\[
+  \abs{c_\infty}\ge\abs{c_0}\Bigl(1-\sum_{t\ge0}\eta^2z_t^2\Bigr)\ge\abs{c_0}\Bigl(1-\frac{\eta^2z_0^2}{1-\rho^2}\Bigr)\ge\abs{c_0}\Bigl(1-\frac{2\eta^2z_0^2}{1-q}\Bigr),
+\]
+because $1-\rho^2\ge1-\rho=(1-q)/2$.
+\end{proof}
+
+\section{The solution: the catapult}\label{sec:stability:catapult}
+
+\Cref{thm:stability:landing} says where gradient descent can end, not whether it gets there. Start at a minimizer with $\eta\Lambda(c_0)$ above $2$ and perturb it slightly. The residual flips sign and grows, and every step with nonzero loss shrinks $\abs c$, as long as the loss stays below $1/\eta^2$. Does the shrinking win before the oscillation runs away? The answer has an exact part, which locates the boundary between the catapult and divergence, and an approximate part, which predicts where a small catapult lands.
+
+\begin{theorem}[The catapult ellipse]\label{thm:stability:ellipse}
+Let $0<\eta y<2$, and define
+\[
+  \Psi(\theta)=\eta\,(u^2+v^2)-\eta^2y\,(uv-y)-4=\eta\tau-\eta^2yz-4 .
+\]
+Then for every $\theta$,
+\begin{equation}\label{eq:stability:psi}
+  \Psi\bigl(G(\theta)\bigr)=\bigl(1+\eta^2z(z+y)\bigr)\,\Psi(\theta),\qquad\text{and}\qquad 1+\eta^2z(z+y)\ge1-\tfrac14\eta^2y^2>0 .
+\end{equation}
+Consequently, with $\cE=\{\Psi=0\}$ and $\cK=\{\Psi<0\}$:
+\begin{enumerate}
+\item the map $G$ sends $\cE$, $\cK$ and the exterior $\{\Psi>0\}$ into themselves;
+\item $\cK$ is the interior of an ellipse with axes along the diagonals $u=\pm v$, and every iterate started in $\cK$ satisfies $\eta\abs{z_t}<2$, that is, $\Loss(\theta_t)<2/\eta^2$;
+\item a minimizer $\theta$ lies in $\cK$ if and only if $\eta S(\theta)<4$, and on $\cE$ if and only if $\eta S(\theta)=4$;
+\item for every $\theta_0$ with $\Psi(\theta_0)\ge0$ outside the null set of \cref{thm:stability:landing}, the iterates do not converge.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to verify the identity with \cref{lem:stability:coordinates} and then read off the consequences. Write $Q=1+\eta^2z(z+y)$. By \cref{lem:stability:coordinates}(iv), $\eta\tau'-4=(1+\eta^2z^2)(\eta\tau-4)-4\eta^2yz$, and by \cref{lem:stability:coordinates}(iii), $\eta^2yz'=\eta^2yz(1-\eta\tau)+\eta^4yz^2(z+y)$. Subtract the second identity from the first, and collect the terms that contain $\eta\tau-4$ (among them $\eta^2yz\cdot\eta\tau-4\eta^2yz$):
+\[
+  \Psi(\theta')=(1+\eta^2z^2+\eta^2yz)(\eta\tau-4)-\eta^2yz\bigl(1+\eta^2z(z+y)\bigr)=Q\,(\eta\tau-4)-Q\,\eta^2yz=Q\,\Psi(\theta).
+\]
+Completing the square, $Q=(\eta z+\frac12\eta y)^2+1-\frac14\eta^2y^2$, which is positive because $\eta y<2$.
+
+(i) By induction, $\Psi(\theta_t)=\Psi(\theta_0)\prod_{s<t}Q(\theta_s)$, and every factor is positive.
+
+(ii) In the coordinates $a=u+v$ and $b=u-v$ we have $u^2+v^2=\frac12(a^2+b^2)$ and $uv=\frac14(a^2-b^2)$, so the inequality $\Psi<0$ reads
+\[
+  \frac{\eta a^2}{4(2+\eta y)}+\frac{\eta b^2}{4(2-\eta y)}<1 ,
+\]
+the interior of an ellipse. For the bound on $z$, use $\tau\ge2\abs{uv}=2\abs{z+y}$. If $z\ge0$, then $\Psi<0$ gives $2\eta(z+y)<4+\eta^2yz$, that is, $\eta z\,(2-\eta y)<2\,(2-\eta y)$, so $\eta z<2$. If $z<-y$, then it gives $-2\eta(z+y)<4+\eta^2yz$, that is, $-\eta z\,(2+\eta y)<2\,(2+\eta y)$, so $\eta z>-2$. If $-y\le z<0$, then $\eta\abs z\le\eta y<2$.
+
+(iii) At a minimizer $z=0$ and $\tau=S$, so $\Psi=\eta S-4$.
+
+(iv) If $\Psi(\theta_0)\ge0$ and $\theta_t\to\theta_\infty$, then $\Psi(\theta_\infty)\ge0$ by (i) and continuity. The limit is a fixed point of $G$, so it is the origin, where $\Psi=\eta^2y^2-4<0$, or a minimizer, which by (iii) has $\eta S(\theta_\infty)\ge4>2$. The first is impossible, and \cref{thm:stability:landing}(ii) confines the second to the null set.
+\end{proof}
+
+Together with \cref{thm:stability:landing}, the ellipse gives an exact phase diagram for gradient descent started near a minimizer $\theta_\star$ with imbalance $c_0$, for $\eta y<1$ (\cref{fig:stability:ellipse}). If $\eta\Lambda(c_0)<2$, gradient descent converges close to $\theta_\star$ (\cref{prop:stability:lazy}). If $2<\eta\Lambda(c_0)<4$, then $\theta_\star$ lies in $\cK$, and so does a neighbourhood of it; gradient descent started there never leaves $\cK$, its loss stays below $2/\eta^2$, and for almost every start, if it converges, then it lands at a minimizer with $\eta S\le2$, below the edge. If $\eta\Lambda(c_0)>4$, then from almost every start near $\theta_\star$ it never converges. The threshold $4/\lambda_{\mathrm{init}}$ of \cref{obs:stability:catapult} is therefore exact in the product model for every $\eta y<2$, and the same identity holds for the width-$m$ model of \textcite{LewkowyczEtAl2020} with $\eta^2/m$ in place of $\eta^2$ (Exercise~\ref{ex:stability:width}).\sidenote{We found the identity \eqref{eq:stability:psi} while looking for the reason why, in simulations, the boundary between catapult and divergence sat at $\eta S=4$ to four digits for every $\eta y$. We have not seen it stated in the literature.} Two things the theorem does not say should be said. That gradient descent started in $\cK$ actually converges is a numerical observation (every one of $10^5$ random initializations in $\cK$ converged for $\eta y\in\{0.1,0.4,0.7,0.9\}$), not a theorem. And that it diverges outside is again numerical, except for $y=0$, where it is an exercise (Exercise~\ref{ex:stability:yzero}).
+
+The ellipse is also where the dynamics is most complicated. In the coordinates $a=2\sqrt{(2+\eta y)/\eta}\,\sin\varphi$ and $b=2\sqrt{(2-\eta y)/\eta}\,\cos\varphi$ on $\cE$, gradient descent is the map $\varphi\mapsto\pi-3\varphi$ of the circle (Exercise~\ref{ex:stability:tripling}), an expanding map with a dense set of periodic orbits, whose only fixed points are the four minimizers with $\eta S=4$. Inside $\cK$, large oscillations behave chaotically for a while before they die out, and the landing point of a large catapult depends sensitively on where it started (\cref{fig:stability:catapult}).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=18mm},hplot]
+\nextgroupplot[width=74mm,height=74mm,axis equal image,xlabel={$u$},ylabel={$v$},xmin=-4.3,xmax=4.3,ymin=-4.3,ymax=4.3,xtick={-4,-2,0,2,4},ytick={-4,-2,0,2,4}]
+\addplot[muted,line width=0.6pt,densely dotted,domain=0.2326:0.3178,samples=20] {1/x};
+\addplot[muted,line width=0.6pt,densely dotted,domain=3.1463:4.3,samples=20] {1/x};
+\addplot[muted,line width=0.6pt,densely dotted,domain=-0.3178:-0.2326,samples=20] {1/x};
+\addplot[muted,line width=0.6pt,densely dotted,domain=-4.3:-3.1463,samples=20] {1/x};
+\addplot[sea,line width=1.2pt,domain=0.3178:0.4569,samples=20] {1/x};
+\addplot[sea,line width=1.2pt,domain=2.1889:3.1463,samples=40] {1/x};
+\addplot[sea,line width=1.2pt,domain=-0.4569:-0.3178,samples=20] {1/x};
+\addplot[sea,line width=1.2pt,domain=-3.1463:-2.1889,samples=40] {1/x};
+\addplot[sandline!55!black,line width=2.2pt,domain=0.4569:2.1889,samples=60] {1/x};
+\addplot[sandline!55!black,line width=2.2pt,domain=-2.1889:-0.4569,samples=60] {1/x};
+\addplot[seadeep,line width=1.0pt,domain=0:360,samples=181] ({sqrt(6)*sin(x)+2*cos(x)},{sqrt(6)*sin(x)-2*cos(x)});
+\addplot[only marks,mark=*,mark size=0.55pt,color=seadeep] table[x=u,y=v] {figures/data/15-stability-ellipse-in.dat};
+\addplot[muted,line width=0.3pt,mark=square*,mark size=0.9pt,mark options={fill=muted}] table[x=u,y=v] {figures/data/15-stability-ellipse-out.dat};
+\node[font=\footnotesize,text=seadeep,anchor=south west] at (axis cs:-3.6,2.9) {$\cE$};
+\node[font=\footnotesize,text=ink,anchor=west] at (axis cs:1.2,1.6) {$\eta S\le2$};
+\nextgroupplot[width=74mm,height=74mm,xlabel={$\eta y$},ylabel={$\eta\Lambda(c_0)$},xmin=0,xmax=2,ymin=0,ymax=5,xtick={0,0.5,1,1.5,2},ytick={0,1,2,3,4,5}]
+\fill[seafoam] (0,0) -- (1,2) -- (0,2) -- cycle;
+\fill[seamist] (0,2) -- (1,2) -- (1,4) -- (0,4) -- cycle;
+\fill[sand] (1,2) -- (2,4) -- (1,4) -- cycle;
+\fill[muted!12] (0,0) -- (2,4) -- (2,0) -- cycle;
+\draw[seadeep,line width=0.9pt] (0,4) -- (2,4);
+\draw[seadeep,line width=0.9pt,dashed] (0,2) -- (1,2);
+\draw[muted,line width=0.6pt] (0,0) -- (2,4);
+\draw[sandline!55!black,line width=0.6pt,densely dotted] (0.4,0.8) -- (0.4,4);
+\node[font=\footnotesize,text=ink] at (axis cs:0.2,1.65) {lazy};
+\node[font=\footnotesize,text=ink] at (axis cs:0.7,3.0) {catapult};
+\node[font=\footnotesize,text=ink,align=center] at (axis cs:1.32,3.45) {oscillates};
+\node[font=\footnotesize,text=ink] at (axis cs:1.0,4.5) {diverges};
+\node[font=\footnotesize,text=muted,align=center] at (axis cs:1.45,1.0) {no minimizer};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The geometry of the product model. Left: the plane of parameters for $y=1$ and $\eta=0.4$. The hyperbola $uv=1$ is drawn thick where its minimizers are stable ($\eta S\le2$), solid inside the catapult ellipse $\cE$ ($2<\eta S<4$), and dotted outside it. Circles: a catapult, gradient descent started next to the minimizer with $\eta S=2.3$; it zigzags across the valley and lands at $\eta S=1.67$. Squares: a run started next to the minimizer with $\eta S=4.3$, outside $\cE$, which leaves the picture after eight steps. Right: the phase diagram for a start near a minimizer, in the dimensionless step size $\eta y$ and the start's sharpness; the lines $\eta\Lambda=2$ (dashed) and $\eta\Lambda=4$ are the exact boundaries of \cref{thm:stability:landing,thm:stability:ellipse}, no minimizer is flatter than $2\eta y$, and in the band marked ``oscillates'' no minimizer is stable but the iterates stay bounded. The dotted line marks $\eta y=0.4$, used in \cref{fig:stability:catapult,fig:stability:trajectory}.}
+\label{fig:stability:ellipse}
+\end{figure}
+
+How far does a catapult throw? Near the edge the answer comes from a slow drift of the sharpness through a period-doubling instability, and it is only derived.\sidenote{The expansion below is the normal form of a flip (period-doubling) bifurcation, here with a parameter that drifts because of the oscillation itself \parencite{Kuznetsov2004}.}
+
+\begin{heuristic}[Heuristic derivation of the reflection law]
+Let $\eta y<1$, and start near a minimizer just beyond the edge: $\eps_0=\eta\Lambda(c_0)-2$ is small and positive, and $z_0$ is much smaller than $\eps_0$. Follow two numbers, the squared residual $A_t=z_t^2=2\Loss(\theta_t)$ and the excess $\eps_t=\eta\Lambda(c_t)-2$ of the sharpness of the flow's destination over the edge. Both stay small, $A$ of order $\eps_0^2$ and $\eps$ of order $\eps_0$, and in each recursion we keep the leading terms.
+
+\emph{The fast variable.} Expand $\tau=(\Lambda(c)^2+8yz+4z^2)^{1/2}$ in powers of $z$ and substitute it in \cref{lem:stability:coordinates}(iii), with $\eta\Lambda(c)=2+\eps$ and with the coefficients of $z^2$ and $z^3$ evaluated at the edge:
+\[
+  z'=-(1+\eps)\,z-\eta^2y\,z^2+\eta^4y^2z^3+\cdots .
+\]
+The residual flips sign at every step, and its size is multiplied by $1+\eps$. The quadratic term changes sign with $z$ and nearly cancels over two steps: composing $g(z)=-(1+\eps)z+k_2z^2+k_3z^3$ with itself gives $g(g(z))=(1+\eps)^2z-2(k_2^2+k_3)z^3$ plus terms of order $\eps z^2$ and $z^4$. Here $k_2=-\eta^2y$ and $k_3=\eta^4y^2$, so $k_2^2+k_3=2\eta^4y^2$, and over one step, on average,
+\[
+  A'=(1+2\eps)A-\beta A^2+\cdots,\qquad \beta=4\eta^4y^2 .
+\]
+
+\emph{The slow variable.} By \cref{lem:stability:coordinates}(ii), $c'=(1-\eta^2A)c$, and $d\eps/dc=\eta c/\Lambda(c)=\eta^2c/(2+\eps)$. At the edge $c^2=\stabce^2$, so
+\[
+  \eps'=\eps-\nu A+\cdots,\qquad \nu=\tfrac12\eta^4\stabce^2=2\eta^2(1-\eta^2y^2) .
+\]
+
+\emph{The flow.} In one step $A$ changes by a factor $1+O(\eps)$ and $\eps$ by $O(A)$, so both vary slowly, and we replace the recursions by differential equations in the step count:
+\begin{equation}\label{eq:stability:slowfast}
+  \frac{dA}{dt}=2\eps A-\beta A^2,\qquad \frac{d\eps}{dt}=-\nu A .
+\end{equation}
+The oscillation grows while $\eps>0$ and decays once $\eps<0$, and its growth is what drives $\eps$ down. Relative to $2\eps A$, the term $\beta A^2$ is of order $\beta\eps_0/\nu$, a correction of relative order $\eps_0$, and to leading order we drop it. Then $\frac{d}{dt}(\nu A+\eps^2)=2\nu\eps A-2\eps\nu A=0$, so $\nu A+\eps^2$ is constant during the catapult. At the start $A\approx0$ and $\eps=\eps_0$; at the end $A\to0$ again, and $\eps$, which only decreases, has become negative. Hence $\eps_\infty=-\eps_0$, which is the \term{reflection law}\index{reflection law}
+\begin{equation}\label{eq:stability:reflection}
+  \eta S(\theta_\infty)=4-\eta\Lambda(c_0).
+\end{equation}
+The same first integral gives the height of the loss spike: $A$ is largest when $\eps=0$, where $\nu A=\eps_0^2$, so the largest loss is about $\eps_0^2/(2\nu)=\eps_0^2/\bigl(4\eta^2(1-\eta^2y^2)\bigr)$.
+\end{heuristic}
+
+\begin{remark}[The next order]\label[remark]{rem:stability:second}
+Each approximation in the derivation (dropping $\beta A^2$, replacing the growth factor $(1+\eps)^2$ by $1+2\eps$, freezing $d\eps/dc$ at its value at the edge, and replacing the recursions by a flow) changes the dynamics by a relative amount of order $\eps$, and so each moves $\eps_\infty$ at order $\eps_0^2$. Carrying all four to the next order (Exercise~\ref{ex:stability:second}) gives
+\begin{equation}\label{eq:stability:second}
+  \eps_\infty=-\eps_0+\Bigl(\frac{2\eta^2y^2}{1-\eta^2y^2}-\frac23\Bigr)\eps_0^2+O(\eps_0^3).
+\end{equation}
+With $s=\beta/\nu=2\eta^2y^2/(1-\eta^2y^2)$, and with $\log A$ and $\log c$ as the variables, the four contributions are $\frac23s$ from the saturation, $\frac13$ from the growth factor, $\frac13(1+s)$ from the curvature of $\eps$ as a function of $\log c$, and $-\frac43$ from the discreteness: the map updates $A$ and $c$ simultaneously, as the explicit Euler method does, and the first integral drifts. The exact map confirms \eqref{eq:stability:second} to six digits for every $\eta y$ from $0.05$ to $0.8$ (\cref{fig:stability:catapult}, right). Keeping the saturation alone turns \eqref{eq:stability:slowfast} into a system solvable with the Lambert $W$ function, and gives the coefficient $\frac23s$, which has the wrong sign whenever $\eta y<\frac12$.
+\end{remark}
+
+\section{Reading the solution}\label{sec:stability:reading}
+
+\paragraph{The catapult curve.} \Cref{fig:stability:catapult} plots where gradient descent lands against where it starts, for $\eta y=0.4$. Below the edge the landing sharpness equals the starting one, as \cref{prop:stability:lazy} requires. Just above the edge the landing point is the mirror image of the start across $\eta S=2$: a start at $\eta S=2.08$ lands at $1.918$, where the reflection law \eqref{eq:stability:reflection} predicts $1.92$ and the second-order law \eqref{eq:stability:second} $1.9182$. The reflection is a statement about a first integral, and it has a physical reading: the oscillation is an instability that feeds on the excess sharpness and destroys it, and since it must die out exactly as it grew, it overshoots the edge by as much as it started above it.\sidenote{Lotka and Volterra's predators and prey, and the epidemics of \textcite{KermackMcKendrick1927}, have first integrals of the same kind; the reflection law is the analogue of the final-size relation of an epidemic, with the oscillation as the infection and the excess sharpness as the susceptible population.} The landing lies slightly below the mirror image, by the second-order term, and beyond $\eta\Lambda(c_0)\approx2.4$ the gap widens, because a large oscillation shrinks $c$ by the factor $\abs{1-\eta^2z^2}$, which is smaller than the $e^{-\eta^2z^2}$ of the expansion. From about $2.9$ on, most runs land near the flattest minimizer, $\eta S=2\eta y=0.8$, with a scatter that depends on the initial perturbation at the level of $10^{-6}$: in these runs the oscillation grows large enough to behave chaotically before it dies out. At $\eta\Lambda(c_0)=4$ the scatter ends in divergence, exactly where \cref{thm:stability:ellipse} puts it.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},hplot,width=82mm,height=56mm]
+\nextgroupplot[xlabel={start: $\eta\Lambda(c_0)$},ylabel={landing: $\eta S(\theta_\infty)$},xmin=0.8,xmax=4.2,ymin=0.6,ymax=2.25,legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize},legend columns=2]
+\fill[seamist] (4,0.6) rectangle (4.2,2.25);
+\addplot[guide] coordinates {(0.8,2) (4.2,2)};
+\addplot[guide] coordinates {(0.8,0.8) (4.2,0.8)};
+\addplot[theory] table[x=el0,y=refl] {figures/data/15-stability-catapult.dat};
+\addplot[theory2] table[x=el0,y=second] {figures/data/15-stability-catapult.dat};
+\addplot[simulation,mark size=1.1pt] table[x=el0,y=rb] {figures/data/15-stability-catapult.dat};
+\addplot[simulation2,mark size=0.9pt] table[x=el0,y=rc] {figures/data/15-stability-catapult.dat};
+\legend{,,reflection law,second order,{exact, $z_0=10^{-6}$},{exact, $z_0=-10^{-6}$}}
+\node[font=\scriptsize,text=seadeep,rotate=90] at (axis cs:4.1,1.4) {diverges};
+\nextgroupplot[xlabel={$\eta y$},ylabel={$\lim\,(\eps_\infty+\eps_0)/\eps_0^2$},xmin=0,xmax=0.82,ymin=-1,ymax=3,legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize},legend columns=2]
+\addplot[guide] coordinates {(0,0) (0.82,0)};
+\addplot[theory,domain=0:0.8,samples=120] {2*x^2/(1-x^2)-2/3};
+\addplot[theory3,domain=0:0.8,samples=120] {(4/3)*x^2/(1-x^2)};
+\addplot[simulation] table[x=h,y=c2exact] {figures/data/15-stability-second.dat};
+\legend{,{second-order law \eqref{eq:stability:second}},saturation only,exact map}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Where a catapult lands. Left: the sharpness at landing against the sharpness of the start, for $y=1$ and $\eta=0.4$. Each point is one run of the exact map, started on the level set of $c_0$ at residual $z_0$ and iterated to convergence; the grid of starts has spacing $0.0125$. Curves: the identity below the edge (\cref{prop:stability:lazy}), the reflection law \eqref{eq:stability:reflection}, and the second-order law \eqref{eq:stability:second}, both cut at the flattest minimizer $2\eta y=0.8$ (dashed). No run converges beyond $\eta\Lambda(c_0)=4$. Right: the second-order coefficient of the landing law, measured from the exact map by extrapolating runs with $\eps_0=0.01,0.005,0.0025$ and $z_0=10^{-9}$ (points), against \eqref{eq:stability:second} and against the saturation term alone. Script: \texttt{15-stability-catapult.py}.}
+\label{fig:stability:catapult}
+\end{figure}
+
+\paragraph{Sizes and times.} Three more numbers come out of the solution. The loss never exceeds $2/\eta^2$ during a catapult that starts inside $\cE$ (\cref{thm:stability:ellipse}), a bound that is attained in the limit $\eta\Lambda(c_0)\to4$. Near the edge the spike has height about $\eps_0^2/(4\eta^2(1-\eta^2y^2))$: for $\eta y=0.4$ and $\eps_0=0.08$ the prediction is $0.0119$, and the exact map gives $0.0125$. And the spike comes after about $\log(A_{\mathrm{peak}}/A_0)/(2\eps_0)$ steps, the time that an oscillation growing by the factor $(1+\eps_0)^2$ per step needs to rise from its initial size $A_0$ to $\eps_0^2/\nu$. The delay is logarithmic in the initial perturbation and inversely proportional to the distance from the edge, the signature of an escape from an unstable fixed point that recurs throughout this book (\cref{ch:deeplinear,ch:singleindex}). \Cref{fig:stability:trajectory} shows one catapult in time.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},hplot,width=82mm,height=52mm,xmin=0,xmax=100]
+\nextgroupplot[xlabel={step $t$},ylabel={loss $\Loss(\theta_t)$},ymode=log,ymin=1e-17,ymax=1]
+\addplot[theory,mark=*,mark size=0.7pt] table[x=t,y=loss] {figures/data/15-stability-trajectory.dat};
+\nextgroupplot[xlabel={step $t$},ylabel={sharpness},ymin=1.5,ymax=2.5,legend pos=north east,legend style={font=\scriptsize},legend columns=2]
+\addplot[guide] coordinates {(0,2) (100,2)};
+\addplot[simulation,mark size=1.1pt] table[x=t,y=sharp] {figures/data/15-stability-trajectory.dat};
+\addplot[theory] table[x=t,y=gfs] {figures/data/15-stability-trajectory.dat};
+\addplot[theory3,domain=0:100] {1.7};
+\addplot[theory2,domain=0:100] {1.6743};
+\legend{,{$\eta S(\theta_t)$},{$\eta\Lambda(c_t)$},reflection law,second order}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{One catapult, for $y=1$, $\eta=0.4$, started on the level set of the minimizer with $\eta S=2.3$ at residual $z_0=10^{-6}$. Left: the loss grows geometrically for about fifty steps, peaks near $0.14$, and then decays geometrically at the rate set by the new minimizer. Right: the sharpness $\eta S(\theta_t)$ (points) and the sharpness $\eta\Lambda(c_t)$ of the minimizer that gradient flow would reach from $\theta_t$ (curve). The second decreases monotonically, as \cref{lem:stability:coordinates}(ii) requires while the loss is below $1/\eta^2$, from $2.3$ to $1.670$; the lines mark the predictions $1.7$ of \eqref{eq:stability:reflection} and $1.674$ of \eqref{eq:stability:second}. Script: \texttt{15-stability-trajectory.py}.}
+\label{fig:stability:trajectory}
+\end{figure}
+
+\paragraph{From the catapult to the edge of stability.} The model has a catapult but no edge of stability: after one oscillation it lands below $2/\eta$ and stays there. The reason is that its gradient flow conserves $c$, so nothing pushes the sharpness of the flow's destination back up. In a network that is trained at the edge, progressive sharpening does exactly that. Add it to \eqref{eq:stability:slowfast} as a constant rate $\gamma>0$:
+\begin{equation}\label{eq:stability:lv}
+  \frac{dA}{dt}=2\eps A,\qquad \frac{d\eps}{dt}=\gamma-\nu A .
+\end{equation}
+This is the Lotka--Volterra system. The function $\eps^2+\nu A-\gamma\log A$ is constant along its solutions, which are closed curves around the point $(A,\eps)=(\gamma/\nu,0)$. Over one period $A$ and $\eps$ return to their initial values, so the time averages of $d\log A/dt=2\eps$ and of $d\eps/dt=\gamma-\nu A$ vanish:
+\[
+  \langle\eps\rangle=0,\qquad \langle A\rangle=\gamma/\nu .
+\]
+The sharpness of the flow's destination oscillates around $2/\eta$, its time average is exactly $2/\eta$, and the oscillation carries exactly the energy needed to cancel the sharpening. With the saturation term $-\beta A^2$ restored, the closed curves become spirals into the fixed point $A=\gamma/\nu$, $\eps=\beta\gamma/(2\nu)$, so the sharpness settles slightly above $2/\eta$, as in \cref{obs:stability:eos}. This is a two-variable caricature of the mechanism that \textcite{DamianNichaniLee2023} called \term{self-stabilization}\index{self-stabilization} and analysed for general losses.
+
+\paragraph{When no minimizer is stable.} For $1<\eta y<2$ every minimizer is sharper than $2/\eta$, and gradient descent started in $\cK$ stays bounded (\cref{thm:stability:ellipse}) but almost never converges (\cref{thm:stability:landing}). Numerically, its imbalance tends to zero, and it settles on the balanced line $u=v$, on an orbit of period two around the balanced minimizer for $\eta y$ up to about $1.24$. The orbit then period-doubles, and for most $\eta y$ above $1.3$ the motion is chaotic; at $\eta y=2$ the map on the balanced line is again a tripling map. In this band the loss never goes to zero: training is stuck at the edge, without the decrease of the loss that \cref{obs:stability:eos} reports.
+
+\section{What the model gets wrong}\label{sec:stability:wrong}
+
+\paragraph{What was thrown away.} The product model keeps one example, one hidden unit and two layers, and so the top eigenvector of its Hessian is pinned to the normal of a single curve. In a network the top eigenvector rotates during training, and several eigenvalues can reach $2/\eta$ at once. The model uses the square loss, whose minimum has a curvature that does not change once it is reached; with the cross-entropy loss, the curvature of a minimizing sequence tends to zero. It uses full-batch gradient descent with a fixed step, with no noise, momentum, preconditioning, schedule or warmup. Above all, its gradient flow conserves the imbalance, so the sharpness of the flow's destination never drifts upward: the model has no progressive sharpening. It reproduces the catapult and the selection of minimizers flatter than $2/\eta$, and it cannot reproduce the long phase at the edge, which needs sharpening to balance. Finally, the exact identities of \cref{lem:stability:coordinates,thm:stability:ellipse} come from the bilinear structure, and nothing guarantees them for deeper or nonlinear models.
+
+\paragraph{Where it breaks.} Six results mark its limits. (1) The product model does not explain why the sharpness rises in networks. \Textcite{CohenEtAl2021} left progressive sharpening unexplained, and the partial explanations since then use other models: second-order regression models \parencite{AgarwalaPedregosaPennington2023}, and an analysis that ties the rise to the growth of the output layer \parencite{WangLiLi2022}. (2) With the cross-entropy loss the sharpness eventually decreases \parencite{CohenEtAl2021}, and for logistic regression on separable data gradient descent converges with every step size, after an initial phase in which the loss oscillates \parencite{WuBravermanLee2023,WuEtAl2024}; there the edge has no fixed location (\cref{ch:margin}). (3) With minibatches the quantity that settles at $2/\eta$ is not the full-batch sharpness: the sharpness that minibatch training reaches early is lower for larger step sizes and smaller batches \parencite{JastrzebskiEtAl2020}, and the edge of stability has a stochastic counterpart, measured with a sharpness adapted to the minibatch \parencite{LeeJang2023,AndreyevBeneventano2024}. (4) With Adam the preconditioned sharpness equilibrates near $38/\eta$ for $\beta_1=0.9$, the stability threshold of momentum of the kind Adam uses (Exercise~\ref{ex:stability:momentum}), rather than $2/\eta$ \parencite{CohenEtAl2022}. (5) The model's divergence threshold $4/\lambda_{\mathrm{init}}$ is not universal: for wide ReLU networks \textcite{LewkowyczEtAl2020} measured a largest step size of about $12/\lambda_{\mathrm{init}}$. (6) Linear stability concerns limits, and \cref{thm:stability:landing} says nothing about the thousands of steps that a network spends at the edge without converging, during which the loss keeps falling; that phase is where the interesting optimization happens.
+
+\paragraph{Fine structure.} Three successors repair the main failure. \Textcite{DamianNichaniLee2023} expand the loss to third order around a point on the edge and show that the oscillation along the top eigenvector produces, through the third derivative, a gradient of the sharpness that pushes the iterates back below $2/\eta$; gradient descent then tracks gradient descent projected onto the set $\{S\le2/\eta\}$, and \eqref{eq:stability:lv} is the two-variable shadow of their analysis. \Textcite{CohenEtAl2025} derive a \term{central flow}\index{central flow}, a differential equation for the time-averaged trajectory at the edge that predicts the loss and the sharpness, including the case of several unstable directions. A series of minimalist models give complete proofs of edge-of-stability behaviour in low dimension: a two-parameter quartic loss \parencite{ZhuEtAl2023}, a model of learning threshold neurons \parencite{AhnEtAl2023}, normalized gradient descent and its sharpness-reduction flow \parencite{AroraLiPanigrahi2022}, scalar networks, for which the sharpness of the gradient-flow solution decreases monotonically \parencite{KreislerEtAl2023}, and a bifurcation analysis of the trajectory \parencite{SongYun2023}. Large step sizes balance the layers of two-layer models \parencite{WangEtAl2022}, and drive diagonal linear networks toward sparser solutions \parencite{EvenEtAl2023}, the subject of \cref{ch:diagonal}. Still open are a solvable model in which progressive sharpening is derived and the long phase at the edge is solved (Exercise~\ref{ex:stability:sharpening}), convergence from the interior of the catapult ellipse (Exercise~\ref{ex:stability:converge}), and a theory of the stochastic and adaptive edges.
+
+\section{Model card}\label{sec:stability:card}
+
+\modelcard{Full-batch gradient descent raises the sharpness to $2/\eta$ and then trains at that edge; large initial steps cause a loss spike and a drop in curvature, the catapult.}
+{$\Loss(u,v)=\frac12(uv-y)^2$ trained by gradient descent with step size $\eta$; imbalance $c=u^2-v^2$; minimizer sharpness $\Lambda(c)=(c^2+4y^2)^{1/2}$.}
+{Exact: $c'=(1-2\eta^2\Loss)c$; convergence, for almost every start, only to minimizers with $\eta S\le2$; an invariant ellipse $\Psi'=(1+\eta^2z(z+y))\Psi$. Derived: the reflection law.}
+{Phase boundaries at $\eta\Lambda=2$ and $\eta\Lambda=4$ (exact); landing at $\eta S\approx4-\eta\Lambda(c_0)$, with correction $(\frac{2\eta^2y^2}{1-\eta^2y^2}-\frac23)\eps_0^2$; spike height $\eps_0^2/(4\eta^2(1-\eta^2y^2))$; loss below $2/\eta^2$.}
+{No progressive sharpening, hence no sustained edge of stability; square loss, full batch, plain gradient descent; the threshold $4$ is special to bilinear models.}
+{Self-stabilization; central flows; minimalist models with proofs; stochastic and adaptive edges; large-step logistic regression.}
+
+The model is the prologue's quadratic with one more parameter, and the extra parameter changes the verdict: the threshold $2/\lambda_1$ of \cref{ch:prologue} becomes a rule about which minimizers can be reached, not a constraint on the step size. The product $uv$ is also a diagonal linear network with one coordinate, and its conserved imbalance is the quantity whose size sets the implicit bias in \cref{ch:diagonal}; large steps act on that same quantity. The conservation law is the scalar case of the balancedness of deep linear networks in \cref{ch:deeplinear}. The delay before the catapult, logarithmic in the initial perturbation, is the time to escape an unstable fixed point, as in \cref{ch:deeplinear,ch:singleindex,ch:committee}. In the committee machine of \cref{ch:committee} the step size enters the order-parameter equations through terms of order $\eta^2$, and a large enough step destabilizes the learning dynamics there too. With the logistic loss, large steps lead to the margin-maximizing solutions of \cref{ch:margin} after an unstable phase.
+
+\begin{exercises}
+\item \consolidation (The Hessian off the valley.) (a) Show that the eigenvalues of $\nabla^2\Loss(u,v)$ are $\frac12\bigl(\tau\pm\sqrt{c^2+4(uv+z)^2}\bigr)$, so that $S(\theta)\ge\tau/2$, with $S=\tau$ on $\cM$. (b) On the balanced line $u=v$, show that $S=\max\{3u^2-y,\;y-u^2\}$. Conclude that along gradient flow from a small balanced initialization the sharpness first falls from $y$ to $y/2$ and then rises to $2y$, a two-parameter caricature of progressive sharpening that ends at the flattest minimizer.\label{ex:stability:hessian}
+
+\item \consolidation (Edges in the valley.) Let $\eta=0.4$ and $y=1$. (a) Show that the minimizers on the positive branch of $\cM$ with $2<\eta S<4$ are the points $(u,1/u)$ with $u\in(0.3178,0.4569)\cup(2.1889,3.1463)$. (b) Show that $\cE$ meets the line $u=v$ where $\eta u^2=2+\eta y$, and the line $u=-v$ where $\eta u^2=2-\eta y$. (c) For general $\eta y<2$, show that $\cK$ contains every point with $\eta(u^2+v^2)<4-2\eta y$, and that $\cK$ is contained in $\{\eta(u^2+v^2)<4+2\eta y\}$.\label{ex:stability:edges}
+
+\item \consolidation (The tripling map on the ellipse.) Let $\eta y<2$, and parameterize $\cE$ by $a=2\sqrt{(2+\eta y)/\eta}\,\sin\varphi$ and $b=2\sqrt{(2-\eta y)/\eta}\,\cos\varphi$. (a) Show that $\eta z=-2\cos2\varphi$ on $\cE$. (b) Using $\sin3\varphi=\sin\varphi\,(1+2\cos2\varphi)$ and $\cos3\varphi=-\cos\varphi\,(1-2\cos2\varphi)$, show that $G$ acts on $\cE$ as $\varphi\mapsto\pi-3\varphi$. (c) Deduce that $G$ has exactly four fixed points on $\cE$, the minimizers with $\eta S=4$, and exactly $3^k-(-1)^k$ points of $\cE$ fixed by $G^k$ for each $k\ge1$. (d) Show that the two orbits of period two are $\{\theta,-\theta\}$ for the points $\theta$ where $\cE$ meets the diagonals, with $\eta z=2$ on $u=v$ and $\eta z=-2$ on $u=-v$.\label{ex:stability:tripling}
+
+\item \consolidation (Volterra's averages.) (a) Show that $\eps^2+\nu A-\gamma\log A$ is constant along the solutions of \eqref{eq:stability:lv}, and that every solution with $A(0)>0$ is periodic. (b) Show that small oscillations around $(\gamma/\nu,0)$ have period $2\pi/\sqrt{2\gamma}$. (c) With the term $-\beta A^2$ added to the first equation, show that the fixed point moves to $(\gamma/\nu,\beta\gamma/(2\nu))$ and is a stable focus.\label{ex:stability:volterra}
+
+\item \consolidation\harder (The second-order reflection law.) Let $\ell=\log A$ and $w=\log c$, and model one step of gradient descent near the edge by
+\[
+  \ell'=\ell+F(w)-\beta e^{\ell},\qquad w'=w-\eta^2e^{\ell},\qquad F(w)=2\log\bigl(1+\eps(w)\bigr),
+\]
+with $\eps(w)=\eta(e^{2w}+4y^2)^{1/2}-2$. (a) Without the term $\beta e^\ell$, show that $H=\eta^2e^\ell+\int^wF$ is constant along the flow $\dot\ell=F(w)$, $\dot w=-\eta^2e^\ell$, and that one step of the map increases it by $\frac12G^2F'(w)+\frac12GF(w)^2$ up to higher-order terms, with $G=\eta^2e^\ell$. (b) Sum these increments over a catapult, converting sums into integrals with $dw=-G$ and using the leading-order solution $\nu A=\eps_0^2-\eps^2$; add the effect of $\beta e^\ell$, and derive \eqref{eq:stability:second}. (c) Check with the exact map that $(\eps_\infty+\eps_0)/\eps_0^2\to-2/7$ for $\eta y=0.4$. \hint{at the edge $d\eps/dw=2(1-\eta^2y^2)$ and $d^2\eps/dw^2=2(1-\eta^4y^4)$; the increments of (a) contribute $-\frac43$, and the expansion $F=2\eps-\eps^2$ contributes $\frac13$.}\label{ex:stability:second}
+
+\item \variation (No label.) Let $y=0$, so that $\Loss=\frac12u^2v^2$ and the minimizers are the two axes, with sharpness $\tau$. (a) Show that $\tau'=\tau+\eta z^2(\eta\tau-4)$ exactly, and that $\cE$ is the circle $\eta\tau=4$. (b) If $\eta\tau_0<4$, show that $\Loss(\theta_t)\to0$. (c) If $\eta\tau_0>4$, show that $\tau_t\to\infty$ for almost every $\theta_0$. \hint{in (c), if $\tau_t$ stayed bounded it would converge, and $\sum_t\eta z_t^2(\eta\tau_t-4)<\infty$ would force $z_t\to0$; now argue as in \cref{thm:stability:landing}.}\label{ex:stability:yzero}
+
+\item \variation (Three factors.) Let $\Loss(u,v,w)=\frac12(uvw-y)^2$ and $z=uvw-y$. (a) Show that gradient flow conserves $u^2-v^2$ and $v^2-w^2$, and that gradient descent multiplies $u^2-v^2$ by $1-\eta^2z^2w^2$. (b) Show that the sharpness of a minimizer is $y^2(u^{-2}+v^{-2}+w^{-2})$, and that the flattest minimizers are balanced, with sharpness $3y^{4/3}$. (c) Adapt the proof of \cref{thm:stability:landing}(ii) to show that the initializations from which gradient descent converges to a minimizer with $\eta S>2$ form a null set. Deduce that if $\eta>2/(3y^{4/3})$, then gradient descent from almost every initialization converges to no minimizer at all.\label{ex:stability:three}
+
+\item \variation (Every width.) In the model of \textcite{LewkowyczEtAl2020}, $u,v\in\R^m$, $f=\ip{u,v}/\sqrt m$, $\Loss=\frac12(f-y)^2$, and the curvature is $\lambda=(\norm u^2+\norm v^2)/m$. (a) With $z=f-y$, show that gradient descent satisfies $z'=z\bigl(1-\eta\lambda+\frac{\eta^2}mz(z+y)\bigr)$ and $\lambda'=\lambda+\frac\eta mz^2(\eta\lambda-4)-\frac{4\eta}myz$. (b) Show that $\Psi_m=\eta\lambda-\frac{\eta^2y}mz-4$ satisfies $\Psi_m'=\bigl(1+\frac{\eta^2}mz(z+y)\bigr)\Psi_m$. (c) Deduce that if $\eta y<2\sqrt m$ and $\Psi_m<0$ at initialization, then the iterates stay bounded; so the threshold $4/\lambda_{\mathrm{init}}$ is exact up to a correction of order $1/m$.\label{ex:stability:width}
+
+\item \variation (Momentum and the adaptive edge.) Gradient descent with momentum in the form used by Adam updates $m_t=\beta_1m_{t-1}+(1-\beta_1)\nabla\Loss(\theta_t)$ and $\theta_{t+1}=\theta_t-\eta m_t$. (a) On a quadratic with curvature $\lambda_1$ in some direction, show that this iteration is stable in that direction if and only if $\eta\lambda_1<2(1+\beta_1)/(1-\beta_1)$. (b) Evaluate the threshold for $\beta_1=0.9$, and compare with the value $38/\eta$ at which \textcite{CohenEtAl2022} observed the preconditioned sharpness of Adam to equilibrate.\label{ex:stability:momentum}
+
+\item \simulation (Other step sizes.) Run \texttt{15-stability-catapult.py} with $\eta y=0.2$ and with $\eta y=0.8$. Check that near the edge the landing follows \eqref{eq:stability:second}, with coefficients $-0.583$ and $2.889$; that the region of smooth landing ends, and the scatter begins, at a start sharpness that decreases as $\eta y$ grows; and that no run converges beyond $\eta\Lambda(c_0)=4$. For $\eta y=0.8$, explain why the reflection law reaches the flattest minimizer already at $\eta\Lambda(c_0)=2.4$.\label{ex:stability:sim1}
+
+\item \simulation (A network at the edge.) Using \texttt{15-stability-mlp.py}: (a) Train with $\eta\in\{0.3,0.5\}$, and check that the sharpness levels off within a few percent of $2/\eta$. (b) Plot the time $\eta t$ at which the sharpness first reaches $2/\eta$ against $2/\eta$ for several step sizes, and check that the points lie on the sharpness curve of the run with the smallest step: before the edge, gradient descent follows gradient flow. (c) Replace the full gradient by a minibatch gradient with $50$ examples and $\eta=0.25$; the full-batch sharpness should level off well below $2/\eta=8$ (near $6.6$ in our runs), as minibatch training is known to do.\label{ex:stability:sim2}
+
+\item \research (Convergence inside the ellipse.) For $0<\eta y<1$, every one of the $10^5$ random initializations in $\cK$ that we tried converged. Prove that gradient descent converges from almost every point of $\cK$. The case $y=0$ is Exercise~\ref{ex:stability:yzero}(b), where $\tau$ is monotone; for $y>0$ no monotone quantity is known to us, and the orbits that pass near $\cE$ are chaotic for a while. A second open question is the law of the landing sharpness for starts near $\cE$, where it is effectively random.\label{ex:stability:converge}
+
+\item \research (Sharpening from first principles.) The product model must be given progressive sharpening by hand, as the rate $\gamma$ of \eqref{eq:stability:lv}. Find a solvable model in which the rate is derived, and which then trains at the edge of stability with a decreasing loss. \Textcite{AgarwalaPedregosaPennington2023} derive progressive sharpening in quadratic regression models; what is open is a model in which both the rate and the long phase at the edge are solved, and a derivation of the rate for a network.\label{ex:stability:sharpening}
+\end{exercises}
+
+
+\notesandrefs
+%%NOTES%%
+
+\printchapterbib
+\end{refsection}

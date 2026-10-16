@@ -5,7 +5,7 @@
 %%
 %% Engine: pdfLaTeX.  Bibliography: biber.  Index: makeindex (run by imakeidx).
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesClass{missingbook}[2026/10/17 v1.0 The Missing Textbooks series class]
+\ProvidesClass{missingbook}[2026/10/17 v1.1 The Missing Textbooks series class]
 
 %------------------------------------------------------------------------------
 % Options
@@ -175,12 +175,15 @@
 %------------------------------------------------------------------------------
 \newcommand*{\mbtocsubtitle}[1]{%
   \par\nopagebreak\vspace{-0.15ex}{\leftskip=2.3em\small\itshape\color{muted}#1\par}\vspace{0.35ex}}
+% the label printed before the third argument of \casechapter ("the move" in volume 1);
+% a volume may renew it, e.g. \renewcommand*{\mbchaptertaglabel}{the model}
+\newcommand*{\mbchaptertaglabel}{the move}
 \newcommand{\mb@subtitleblock}[2]{%
   \vspace*{-0.2\baselineskip}%
   {\raggedright\large\itshape\color{muted}#1\par}%
   \Ifstr{#2}{}{}{%
     \vspace{0.55\baselineskip}%
-    {\raggedright\small\textsc{\color{sea}the move}\enspace{\color{sea}\rule[0.32ex]{1.6em}{0.4pt}}\enspace\textsc{#2}\par}}%
+    {\raggedright\small\textsc{\color{sea}\mbchaptertaglabel}\enspace{\color{sea}\rule[0.32ex]{1.6em}{0.4pt}}\enspace\textsc{#2}\par}}%
   \vspace{0.5\baselineskip}%
   \mb@waverule
   \vspace{0.9\baselineskip}}
@@ -445,6 +448,15 @@
 %------------------------------------------------------------------------------
 \newcommand{\mbtableofcontents}{{\hypersetup{linkcolor=ink}\tableofcontents}}
 
+% The title-page emblem is drawn half under water, between the first and second waves, in
+% page coordinates (cm from the lower-left corner). The default is the soaking nut of volume 1;
+% a volume may draw its own with \renewcommand{\mbtitleemblem}{<TikZ commands>}.
+\newcommand{\mbtitleemblem}{%
+      \fill[brown!55!black] (15.2,7.6) ellipse (1.25 and 1.55);
+      \draw[brown!30!black,line width=0.5pt] (15.2,6.1) .. controls (15.05,7.3) and (15.35,8.0) .. (15.2,9.15);
+      \draw[brown!75!black,line width=0.35pt] (14.55,6.6) .. controls (14.35,7.5) and (14.5,8.4) .. (14.8,8.95);
+      \draw[brown!75!black,line width=0.35pt] (15.85,6.6) .. controls (16.05,7.5) and (15.9,8.4) .. (15.6,8.95);}
+
 % \mbtitlepage{Title}{Subtitle}{Author}{Imprint line}
 \newcommand{\mbtitlepage}[4]{%
   \begin{titlepage}
@@ -452,11 +464,7 @@
     \begin{scope}[shift={(current page.south west)}]
       \fill[seafoam] (0,0) -- plot[domain=0:\mb@paperwidthmm,samples=200,smooth]
         (\x/10,{(84+2.2*sin(\x*3.1))/10}) -- (\mb@paperwidthmm/10,0) -- cycle;
-      % the nut, soaking
-      \fill[brown!55!black] (15.2,7.6) ellipse (1.25 and 1.55);
-      \draw[brown!30!black,line width=0.5pt] (15.2,6.1) .. controls (15.05,7.3) and (15.35,8.0) .. (15.2,9.15);
-      \draw[brown!75!black,line width=0.35pt] (14.55,6.6) .. controls (14.35,7.5) and (14.5,8.4) .. (14.8,8.95);
-      \draw[brown!75!black,line width=0.35pt] (15.85,6.6) .. controls (16.05,7.5) and (15.9,8.4) .. (15.6,8.95);
+      \mbtitleemblem
       \fill[seamist,opacity=0.92] (0,0) -- plot[domain=0:\mb@paperwidthmm,samples=200,smooth]
         (\x/10,{(76+2.0*sin(\x*4.3+40))/10}) -- (\mb@paperwidthmm/10,0) -- cycle;
       \draw[sea!45,line width=0.5pt] plot[domain=0:\mb@paperwidthmm,samples=200,smooth]

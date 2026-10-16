@@ -1,0 +1,364 @@
+% Appendix A of The Hydrogen Atoms of Deep Learning: the shared mathematical toolkit.
+\casechapter{A Toolkit}{The mathematics the models share}{}{ch:toolkit}
+\begin{refsection}[chapters/18-toolkit.bib]
+
+\begin{chaptersummary}
+Five pieces of mathematics recur across the models of this book: Gaussian integration by parts and Hermite polynomials, which turn expectations over Gaussian data into power series in an overlap; spherical harmonics, which do the same on the sphere; the Marchenko--Pastur law for the spectrum of a sample covariance matrix; martingale inequalities and the method of ordinary differential equations, which reduce a stochastic recursion in high dimension to a deterministic flow; and Fourier analysis on finite groups. This appendix states what the chapters use and proves what can be proved in a page.
+\end{chaptersummary}
+
+The appendix is a reference, not a chapter to be read in order. Hermite polynomials (\cref{sec:toolkit:hermite}) are used in \cref{ch:signalprop,ch:singleindex,ch:committee,ch:lazy}; spherical harmonics (\cref{sec:toolkit:sphere}) in \cref{ch:lazy}; the Marchenko--Pastur law (\cref{sec:toolkit:mp}) in \cref{ch:doubledescent,ch:scaling}; martingales and the ODE method (\cref{sec:toolkit:ode}) in \cref{ch:singleindex,ch:committee}; Fourier analysis (\cref{sec:toolkit:fourier}) in \cref{ch:parity,ch:grokking}; and concentration inequalities (\cref{sec:toolkit:conc}) throughout.
+
+\section{Gaussian integration by parts and Hermite polynomials}\label{sec:toolkit:hermite}
+
+Throughout this section $z$ is a standard Gaussian random variable, with density $\varphi(z)=(2\pi)^{-1/2}e^{-z^2/2}$, and $L^2(\gamma)$ is the space of functions $f\colon\R\to\R$ with $\E[f(z)^2]<\infty$, with inner product $\ip{f,g}=\E[f(z)g(z)]$.
+
+\begin{theorem}[Gaussian integration by parts]\label{thm:toolkit:stein}\index{Gaussian integration by parts}\index{Stein's lemma}
+Let $f\colon\R\to\R$ be absolutely continuous with $\E\abs{f'(z)}<\infty$. Then $\E\abs{zf(z)}<\infty$ and
+\[
+  \E[zf(z)]=\E[f'(z)].
+\]
+More generally, let $x\sim\cN(0,\Sigma)$ in $\R^d$ and let $f\colon\R^d\to\R$ be continuously differentiable with $\E\abs{f(x)}$ and $\E\norm{\nabla f(x)}$ finite. Then $\E[x f(x)]=\Sigma\,\E[\nabla f(x)]$.
+\end{theorem}
+
+\begin{proof}
+The plan is to write $f'$ as an integral against the Gaussian tail and exchange the order of integration. The density satisfies $\varphi'(u)=-u\varphi(u)$, so $\varphi(t)=\int_t^\infty u\varphi(u)\dd u$ for $t\ge0$ and $\varphi(t)=\int_{-\infty}^t(-u)\varphi(u)\dd u$ for $t\le0$. On the positive half-line we substitute the first formula and exchange the order of integration, which Fubini's theorem allows because the same computation with $\abs{f'}$ in place of $f'$ gives the finite value $\int_0^\infty\abs{f'}\varphi$:
+\begin{align*}
+  \int_0^\infty f'(t)\varphi(t)\dd t&=\int_0^\infty f'(t)\int_t^\infty u\varphi(u)\dd u\dd t\\
+  &=\int_0^\infty u\varphi(u)\big(f(u)-f(0)\big)\dd u .
+\end{align*} The negative half-line gives in the same way $\int_{-\infty}^0f'\varphi=\int_{-\infty}^0u\varphi(u)(f(u)-f(0))\dd u$. Adding the two, $\E[f'(z)]=\E[z(f(z)-f(0))]=\E[zf(z)]$, since $\E z=0$; the integrability of $zf(z)$ follows from the bound $\E\abs{z}\abs{f(z)-f(0)}\le\E\abs{f'(z)}$, which the same computation with absolute values provides.
+
+For the vector form, write $x=\Sigma^{1/2}g$ with $g\sim\cN(0,I_d)$ and $F(g)=f(\Sigma^{1/2}g)$, so that $\nabla F(g)=\Sigma^{1/2}\nabla f(x)$. Conditionally on the other coordinates, the scalar statement applied to the $i$th coordinate of $g$ gives $\E[g_iF(g)]=\E[\partial_iF(g)]$, by Fubini's theorem and the integrability assumptions. Hence $\E[xf(x)]=\Sigma^{1/2}\E[gF(g)]=\Sigma^{1/2}\E[\nabla F(g)]=\Sigma\,\E[\nabla f(x)]$.
+\end{proof}
+
+Hermite polynomials are the orthogonal polynomials of the Gaussian measure. The quickest definition is through their generating function: for real $s$ and $z$,
+\begin{equation}\label{eq:toolkit:genfun}
+  G(s,z)\defeq e^{sz-s^2/2}=\sum_{k\ge0}\He_k(z)\,\frac{s^k}{k!}.
+\end{equation}
+Expanding $e^{sz}e^{-s^2/2}$ as a product of two power series shows that $\He_k$ is a monic polynomial of degree $k$: $\He_0=1$, $\He_1(z)=z$, $\He_2(z)=z^2-1$, $\He_3(z)=z^3-3z$, $\He_4(z)=z^4-6z^2+3$. The normalized Hermite polynomials are $h_k=\He_k/\sqrt{k!}$, and the \term{Hermite coefficients}\index{Hermite coefficient} of $f\in L^2(\gamma)$ are $\hat f_k=\E[f(z)h_k(z)]$.
+
+\begin{lemma}[Hermite polynomials]\label{lem:toolkit:hermite}\index{Hermite polynomials}
+\begin{enumerate}
+\item $\He_k'=k\He_{k-1}$ and $\He_{k+1}(z)=z\He_k(z)-k\He_{k-1}(z)$; equivalently $h_k'=\sqrt k\,h_{k-1}$ and $zh_k=\sqrt{k+1}\,h_{k+1}+\sqrt k\,h_{k-1}$.
+\item $\E[\He_j(z)\He_k(z)]=k!\,\delta_{jk}$, so the $h_k$ are orthonormal in $L^2(\gamma)$; they form an orthonormal basis.
+\item If $f$ has $k$ derivatives with $\E\abs{f^{(i)}(z)}\abs{\He_{k-i}(z)}<\infty$ for $i\le k$, then $\E[f(z)\He_k(z)]=\E[f^{(k)}(z)]$, so $\hat f_k=\E[f^{(k)}(z)]/\sqrt{k!}$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+For (i), differentiate the generating function: $\partial_zG=sG$ and $\partial_sG=(z-s)G$; comparing the coefficients of $s^k/k!$ gives $\He_k'=k\He_{k-1}$ and $\He_{k+1}=z\He_k-k\He_{k-1}$. Dividing by the factorials gives the normalized forms. For (ii), compute with the moment generating function of $z$:
+\[
+  \E[G(s,z)G(t,z)]=e^{-(s^2+t^2)/2}\,\E[e^{(s+t)z}]=e^{st}=\sum_{k\ge0}\frac{(st)^k}{k!}.
+\]
+The series in \eqref{eq:toolkit:genfun} converges absolutely, and $\E[e^{(\abs s+\abs t)\abs z}]$ is finite, so expectation and summation can be exchanged; comparing the coefficients of $s^jt^k$ gives $\E[\He_j\He_k]/(j!\,k!)=\delta_{jk}/k!$. That the $h_k$ are complete, that is, that polynomials are dense in $L^2(\gamma)$, is classical \parencite{Bogachev1998}. For (iii), the recurrence and $\He_{k-1}'=(k-1)\He_{k-2}$ give $\He_k=z\He_{k-1}-\He_{k-1}'$, and \cref{thm:toolkit:stein} applied to $f\He_{k-1}$ gives $\E[zf\He_{k-1}]=\E[f'\He_{k-1}]+\E[f\He_{k-1}']$. Subtracting $\E[f\He_{k-1}']$ from both sides,
+\[
+  \E[f\He_k]=\E[zf\He_{k-1}]-\E[f\He_{k-1}']=\E[f'\He_{k-1}],
+\]
+and induction on $k$ finishes the proof.
+\end{proof}
+
+For example, the rectified linear unit $\relu(z)=\max(z,0)$ has $\hat\relu_0=\E[\relu(z)]=1/\sqrt{2\pi}$, $\hat\relu_1=\E[\ind\{z>0\}]=\frac12$ by part (iii), and $\hat\relu_2=\E[(z^3-z)\ind\{z>0\}]/\sqrt2=\varphi(0)/\sqrt2=1/(2\sqrt\pi)$ by direct computation.
+
+The basic fact that makes Gaussian data tractable is that Hermite polynomials of correlated Gaussians are orthogonal across degrees.
+
+\begin{theorem}[Hermite polynomials of correlated Gaussians]\label{thm:toolkit:hermite-corr}\index{Hermite polynomials!of correlated Gaussians}
+Let $(u,v)$ be jointly Gaussian with $\E u=\E v=0$, $\E u^2=\E v^2=1$ and $\E uv=\rho$. Then $\E[\He_j(u)\He_k(v)]=\delta_{jk}\,k!\,\rho^k$, that is, $\E[h_j(u)h_k(v)]=\delta_{jk}\rho^k$. In particular, for unit vectors $a,b\in\R^d$ and $x\sim\cN(0,I_d)$,
+\[
+  \E\big[h_j(\ip{a,x})\,h_k(\ip{b,x})\big]=\delta_{jk}\,\ip{a,b}^k.
+\]
+\end{theorem}
+
+\begin{proof}
+The moment generating function of $su+tv$ is $e^{(s^2+t^2+2st\rho)/2}$, so $\E[G(s,u)G(t,v)]=e^{st\rho}=\sum_k(st\rho)^k/k!$. Comparing coefficients of $s^jt^k$, as in the proof of \cref{lem:toolkit:hermite}, gives the first claim. The pair $(\ip{a,x},\ip{b,x})$ is jointly Gaussian with unit variances and covariance $\ip{a,b}$.
+\end{proof}
+
+\begin{corollary}[Dual activations]\label{cor:toolkit:dual}\index{dual activation}
+Let $f,g\in L^2(\gamma)$ and let $(u,v)$ be as in \cref{thm:toolkit:hermite-corr}. Then
+\[
+  \E[f(u)g(v)]=\sum_{k\ge0}\hat f_k\,\hat g_k\,\rho^k,
+\]
+and the series converges absolutely for $\abs\rho\le1$. In particular $\rho\mapsto\E[f(u)f(v)]=\sum_k\hat f_k^2\rho^k$ is a power series with nonnegative coefficients.
+\end{corollary}
+
+\begin{proof}
+The bilinear form $B(f,g)=\E[f(u)g(v)]$ satisfies $\abs{B(f,g)}\le\norm f\norm g$ by the Cauchy--Schwarz inequality, because $u$ and $v$ are standard Gaussians; so $B$ is continuous on $L^2(\gamma)\times L^2(\gamma)$. For the truncations $f_K=\sum_{k\le K}\hat f_kh_k$ and $g_K$, \cref{thm:toolkit:hermite-corr} gives $B(f_K,g_K)=\sum_{k\le K}\hat f_k\hat g_k\rho^k$. As $K\to\infty$, $f_K\to f$ and $g_K\to g$ in $L^2(\gamma)$ by \cref{lem:toolkit:hermite}(ii), so the left side tends to $B(f,g)$, while the right side converges absolutely because $\sum_k\abs{\hat f_k\hat g_k}\le\norm f\norm g$.
+\end{proof}
+
+\begin{lemma}[Price's theorem]\label{lem:toolkit:price}\index{Price's theorem}
+Let $f$ and $g$ be absolutely continuous with $f,f',g,g'\in L^2(\gamma)$, and let $(u,v)$ be as in \cref{thm:toolkit:hermite-corr}. Then $\rho\mapsto\E[f(u)g(v)]$ is differentiable on $(-1,1)$, with
+\[
+  \frac{\partial}{\partial\rho}\E[f(u)g(v)]=\E[f'(u)g'(v)].
+\]
+\end{lemma}
+
+\begin{proof}
+The Hermite coefficients of $f'$ are $\widehat{(f')}_{k-1}=\sqrt k\,\hat f_k$: by \cref{lem:toolkit:hermite}(iii) with one derivative, $\E[f'\He_{k-1}]=\E[f\He_k]$, and dividing by $\sqrt{(k-1)!}$ gives the claim. \Cref{cor:toolkit:dual} applied to $f'$ and $g'$ gives $\E[f'(u)g'(v)]=\sum_{k\ge1}k\hat f_k\hat g_k\rho^{k-1}$, which is the termwise derivative of the power series $\sum_k\hat f_k\hat g_k\rho^k$. A power series with radius of convergence at least $1$ may be differentiated termwise on $(-1,1)$.
+\end{proof}
+
+\section{Spherical harmonics}\label{sec:toolkit:sphere}
+
+Let $\sigma$ be the uniform probability measure on the unit sphere $\Sph^{d-1}\subset\R^d$, $d\ge3$. A \term{spherical harmonic}\index{spherical harmonics} of degree $k$ is the restriction to the sphere of a homogeneous polynomial of degree $k$ on $\R^d$ that is harmonic (its Laplacian vanishes). They form a finite-dimensional space $\cH_k$, and the following facts are classical \parencite[Chapter~IV]{SteinWeiss1971}; see also \textcite{AtkinsonHan2012} and \textcite{DaiXu2013}.
+
+\begin{theorem}[Spherical harmonics]\label{thm:toolkit:addition}\index{addition theorem}\index{Funk--Hecke formula}
+\begin{enumerate}
+\item $L^2(\Sph^{d-1},\sigma)$ is the orthogonal direct sum of the spaces $\cH_k$, $k\ge0$, and
+\[
+  N_{d,k}\defeq\dim\cH_k=\binom{d+k-1}{k}-\binom{d+k-3}{k-2},
+\]
+with the second binomial coefficient read as $0$ for $k<2$. For fixed $k$, $N_{d,k}=\frac{d^k}{k!}\big(1+O(1/d)\big)$ as $d\to\infty$.
+\item \emph{(Addition theorem.)} Let $Y_1,\dots,Y_{N_{d,k}}$ be an orthonormal basis of $\cH_k$ in $L^2(\sigma)$. The function $Z_k(x,y)=\sum_jY_j(x)Y_j(y)$ does not depend on the choice of basis, is the kernel of the orthogonal projection onto $\cH_k$, and depends only on $\ip{x,y}$: $Z_k(x,y)=N_{d,k}\,P_{d,k}(\ip{x,y})$, where $P_{d,k}$ is the Gegenbauer polynomial of degree $k$ for dimension $d$, normalized by $P_{d,k}(1)=1$. In particular $Z_k(x,x)=N_{d,k}$ for every $x$.
+\item \emph{(Funk--Hecke formula.)} For every bounded measurable $F\colon[-1,1]\to\R$ and every $Y\in\cH_k$,
+\[
+  \int F(\ip{x,y})\,Y(y)\dd\sigma(y)=\mu_k(F)\,Y(x),
+\]
+with $\mu_k(F)=\frac{\abs{\Sph^{d-2}}}{\abs{\Sph^{d-1}}}\int_{-1}^1F(t)P_{d,k}(t)(1-t^2)^{(d-3)/2}\dd t$.
+Consequently every kernel of the form $K(x,y)=F(\ip{x,y})$ on the sphere has the spherical harmonics as eigenfunctions, with the eigenvalue $\mu_k(F)$ shared by all of $\cH_k$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}[Proof of the parts used in this book]
+We take the decomposition and the dimension formula in (i) from the references. The asymptotics follow from the formula: $\binom{d+k-1}k=\frac{d^k}{k!}(1+O(1/d))$, while $\binom{d+k-3}{k-2}=O(d^{k-2})$.
+
+For (ii), the function $Z_k(\cdot,y)$ satisfies $\ip{Y,Z_k(\cdot,y)}=Y(y)$ for every $Y\in\cH_k$, which characterizes it as the reproducing kernel of the finite-dimensional space $\cH_k$; so it does not depend on the basis. If $U$ is an orthogonal matrix, then $Y\mapsto Y\circ U$ maps $\cH_k$ onto itself and preserves $L^2(\sigma)$ inner products, because harmonicity, homogeneity and $\sigma$ are rotation invariant; so $\{Y_j\circ U\}$ is another orthonormal basis, and $Z_k(Ux,Uy)=Z_k(x,y)$. Since every pair of points with the same inner product is mapped to every other such pair by some rotation, $Z_k(x,y)$ depends only on $\ip{x,y}$. In particular $Z_k(x,x)$ is a constant $c$, and integrating $\sum_jY_j(x)^2$ against $\sigma$ gives $c=\sum_j\norm{Y_j}^2=N_{d,k}$. The identification of $Z_k(x,y)/N_{d,k}$ with the Gegenbauer polynomial and part (iii) are in \textcite[Chapter~IV]{SteinWeiss1971}.
+\end{proof}
+
+For $d=3$, the polynomial $P_{3,k}$ is the Legendre polynomial of degree $k$, and $N_{3,k}=2k+1$.
+
+\section{Wishart matrices and the Marchenko--Pastur law}\label{sec:toolkit:mp}
+
+Let $X\in\R^{n\times p}$ have independent $\cN(0,1)$ entries, with rows $x_1,\dots,x_n\in\R^p$, and let $\hat\Sigma=X^\top X/n$ be the sample covariance matrix; its population counterpart is $I_p$. The first result is exact at every size.
+
+\begin{theorem}[Mean of the inverse Wishart matrix]\label{thm:toolkit:inv-wishart}\index{Wishart matrix}
+If $n\ge p+2$, then $\E[(X^\top X)^{-1}]=I_p/(n-p-1)$. If $n\in\{p,p+1\}$, then $X^\top X$ is invertible almost surely and $\E\tr[(X^\top X)^{-1}]=+\infty$.
+\end{theorem}
+
+\begin{proof}
+The plan is to use rotational invariance to reduce to one diagonal entry, and then to compute that entry with a Schur complement. When $n\ge p$, the columns of $X$ are linearly independent almost surely, so $X^\top X$ is invertible. For every orthogonal $U\in\R^{p\times p}$ the matrix $XU$ has the same law as $X$, so $M=\E[(X^\top X)^{-1}]$, if finite, satisfies $U^\top MU=M$ for all $U$, and is therefore a multiple $cI_p$ of the identity; also all diagonal entries of $(X^\top X)^{-1}$ have the same law. Let $X_1$ be the first column of $X$ and $P$ the orthogonal projection onto the span of the other $p-1$ columns. By the formula for the inverse of a block matrix,
+\[
+  \big[(X^\top X)^{-1}\big]_{11}=\frac{1}{X_1^\top X_1-X_1^\top P X_1}=\frac1{\norm{(I-P)X_1}^2}.
+\]
+Conditionally on the other columns, $I-P$ is a projection of rank $n-p+1$ independent of $X_1\sim\cN(0,I_n)$, so $\norm{(I-P)X_1}^2$ has the $\chi^2$ distribution with $k=n-p+1$ degrees of freedom. For $k\ge3$, $\E[1/\chi^2_k]=\frac{\Gamma(k/2-1)}{2\Gamma(k/2)}=\frac1{k-2}$, and for $k\in\{1,2\}$ the expectation is infinite, because the $\chi^2_k$ density does not vanish at $0$. With $k-2=n-p-1$ this gives $c=1/(n-p-1)$ when $n\ge p+2$, and an infinite expected trace when $n-p\in\{0,1\}$.
+\end{proof}
+
+In the proportional regime, $p/n\to\gamma\in(0,\infty)$, the eigenvalues of $\hat\Sigma$ do not concentrate at $1$ but spread over an interval. We describe their distribution through the \term{Stieltjes transform}\index{Stieltjes transform}
+\[
+  s_p(z)=\frac1p\tr\big(\hat\Sigma-zI_p\big)^{-1}=\frac1p\sum_{j=1}^p\frac1{\lambda_j(\hat\Sigma)-z},
+\]
+which for real $z=-\lambda<0$ is a positive, decreasing, convex function of $\lambda$. Its derivative gives the other trace that appears in ridge regression: $\frac{d}{d\lambda}s_p(-\lambda)=-\frac1p\tr(\hat\Sigma+\lambda I)^{-2}$.
+
+\begin{theorem}[Marchenko--Pastur law]\label{thm:toolkit:mp}\index{Marchenko--Pastur law}
+Let $n,p\to\infty$ with $p/n\to\gamma\in(0,\infty)$. For every $\lambda>0$, almost surely,
+\[
+  \frac1p\tr\big(\hat\Sigma+\lambda I_p\big)^{-1}\to m(-\lambda),\qquad \frac1p\tr\big(\hat\Sigma+\lambda I_p\big)^{-2}\to m'(-\lambda),
+\]
+where $m(-\lambda)$ is the unique positive solution $m$ of
+\begin{equation}\label{eq:toolkit:mp}
+  \gamma zm^2-(1-\gamma-z)m+1=0\qquad\text{at }z=-\lambda,
+\end{equation}
+namely $m(-\lambda)=\big(\gamma-1-\lambda+\sqrt{(\gamma-1-\lambda)^2+4\gamma\lambda}\big)/(2\gamma\lambda)$, and $m'$ denotes the derivative of $m(z)$ in $z$. The function $m$ is the Stieltjes transform of the Marchenko--Pastur law $\mu_\gamma$, which has density $\sqrt{(b-x)(x-a)}/(2\pi\gamma x)$ on $[a,b]=[(1-\sqrt\gamma)^2,(1+\sqrt\gamma)^2]$ and, when $\gamma>1$, an atom of mass $1-1/\gamma$ at $0$.
+\end{theorem}
+
+\begin{proof}
+The plan is to derive an approximate quadratic equation for $\E s_p$ from a resolvent identity, using that each row of $X$ is independent of the matrix built from the other rows, and then to show that $s_p$ concentrates around its mean. Fix $\lambda>0$, write $z=-\lambda$, $R=(\hat\Sigma+\lambda I)^{-1}$, $s_p=\frac1p\tr R$ and $\gamma_n=p/n$. Every resolvent below is positive definite with operator norm at most $1/\lambda$.
+
+\emph{A resolvent identity.} Since $\hat\Sigma R=I+zR$, taking normalized traces gives $1+zs_p=\frac1p\tr(\hat\Sigma R)=\frac1{pn}\sum_ix_i^\top Rx_i$. Let $R_{(i)}=(\hat\Sigma-\frac1nx_ix_i^\top+\lambda I)^{-1}$ be the resolvent without the $i$th row and $q_i=\frac1nx_i^\top R_{(i)}x_i\ge0$. The Sherman--Morrison formula gives $Rx_i=R_{(i)}x_i/(1+q_i)$, hence $x_i^\top Rx_i=nq_i/(1+q_i)$, and
+\begin{equation}\label{eq:toolkit:resolvent}
+  1+zs_p=\frac1p\sum_{i=1}^n\frac{q_i}{1+q_i}=\frac1{\gamma_n}\Big(1-\frac1n\sum_{i=1}^n\frac1{1+q_i}\Big).
+\end{equation}
+
+\emph{Removing one row changes little.} Again by Sherman--Morrison, $R_{(i)}-R=\frac1nR_{(i)}x_ix_i^\top R_{(i)}/(1+q_i)$, a positive semidefinite matrix of rank one with trace $\frac1nx_i^\top R_{(i)}^2x_i/(1+q_i)\le\frac1\lambda\cdot\frac{q_i}{1+q_i}\le\frac1\lambda$. Hence $0\le\tr R_{(i)}-\tr R\le1/\lambda$. As a consequence, replacing the row $x_i$ by an independent copy changes $s_p$ by at most $1/(p\lambda)$.
+
+\emph{Concentration.} By the rank-one bound, $s_p$ is a function of $n$ independent rows with bounded differences $1/(p\lambda)$, so McDiarmid's inequality (\cref{thm:toolkit:mcdiarmid}) gives $\Pr(\abs{s_p-\E s_p}\ge\eps)\le2\exp(-2\eps^2p^2\lambda^2/n)$. Since $p^2/n\to\infty$ at a linear rate, these probabilities are summable, and the Borel--Cantelli lemma gives $s_p-\E s_p\to0$ almost surely. The Efron--Stein inequality \parencite[Theorem~3.1]{BoucheronLugosiMassart2013} gives in the same way $\Var(s_p)\le n/(2p^2\lambda^2)$.
+
+\emph{The quadratic form concentrates.} The row $x_i\sim\cN(0,I_p)$ is independent of $R_{(i)}$, and for a fixed symmetric matrix $A$ we have $\E[x^\top Ax]=\tr A$ and $\Var(x^\top Ax)=2\tr(A^2)$ when $x\sim\cN(0,I_p)$. Hence, with $s_{(i)}=\frac1p\tr R_{(i)}$, conditionally on $R_{(i)}$ the quadratic form $q_i$ has mean $\gamma_ns_{(i)}$ and variance $\frac2{n^2}\tr R_{(i)}^2\le\frac{2p}{n^2\lambda^2}$. We split $q_i-\gamma_n\E s_p$ into $q_i-\gamma_ns_{(i)}$, $\gamma_n(s_{(i)}-s_p)$ and $\gamma_n(s_p-\E s_p)$, and bound the three in mean by the conditional variance, the rank-one bound, and the variance bound:
+\[
+  \E\abs{q_i-\gamma_n\E s_p}\le\frac{\sqrt{2\gamma_n/n}}{\lambda}+\frac{\gamma_n}{p\lambda}+\gamma_n\sqrt{\Var(s_p)}\eqqcolon\epsilon_n,
+\]
+and $\epsilon_n\to0$.
+
+\emph{The limiting equation.} Take expectations in \eqref{eq:toolkit:resolvent} and write $\bar s=\E s_p\in[0,1/\lambda]$. Because $q_i\ge0$ and $\gamma_n\bar s\ge0$, the function $a\mapsto1/(1+a)$ is $1$-Lipschitz on the relevant range, so $\E[1/(1+q_i)]=1/(1+\gamma_n\bar s)+O(\epsilon_n)$, and
+\[
+  1+z\bar s=\frac1{\gamma_n}\Big(1-\frac1{1+\gamma_n\bar s}\Big)+O(\epsilon_n)=\frac{\bar s}{1+\gamma_n\bar s}+O(\epsilon_n).
+\]
+Multiplying by $1+\gamma_n\bar s\le1+\gamma_n/\lambda$ gives $(1+z\bar s)(1+\gamma_n\bar s)-\bar s\to0$. Along every subsequence on which $\bar s$ converges, its limit $s^*\ge0$ satisfies $(1+zs^*)(1+\gamma s^*)=s^*$, which expands to \eqref{eq:toolkit:mp}. At $z=-\lambda$ the quadratic $\gamma zm^2-(1-\gamma-z)m+1$ has roots whose product is $1/(\gamma z)<0$, so exactly one root is positive; and $0$ is not a root. Hence every subsequential limit of $\bar s$ equals the positive root $m(-\lambda)$, so $\bar s\to m(-\lambda)$, and with the concentration step, $s_p\to m(-\lambda)$ almost surely.
+
+\emph{Derivatives.} The functions $\lambda\mapsto\frac1p\tr(\hat\Sigma+\lambda I)^{-1}$ are convex on $(0,\infty)$. Almost surely they converge on a countable dense set of $\lambda$ simultaneously, hence, being monotone with a continuous limit, at every $\lambda>0$. Pointwise convergence of convex functions on an open interval implies convergence of their derivatives at every point where the limit is differentiable \parencite[Theorem~24.5]{Rockafellar1970}, and $\lambda\mapsto m(-\lambda)$ is differentiable. The derivative of $\frac1p\tr(\hat\Sigma+\lambda I)^{-1}$ in $\lambda$ is $-\frac1p\tr(\hat\Sigma+\lambda I)^{-2}$, and the derivative of $m(-\lambda)$ in $\lambda$ is $-m'(-\lambda)$, which gives the second limit.
+
+The identification of $m$ with the Stieltjes transform of $\mu_\gamma$ is a computation with the explicit density, which we omit; see \textcite{MarchenkoPastur1967} and \textcite[Chapter~3]{BaiSilverstein2010}. A probability measure on $[0,\infty)$ is determined by its Stieltjes transform on the negative half-line, because the transform extends analytically to $\C\setminus[0,\infty)$, where the Stieltjes inversion formula recovers the measure.
+\end{proof}
+
+\begin{remark}\label{rem:toolkit:mp-edges}
+The edges of the Marchenko--Pastur law explain the double descent peak of \cref{ch:doubledescent}: the smallest nonzero eigenvalue of $\hat\Sigma$ tends to $(1-\sqrt\gamma)^2$, which vanishes at $\gamma=1$, so the minimum-norm least squares solution, which inverts $\hat\Sigma$ on its range, becomes unstable exactly at the interpolation threshold. (The convergence of the extreme eigenvalues to the edges of the support needs an argument beyond the Stieltjes transform; see \textcite[Chapter~5]{BaiSilverstein2010}.)
+\end{remark}
+
+\section{Martingales, Gr\"onwall, and the ODE method}\label{sec:toolkit:ode}
+
+Several chapters analyze a stochastic recursion in which each step moves the state by an amount of order $1/d$, with random fluctuations of the same order, and claim that over $d$ steps the state follows a deterministic ordinary differential equation. This section proves such a claim in the generality the chapters need. We write $\cF_t$ for the $\sigma$-algebra generated by the first $t$ steps.
+
+\begin{lemma}[Doob's maximal inequality]\label{lem:toolkit:doob}\index{Doob's maximal inequality}
+Let $(M_t)_{t=0}^T$ be a martingale with values in $\R^D$ and $\E\norm{M_T}^2<\infty$. Then for every $a>0$,
+\[
+  \Pr\Big(\max_{t\le T}\norm{M_t}\ge a\Big)\le\frac{\E\norm{M_T}^2}{a^2},\qquad \E\Big[\max_{t\le T}\norm{M_t}^2\Big]\le4\,\E\norm{M_T}^2 .
+\]
+If the increments satisfy $\E[\norm{M_{t+1}-M_t}^2\mid\cF_t]\le v_t$, then $\E\norm{M_T}^2\le\norm{M_0}^2+\sum_{t<T}\E v_t$.
+\end{lemma}
+
+\begin{proof}
+The process $\norm{M_t}$ is a nonnegative submartingale, by Jensen's inequality for conditional expectations, and the two inequalities are Doob's maximal and $L^2$ inequalities for nonnegative submartingales \parencite{Williams1991}. For the last claim, increments of a square-integrable martingale are orthogonal: $\E\ip{M_{t+1}-M_t,M_s-M_{s-1}}=0$ for $s\le t$, by conditioning on $\cF_t$; so $\E\norm{M_T-M_0}^2=\sum_t\E\norm{M_{t+1}-M_t}^2$, and the same conditioning shows $\E\ip{M_T-M_0,M_0}=0$.
+\end{proof}
+
+\begin{theorem}[Freedman's inequality]\label{thm:toolkit:freedman}\index{Freedman's inequality}
+Let $(M_t)$ be a real martingale with $M_0=0$ whose increments satisfy $M_{t+1}-M_t\le c$, and let $V_t=\sum_{s<t}\E[(M_{s+1}-M_s)^2\mid\cF_s]$. Then for all $a,v>0$,
+\[
+  \Pr\big(M_t\ge a\text{ and }V_t\le v\text{ for some }t\big)\le\exp\Big(-\frac{a^2}{2(v+ca)}\Big).
+\]
+In particular (Azuma--Hoeffding), if $\abs{M_{t+1}-M_t}\le c_t$ almost surely, then $\Pr(\abs{M_T}\ge a)\le2\exp\big(-a^2/(2\sum_{t<T}c_t^2)\big)$.
+\end{theorem}
+
+Freedman's inequality is proved by \textcite{Freedman1975}. The Azuma--Hoeffding inequality follows from the exponential method; see \textcite{BoucheronLugosiMassart2013}.
+
+\begin{theorem}[Gr\"onwall's inequality]\label{thm:toolkit:gronwall}\index{Gr\"onwall's inequality}
+\begin{enumerate}
+\item If $u\colon[0,T]\to[0,\infty)$ is continuous and $u(t)\le a+\int_0^tb\,u(s)\dd s$ for constants $a,b\ge0$, then $u(t)\le ae^{bt}$.
+\item If $u_0,u_1,\dots$ are nonnegative and $u_t\le a+b\sum_{s<t}u_s$ for all $t$, then $u_t\le a(1+b)^t\le ae^{bt}$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+For (i), let $U(t)=a+\int_0^tbu$; then $U'=bu\le bU$, so $(e^{-bt}U)'\le0$ and $u\le U(t)\le e^{bt}U(0)=ae^{bt}$. For (ii), let $S_t=a+b\sum_{s<t}u_s$; then $u_t\le S_t$ and $S_{t+1}=S_t+bu_t\le(1+b)S_t$, so $u_t\le S_t\le(1+b)^tS_0=(1+b)^ta$.
+\end{proof}
+
+\begin{theorem}[The ODE method]\label{thm:toolkit:ode-method}\index{ODE method}
+Let $U\subseteq\R^D$ be open and let $F\colon U\to\R^D$ be $L$-Lipschitz and bounded by $B$ on $U$. Let $(Z_t)_{t\ge0}$ be adapted random vectors with
+\[
+  Z_{t+1}=Z_t+\frac1d\big(F(Z_t)+\xi_{t+1}+\epsilon_{t+1}\big),
+\]
+where, on the event $\{Z_t\in U\}$, the noise satisfies $\E[\xi_{t+1}\mid\cF_t]=0$ and $\E[\norm{\xi_{t+1}}^2\mid\cF_t]\le\varsigma^2$, and the error satisfies $\norm{\epsilon_{t+1}}\le\epsilon$. Let $z\colon[0,T]\to U$ solve $\dot z=F(z)$, and suppose that every point within distance $\rho$ of the path $z([0,T])$ lies in $U$. For $a>0$ put
+\[
+  \Delta=\big(\norm{Z_0-z(0)}+a+T\epsilon+TLB/(2d)\big)e^{LT}.
+\]
+If $\Delta<\rho$, then
+\[
+  \Pr\Big(\max_{0\le t\le Td}\norm{Z_t-z(t/d)}>\Delta\Big)\le\frac{\varsigma^2T}{a^2d}.
+\]
+\end{theorem}
+
+\begin{proof}
+The plan is to compare the recursion with the Euler scheme for the ODE, to control the accumulated noise with Doob's inequality, and to close the argument with Gr\"onwall's inequality, using a stopping time to stay inside $U$. Write $D_t=Z_t-z(t/d)$. Integrating the ODE over one step gives $z(\frac{t+1}d)=z(\frac td)+\frac1dF(z(\frac td))+r_t$ with the Euler error
+\[
+  \norm{r_t}\le\int_{t/d}^{(t+1)/d}\norm[\big]{F(z(u))-F\big(z(\tfrac td)\big)}\dd u\le\frac{LB}{2d^2},
+\]
+because $\norm{z(u)-z(t/d)}\le B(u-t/d)$. Let $\tau$ be the first $t$ with $\norm{D_t}>\rho$; for $t<\tau$ the point $Z_t$ lies within $\rho$ of the path, hence in $U$. Let $M_t=\sum_{s<t\wedge\tau}\xi_{s+1}$, a martingale because $\tau$ is a stopping time. Subtracting the two recursions and summing, for $t\le\tau\wedge\lfloor Td\rfloor$,
+\[
+  D_t=D_0+\frac1d\sum_{s<t}\big(F(Z_s)-F(z(\tfrac sd))\big)+\frac1dM_t+\frac1d\sum_{s<t}\epsilon_{s+1}-\sum_{s<t}r_s,
+\]
+Taking norms and using the Lipschitz bound,
+\[
+  \norm{D_t}\le\Big(\norm{D_0}+\frac1d\max_{u\le Td}\norm{M_u}+T\epsilon+\frac{TLB}{2d}\Big)+\frac Ld\sum_{s<t}\norm{D_s}.
+\]
+On the event $E=\{\max_{u\le Td}\norm{M_u}\le ad\}$, the discrete Gr\"onwall inequality (\cref{thm:toolkit:gronwall}(ii)) gives $\norm{D_t}\le\Delta$ for every $t\le\tau\wedge\lfloor Td\rfloor$. Since $\Delta<\rho$, this rules out $\tau\le\lfloor Td\rfloor$, so on $E$ the bound holds for all $t\le Td$. Finally, the increments of $M$ have conditional second moment at most $\varsigma^2$, so by \cref{lem:toolkit:doob}, $\Pr(E^c)\le\E\norm{M_{\lfloor Td\rfloor}}^2/(ad)^2\le\varsigma^2Td/(a^2d^2)=\varsigma^2T/(a^2d)$.
+\end{proof}
+
+In the applications, $\epsilon$ and $1/d$ tend to zero as the dimension grows and $a$ is chosen as $d^{-1/4}$, say; then the recursion stays within $O(d^{-1/4})$ of the ODE on the time interval $[0,T]$ with probability $1-O(d^{-1/2})$, and choosing $a$ a little larger than $d^{-1/2}$ shows that the fluctuations are of order $d^{-1/2}$.
+
+\section{Fourier analysis on finite groups}\label{sec:toolkit:fourier}
+
+\paragraph{The cyclic group.} Let $p\ge2$ be an integer, $\Z_p=\{0,1,\dots,p-1\}$ with addition modulo $p$, and $e_p(x)=e^{2\pi ix/p}$. For $f\colon\Z_p\to\C$ define the Fourier transform $\hat f(\omega)=\frac1p\sum_{a\in\Z_p}f(a)\,e_p(-\omega a)$ for $\omega\in\Z_p$, and the convolution $(f*g)(c)=\frac1p\sum_af(a)g(c-a)$.
+
+\begin{theorem}[Fourier analysis on $\Z_p$]\label{thm:toolkit:fourier-zp}\index{Fourier analysis!on $\Z_p$}
+For all $f,g,u,u',v\colon\Z_p\to\C$:
+\begin{enumerate}
+\item (inversion) $f(a)=\sum_\omega\hat f(\omega)e_p(\omega a)$;
+\item (Plancherel) $\frac1p\sum_af(a)\overline{g(a)}=\sum_\omega\hat f(\omega)\overline{\hat g(\omega)}$;
+\item (convolution) $\widehat{f*g}=\hat f\,\hat g$;
+\item (triple correlation) $\frac1{p^2}\sum_{a,b}u(a)u'(b)v(a+b)=\sum_\omega\hat u(-\omega)\,\hat u'(-\omega)\,\hat v(\omega)$.
+\end{enumerate}
+If $f$ is real, then $\hat f(-\omega)=\overline{\hat f(\omega)}$, and $f(a)=\hat f(0)+\sum_{\omega}\abs{\hat f(\omega)}\cos(2\pi\omega a/p+\arg\hat f(\omega))$, where for odd $p$ the sum runs over $\omega=1,\dots,(p-1)/2$ with each term doubled.
+\end{theorem}
+
+\begin{proof}
+Everything follows from the orthogonality relation
+\[
+  \frac1p\sum_{a\in\Z_p}e_p(\omega a)=\ind\{\omega=0\},
+\]
+which holds because for $\omega\ne0$ the sum is a geometric series of $p$th roots of unity whose ratio is not $1$. For (i), substitute the definition of $\hat f$ into the right side and sum over $\omega$ first. For (ii), substitute (i) for $f$ and $g$ and use orthogonality. For (iii), $\widehat{f*g}(\omega)=\frac1{p^2}\sum_{a,c}f(a)g(c-a)e_p(-\omega a)e_p(-\omega(c-a))=\hat f(\omega)\hat g(\omega)$, substituting $b=c-a$. For (iv), expand $v$ by (i): $\sum_{a,b}u(a)u'(b)v(a+b)=\sum_\omega\hat v(\omega)\sum_au(a)e_p(\omega a)\sum_bu'(b)e_p(\omega b)=p^2\sum_\omega\hat v(\omega)\hat u(-\omega)\hat u'(-\omega)$. The statements for real $f$ follow from conjugating the definition, and from pairing the terms $\omega$ and $-\omega$ in (i).
+\end{proof}
+
+\paragraph{The Boolean cube.} For $S\subseteq[d]=\{1,\dots,d\}$ the \term{parity}\index{parity function} or character $\chi_S(x)=\prod_{i\in S}x_i$ is a function on $\{\pm1\}^d$, with $\chi_\emptyset=1$. Let $x$ be uniform on $\{\pm1\}^d$ and $\ip{f,g}=\E[f(x)g(x)]$.
+
+\begin{theorem}[Fourier--Walsh expansion]\label{thm:toolkit:fourier-cube}\index{Fourier analysis!on the Boolean cube}
+The $2^d$ characters form an orthonormal basis of the functions on $\{\pm1\}^d$. Every $f$ equals $\sum_S\hat f(S)\chi_S$ with $\hat f(S)=\ip{f,\chi_S}$, and $\E[f(x)^2]=\sum_S\hat f(S)^2$.
+\end{theorem}
+
+\begin{proof}
+Since $x_i^2=1$, $\chi_S\chi_T=\chi_{S\triangle T}$, and by independence of the coordinates $\E[\chi_{S\triangle T}(x)]=\prod_{i\in S\triangle T}\E[x_i]$, which is $1$ if $S=T$ and $0$ otherwise. So the characters are orthonormal, and $2^d$ orthonormal vectors in a $2^d$-dimensional space form a basis.
+\end{proof}
+
+The \term{degree} of $f$ is the largest $\abs S$ with $\hat f(S)\ne0$. Low-degree functions cannot have heavy tails, a fact known as hypercontractivity. We prove the fourth-moment version, which suffices for most purposes, and state the general one.
+
+\begin{theorem}[Bonami's lemma and hypercontractivity]\label{thm:toolkit:bonami}\index{hypercontractivity}\index{Bonami's lemma}
+If $f\colon\{\pm1\}^d\to\R$ has degree at most $k$, then $\E[f^4]\le9^k\big(\E[f^2]\big)^2$. More generally, for every $q\ge2$, $\big(\E\abs f^q\big)^{1/q}\le(q-1)^{k/2}\big(\E f^2\big)^{1/2}$, and consequently, for $t\ge(2e)^{k/2}$,
+\[
+  \Pr\big(\abs{f(x)}\ge t\,(\E f^2)^{1/2}\big)\le\exp\Big(-\frac k{2e}\,t^{2/k}\Big).
+\]
+The same inequalities hold for polynomials of degree at most $k$ in a standard Gaussian vector.
+\end{theorem}
+
+\begin{proof}[Proof of the fourth-moment bound]
+The plan is induction on the number $d$ of variables. For $d=0$, $f$ is constant and the bound holds with equality. For $d\ge1$, write $f(x)=x_dg(x')+h(x')$, where $x'=(x_1,\dots,x_{d-1})$, $g$ has degree at most $k-1$ and $h$ degree at most $k$. Expanding $(x_dg+h)^4$ and averaging over $x_d$ removes the odd powers of $x_d$, and $\E[f^2]=\E[g^2]+\E[h^2]$ in the same way. Hence $\E f^4=\E g^4+6\,\E[g^2h^2]+\E h^4$. We bound the outer terms by the induction hypothesis and the middle one by the Cauchy--Schwarz inequality and the induction hypothesis again:
+\[
+  \E f^4\le9^{k-1}(\E g^2)^2+6\cdot3^{k-1}3^k\,\E g^2\,\E h^2+9^k(\E h^2)^2 .
+\]
+Since $6\cdot3^{2k-1}=2\cdot9^k$ and $9^{k-1}\le9^k$, the right side is at most $9^k(\E g^2+\E h^2)^2=9^k(\E f^2)^2$.
+\end{proof}
+
+The general moment bound is the Bonami--Beckner hypercontractive inequality, and the tail bound follows from it by Markov's inequality with an optimized $q$; see \textcite[Chapters~9 and~11]{ODonnell2014}, where the Gaussian case is also treated.
+
+\section{Concentration inequalities}\label{sec:toolkit:conc}
+
+We collect the standard inequalities used in the chapters; proofs are in \textcite{BoucheronLugosiMassart2013} and \textcite{Vershynin2018}.
+
+\begin{theorem}[Hoeffding's inequality]\label{thm:toolkit:hoeffding}\index{Hoeffding's inequality}
+If $X_1,\dots,X_n$ are independent with $X_i\in[a_i,b_i]$ almost surely, then for every $t>0$,
+\[
+  \Pr\Big(\Big|\sum_i(X_i-\E X_i)\Big|\ge t\Big)\le2\exp\Big(-\frac{2t^2}{\sum_i(b_i-a_i)^2}\Big).
+\]
+\end{theorem}
+
+\begin{theorem}[Bernstein's inequality]\label{thm:toolkit:bernstein}\index{Bernstein's inequality}
+If $X_1,\dots,X_n$ are independent with $\E X_i=0$, $\abs{X_i}\le c$ almost surely and $\sum_i\E X_i^2\le v$, then for every $t>0$,
+\[
+  \Pr\Big(\Big|\sum_iX_i\Big|\ge t\Big)\le2\exp\Big(-\frac{t^2}{2(v+ct/3)}\Big).
+\]
+\end{theorem}
+
+\begin{theorem}[McDiarmid's bounded differences inequality]\label{thm:toolkit:mcdiarmid}\index{bounded differences inequality}
+Let $X_1,\dots,X_n$ be independent and let $F$ satisfy $\abs{F(x)-F(x')}\le c_i$ whenever $x$ and $x'$ differ only in the $i$th coordinate. Then $\Pr(\abs{F(X)-\E F(X)}\ge t)\le2\exp\big(-2t^2/\sum_ic_i^2\big)$.
+\end{theorem}
+
+\begin{theorem}[Gaussian concentration]\label{thm:toolkit:gauss-conc}\index{Gaussian concentration}
+If $x\sim\cN(0,I_d)$ and $f\colon\R^d\to\R$ is $L$-Lipschitz, then $\Pr(\abs{f(x)-\E f(x)}\ge t)\le2e^{-t^2/(2L^2)}$ for every $t>0$.
+\end{theorem}
+
+Gaussian concentration is due to \textcite{TsirelsonIbragimovSudakov1976}; it shows, for example, that $\norm x$ concentrates around $\sqrt d$ with fluctuations of order one, since the norm is $1$-Lipschitz, and that $\norm{x}^2/d=1+O(d^{-1/2})$ with high probability.
+
+\begin{exercises}
+\item \consolidation Use \cref{lem:toolkit:hermite}(iii) to compute the Hermite coefficients of $\phi(z)=\abs z$ and of $\phi(z)=\sgn(z)$, and check that $\sum_k\hat\phi_k^2=\E[\phi(z)^2]$ numerically for the first twenty coefficients.\label{ex:toolkit:coeffs}
+\item \consolidation Let $u$ and $v$ be standard Gaussians with correlation $\rho$. Show that
+\[
+  \E[\relu(u)\relu(v)]=\tfrac1{2\pi}\big(\sqrt{1-\rho^2}+(\pi-\arccos\rho)\rho\big).
+\] \hint{By \cref{lem:toolkit:price} the $\rho$-derivative of the left side is $\E[\ind\{u>0\}\ind\{v>0\}]=\frac14+\frac{\arcsin\rho}{2\pi}$; integrate from $\rho=0$.}
+\item \consolidation Prove that $N_{d,1}=d$, $N_{d,2}=d(d+1)/2-1$, and identify $\cH_1$ and $\cH_2$ explicitly.
+\item \consolidation\hard Show from the explicit formula for $m(-\lambda)$ that $\lambda\,m(-\lambda)\to1-1/\gamma$ as $\lambda\downarrow0$ when $\gamma>1$, and $\lambda\,m(-\lambda)\to0$ when $\gamma<1$; interpret the limit through the atom of $\mu_\gamma$ at $0$. \hint{$\lambda m(-\lambda)=\int\frac{\lambda}{x+\lambda}\dd\mu_\gamma(x)$.}
+\item \consolidation Check \cref{thm:toolkit:inv-wishart} by simulation for $n=30$ and $p\in\{5,15,25,27\}$, and explain why the empirical average of $\tr(X^\top X)^{-1}$ is unstable at $p=29$.
+\item \variation Prove the variance formula $\Var(x^\top Ax)=2\tr(A^2)$ used in the proof of \cref{thm:toolkit:mp}, and generalize it to $x\sim\cN(0,\Sigma)$.
+\item \consolidation\hard Show that the error bound of \cref{thm:toolkit:ode-method} is sharp in its dependence on $d$: for $D=1$, $F=0$ and $\pm1$ noise, the maximum of $\abs{Z_t-Z_0}$ over $t\le d$ is of order $d^{-1/2}$.
+\end{exercises}
+
+\notesandrefs
+
+Gaussian integration by parts is often called Stein's lemma, after its role in Stein's method for normal approximation \parencite{Stein1981}; Hermite polynomials and their generating function are classical, and \textcite{ODonnell2014} develops them alongside Fourier analysis on the cube in a way that matches this book's use. The expansion of $\E[\phi(u)\phi(v)]$ in powers of the correlation, which \textcite{DanielyFrostigSinger2016} called the dual activation, is a form of Mehler's formula. Price's theorem is from \textcite{Price1958}.
+
+The Marchenko--Pastur law appeared in \textcite{MarchenkoPastur1967}; the resolvent argument above follows the standard Stieltjes-transform proof \parencite{BaiSilverstein2010}, restricted to the negative real axis, where every estimate is real and elementary. The ODE method for stochastic approximation goes back to \textcite{Ljung1977} and \textcite{KushnerYin2003}; its high-dimensional form, in which the step size is $1/d$ and the state is a finite set of overlaps, is the method of \textcite{SaadSolla1995} made rigorous, for example by \textcite{WangMattinglyLu2017} and \textcite{GoldtEtAl2019}.
+
+\printchapterbib
+\end{refsection}

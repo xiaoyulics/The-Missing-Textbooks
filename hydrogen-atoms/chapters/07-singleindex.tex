@@ -1,0 +1,416 @@
+% Chapter 7 of The Hydrogen Atoms of Deep Learning: single-index models and the information exponent.
+\casechapter{The Search Phase}{Single-index models and the information exponent}{Single-index model, online SGD}{ch:singleindex}
+\begin{refsection}[chapters/07-singleindex.bib]
+
+\begin{chaptersummary}
+When a network must find a few relevant directions in a high-dimensional input, its loss often stays flat for a long time and then drops. The single-index model, a target $g(\ip{w_\star,x})$ of a Gaussian input learned by one neuron with online stochastic gradient descent on the sphere, isolates this search. Its state is one number, the overlap $r=\ip{w,w_\star}$, which leaves the equator $r=0$ at a rate proportional to $r^{k-1}$, where $k$ is the information exponent, the lowest Hermite degree that the target shares with the neuron. We prove that the population dynamics escapes in time of order $d^{(k-2)/2}$ and that online SGD, whose step size the noise at the equator limits to order $d^{-k/2}$, needs of order $d^{k-1}$ samples when $k\ge3$, with explicit constants. The model is wrong about the task itself: reusing samples, smoothing the loss, or transforming the labels finds the direction with far fewer samples, so the information exponent measures one algorithm, not the difficulty of the problem.
+\end{chaptersummary}
+
+\section{The phenomenon: plateaus whose length is set by the target}\label{sec:singleindex:phenomenon}
+
+A trained network computes features, functions of the input that make the task easy, and it has to find them. When the task depends on a few directions of a high-dimensional input, finding them is a search over a sphere whose dimension is that of the input, and in the training curve the search shows up as a plateau: the loss stays near its initial value for a long time and then falls in a comparatively short one. Plateaus of this kind are among the oldest observations about gradient training. Committee machines trained online sit on plateaus while their hidden units are interchangeable (\cref{ch:committee}), networks trained on sparse parities show no progress in the loss for a long time and then learn abruptly (\cref{ch:parity}), and transformers acquire induction heads in a sudden transition (\cref{ch:induction}). This chapter isolates the simplest setting in which the length of the plateau can be computed, and the answer depends on the target through one integer.
+
+The integer comes from the Hermite expansion (\cref{lem:toolkit:hermite}). A target $y=g(\ip{w_\star,x})$ with $x\sim\cN(0,I_d)$ and $\E g(z)^2<\infty$ for $z\sim\cN(0,1)$ expands as $g=\sum_{j\ge0}\hat g_jh_j$, and the first index $j\ge1$ with $\hat g_j\ne0$ says how much of the target is visible to low-degree statistics of the input. The targets $\ip{w_\star,x}^3$ and $\He_3(\ip{w_\star,x})=\ip{w_\star,x}^3-3\ip{w_\star,x}$ differ by a linear function. The first is correlated with $\ip{w_\star,x}$, so the empirical average of $yx$ already points at $w_\star$; the second is uncorrelated with every polynomial of degree at most $2$ in $x$, so no statistic of that kind sees it. Experiments show that this difference controls how long gradient training searches.
+
+\begin{observation}[\textcite{BenArousGheissariJagannath2021}; \textcite{AbbeBoixAdseraMisiakiewicz2023}; \textcite{ArnaboldiEtAl2023}]\label[observation]{obs:singleindex:plateau}
+Train a single neuron or a two-layer network by one-pass stochastic gradient descent on inputs with independent coordinates, Gaussian or uniform on $\{-1,1\}^d$, with a target that depends on one or a few directions. The loss stays near its initial value for a stretch of training and then falls quickly, and at fixed $d$ the stretch is longer when the lowest-degree component of the target has higher degree. For a single neuron in dimension $d=3000$ learning $y=f(\ip{w_\star,x})$, the plateau is absent for $f(z)=z^3$, short for $f(z)=z^2$, and fills about half of the run for $f(z)=z^3-3z$. For a two-layer network on $\{-1,1\}^{100}$ learning $z_1+z_1\cdots z_5+z_1\cdots z_9+z_1\cdots z_{14}$, the plateaus before the four drops last, by the authors' estimate, about $d$, $d^3$, $d^3$, and $d^4$ steps, where $1$, $4$, $4$, and $5$ new coordinates enter. For the quadratic target $y=\ip{w_\star,x}^2$ the escape takes a number of samples proportional to $d\log d$, in simulations up to $d=10^4$.
+\end{observation}
+
+These are controlled experiments on synthetic data, and they are robust: many groups have reproduced them, with different architectures, losses, and step sizes. Their limits are as clear. Most use one or two dimensions, so the growth of the plateau as a power of $d$ is inferred rather than measured; the one systematic fit we know of is for a smoothed variant of SGD, for which \textcite{DamianEtAl2023} measured exponents close to $k/2$ for $k=3,4,5$ and $d$ from $2^8$ to $2^{13}$. In practical networks plateaus are common, but none has been traced to the Hermite degree of a target. The model of this chapter supplies the missing dimension sweep (\cref{fig:singleindex:escape}). The question it answers: how long does the search last, as a function of the dimension and of the target, and why does the answer depend on the target only through one integer?
+
+\section{The model: one neuron searching for one direction}\label{sec:singleindex:model}
+
+Write $P_w^\perp=I_d-ww^\top$ for the orthogonal projection onto the tangent space of the sphere $\Sph^{d-1}$ at a unit vector $w$.
+
+\begin{definition}[The single-index model and spherical online SGD]\label[definition]{def:singleindex:model}
+Let $d\ge2$ and $w_\star\in\Sph^{d-1}$, and let $g$ and $\phi$ be polynomials. Inputs are $x\sim\cN(0,I_d)$ and labels are $y=g(\ip{w_\star,x})$. A neuron with weight $w$ predicts $\phi(\ip{w,x})$ and pays the \term{correlation loss}\index{correlation loss} $\ell(w;x,y)=-y\,\phi(\ip{w,x})$; its population loss is $\Loss(w)=\E\,\ell(w;x,y)$ for $w\in\R^d$. Given independent samples $(x_t,y_t)$ for $t=0,1,2,\dots$, a start $w_0\in\Sph^{d-1}$, and a step size $\eta>0$, \term{spherical online SGD}\index{online SGD} is the recursion
+\begin{equation}\label{eq:singleindex:sgd}
+  w_{t+1}=\frac{w_t-\eta G_t}{\norm{w_t-\eta G_t}},\qquad G_t=P_{w_t}^\perp\nabla_w\ell(w_t;x_t,y_t)=-y_t\,\phi'(\ip{w_t,x_t})\,P_{w_t}^\perp x_t .
+\end{equation}
+The \term{overlap}\index{overlap} is $r_t=\ip{w_t,w_\star}$.
+\end{definition}
+
+Each step uses a new sample, so after $t$ steps the algorithm has seen $t$ samples: in this model the sample complexity and the running time are the same number. The update moves along the tangent vector $-G_t$ and returns to the sphere; because $G_t$ is orthogonal to $w_t$, the normalization divides by $\sqrt{1+\eta^2\norm{G_t}^2}\ge1$, never by zero. By \cref{lem:singleindex:hermite} below, the population loss on the sphere depends on $w$ only through the overlap, $\Loss(w)=-\Psi(\ip{w,w_\star})$, with
+\begin{equation}\label{eq:singleindex:Psi}
+  \Psi(r)=\sum_{j\ge0}\hat g_j\hat\phi_j\,r^j,\qquad -1\le r\le1 .
+\end{equation}
+For the matched pure link $g=\phi=h_k$ this is $\Psi(r)=r^k$. That case is the hydrogen atom of the chapter, and the reader may keep it in mind throughout.
+
+\begin{definition}[Information exponent]\label[definition]{def:singleindex:ie}
+The \term{information exponent}\index{information exponent} of a function $g$ with $\E g(z)^2<\infty$ is $k^\star(g)=\min\{j\ge1:\hat g_j\ne0\}$. For a target $g$ learned by a neuron $\phi$ on the correlation loss, the relevant integer is $k^\star=\min\{j\ge1:\hat g_j\hat\phi_j\ne0\}$, the lowest degree at which $\Psi$ is not constant. It is at least $k^\star(g)$, with equality when the Hermite coefficients of the student do not vanish.
+\end{definition}
+
+The name is due to \textcite{BenArousGheissariJagannath2021}, who define it through the derivatives of the population loss at the equator; \textcite{DudejaHsu2018} had used the same index, which they called the order of degeneracy.\sidenote{Dudeja and Hsu used it for an estimator that maximizes the empirical correlation with a single Hermite polynomial, not for SGD; their sample complexity grows like $d^{l}$ for harmonic $l$.} Linear functions, the ReLU, $\tanh$, the sign, and $z^3$ have information exponent $1$, because each is correlated with $z$; even functions such as $z^2$ and $\abs z$ have information exponent $2$; and $\He_k$ has information exponent $k$ (\cref{ex:singleindex:exponents}). Near the equator $r=0$ the population loss is $-\Psi(0)-\hat g_k\hat\phi_kr^k+O(r^{k+1})$ with $k=k^\star$, so for $k\ge2$ the equator is a critical set of the loss, flat to order $k$. A random start lies almost on it, because a uniformly random unit vector has overlap of order $d^{-1/2}$.\sidenote{Concentration of measure: all but a fraction $2e^{-d\eps^2/2}$ of the sphere lies within distance $\eps$ of each equator.} The search phase\index{search phase} is the escape from this degenerate saddle; for $k=2$ it is the logistic escape of \cref{ch:deeplinear}, and for larger $k$ it is the higher-order saddle that recurs in \cref{ch:committee,ch:parity}.
+
+Each simplification removes one difficulty so that the search can be seen alone. Gaussian inputs make the joint law of $\ip{w_\star,x}$ and $\ip{w,x}$ depend only on $r$, so the overlap is the only order parameter, and the Hermite basis diagonalizes the correlation of the two (\cref{lem:singleindex:hermite}), as the characters diagonalize noise on the cube in \cref{ch:parity}. This rotational invariance is the thread that also runs through \cref{ch:doubledescent,ch:lazy,ch:committee,ch:icl}. One direction and a known link separate the search for $w_\star$ from the fitting of a function. The sphere removes the dynamics of the norm, which in a network is set by the other layers and by weight decay; the price is the normalization step, which pulls the overlap toward the equator and is one of the two effects that limit the step size. The correlation loss changes nothing essential: on the sphere $\frac12\E(y-\phi(\ip{w,x}))^2=\frac12\E g(z)^2+\frac12\E\phi(z)^2-\Psi(r)$, so the square loss has the same landscape, and its stochastic gradient differs by a term of mean zero (\cref{ex:singleindex:square}). Fresh samples make the gradient noise a martingale difference sequence and make samples and steps the same thing.
+
+To invent the model one has to notice two facts. Rotational invariance collapses the $d$-dimensional dynamics to one number, so that a high-dimensional search becomes a one-dimensional random walk with drift. And near the equator only the lowest common Hermite degree matters: the drift of the overlap is of order $r^{k-1}$ while the noise is of order one, so the search is a contest between a signal that vanishes at the starting point and a noise that does not.
+
+\begin{dictionary}
+weight $w\in\Sph^{d-1}$ & incoming weights of one hidden neuron, normalized\\
+direction $w_\star$ & a feature on which the target depends\\
+overlap $r=\ip{w,w_\star}$ & alignment of a neuron with the feature: the progress of feature learning\\
+equator $\abs r\lesssim d^{-1/2}$ & where every neuron starts under random initialization\\
+Hermite coefficients $\hat g_j$ & how the target depends on the feature, degree by degree\\
+information exponent $k^\star$ & how much of the target leaks to low-degree statistics\\
+step size $\eta$ & learning rate\\
+one fresh sample per step & one pass over a large data set\\
+normalization after each step & weight normalization, weight decay, or the scale set by other layers\\
+search phase, $r$ near $0$ & a loss plateau\\
+descent phase, $r$ near $1$ & the drop that ends the plateau\\
+\end{dictionary}
+
+\section{The solution: the overlap and its drift}\label{sec:singleindex:drift}
+
+Everything in this section rests on one identity for Gaussian vectors, which turns the $d$-dimensional problem into a problem about one number.
+
+\begin{lemma}[Hermite correlation]\label[lemma]{lem:singleindex:hermite}
+Let $U$ and $V$ be jointly Gaussian standard variables with $\E[UV]=\rho$. Then $\E[h_j(U)h_k(V)]=\delta_{jk}\rho^k$ for all $j,k\ge0$, and all functions $f_1$ and $f_2$ with $\E f_1(z)^2<\infty$ and $\E f_2(z)^2<\infty$ satisfy $\E[f_1(U)f_2(V)]=\sum_{k\ge0}\hat f_{1,k}\hat f_{2,k}\rho^k$, with $\hat f_{i,k}=\E[f_i(z)h_k(z)]$. In particular $\Loss(w)=-\Psi(\ip{w,w_\star})$ for every $w\in\Sph^{d-1}$.
+\end{lemma}
+
+\begin{proof}
+The first statement is \cref{thm:toolkit:hermite-corr}; we recall the proof because it takes three lines. The generating function $e^{sz-s^2/2}=\sum_{k\ge0}s^kh_k(z)/\sqrt{k!}$ (\cref{lem:toolkit:hermite}) and the Gaussian moment generating function $\E e^{sU+tV}=e^{(s^2+2\rho st+t^2)/2}$ give, for real $s$ and $t$,
+\[
+  \sum_{j,k\ge0}\frac{s^jt^k}{\sqrt{j!\,k!}}\,\E[h_j(U)h_k(V)]=\E\bigl[e^{sU-s^2/2}e^{tV-t^2/2}\bigr]=e^{\rho st}=\sum_{k\ge0}\frac{(\rho st)^k}{k!} .
+\]
+Taking the expectation term by term is legitimate because $\E\abs{h_j(U)h_k(V)}\le1$ by the Cauchy--Schwarz inequality, so the double series converges absolutely; comparing the coefficients of $s^jt^k$ proves the first statement. For the second, expand $f_1$ and $f_2$ in the orthonormal basis $(h_k)$ and pass to the limit in the bilinear form $(f_1,f_2)\mapsto\E[f_1(U)f_2(V)]$, which the Cauchy--Schwarz inequality bounds by $(\E f_1(z)^2\,\E f_2(z)^2)^{1/2}$. For the last statement, $\ip{w_\star,x}$ and $\ip{w,x}$ are standard Gaussians with correlation $\ip{w,w_\star}$.
+\end{proof}
+
+For a unit vector $w$ with overlap $r$ and a fresh input $x$, write $u=\ip{w_\star,x}$, $v=\ip{w,x}$, and $F=g(u)\,\phi'(v)$, so that the spherical gradient is $G=-F\,P_w^\perp x$. Two scalars govern one step: the component of $-G$ along $w_\star$, which moves the overlap, and the squared length of $G$, which drives the normalization,
+\[
+  a=-\ip{G,w_\star}=F\,(u-rv),\qquad N=\norm{G}^2=F^2\norm{P_w^\perp x}^2 .
+\]
+One function of the overlap controls the size of both. For $-1\le r\le1$ let $v$ and $z$ be independent standard Gaussians, and put
+\begin{equation}\label{eq:singleindex:lambda}
+  \lambda(r)=\E\Bigl[g\bigl(rv+\sqrt{1-r^2}\,z\bigr)^2\,\phi'(v)^2\,(1+z^2)\Bigr].
+\end{equation}
+
+\begin{lemma}[One step in terms of the overlap]\label[lemma]{lem:singleindex:onestep}
+Let $w\in\Sph^{d-1}$ have overlap $r$, let $x\sim\cN(0,I_d)$, and define $u$, $v$, $F$, $a$, and $N$ as above. Then
+\begin{enumerate}
+\item[\textup{(a)}] $\E[F\,P_w^\perp x]=\Psi'(r)\,P_w^\perp w_\star$, and consequently $\E a=(1-r^2)\,\Psi'(r)$;
+\item[\textup{(b)}] $\E a^2\le\lambda(r)$ and $\E N\le d\,\lambda(r)$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+For (a), let $e$ be a unit vector orthogonal to $w$, and let $c(\theta)=w\cos\theta+e\sin\theta$, a curve on the sphere through $w$ with velocity $e$. By \cref{lem:singleindex:hermite}, $\E[g(u)\phi(\ip{c(\theta),x})]=\Psi(\ip{c(\theta),w_\star})$ for every $\theta$. Differentiate at $\theta=0$, under the expectation on the left, which dominated convergence allows because the integrand is a polynomial in Gaussian variables: $\E[F\ip{e,x}]=\Psi'(r)\ip{e,w_\star}$. The vector $m=\E[F\,P_w^\perp x]$ is orthogonal to $w$ and satisfies $\ip{m,e}=\E[F\ip{e,x}]$ for every such $e$, so $m=\Psi'(r)\,P_w^\perp w_\star$. Since $a=F\ip{P_w^\perp x,w_\star}$ and $\ip{P_w^\perp w_\star,w_\star}=1-r^2$, the inner product of $m$ with $w_\star$ is $\E a=(1-r^2)\Psi'(r)$.
+
+For (b), suppose first that $\abs r<1$. Put $e=(w_\star-rw)/\sqrt{1-r^2}$ and $z=\ip{e,x}$, and let $x'$ be the projection of $x$ onto the orthogonal complement of $w$ and $w_\star$. Then $v$, $z$, and $x'$ are independent, $v$ and $z$ are standard Gaussians, $u=rv+\sqrt{1-r^2}\,z$, $P_w^\perp x=ze+x'$, and $\E\norm{x'}^2=d-2$. Hence $a=\sqrt{1-r^2}\,Fz$, so that $\E a^2\le\E[F^2z^2]\le\lambda(r)$, and
+\[
+  \E N=\E\bigl[F^2\bigl(z^2+\norm{x'}^2\bigr)\bigr]=\E[F^2z^2]+(d-2)\,\E[F^2]\le d\,\lambda(r).
+\]
+In the degenerate case $w=\pm w_\star$ we have $u=\pm v$, so $a=0$; and $P_w^\perp x$ is independent of $v$ with $\E\norm{P_w^\perp x}^2=d-1$, so $\E N=(d-1)\E[F^2]\le d\,\lambda(\pm1)$.
+\end{proof}
+
+\begin{remark}[The overlap is a Markov chain]\label[remark]{rem:singleindex:markov}
+The proof of (b) shows more. Given the past, the triple $(u_t,v_t,\norm{P_{w_t}^\perp x_t}^2)$ that enters step $t$ has the law of $(r_tv+\sqrt{1-r_t^2}\,z,\;v,\;z^2+Q)$, with $v$ and $z$ standard Gaussians and $Q$ a $\chi^2_{d-2}$ variable, all independent; and $r_{t+1}$ is a function of $r_t$ and this triple (\cref{lem:singleindex:ineq} below). So $(r_t)$ is a Markov chain on $[-1,1]$ whose transition depends on $d$ only through $Q$. Simulating it costs a few operations per step in every dimension, and we use it in \cref{sec:singleindex:reading} (\cref{ex:singleindex:markov}).
+\end{remark}
+
+The population flow is the limit of \eqref{eq:singleindex:sgd} as $\eta\to0$ with $\eta t$ fixed. Its overlap obeys a closed equation, and the time it needs to leave the equator already shows the role of $k$.
+
+\begin{theorem}[Population dynamics and escape times]\label{thm:singleindex:flow}
+Suppose $\hat g_j\hat\phi_j\ge0$ for every $j\ge1$, and let $k=k^\star$. The spherical gradient flow $\dot w=-P_w^\perp\nabla\Loss(w)$ started at $w_0\in\Sph^{d-1}$ stays on the sphere, and its overlap solves
+\begin{equation}\label{eq:singleindex:ode}
+  \dot r=(1-r^2)\,\Psi'(r).
+\end{equation}
+If $0<r_0<\frac12$, then $r$ reaches $\frac12$ at the time $t_{1/2}=\int_{r_0}^{1/2}\dd s/((1-s^2)\Psi'(s))$, which satisfies
+\[
+  \frac{I_k(r_0)}{2^{k-1}\Psi'(\frac12)}\le t_{1/2}\le\frac{4\,I_k(r_0)}{3k\,\hat g_k\hat\phi_k},\qquad I_k(r_0)=\int_{r_0}^{1/2}s^{1-k}\dd s .
+\]
+For $r_0=d^{-1/2}$ with $d>4$, the integral is $I_1=\frac12-d^{-1/2}$, $I_2=\frac12\log d-\log2$, and $I_k=(d^{(k-2)/2}-2^{k-2})/(k-2)$ for $k\ge3$: the escape takes a time of order $1$, $\log d$, and $d^{(k-2)/2}$ respectively.
+\end{theorem}
+
+\begin{proof}
+By \cref{lem:singleindex:onestep}(a), on the sphere $-P_w^\perp\nabla\Loss(w)=\E[F\,P_w^\perp x]=\Psi'(\ip{w,w_\star})(w_\star-\ip{w,w_\star}w)$. Read the right side as a polynomial vector field on $\R^d$. Along its solutions $q=\norm w^2-1$ satisfies the linear equation $\dot q=-2\Psi'(r)\,r\,q$, so $q$ stays $0$ when it starts at $0$: the flow stays on the compact sphere and therefore exists for all time. The inner product of the flow with $w_\star$ is \eqref{eq:singleindex:ode}.
+
+Nonnegative coefficients make $s\mapsto\Psi'(s)/s^{k-1}=\sum_{j\ge k}j\hat g_j\hat\phi_js^{j-k}$ nondecreasing on $(0,1]$, so for $0<s\le\frac12$
+\[
+  k\,\hat g_k\hat\phi_k\,s^{k-1}\le\Psi'(s)\le2^{k-1}\Psi'(\tfrac12)\,s^{k-1},
+\]
+and $\frac34\le1-s^2\le1$. The right side of \eqref{eq:singleindex:ode} is therefore bounded below by a positive number on $[r_0,\frac12]$, so $r$ increases and reaches $\frac12$ in finite time, and the substitution $s=r(t)$ gives the formula for $t_{1/2}$. The two displayed bounds on $\Psi'$ bound the integrand $1/((1-s^2)\Psi'(s))$ above and below, which gives the bounds on $t_{1/2}$; the values of $I_k$ are elementary integrals.
+\end{proof}
+
+For $k\ge2$ the population flow is not slow because the landscape is rough; on the hemisphere $r>0$ it has no critical points at all. It is slow because the landscape is flat where the search starts. Online SGD adds noise to this weak drift, and the noise sets the step size.
+
+\begin{heuristic}[Why the step size must be of order $d^{-k/2}$]
+Take $\Psi(r)=r^k$ and expand one step of \eqref{eq:singleindex:sgd} to second order in $\eta$ (the exact form is \cref{lem:singleindex:ineq}): at overlap $\rho\ll1$ the overlap changes by a drift $\eta k\rho^{k-1}$, a centered noise $\eta\xi$ with $\E\xi^2$ of order one, and a normalization term $-\frac12\eta^2N\rho$ with $\E N$ of order $d$, by \cref{lem:singleindex:onestep}. To double the overlap, the drift needs $L\approx\rho^{2-k}/(\eta k)$ steps. Over these steps the noise accumulates to about $\eta\sqrt L\approx(\eta\rho^{2-k}/k)^{1/2}$, which is small compared with $\rho$ only if $\eta\ll\rho^k$; the normalization accumulates to about $\eta^2d\rho L\approx\eta d\rho^{3-k}/k$, which is small compared with $\rho$ only if $\eta\ll\rho^{k-2}/d$. For $k\ge3$ both conditions are hardest at the start, $\rho=d^{-1/2}$, where both read $\eta\ll d^{-k/2}$. The doubling times form a geometric series dominated by its first term, about $d^{(k-2)/2}/(\eta k)$, which is of order $d^{k-1}$ when $\eta$ is of order $d^{-k/2}$. In words: the number of samples is the population escape time divided by the largest step that the noise at the equator allows. For $k=1$ the binding condition is the normalization at $\rho\approx\frac12$, which gives $\eta\approx1/d$ and $d$ samples; for $k=2$ every doubling takes about $1/(2\eta)$ steps and both conditions read $\eta\ll1/d$, which gives about $d\log d$ samples.
+\end{heuristic}
+
+\section{The solution: online SGD needs \texorpdfstring{$d^{k-1}$}{d\^{}(k-1)} samples}\label{sec:singleindex:sgd}
+
+We now make the heuristic rigorous for $k\ge3$. The proof uses only the following properties of the pair $(g,\phi)$.
+
+\begin{assumption}[The search-phase hypotheses]\label[assumption]{ass:singleindex:search}
+The functions $g$ and $\phi$ are polynomials, $k\ge3$, and there are constants $c_0>0$ and $\Lambda<\infty$ such that $\Psi'(r)\ge c_0r^{k-1}$ and $\lambda(r)\le\Lambda$ for $0\le r\le\frac12$.
+\end{assumption}
+
+\begin{example}[Matched Hermite links]\label[example]{exm:singleindex:hermite}
+For $g=\phi=h_k$ we have $\Psi(r)=r^k$, so the drift condition holds with $c_0=k$. The function $\lambda$ is a polynomial with $\lambda(0)=2k(k+1)$ (\cref{ex:singleindex:constants}). For $k=3$ a direct expansion gives $\lambda(r)=6(4+45r^2+12r^4-30r^6)$, which increases on $[0,\frac12]$, so $\Lambda=\lambda(\frac12)=1491/16<94$; for $k=4$ one finds $\Lambda=\lambda(\frac12)=3633/8<455$. More generally, every matched link $g=\phi$ with $\hat g_1=\dots=\hat g_{k-1}=0$ satisfies the drift condition with $c_0=k\hat g_k^2$.
+\end{example}
+
+The first step is an exact form of the expansion used in the heuristic. With $(r)_+=\max(r,0)$ and $\cF_t$ the $\sigma$-algebra generated by $x_0,\dots,x_{t-1}$, write $a_t$ and $N_t$ for the quantities of \cref{lem:singleindex:onestep} computed with $w=w_t$ and the sample $x_t$.
+
+\begin{lemma}[One step of SGD, bounded below]\label[lemma]{lem:singleindex:ineq}
+For every $t$,
+\begin{equation}\label{eq:singleindex:ineq}
+  r_{t+1}\ge r_t+\eta a_t-\eta^2E_t,\qquad E_t=\tfrac12N_t\,(r_t)_++\abs{a_t}\sqrt{N_t/2},
+\end{equation}
+and $\E[E_t\mid\cF_t]\le\lambda(r_t)\bigl(\frac d2(r_t)_++\sqrt{d/2}\bigr)$.
+\end{lemma}
+
+\begin{proof}
+Because $G_t$ is orthogonal to $w_t$, $\norm{w_t-\eta G_t}^2=1+\eta^2N_t$, and the inner product of \eqref{eq:singleindex:sgd} with $w_\star$ gives the exact recursion
+\[
+  r_{t+1}=\frac{r_t+\eta a_t}{\sqrt{1+\eta^2N_t}}=(r_t+\eta a_t)(1-\theta_t),\qquad\theta_t=1-(1+\eta^2N_t)^{-1/2}.
+\]
+Convexity of $q\mapsto(1+q)^{-1/2}$ gives $(1+q)^{-1/2}\ge1-q/2$ for $q\ge0$, so $0\le\theta_t\le\min(1,\eta^2N_t/2)$; and $\min(1,p)\le\sqrt p$ for $p\ge0$ gives also $\theta_t\le\eta\sqrt{N_t/2}$. Bound $r_t+\eta a_t$ above by $(r_t)_++\eta\abs{a_t}$, then use the first bound on $\theta_t$ in the third term below and the second bound in the fourth:
+\[
+  r_{t+1}\ge r_t+\eta a_t-\theta_t(r_t)_+-\theta_t\,\eta\abs{a_t}\ge r_t+\eta a_t-\tfrac12\eta^2N_t(r_t)_+-\eta^2\abs{a_t}\sqrt{N_t/2} .
+\]
+For the conditional expectation, $w_t$ is $\cF_t$-measurable and $x_t$ is independent of $\cF_t$, so \cref{lem:singleindex:onestep}(b) applies conditionally with $w=w_t$: $\E[N_t\mid\cF_t]\le d\lambda(r_t)$, and by the Cauchy--Schwarz inequality $\E[\abs{a_t}\sqrt{N_t}\mid\cF_t]\le(\lambda(r_t)\cdot d\lambda(r_t))^{1/2}$.
+\end{proof}
+
+The proof of the theorem cuts the search into epochs in which the overlap doubles. The next lemma treats one epoch; it is stated for a general band of overlaps because the descent phase will use it too. For a unit vector $w$ and a fresh sample, $E$ denotes $\frac12N(r)_++\abs a\sqrt{N/2}$, the quantity $E_t$ of \eqref{eq:singleindex:ineq} at $w_t=w$.
+
+\begin{lemma}[One epoch]\label[lemma]{lem:singleindex:epoch}
+Let $h>0$, $\ell<\ell'$, $m\ge0$, $v\ge0$, and $e\ge0$ be numbers such that every $w\in\Sph^{d-1}$ with $\ell-h\le\ip{w,w_\star}<\ell'$ satisfies $\E a\ge m$, $\E a^2\le v$, and $\E E\le e$. Let $\tau$ be a stopping time with $r_\tau\ge\ell$ on the event $\{\tau<\infty\}$, let $L\ge1$ be an integer, and let $\sigma$ be the first time $t\ge\tau$ with $r_t\notin[\ell-h,\ell')$. Then, outside an event of probability at most
+\begin{equation}\label{eq:singleindex:epochfail}
+  \frac{16\eta^2vL}{h^2}+\frac{2\eta^2eL}{h},
+\end{equation}
+either $\tau=\infty$ or $r_t>\ell-h+\eta m(t-\tau)$ for every integer $t$ with $\tau\le t\le\min(\sigma,\tau+L)$. Consequently, outside the same event and if $\tau<\infty$:
+\begin{enumerate}
+\item[\textup{(i)}] if $\eta mL\ge\ell'-\ell+h$, then $r_t\ge\ell'$ for some $t\le\tau+L$, and $r_s>\ell-h$ for $\tau\le s\le t$;
+\item[\textup{(ii)}] if $\ell'>1$, then $r_t>\ell-h$ for $\tau\le t\le\tau+L$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to split the change of the overlap after $\tau$ into a drift, a martingale, and a nonnegative loss, and to bound the martingale by Doob's inequality and the loss by Markov's inequality. Let $\mu_s=\E[a_s\mid\cF_s]$ and $\xi_s=a_s-\mu_s$, and let $\chi_s$ be the indicator of the event $\{\tau\le s<\min(\sigma,\tau+L)\}$. This event belongs to $\cF_s$, because $\tau$ and $\sigma$ are stopping times and $\{s<\tau+L\}$ is the complement of $\{\tau\le s-L\}$; on it $r_s\in[\ell-h,\ell')$, so that $\mu_s\ge m$, $\E[\xi_s^2\mid\cF_s]\le\E[a_s^2\mid\cF_s]\le v$, and $\E[E_s\mid\cF_s]\le e$. Consider
+\[
+  M_t=\sum_{s<t}\chi_s\xi_s,\qquad S=\sum_{s\ge0}\chi_sE_s .
+\]
+The process $(M_t)$ is a martingale with orthogonal increments, so $\E M_t^2=\sum_{s<t}\E\bigl[\chi_s\E[\xi_s^2\mid\cF_s]\bigr]\le vL$ for every $t$, since at most $L$ of the indicators equal $1$. Doob's $L^2$ inequality (\cref{lem:toolkit:doob}) gives $\E\max_{t\le n}M_t^2\le4vL$ for every $n$, hence $\E\sup_tM_t^2\le4vL$ by monotone convergence, and Markov's inequality gives $\Pr(\sup_t\abs{\eta M_t}\ge h/2)\le16\eta^2vL/h^2$. In the same way $\E S\le eL$, so $\Pr(\eta^2S\ge h/2)\le2\eta^2eL/h$. Let $\cE$ be the event that $\sup_t\abs{\eta M_t}<h/2$ and $\eta^2S<h/2$; its complement has probability at most \eqref{eq:singleindex:epochfail}.
+
+On $\cE\cap\{\tau<\infty\}$, let $\tau\le t\le\min(\sigma,\tau+L)$. Every $s$ with $\tau\le s<t$ has $\chi_s=1$ and no $s<\tau$ has, so summing \eqref{eq:singleindex:ineq} over $\tau\le s<t$ and using $\mu_s\ge m$ gives
+\[
+  r_t\ge r_\tau+\eta\sum_{s=\tau}^{t-1}\mu_s+\eta M_t-\eta^2\sum_{s=\tau}^{t-1}E_s>\ell+\eta m(t-\tau)-\frac h2-\frac h2 ,
+\]
+which is the main claim. For (i), suppose $\sigma>\tau+L$; then $t=\tau+L$ is admissible, so $r_t>\ell-h+\eta mL\ge\ell'$, whereas $t<\sigma$ forces $r_t<\ell'$. Hence $\sigma\le\tau+L$, and since $r_\sigma>\ell-h$, the overlap leaves the band through the top: $r_\sigma\ge\ell'$. For (ii), the overlap never reaches $\ell'>1$, so an exit at a time $\sigma\le\tau+L$ would have $r_\sigma<\ell-h$, contradicting the main claim; hence $\sigma>\tau+L$, and the main claim with $m\ge0$ gives (ii).
+\end{proof}
+
+\begin{theorem}[Online SGD finds the direction]\label{thm:singleindex:sgd}
+Suppose \cref{ass:singleindex:search} holds, let $0<\eps\le1$, and let $r_0\ge d^{-1/2}$. Run \eqref{eq:singleindex:sgd} with step size and horizon
+\[
+  \eta=\frac{c_0\,\eps}{2^{k+8}\Lambda}\,d^{-k/2},\qquad T=\frac{2^{2k+10}\Lambda}{c_0^2\,\eps}\,d^{k-1}.
+\]
+Then with probability at least $1-\eps$ some $t\le T$ has $r_t\ge\frac12$. In particular $T$ samples suffice to leave the search phase.
+\end{theorem}
+
+\begin{proof}
+The plan is to cut the climb from $r_0$ to $\frac12$ into epochs in which the overlap doubles, to apply \cref{lem:singleindex:epoch}(i) to each, and to add up the failure probabilities, which form a geometric series because $k\ge3$. If $r_0\ge\frac12$, there is nothing to prove. Otherwise let $J\ge1$ be the least integer with $2^Jr_0\ge\frac12$, put $\rho_j=2^jr_0$ for $0\le j<J$ and $\rho_J=\frac12$, so that $\rho_{j+1}=\min(2\rho_j,\frac12)$, and let $\tau_j$ be the first time $t$ with $r_t\ge\rho_j$. In particular $\tau_0=0$.
+
+\emph{The constants of an epoch.} Fix $j<J$ and use \cref{lem:singleindex:epoch} with $\tau=\tau_j$, $\ell=\rho_j$, $h=\rho_j/2$, and $\ell'=\rho_{j+1}$. Every overlap $r$ in the band $[\rho_j/2,\rho_{j+1})$ lies in $(0,\frac12)$, so \cref{lem:singleindex:onestep}(a) and \cref{ass:singleindex:search} give $\E a=(1-r^2)\Psi'(r)\ge\frac34c_0(\rho_j/2)^{k-1}=:m_j$, and \cref{lem:singleindex:onestep}(b) gives $\E a^2\le\Lambda$. \Cref{lem:singleindex:ineq} gives $\E E\le\Lambda(\frac d2\cdot2\rho_j+\sqrt{d/2})\le2\Lambda d\rho_j$, because $r<2\rho_j$ in the band and $\sqrt{d/2}\le d\rho_j$ (here $\rho_j\ge r_0\ge d^{-1/2}$ is used). Let $L_j$ be the least integer at least
+\[
+  x_j=\frac{3\rho_j}{2\eta m_j}=\frac{2^k}{c_0\,\eta\,\rho_j^{k-2}} .
+\]
+Since $\ell'-\ell+h\le\frac32\rho_j$, the hypothesis $\eta m_jL_j\ge\ell'-\ell+h$ of (i) holds. So outside an event $\cB_j$ whose probability is at most \eqref{eq:singleindex:epochfail}, if $\tau_j<\infty$, then $\tau_{j+1}\le\tau_j+L_j$.
+
+\emph{The failure probability.} The number $x_j$ is at least $1$, so $L_j\le2x_j$. To see this, compare the drift at overlap $\frac12$ with its noise: $\frac34c_02^{1-k}\le\frac34\Psi'(\frac12)=\E a\le(\E a^2)^{1/2}\le\Lambda^{1/2}$, so $c_0^2<4^k\Lambda$ and $x_j\ge2^k/(c_0\eta)\ge2^{2k+8}\Lambda/c_0^2>1$. Inserting $v=\Lambda$, $e=2\Lambda d\rho_j$, $h=\rho_j/2$, and $L_j\le2x_j$ into \eqref{eq:singleindex:epochfail},
+\[
+  \Pr(\cB_j)\le\frac{64\eta^2\Lambda L_j}{\rho_j^2}+8\eta^2\Lambda dL_j\le\frac{2^{k+1}\Lambda\eta}{c_0}\Bigl(\frac{64}{\rho_j^k}+\frac{8d}{\rho_j^{k-2}}\Bigr).
+\]
+Since $\rho_j=2^jr_0$ and $r_0\ge d^{-1/2}$, the geometric series give $\sum_{j<J}\rho_j^{-k}\le\frac87d^{k/2}$ and, because $k\ge3$, $\sum_{j<J}\rho_j^{2-k}\le2d^{(k-2)/2}$. Hence
+\[
+  \sum_{j<J}\Pr(\cB_j)\le\frac{2^{k+1}\Lambda\eta\,d^{k/2}}{c_0}\Bigl(\frac{512}{7}+16\Bigr)<\frac{2^{k+8}\Lambda\eta\,d^{k/2}}{c_0}=\eps .
+\]
+
+\emph{The time.} Outside the union of the events $\cB_j$, induction on $j$ gives $\tau_j\le L_0+\dots+L_{j-1}$, and therefore
+\[
+  \tau_J\le\sum_{j<J}L_j\le\frac{2^{k+1}}{c_0\eta}\sum_{j<J}\rho_j^{2-k}\le\frac{2^{k+2}d^{(k-2)/2}}{c_0\,\eta}=T .\qedhere
+\]
+\end{proof}
+
+Three remarks place the theorem. The constants are explicit but not good: for $k=3$ and $\eps=0.1$ the step size is $1.6\times10^{-6}d^{-3/2}$, while the simulations of \cref{sec:singleindex:reading} escape reliably with steps about $10^4$ times larger. The losses come from Chebyshev-type bounds, the margins of $\rho_j/4$ allowed to the noise and to the normalization, the factor $2^{k-1}$ lost by bounding the drift at the bottom of each band, and the use of $\lambda(\frac12)$ instead of $\lambda(0)$; the exponents are what the proof gets right. Second, the warm start $r_0\ge d^{-1/2}$ holds with probability about $0.16$ for a uniformly random $w_0$, because $\sqrt d\,r_0$ is approximately standard Gaussian; for even links the symmetry $w\mapsto-w$ makes $\abs{r_0}\ge d^{-1/2}$ enough, and a start at $\gamma d^{-1/2}$ with $0<\gamma<1$ costs a factor $\gamma^k$ in the step size (\cref{ex:singleindex:otherk}). For odd $k$ a start with $r_0<0$ is genuinely bad: the population flow then tends to the equator from below and never crosses it (\cref{ex:singleindex:sign}). Third, the failure probability enters as $1/\eps$, the price of using only second moments; \textcite{BenArousGheissariJagannath2021} obtain probability $1-o(1)$ from random starts at the cost of factors $\log^2d$, and a statement of exactly our form, with step $\eps d^{-k/2}$ and horizon $d^{k-1}/\eps$, is Theorem 3.2 of \textcite{ZweigEtAl2023}, who prove it for a class of non-Gaussian inputs.\sidenote{The doubling epochs, the martingale bound, and the treatment of the normalization are standard; we have arranged them so that every constant can be checked by hand.}
+
+After the search, the overlap must still climb from $\frac12$ to nearly $1$. This descent phase\index{descent phase} is fast, and its accuracy is limited by the step size.
+
+\begin{proposition}[The descent phase]\label[proposition]{prop:singleindex:descent}
+Let $g=\phi=h_k$ with $k\ge3$, let $d\ge16$, let $\bar\Lambda=\max_{0\le r\le1}\lambda(r)$, and let $\eta$ and $T$ be as in \cref{thm:singleindex:sgd} with $c_0=k$ and $\Lambda=\bar\Lambda$. If $r_0\ge d^{-1/2}$, then for every $\delta\in(0,1)$ and every integer $t$ with $T\le t\le2T$,
+\[
+  \Pr\bigl(r_t<1-\delta\bigr)\le2\eps+\frac1\delta\Bigl(e^{-\kappa\eta(t-T)}+\frac{2^{k-10}\,\eps}{d^{(k-2)/2}}\Bigr),\qquad\kappa=k\,4^{1-k}.
+\]
+\end{proposition}
+
+\begin{proof}
+The plan is to wait for the search to end, to show with \cref{lem:singleindex:epoch}(ii) that the overlap then stays above $\frac14$, and to show that above $\frac14$ the distance $D_t=1-r_t$ contracts in expectation. The hypotheses of \cref{thm:singleindex:sgd} hold with $c_0=k$ and the larger constant $\bar\Lambda$, so the first time $\tau$ with $r_\tau\ge\frac12$ satisfies $\Pr(\tau>T)\le\eps$.
+
+\emph{The overlap stays above $\frac14$.} For overlaps $r\in[\frac14,1]$, \cref{lem:singleindex:onestep} gives $\E a=kr^{k-1}(1-r^2)\ge0$ and $\E a^2\le\bar\Lambda$, and \cref{lem:singleindex:ineq} gives $\E E\le\bar\Lambda(\frac d2+\sqrt{d/2})\le\bar\Lambda d$. Apply \cref{lem:singleindex:epoch}(ii) with $\ell=\frac12$, $h=\frac14$, $\ell'=2$, $m=0$, and $L=\floor{2T}$: outside an event of probability at most $8\eta^2\bar\Lambda L(32+d)$, if $\tau<\infty$, then $r_s>\frac14$ for $\tau\le s\le\tau+L$, in particular for $\tau\le s\le2T$. The definitions of $\eta$ and $T$ give $\eta^2\bar\Lambda T=\eps/(64d)$, so this probability is at most $\eps(32+d)/(4d)\le\frac34\eps$ when $d\ge16$.
+
+\emph{Contraction.} Let $\nu$ be the first time $s\ge\tau$ with $r_s<\frac14$, and for $s\ge T$ let $V_s=D_s\,\ind\{\tau\le T,\ s<\nu\}$. The event in the indicator belongs to $\cF_s$, and on it $\frac14\le r_s\le1$, so that $\E[a_s\mid\cF_s]=kr_s^{k-1}(1+r_s)(1-r_s)\ge\kappa D_s$ and $\E[E_s\mid\cF_s]\le\bar\Lambda d$. By \eqref{eq:singleindex:ineq}, $D_{s+1}\le D_s-\eta a_s+\eta^2E_s$, and $D_{s+1}\ge0$. The indicator can only switch off as $s$ grows, so
+\[
+  \E V_{s+1}\le\E\bigl[\ind\{\tau\le T,\ s<\nu\}\,\E[D_{s+1}\mid\cF_s]\bigr]\le(1-\kappa\eta)\,\E V_s+\eta^2\bar\Lambda d .
+\]
+Starting from $\E V_T\le\frac34$ and iterating, then inserting the value of $\eta$,
+\[
+  \E V_t\le\tfrac34(1-\kappa\eta)^{t-T}+\frac{\eta\bar\Lambda d}{\kappa}\le e^{-\kappa\eta(t-T)}+\frac{2^{k-10}\,\eps}{d^{(k-2)/2}} .
+\]
+
+\emph{Conclusion.} If $\tau\le T$ and $\nu>t$, then $V_t=D_t$. So the event $\{r_t<1-\delta\}$ is contained in the union of $\{\tau>T\}$, the event that the overlap falls below $\frac14$ between $\tau$ and $2T$, and $\{V_t>\delta\}$, whose probabilities are at most $\eps$, $\frac34\eps$, and $\E V_t/\delta$ by Markov's inequality.
+\end{proof}
+
+At $t=2T$ the exponential term equals $\exp(-2^{4-k}d^{(k-2)/2})$, which is negligible: with probability at least $1-2\eps$, up to terms that vanish as $d$ grows, the overlap is within $\delta$ of $1$ for every fixed $\delta>0$. The descent takes about $\kappa^{-1}\eta^{-1}\log(1/(\eps\delta))$ steps, of order $d^{k/2}\log(1/(\eps\delta))/\eps$, a vanishing fraction of $T$: the samples are spent in the search.
+
+\subsection{What is known to be sharp}\label{sec:singleindex:sharp}
+
+\Cref{thm:singleindex:sgd} is an upper bound for one algorithm. Two kinds of lower bound complete the picture: one for online SGD, and one for every algorithm that learns from correlations. In the next statement, $a_d\ll b_d$ means $a_d/b_d\to0$ as $d\to\infty$, and the square loss replaces the correlation loss; on the sphere the two have the same population landscape.
+
+\begin{theorem}[Sharp thresholds for online SGD; \textcite{BenArousGheissariJagannath2021}]\label{thm:singleindex:bagj}
+Let $g$ be a polynomial with information exponent $k$, let $\phi=g$, and run \eqref{eq:singleindex:sgd} for the square loss $\frac12(y-\phi(\ip{w,x}))^2$ from $w_0$ uniform on the hemisphere $\{w:\ip{w,w_\star}\ge0\}$, with $n$ samples and step size $\eta$ depending on $d$, $n$ at most polynomial in $d$.
+\begin{enumerate}
+\item[\textup{(a)}] If $1/n\ll\eta\ll1/\sqrt{nd}$, and $n\gg d$ for $k=1$, $n\gg d\log^2d$ for $k=2$, or $n\gg d^{k-1}\log^2d$ for $k\ge3$, then $r_n\to1$ in probability.
+\item[\textup{(b)}] If $n\ll d$ for $k=1$ or $n\ll d\log d$ for $k=2$, with $\eta=O(1/d)$, or if $n\ll d^{k-1}$ for $k\ge3$, with $\eta=O(1/\sqrt{nd})$, then $\max_{t\le n}\abs{r_t}\to0$ in probability.
+\end{enumerate}
+\end{theorem}
+
+The thresholds $d$, $d\log d$, and $d^{k-1}$ are sharp up to the factors $\log^2d$, which the authors expect to be removable. The lower bound for $k\ge3$ is proved only for step sizes $\eta=O(1/\sqrt{nd})$, of order $d^{-k/2}$ at the threshold, and the restriction is not cosmetic: with steps up to $O(1/d)$ their argument excludes only $n\lesssim d^{k/2}$. Later work has narrowed the gap. \Textcite{TsiolisMousaviHosseiniErdogdu2025} prove that $d^{k-1}$ samples, up to logarithms, are necessary and sufficient for the spherical correlation-loss setting in the small-step range, and \textcite{BarzilaiShamir2026}, in an unrefereed preprint, prove a lower bound of the same order for unconstrained SGD with steps up to about $d^{-1/2}$. For even $k\ge4$, \textcite{RenEtAl2025} show that the escape happens at the time predicted by the population flow, to leading order.
+
+The second lower bound concerns \term{correlational statistical queries}\index{correlational statistical query}: an algorithm chooses functions $\psi$ of the input with $\E\psi(x)^2\le1$ and receives, for each, a number within a tolerance $\tau$ of $\E[y\,\psi(x)]$, with the errors chosen by an adversary. The model is the correlational restriction \parencite{BshoutyFeldman2002} of the statistical queries of \textcite{Kearns1998}; a gradient of the square or correlation loss is such a query, estimated from samples.
+
+\begin{theorem}[Correlational lower bound; \textcite{DamianLeeSoltanolkotabi2022}, \textcite{DamianEtAl2023}]\label{thm:singleindex:csq}
+Let $g$ satisfy $\E g(z)=0$ and $\E g(z)^2=1$ and have information exponent $k\ge1$. If an algorithm makes $q$ correlational statistical queries of tolerance $\tau$ and outputs, for every $w_\star\in\Sph^{d-1}$, a unit vector $\hat w$ with $\E\bigl(g(\ip{\hat w,x})-g(\ip{w_\star,x})\bigr)^2<1$, then $\tau\le C_k(\log(qd)/d)^{k/4}$, with $C_k$ depending only on $k$.
+\end{theorem}
+
+An empirical average of $n$ samples estimates $\E[y\psi(x)]$ to accuracy about $n^{-1/2}$. Reading $\tau\approx n^{-1/2}$ turns the theorem into the heuristic bound $n\gtrsim(d/\log(qd))^{k/2}$ for gradient methods; it is a heuristic, not a theorem about SGD, because the errors of SGD are random rather than adversarial, as both papers stress. The bound has the same form for odd and even $k$; parity matters only on the algorithmic side, where the simplest matching estimator, a partial trace of the empirical Hermite tensor, needs about $d^{\lceil k/2\rceil}$ samples, and odd $k$ needs a further power iteration to reach $d^{k/2}$ \parencite{DamianEtAl2023,DamianEtAl2024}. For $k\le2$ the correlational bound is weaker than the trivial requirement $n\gtrsim d$, and online SGD is optimal up to logarithms. For $k\ge3$ it is $d^{k/2}$, and online SGD is off by the factor $d^{k/2-1}$. Smoothing the loss closes this gap (\cref{sec:singleindex:wrong}).
+
+\section{Reading the solution}\label{sec:singleindex:reading}
+
+The solution has three clocks. The population flow needs time of order $d^{(k-2)/2}$ to leave the equator. The step size is limited by what happens at the equator, where the drift is weakest: to order $d^{-k/2}$ for $k\ge3$, by the noise and the normalization together, and to order $1/d$ for $k\le2$, by the normalization. The number of samples is the first clock divided by the second: $d^{k-1}$ for $k\ge3$, $d\log d$ for $k=2$, and $d$ for $k=1$, the thresholds of \cref{thm:singleindex:bagj}. The samples are spent almost entirely near the equator: the epoch lengths in the proof of \cref{thm:singleindex:sgd} are proportional to $\rho_j^{2-k}$, so for $k\ge3$ the first doubling of the overlap costs at least as much as all later ones together, and the descent costs a vanishing fraction (\cref{prop:singleindex:descent}).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,xmode=log,ymode=log,log basis x=2,xmin=12,xmax=5600,ymin=100,ymax=3e6,
+  xlabel={dimension $d$},ylabel={samples to reach $\abs{r_t}\ge\frac12$},legend pos=north west,
+  xtick={16,64,256,1024,4096},xticklabels={$16$,$64$,$256$,$1024$,$4096$}]
+\addplot[theory] table[x=d,y=k3] {figures/data/07-singleindex-escape-theory.dat};
+\addplot[theory2] table[x=d,y=k2] {figures/data/07-singleindex-escape-theory.dat};
+\addplot[theory3] table[x=d,y=k1] {figures/data/07-singleindex-escape-theory.dat};
+\addplot[simulation,error bars/.cd,y dir=both,y explicit] table[x=d,y=median,
+  y error plus expr=\thisrow{q75}-\thisrow{median},y error minus expr=\thisrow{median}-\thisrow{q25}]
+  {figures/data/07-singleindex-escape-k3.dat};
+\addplot[simulation,forget plot,error bars/.cd,y dir=both,y explicit] table[x=d,y=median,
+  y error plus expr=\thisrow{q75}-\thisrow{median},y error minus expr=\thisrow{median}-\thisrow{q25}]
+  {figures/data/07-singleindex-escape-k2.dat};
+\addplot[simulation,forget plot,error bars/.cd,y dir=both,y explicit] table[x=d,y=median,
+  y error plus expr=\thisrow{q75}-\thisrow{median},y error minus expr=\thisrow{median}-\thisrow{q25}]
+  {figures/data/07-singleindex-escape-k1.dat};
+\legend{population flow $k=3$,population flow $k=2$,population flow $k=1$,SGD median and quartiles}
+\end{axis}
+\end{tikzpicture}
+\caption{Escape times of spherical online SGD for the matched links $g=\phi=h_k$, from $r_0=d^{-1/2}$, with $\eta=0.02/d$ for $k\le2$ and $\eta=0.02\,d^{-3/2}$ for $k=3$. Curves: the population prediction $t_{1/2}/\eta$ of \cref{thm:singleindex:flow}, with no fitted constant. Points: medians and quartiles of the first time $t$ with $r_t\ge\frac12$ (with $\abs{r_t}\ge\frac12$ for $k=2$), over $200$ runs for $k\le2$ and $100$ runs for $k=3$, simulated with the exact one-dimensional chain of \cref{rem:singleindex:markov} (seed $20261017$). One run in a hundred at $k=3$, $d=256$, had not escaped after three times the predicted time.}\label{fig:singleindex:escape}
+\end{figure}
+
+\Cref{fig:singleindex:escape} tests the first two clocks. The step sizes are those of the heuristic, $\eta=0.02/d$ for $k\le2$ and $\eta=0.02\,d^{-3/2}$ for $k=3$, and the curves are the population prediction with no fitted constant. The slopes are $1$ for $k=1$, slightly more than $1$ for $k=2$ because of the logarithm, and $2$ for $k=3$. The medians agree with the curves within $1\%$ for $k=1$, within $7\%$ for $k=2$, and within $12\%$ for $k=3$, the worst cases at $d=16$, where the start $r_0=\frac14$ is already halfway to the target. The spread is the other prediction. For $k=1$ the quartiles are within $1\%$ of the median, for $k=2$ they narrow from $\pm15\%$ to $\pm5\%$ as $d$ grows, and for $k=3$ the interquartile range stays near $30\%$ of the median at every $d$. At the step size $\eta\approx d^{-k/2}$ the noise is as large as it can be without stopping the search, so the escape time stays random as $d\to\infty$. We checked the one-dimensional chain against $d$-dimensional SGD at $d=16$ and $d=32$, where the medians agree within $2\%$.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=1.45cm},hplot,width=0.53\linewidth,height=0.48\linewidth,
+  xlabel={samples$/d^2$},xmin=0,xmax=36]
+\nextgroupplot[ymode=log,ymin=0.05,ymax=1.2,ylabel={overlap $r_t$},ytick={0.0625,0.125,0.25,0.5,1},
+  yticklabels={$\frac1{16}$,$\frac18$,$\frac14$,$\frac12$,$1$}]
+\pgfplotsinvokeforeach{1,...,8}{\addplot[muted!70,line width=0.35pt] table[x=tau,y=r#1] {figures/data/07-singleindex-traj.dat};}
+\addplot[theory] table[x=tau,y=ode] {figures/data/07-singleindex-traj.dat};
+\nextgroupplot[ymin=0,ymax=1.08,ylabel={loss $1-r_t^3$}]
+\pgfplotsinvokeforeach{1,...,8}{\addplot[muted!70,line width=0.35pt] table[x=tau,y=l#1] {figures/data/07-singleindex-traj.dat};}
+\addplot[theory] table[x=tau,y=lode] {figures/data/07-singleindex-traj.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Eight runs of spherical online SGD in dimension $d=128$ for $g=\phi=h_3$, with $\eta=0.02\,d^{-3/2}$ and $r_0=d^{-1/2}$ (grey), and the population flow (curve). Left: the overlap, on a logarithmic scale. Right: the population square loss on the sphere, $\frac12\E(y-h_3(\ip{w_t,x}))^2=1-r_t^3$. The runs simulate \eqref{eq:singleindex:sgd} in $\R^{128}$ directly (seed $7$).}\label{fig:singleindex:trajectories}
+\end{figure}
+
+\Cref{fig:singleindex:trajectories} shows single runs. On a logarithmic scale the overlap grows from the start, as the population flow predicts; for $k=3$ the flow makes $1/r_t$ decrease almost linearly in $t$ while $r_t$ is small. Yet the loss $1-r_t^3$ stays within $10^{-2}$ of its initial value until the overlap passes $0.2$: progress is hidden from the loss because the loss sees $r^k$, not $r$, the same mechanism as the hidden progress of \cref{ch:parity}. The runs escape at different times, between $0.8$ and $1.4$ times the population prediction, and then descend in a short and nearly deterministic time. They settle at $r\approx0.985$, not at $1$. Near $r=1$ the normalization pulls the overlap down by about $\frac12\eta^2\E N\approx\frac12\eta^2(d-1)\E[F^2]$ per step, and the drift pulls it up by about $\eta kr^{k-1}(1-r^2)\approx2k\eta(1-r)$; they balance at $1-r\approx\eta(d-1)\E[F^2]/(4k)$, which is $0.014$ here, since $\E[F^2]=93$ at $r=1$ for $k=3$. A smaller step after the search removes this floor, as in the two-phase schedules of \textcite{DamianEtAl2023}.
+
+The equator also has a picture of its own. Near $r=0$, \cref{lem:singleindex:onestep} and \cref{lem:singleindex:ineq} give, to leading order, $r_{t+1}-r_t\approx\eta kr_t^{k-1}-\frac12\eta^2kd\,r_t+\eta\xi_t$ with $\E\xi_t^2\approx k(2k+1)$ for the matched link $h_k$. Without the drift this is an autoregressive process whose stationary variance is $(2k+1)/d$ (\cref{ex:singleindex:stepsize}): SGD noise by itself keeps the overlap at the scale $d^{-1/2}$ of a random start. The drift beats the restoring force $\frac12\eta^2kd\,r$ only where $r^{k-2}>\eta d/2$, and this threshold lies inside the band of width $\sqrt{(2k+1)/d}$ exactly when $\eta\lesssim d^{-k/2}$. Larger steps do not stop the search outright but make it a rare event, a large deviation of the equatorial noise; the lower bound of \cref{thm:singleindex:bagj} excludes them, and for unconstrained SGD on the square loss with steps of order $1/d$, \textcite{Rangriz2026} shows that $\sqrt d\,r_t$ converges to a mean-reverting Ornstein--Uhlenbeck process when $k\ge3$.\sidenote{At this step size the equator is a stable fixed point of the effective dynamics in the sense of \textcite{BenArousGheissariJagannath2024}, who prove limit theorems for summary statistics of SGD on time scales of order $1/\eta$.}
+
+\section{What the model gets wrong}\label{sec:singleindex:wrong}
+
+\paragraph{What was thrown away.}
+Isotropic Gaussian inputs, which made the overlap a sufficient statistic and the Hermite polynomials the right basis; with structured or non-Gaussian inputs neither holds. One relevant direction and a known link: a network must find several directions and fit an unknown function of them, and the order in which directions are found becomes part of the problem. One neuron with nothing on top of it: width changes only the start, since the best of $m$ random neurons has overlap about $\sqrt{2\log m/d}$, which shortens the search by a factor of order $(\log m)^{(k-2)/2}$ (\cref{ex:singleindex:width}); for $k=2$, \textcite{ArnaboldiEtAl2023} find that overparameterization helps only by a constant factor. One pass over fresh samples, which is what makes samples and steps the same number and the noise a martingale. The sphere, which fixes the norm that real networks must learn. The correlation loss with a matched student, small constant steps, and no momentum or adaptive preconditioning. And a warm start.
+
+\paragraph{Where it breaks.}
+The model's central prediction, that a target with information exponent $k$ costs about $d^{k-1}$ samples, is a statement about one algorithm, and other gradient-based algorithms do much better (\cref{tab:singleindex:ladder}). \emph{Smoothing the loss.} \Textcite{DamianEtAl2023} run online SGD on a loss averaged over a cap of radius $\lambda$ around $w$; with $\lambda=d^{1/4}$ the signal near the equator grows faster than the noise, and $d^{k/2}$ samples suffice up to logarithms, which matches \cref{thm:singleindex:csq}. So $d^{k-1}$ is not a limit of correlational methods, only of plain online SGD. \emph{Reusing samples.} Two steps on the same batch let the update depend nonlinearly on the label, which acts as an implicit transformation of $y$. \Textcite{DandiEtAl2024} show that two full-batch gradient steps on $n\asymp d$ samples find directions with information exponent $3$, where one-pass SGD with as many samples finds nothing, and \textcite{LeeEtAl2024} show that a two-layer network that uses each sample in two consecutive steps learns every polynomial single-index target with $d$ samples up to logarithmic factors; \textcite{ArnaboldiEtAl2024a} obtain $d\log^2d$ for a single neuron, in a preprint. \emph{The information exponent is not the hardness of the problem.} \Textcite{DamianEtAl2024} define the generative exponent\index{generative exponent}, the least information exponent of $T(y)$ over all square-integrable transformations $T$ of the label, prove that statistical-query and low-degree algorithms need $d^{k_{\mathrm g}/2}$ samples when it equals $k_{\mathrm g}$, and match this with a spectral algorithm. Every polynomial link has $k_{\mathrm g}\le2$; for $y=\He_3(\ip{w_\star,x})$ the generative exponent is $1$, so the hydrogen atom of this chapter is easy for the right algorithm. \emph{The loss and the student matter.} \Textcite{JoshiMisiakiewiczSrebro2024} show for sparse functions that gradient queries of the square loss are exactly as weak as correlational queries, while those of the absolute or hinge loss are as strong as general statistical queries, with a target that needs $d^3$ queries in the first case and $d$ in the second; and a student whose Hermite coefficients vanish where the target's do not can lose the signal altogether (\cref{ex:singleindex:exponents}). \emph{Anisotropy.} When the input covariance has a spike aligned with $w_\star$, the effective dimension drops and fewer samples suffice \parencite{BaEtAl2023}; but \textcite{MousaviHosseiniEtAl2023} show that spherical gradient flow that ignores the covariance can then stay at the equator, while a normalization adapted to the covariance exploits the spike.
+
+\begin{table}[t]
+\centering\small
+\caption{The cost, in samples and up to logarithmic factors, of finding $w_\star$ for $y=\He_k(\ip{w_\star,x})$ with $k\ge3$, by method. The information-theoretic cost is of order $d$ for every single-index model.}\label{tab:singleindex:ladder}
+\begin{tabular}{@{}lll@{}}
+\toprule
+method & samples & source\\
+\midrule
+kernel methods, random features & $d^k$ & \textcite{GhorbaniEtAl2021}; \cref{ch:lazy}\\
+online SGD, one neuron & $d^{k-1}$ & \cref{thm:singleindex:sgd,thm:singleindex:bagj}\\
+correlational queries; smoothed online SGD & $d^{k/2}$ & \cref{thm:singleindex:csq}; \textcite{DamianEtAl2023}\\
+statistical queries (generative exponent $\le2$) & $d$ & \textcite{DamianEtAl2024}\\
+SGD reusing each sample twice & $d$ & \textcite{LeeEtAl2024}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Fine structure.}
+The successors repair one omission each. For targets with several directions, the information exponent becomes the leap complexity\index{leap complexity}: \textcite{AbbeBoixAdseraMisiakiewicz2022} characterize the sparse targets learnable with order $d$ samples by a merged-staircase property, and \textcite{AbbeBoixAdseraMisiakiewicz2023} conjecture that online SGD needs about $d^{\max(L-1,1)}$ samples for a target of leap $L$, proving it in restricted Gaussian settings; the correlational and generative versions of the leap are studied by \textcite{DamianLeeBruna2025}. With large steps and $n\asymp d$ samples, a single gradient step already learns the linear part of a target \parencite{BaEtAl2022}. When the link is unknown, a shallow network can learn it together with the direction, with about $d^{k}$ samples for gradient flow on the empirical loss \parencite{BiettiEtAl2022}, and two-timescale gradient flow on multi-index targets passes a sequence of saddles predicted by the Hermite structure \parencite{BiettiBrunaPillaudVivien2025}. Beyond Gaussian inputs, a local growth condition on the population drift replaces the information exponent \parencite{ZweigEtAl2023}, and for spherically symmetric inputs a decomposition into spherical harmonics shows that online SGD, while not sample-optimal, is optimal in running time among methods that ignore $\norm x$ \parencite{JoshiEtAl2025}. The step size itself is a knob: \textcite{TsiolisMousaviHosseiniErdogdu2025} show that the inner step size of a sample-reusing update moves the cost continuously from the information exponent to the generative one. The survey of \textcite{BrunaHsu2025} organizes these results. Open are a proof that plain minibatch SGD, with neither smoothing nor reuse, reaches $d^{k/2}$, which \textcite{DamianEtAl2023} conjecture; the limit law of the escape time at the critical step size for odd $k$ (\cref{ex:singleindex:law}); and lower bounds for online SGD that hold for every step size.
+
+\section{Model card}\label{sec:singleindex:card}
+
+\modelcard{A loss plateau while a network searches for the relevant directions of a high-dimensional input; longer for targets whose low-degree Hermite components vanish.}
+{$y=g(\ip{w_\star,x})$, $x\sim\cN(0,I_d)$; one neuron $\phi(\ip{w,x})$ on the sphere; online SGD on the correlation loss; order parameter $r=\ip{w,w_\star}$.}
+{Population drift $(1-r^2)\Psi'(r)\approx kc_kr^{k-1}$; flow escapes in time of order $d^{(k-2)/2}$; with $\eta\asymp\eps d^{-k/2}$, online SGD reaches $r=\frac12$ within $O(d^{k-1}/\eps)$ samples for $k\ge3$ (proved), then descends in $O(d^{k/2}\log)$ samples.}
+{Sample complexities $d$, $d\log d$, $d^{k-1}$ for $k=1$, $2$, $\ge3$; a step size limited by the equator; flat loss with hidden progress in $r$; an accuracy floor proportional to $\eta d$.}
+{It measures one algorithm: smoothing reaches $d^{k/2}$, sample reuse and label transforms reach about $d$ for polynomial links; anisotropic and non-Gaussian inputs change the exponent; one direction, known link, one neuron.}
+{Generative exponent; correlational and statistical-query lower bounds; smoothing and partial traces; leap complexity for multi-index targets; effective dynamics of SGD.}
+
+The search phase is the third appearance in this book of an escape from a saddle at small initialization. In \cref{ch:deeplinear} the escape is logistic, with time $\log(1/\text{initialization})/\text{strength}$, which is the case $k=2$ here; in \cref{ch:diagonal} the same mechanism orders the coordinates; here a degenerate saddle of order $k$ turns the logarithm into the power $d^{(k-2)/2}$. The committee machine of \cref{ch:committee} adds a symmetric saddle between students, analyzed with the same order parameters and the ODE method (\cref{thm:toolkit:ode-method}), and \cref{ch:parity} is the Boolean version of this chapter: a parity on $k$ coordinates has no correlation with low-degree functions, its hidden progress is the growth of $\log r$ under a flat loss, and its statistical-query bound is the counterpart of \cref{thm:singleindex:csq}.
+
+Against \cref{ch:lazy} the chapter gives the first quantitative separation between feature learning and kernels: a kernel method needs about $d^k$ samples for a degree-$k$ target, one neuron trained by online SGD needs $d^{k-1}$, and better gradient methods need $d^{k/2}$ or fewer. Rotational invariance of Gaussian data, which reduced everything to one overlap here, reduces the committee machine to a few overlaps in \cref{ch:committee} and makes the spectra of \cref{ch:doubledescent} computable.
+
+\begin{exercises}
+\item \consolidation (Information exponents.) (a) Show that $z\mapsto\relu(z)$, $\tanh z$, $\sgn z$, and $z^3$ have information exponent $1$, that $z^2$ and $\abs z$ have information exponent $2$ with $\widehat{\abs{z}}_2=1/\sqrt\pi$, and that $\He_k$ has information exponent $k$. (b) Show that the Hermite coefficients of the ReLU vanish at every odd degree $j\ge3$. Conclude that a ReLU neuron trained on the correlation loss for the target $h_3(\ip{w_\star,x})$ has $\Psi\equiv0$: it receives no signal at all, at any overlap. \hint{$\relu(z)=\frac z2+\frac{\abs z}2$.}\label{ex:singleindex:exponents}
+
+\item \consolidation (Noise at the equator.) Let $g=\phi=h_k$. (a) Use $zh_k=\sqrt{k+1}\,h_{k+1}+\sqrt k\,h_{k-1}$ to show that $\lambda(0)=2k(k+1)$, that $\E a^2=k(2k+1)$ at overlap $0$, and that $\E N=k(2k+1)+(d-2)k$ there. (b) Check the value $\lambda(\frac12)=1491/16$ of \cref{exm:singleindex:hermite} by expanding $h_3(\frac12v+\frac{\sqrt3}2z)$ in monomials.\label{ex:singleindex:constants}
+
+\item \consolidation (The overlap is a Markov chain.) Prove the claim of \cref{rem:singleindex:markov}: given $\cF_t$, the law of $r_{t+1}$ depends only on $r_t$. Write the transition as an explicit function of $r_t$ and of independent $v,z\sim\cN(0,1)$ and $Q\sim\chi^2_{d-2}$.\label{ex:singleindex:markov}
+
+\item \consolidation (Square loss.) For the square loss $\frac12(y-\phi(\ip{w,x}))^2$, show that the spherical gradient is that of the correlation loss plus $\phi(v)\phi'(v)P_w^\perp x$, that this extra term has mean zero, and that \cref{thm:singleindex:sgd} holds for the square loss with $g(u)$ replaced by $g(u)-\phi(v)$ in the definition \eqref{eq:singleindex:lambda} of $\lambda$.\label{ex:singleindex:square}
+
+\item \consolidation\hard (Other exponents and colder starts.) (a) Adapt the proof of \cref{thm:singleindex:sgd} to $k=2$: show that $\eta$ of order $\eps/(d\log d)$ and $O(d\log^2d/\eps)$ samples suffice, and locate the logarithm that \cref{thm:singleindex:bagj} suggests should be removable. (b) Do the same for $k=1$, with $\eta$ of order $\eps/d$ and $O(d/\eps)$ samples. (c) For $k\ge3$ and $r_0\ge\gamma d^{-1/2}$ with $0<\gamma<1$, show that the conclusion holds with $\eta$ multiplied by $\gamma^k$ and $T$ by $\gamma^{2-2k}$. \hint{in (a) every epoch contributes the same failure probability, and there are about $\log_2\sqrt d$ epochs.}\label{ex:singleindex:otherk}
+
+\item \variation (Label noise.) Let $y=g(\ip{w_\star,x})+\sigma\zeta$ with $\zeta\sim\cN(0,1)$ independent of $x$. Show that the drift of \cref{lem:singleindex:onestep}(a) is unchanged and that $\lambda(r)$ increases by $2\sigma^2\E\phi'(z)^2$, which is $2k\sigma^2$ for $\phi=h_k$. By what factor does the bound of \cref{thm:singleindex:sgd} grow?\label{ex:singleindex:noise}
+
+\item \variation (A little leakage.) Let $g=\phi=h_3+\beta h_1$ with $0<\beta<1$, so that $\Psi(r)=r^3+\beta^2r$ and the information exponent is $1$. Solve the population flow near the equator and show that the escape from $r_0=d^{-1/2}$ takes time of order $\min(\sqrt d,1/\beta)$. For which $\beta$ does the degree-$1$ leakage dominate the search?\label{ex:singleindex:leak}
+
+\item \variation (Starting below the equator.) Let $g=\phi=h_k$ and $-1<r_0<0$. (a) For even $k$, show that the population flow converges to $-w_\star$, and explain why that is as good as $w_\star$. (b) For odd $k$, show that $r(t)$ increases to $0$ and never becomes positive. What must the noise of SGD do in that case?\label{ex:singleindex:sign}
+
+\item \variation (Width.) Start $m$ neurons independently and uniformly on the sphere, and train each by \eqref{eq:singleindex:sgd}. Show that the largest initial overlap is about $\sqrt{2\log m/d}$ when $\log m\ll d$, and use \cref{thm:singleindex:flow} to show that the fastest neuron escapes earlier than a typical one by a factor of order $(2\log m)^{(k-2)/2}$.\label{ex:singleindex:width}
+
+\item \simulation (Escape times for $k=4$.) Using the chain of \cref{rem:singleindex:markov} with $g=\phi=h_4$, $r_0=d^{-1/2}$, and $\eta=0.02\,d^{-2}$, measure the median escape time to $\abs r\ge\frac12$ over $50$ runs for $d=16$, $32$, $64$, $128$. You should observe slope $3$ on a log-log plot and agreement with $t_{1/2}/\eta$ from \cref{thm:singleindex:flow} within about $15\%$; explain why the agreement is worse at small $d$.\label{ex:singleindex:k4}
+
+\item \simulation (The equator and the step size.) (a) Show that the recursion $r_{t+1}=(1-\frac12\eta^2kd)r_t+\eta\xi_t$ with independent $\xi_t$ of variance $k(2k+1)$ has stationary variance close to $(2k+1)/d$ when $\eta^2kd\ll1$. (b) For $k=3$ and $d=256$, simulate the chain of \cref{rem:singleindex:markov} with $\eta=c\,d^{-3/2}$ for $c$ between $0.25$ and $16$, and plot the median escape time divided by $d^2$ against $c$. You should observe a decrease like $1/(3c)$ for small $c$, a minimum for $c$ of order one, and a steep increase for large $c$. Relate the increase to the equatorial band of (a).\label{ex:singleindex:stepsize}
+
+\item \research (The law of the search time.) Let $g=\phi=h_k$ with $k\ge3$, $\eta=c\,d^{-k/2}$, and $r_0=d^{-1/2}$. Show heuristically that $\bar r_s=\sqrt d\,r_{\floor{sd^{k-1}}}$ approximately solves $\dd\bar r=c\bigl(k\bar r^{k-1}-\frac{ck}2\bar r\bigr)\dd s+c\sqrt{k(2k+1)}\,\dd W_s$, so that the escape time divided by $d^{k-1}$ should converge in law to the blow-up time of this equation started at $\bar r=1$. A proof is open as far as we know: the limit theorems of \textcite{BenArousGheissariJagannath2024} cover time scales of order $1/\eta$, shorter by the factor $d^{(k-2)/2}$.\label{ex:singleindex:law}
+
+\item \research (Plain SGD at the correlational rate.) \Textcite{DamianEtAl2023} conjecture that minibatch SGD without explicit smoothing, with suitably tuned batch size and step size, learns targets of information exponent $k\ge3$ with about $d^{k/2}$ samples. Test the conjecture numerically for $h_3$, then try to identify the implicit smoothing. Open; \textcite{ArnaboldiEtAl2024b} analyze the effect of the batch size on online SGD.\label{ex:singleindex:minibatch}
+\end{exercises}
+
+\notesandrefs
+The rigorous theory of the search phase starts with \textcite{BenArousGheissariJagannath2021}, who named the information exponent, proved the thresholds of \cref{thm:singleindex:bagj} for a general class of losses, and described the search and descent phases; the same thresholds had appeared for Langevin dynamics and gradient descent on spiked tensor models in \textcite{BenArousGheissariJagannath2020}.\sidenote{Ben Arous, Gheissari, and Jagannath borrowed the words search and descent from older, heuristic descriptions of SGD.} Before them, \textcite{DudejaHsu2018} had used the Hermite expansion of the link to learn single-index models with an estimator tailored to one harmonic at a time, and \textcite{TanVershynin2023} had shown, in work first posted in 2019, that online SGD solves phase retrieval, an example with $k=2$, from an arbitrary start with about $d\log d$ samples. On the information-theoretic side, \textcite{MondelliMontanari2019} located the weak-recovery threshold of single-index models at a number of samples proportional to $d$.
+
+The correlational lower bound is due to \textcite{DamianLeeSoltanolkotabi2022}, who also showed that two-layer networks trained by gradient descent beat kernel methods on such targets; \textcite{DamianEtAl2023} extended it to every link and matched it with smoothed online SGD. \Textcite{AbbeBoixAdseraMisiakiewicz2023} stated the corresponding bounds for multi-index targets in terms of the leap. The generative exponent of \textcite{DamianEtAl2024} explained why the correlational picture is not the whole story, and the sample-reuse papers \parencite{DandiEtAl2024,LeeEtAl2024,ArnaboldiEtAl2024a} showed that ordinary gradient methods can realize the label transformations it calls for. \Textcite{BrunaHsu2025} survey algorithms for single- and multi-index models.
+
+The effective-dynamics theorems of \textcite{BenArousGheissariJagannath2024} turn the heuristic expansion of \cref{sec:singleindex:drift} into limit theorems for summary statistics on time scales of order $1/\eta$, and the ODE method of \cref{thm:toolkit:ode-method} is the special case without noise in the limit. For escape times with explicit constants see \textcite{RenEtAl2025}; for the role of the batch size and the step size see \textcite{ArnaboldiEtAl2024b} and \textcite{TsiolisMousaviHosseiniErdogdu2025}.
+
+\paragraph{Translating the literature.}
+\Textcite{BenArousGheissariJagannath2021} write $N$ for our $d$, $M=\alpha N$ for our $n$, $\delta/N$ for our $\eta$, $\theta_N$ (or $v_0$, later $e_1$) for $w_\star$, and $m_N(x)=x\cdot\theta_N$, the latitude, for our $r$; their population loss $\phi(m)$ is our $-\Psi(r)$ up to a constant, and for the square loss with known link $f$ it is $2\sum_ju_j(f)^2(1-m^j)$, with $u_j(f)$ our $\hat g_j$. Their information exponent is defined by the derivatives of $\phi$ at $m=0$ and agrees with our $k^\star$ for matched links, and their directional martingale $M_t$ is our $\eta\sum_{s<t}\xi_s$. \Textcite{DamianEtAl2023} write $\sigma$ for the known link, our $g=\phi$; $w^\star$ for $w_\star$; $\alpha=w\cdot w^\star$ for $r$; $\He_k$ for the monic Hermite polynomials, with coefficients $c_k=\E[\sigma\He_k]=\sqrt{k!}\,\hat g_k$; $k^\star$ for the information exponent; and $L(w;x;y)=1-\sigma(w\cdot x)y$ for our $\ell+1$, with $\lambda$ the smoothing radius, unrelated to our $\lambda(r)$. In \textcite{DamianEtAl2024} the same letters change roles: $k^\star$ is the generative exponent and $l^\star$ the information exponent. \Textcite{DudejaHsu2018} write $p$ for $d$, $u^*$ for $w_\star$, $a^*_l$ for $\hat g_l$, and call the information exponent the order of degeneracy.
+
+\printchapterbib
+\end{refsection}

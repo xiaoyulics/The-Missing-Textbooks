@@ -1,0 +1,432 @@
+% Chapter 1 of The Hydrogen Atoms of Deep Learning: double descent in least squares.
+\casechapter{Double Descent}{Least squares in the proportional limit}{Ridgeless least squares, Gaussian features}{ch:doubledescent}
+\begin{refsection}[chapters/01-doubledescent.bib]
+
+\begin{chaptersummary}
+As a model grows past the size at which it first fits its training data exactly, its test error can rise to a peak and fall again, sometimes below the bottom of the classical U. Least squares on isotropic Gaussian features, solved by the minimum-norm interpolator that gradient descent finds, does exactly this. We prove an exact formula for its test error at every sample size from two symmetries of the Gaussian design, and use the Marchenko--Pastur law to compute the risk of ridge regression, whose optimal tuning removes the peak. The model gets the shape right and the axis wrong: networks peak at an effective complexity rather than at a parameter count, the epoch-wise curve needs dynamics, and isotropic features never overfit benignly.
+\end{chaptersummary}
+
+\section{The phenomenon: a second descent}\label{sec:doubledescent:phenomenon}
+
+Statistics teaches a U: as a model grows, its training error falls, while its test error first falls and then rises, because small models are biased and large ones fit the noise. So a model that fits its training data exactly, noise included, should predict badly.
+
+Deep networks violate the corollary routinely. They have more parameters than training examples, reach zero training error, and still predict well, although they can fit images with random labels perfectly \parencite{ZhangEtAl2017}. \Textcite{BelkinEtAl2019} reconciled the two pictures with one curve, which they named \term{double descent}\index{double descent}. Past the \term{interpolation threshold}\index{interpolation threshold}, the smallest capacity at which the model fits the training set exactly, the test error, after the classical U and a peak at the threshold, falls again, in their experiments often below the bottom of the U. They showed this for random Fourier and random ReLU features fitted by minimum-norm least squares (on $10^4$ MNIST digits the peak sits at $10^4$ features), for random forests and $L_2$-boosting, and for networks with one hidden layer, whose threshold appeared near $nK$ parameters for $K=10$ classes: one parameter per fitted number.
+
+\Textcite{NakkiranEtAl2020} found the same curve for ResNets and convolutional networks on CIFAR and for transformers trained to translate, and two more versions of it. In \term{epoch-wise double descent}\index{double descent!epoch-wise} the test error falls, rises, and falls again during training. In \term{sample-wise double descent}\index{double descent!sample-wise} more data hurts: for some transformer sizes, four and a half times more training sentences gave a worse test loss. They measured a training procedure by its \term{effective model complexity}\index{effective model complexity}, the largest number of examples on which it reaches near-zero training error, and found the peak where this equals the size of the training set; label noise, data augmentation, and more examples all move it, and the peak with it.
+
+\begin{observation}[\textcite{BelkinEtAl2019}; \textcite{NakkiranEtAl2020}]\label[observation]{obs:doubledescent:dd}
+On a fixed training set, train models of increasing capacity, each to (near) zero training error when it can. The test error follows the classical U until shortly before the interpolation threshold, peaks near the threshold, and decreases beyond it, sometimes below its classical minimum. A curve of the same shape appears as a function of training time, and, near the threshold, of the number of training examples.
+\end{observation}
+
+How robust is this? The location of the peak at the threshold is reliable; its height is not. In the experiments of \textcite{NakkiranEtAl2020} every form of double descent was strongest with label noise: on clean CIFAR-10 the model-wise curve often showed only a plateau and the epoch-wise curve did not appear, although clean CIFAR-100 and the transformers did show peaks. Regularization usually tames the peak (the cusp of \textcite{SpiglerEtAl2019} disappears with early stopping, and tuned weight decay makes the test error of the networks of \textcite{NakkiranEtAl2021} largely monotone), but in one setting of \textcite{NakkiranEtAl2020} a peak survives optimal early stopping. Models trained for one pass over their data, as large language models are, never interpolate it; in language models double descent has been reported in training time when a small dataset is repeated for hundreds of epochs \parencite{MuennighoffEtAl2023}.
+
+The curve is older than its name \parencite{LoogEtAl2020}.\sidenote{\Textcite{LoogEtAl2020} also list the peaking of the pseudo-Fisher linear discriminant in pattern recognition, analyzed by Raudys and Duin in 1998.} For linear models fitted with the pseudo-inverse, \textcite{ValletEtAl1989} saw a peak at $n=p$ in simulated learning curves, and \textcite{OpperEtAl1990} computed it exactly in the limit of large dimension. \Textcite{KroghHertz1992} showed that a weight decay matched to the noise suppresses the overfitting, \textcite{AdvaniEtAl2020} traced the peak to the small eigenvalues of the Marchenko--Pastur law, and \textcite{SpiglerEtAl2019} identified the threshold of deep networks with a jamming transition, the point at which a granular packing becomes rigid.
+
+Three questions remain. Why is there a peak exactly where the model first fits its training data? Why does the test error come down again past it, and how far? And is the second descent a property of the data, of the estimator, or of the way capacity is counted? The model of this chapter answers all three, exactly, for linear regression.
+
+\section{The model: least squares on Gaussian features}\label{sec:doubledescent:model}
+
+The simplest learner with a sharp interpolation threshold is linear least squares: with $p$ features and $n$ examples in general position, it cannot fit arbitrary labels when $p<n$, and it fits every set of labels exactly when $p\ge n$. We take the features to be independent standard Gaussians, the target linear, and the noise additive.
+
+\begin{assumption}[Gaussian design, additive noise]\label[assumption]{ass:doubledescent:design}
+The inputs $x_1,\dots,x_n$ are independent with law $\cN(0,I_p)$ and form the rows of the design matrix $X\in\R^{n\times p}$. The responses are $y=Xw_\star+\xi$, with a fixed target $w_\star\in\R^p$ of norm $r=\norm{w_\star}$ and a noise vector $\xi\in\R^n$ that is independent of $X$ and satisfies $\E\xi=0$ and $\E\xi\xi^\top=\sigma^2I_n$.
+\end{assumption}
+
+The noise need not be Gaussian, nor have independent coordinates; this generality costs nothing, and it lets one theorem cover the second model below.
+
+\paragraph{Test error.} A test point is a fresh pair $(x,y)$ with $x\sim\cN(0,I_p)$ and $y=\ip{w_\star,x}+\eps$, the noise $\eps$ having mean $0$ and variance $\sigma^2$ and being independent of $x$ and of the training data. Since $y-\ip{w,x}=\eps+\ip{w_\star-w,x}$ is a sum of two uncorrelated terms and $\E[xx^\top]=I_p$, the population loss is
+\begin{equation}\label{eq:doubledescent:loss}
+  \Loss(w)=\E\bigl(y-\ip{w,x}\bigr)^2=\sigma^2+\norm{w-w_\star}^2 .
+\end{equation}
+The \term{test error}\index{test error} of an estimator $\hat w$ is $\E\Loss(\hat w)$: the noise floor $\sigma^2$ plus the \term{risk}\index{risk} $\E\norm{\hat w-w_\star}^2$. The predictor $w=0$ has the \term{null risk}\index{null risk} $\Loss(0)=\sigma^2+r^2$, which every reasonable estimator should beat.
+
+\paragraph{Two estimators.} The training loss is $\Lhat(w)=\frac1{2n}\norm{y-Xw}^2$, and the \term{minimum-norm least-squares estimator}\index{minimum-norm interpolator} $\hat w=X^+y$ is its minimizer of smallest norm. If $X$ has rank $p$ (so $p\le n$), the minimizer is unique, $\hat w=(X^\top X)^{-1}X^\top y$. If $X$ has rank $n$ (so $p\ge n$), the minimizers are the \term{interpolators}, the solutions of $Xw=y$; they differ from $X^\top(XX^\top)^{-1}y$, which lies in the row space of $X$, by vectors of $\ker X$, which are orthogonal to the row space, so $\hat w=X^\top(XX^\top)^{-1}y$. One of the two cases occurs with probability one (\cref{lem:doubledescent:wishart}). The \term{ridge estimator}\index{ridge regression} with $\lambda>0$ minimizes $\Lhat(w)+\frac\lambda2\norm w^2$; with the sample covariance $\hat\Sigma=\frac1nX^\top X$,
+\begin{equation}\label{eq:doubledescent:ridge}
+  \hat w_\lambda=(X^\top X+n\lambda I_p)^{-1}X^\top y=(\hat\Sigma+\lambda I_p)^{-1}\frac{X^\top y}{n},
+\end{equation}
+and $\hat w_\lambda\to X^+y$ as $\lambda\to0$, which is why $X^+y$ is also called \term{ridgeless}.
+
+Why the minimum norm? Because gradient descent finds it. Started at $w=0$, gradient descent on $\Lhat$ moves along gradients $-\frac1nX^\top(y-Xw)$, which lie in the row space of $X$; if it converges to a minimizer, then the limit is the only minimizer in the row space, $X^+y$ (\cref{ex:doubledescent:gd}). Past the threshold the loss does not choose among the interpolators; the training algorithm does.
+
+\paragraph{Weak features.} So far $p$ is both the number of parameters and the dimension of the truth, so changing $p$ changes the problem as well as the learner. \Textcite{BelkinEtAl2020} proposed a version in which only the learner changes.
+
+\begin{assumption}[Weak features]\label[assumption]{ass:doubledescent:weak}
+The full input is $z\sim\cN(0,I_d)$, and $y=\ip{w_\star,z}+\eps$ with $w_\star\in\R^d$ and noise $\eps$ of mean $0$ and variance $\sigma^2$, independent of $z$. The learner uses the coordinates in a fixed set $S\subseteq\{1,\dots,d\}$ of size $p$: it fits $\hat w=X^+y$, with $X\in\R^{n\times p}$ the matrix of the observed coordinates $z_{i,S}$ of $n$ independent examples, and predicts $\ip{\hat w,z_S}$.
+\end{assumption}
+
+The omitted coordinates are independent of the observed ones, so their contribution $\ip{w_{\star,S^c},z_{S^c}}$ to the label looks to the learner exactly like noise; ``weak'' means that each feature carries a small part of the signal.
+
+\paragraph{What was thrown away, and why first.} The features are fixed, so nothing is learned about the representation; but the threshold already appears with fixed random features \parencite{BelkinEtAl2019}. They are isotropic, which makes the risk depend on $w_\star$ only through its norm and gives exact formulas at finite sample size. The estimator is the end point of training, because the model-wise curve is a statement about end points. The loss is square, so the estimator is linear in the labels and every expectation is a trace. \Cref{sec:doubledescent:wrong} says what each choice costs.
+
+\paragraph{What one had to notice.} Three things. The peak sits where the model first fits the training set, and least squares has the sharpest such threshold, at $p=n$, where its solution changes from the unique best fit to one of many exact fits. Past the threshold the training algorithm selects the solution, and gradient descent from zero selects the minimum norm. And with a rotation-invariant design the target matters only through its norm, and the spectrum of $X^\top X$ carries everything else.
+
+\begin{dictionary}
+number of features $p$ & number of parameters, or better an effective number of fitted directions\\
+number of examples $n$ & training examples (times outputs, for several outputs)\\
+threshold $p=n$ & smallest model that fits the training set exactly\\
+noise variance $\sigma^2$ & label noise, plus the part of the target the model cannot represent\\
+minimum-norm interpolator $X^+y$ & the interpolator that gradient descent finds from small initialization\\
+ridge parameter $\lambda$ & weight decay, or early stopping at time of order $1/\lambda$\\
+smallest singular value of $X$ & conditioning of the interpolation problem\\
+Marchenko--Pastur law & spectrum of the feature (or tangent-kernel) covariance at finite sample size\\
+identity covariance $I_p$ & a strongly anisotropic feature covariance (\cref{ch:scaling})\\
+null risk $\sigma^2+r^2$ & test error of the constant predictor\\
+\end{dictionary}
+
+\section{The solution: exact risk at every sample size}\label{sec:doubledescent:exact}
+
+The Gaussian design has two symmetries that make the risk computable at every $n$ and $p$. Its law is invariant under rotations of the feature space, which reduces the error along $w_\star$ to a trace, and under permutations of the columns, which reduces the trace to one diagonal entry of an inverse Wishart matrix.
+
+\begin{lemma}[Rotational averaging]\label[lemma]{lem:doubledescent:rotation}
+Let $X\in\R^{n\times p}$ have independent $\cN(0,1)$ entries, and let $F$ map almost every $n\times p$ matrix to a $p\times p$ matrix so that $F(XO)=O^\top F(X)O$ for every orthogonal $O\in\R^{p\times p}$. If $\E\norm{F(X)}_F<\infty$, then $\E F(X)=\frac1p\E\tr F(X)\cdot I_p$.
+\end{lemma}
+
+\begin{proof}
+For an orthogonal $O$, the rows of $XO$ are the vectors $O^\top x_i$, again independent with law $\cN(0,I_p)$, so $XO$ has the law of $X$. Hence $M=\E F(X)$ satisfies $M=\E F(XO)=O^\top MO$ for every orthogonal $O$. Taking for $O$ the diagonal matrix that flips the sign of the $i$th coordinate gives $M_{ij}=-M_{ij}$ for $j\ne i$, so $M$ is diagonal; taking the permutation matrix that swaps coordinates $i$ and $j$ gives $M_{ii}=M_{jj}$. So $M$ is a multiple of $I_p$, and comparing traces identifies the multiple.
+\end{proof}
+
+\begin{lemma}[Inverse moments of a Wishart matrix]\label[lemma]{lem:doubledescent:wishart}
+Let $X\in\R^{n\times p}$, with $p\le n$, have independent $\cN(0,1)$ entries. Then $X$ has rank $p$ almost surely, and
+\[
+  \E\tr\bigl((X^\top X)^{-1}\bigr)=\begin{cases}\dfrac{p}{n-p-1}, & p\le n-2,\\[1.2ex] +\infty, & p\in\{n-1,n\}.\end{cases}
+\]
+\end{lemma}
+
+\begin{proof}
+The plan is to show that each diagonal entry of $(X^\top X)^{-1}$ is the reciprocal of a chi-square variable with $n-p+1$ degrees of freedom.
+
+\emph{The rank.} Conditionally on the other columns, the span of the columns other than the $j$th is a fixed subspace of dimension at most $p-1<n$, contained in a hyperplane $\{u\colon\ip{a,u}=0\}$ with $a\ne0$, and the $j$th column $x^{(j)}$ satisfies $\ip{a,x^{(j)}}\sim\cN(0,\norm a^2)$, which vanishes with probability $0$. So almost surely no column lies in the span of the others.
+
+\emph{One diagonal entry.} Write $X=[x^{(1)},X']$, and let $Q$ be the orthogonal projection onto the orthogonal complement of the column space of $X'$, which has rank $n-p+1$ by the rank statement applied to $X'$ (in the trivial case $p=1$, $X'$ is empty and $Q=I_n$). The block-inversion formula for the positive definite matrix $X^\top X$ gives
+\[
+  \bigl[(X^\top X)^{-1}\bigr]_{11}=\frac1{\norm{x^{(1)}}^2-x^{(1)\top}X'(X'^\top X')^{-1}X'^\top x^{(1)}}=\frac1{\norm{Qx^{(1)}}^2}.
+\]
+Conditionally on $X'$, the column $x^{(1)}$ is still $\cN(0,I_n)$; writing $Q=UU^\top$ with $U$ an $n\times(n-p+1)$ matrix with orthonormal columns, $\norm{Qx^{(1)}}^2=\norm{U^\top x^{(1)}}^2$ is a sum of $k=n-p+1$ squares of independent standard Gaussians. So it has the $\chi^2_k$ law, conditionally on $X'$ and hence unconditionally.
+
+\emph{The chi-square integral.} Integrating $1/t$ against the $\chi^2_k$ density gives
+\[
+  \E\Bigl[\frac1{\chi^2_k}\Bigr]=\frac1{2^{k/2}\Gamma(k/2)}\int_0^\infty t^{k/2-2}e^{-t/2}\dd t ,
+\]
+which is finite if and only if $k\ge3$, by the behavior $t^{k/2-2}$ near $t=0$. For $k\ge3$ the integral is $2^{k/2-1}\Gamma(k/2-1)$, and $\Gamma(k/2)=(k/2-1)\Gamma(k/2-1)$ turns the expectation into $1/(k-2)$. With $k=n-p+1$, the condition $k\ge3$ reads $p\le n-2$, and $k-2=n-p-1$.
+
+\emph{The trace.} Permuting the columns of $X$ does not change its law, so every diagonal entry of $(X^\top X)^{-1}$ has the law of the first. Summing $p$ equal expectations gives $p/(n-p-1)$ for $p\le n-2$, and $+\infty$ for $p\in\{n-1,n\}$.
+\end{proof}
+
+\begin{theorem}[Exact risk of the minimum-norm interpolator]\label{thm:doubledescent:exact}
+Under \cref{ass:doubledescent:design} with $\sigma>0$, the estimator $\hat w=X^+y$ satisfies
+\begin{equation}\label{eq:doubledescent:exact}
+  \E\norm{\hat w-w_\star}^2=\begin{cases}
+  \sigma^2\,\dfrac{p}{n-p-1}, & p\le n-2,\\[1.4ex]
+  +\infty, & \abs{p-n}\le1,\\[0.8ex]
+  r^2\Bigl(1-\dfrac np\Bigr)+\sigma^2\,\dfrac{n}{p-n-1}, & p\ge n+2.
+  \end{cases}
+\end{equation}
+Without noise ($\sigma=0$) the risk is $0$ for $p\le n$ and $r^2(1-n/p)$ for $p\ge n$. In every case the test error is $\E\Loss(\hat w)=\sigma^2+\E\norm{\hat w-w_\star}^2$.
+\end{theorem}
+
+\begin{proof}
+The plan is to compute the error conditionally on $X$, where it is a quadratic form in the noise and in $w_\star$, and then to average over $X$ with the two lemmas.
+
+\emph{Below the threshold, $p\le n$.} By \cref{lem:doubledescent:wishart}, $X$ has rank $p$ almost surely, so $\hat w=(X^\top X)^{-1}X^\top(Xw_\star+\xi)=w_\star+(X^\top X)^{-1}X^\top\xi$. Since $\xi$ is independent of $X$ with $\E\xi\xi^\top=\sigma^2I_n$,
+\[
+  \E\bigl[\norm{\hat w-w_\star}^2\bigm| X\bigr]=\tr\Bigl((X^\top X)^{-1}X^\top\,\E[\xi\xi^\top]\,X(X^\top X)^{-1}\Bigr)=\sigma^2\tr\bigl((X^\top X)^{-1}\bigr),
+\]
+and \cref{lem:doubledescent:wishart} gives $\sigma^2p/(n-p-1)$ for $p\le n-2$, and $+\infty$ for $p\in\{n-1,n\}$ because $\sigma>0$. Without noise, $\hat w=w_\star$.
+
+\emph{Above the threshold, $p\ge n$.} \Cref{lem:doubledescent:wishart} applied to the $p\times n$ matrix $X^\top$ shows that $X$ has rank $n$ almost surely. Let $P=X^\top(XX^\top)^{-1}X$ be the orthogonal projection onto the row space of $X$. Then $\hat w=X^\top(XX^\top)^{-1}(Xw_\star+\xi)=Pw_\star+X^\top(XX^\top)^{-1}\xi$, and the error
+\[
+  \hat w-w_\star=-(I_p-P)w_\star+X^\top(XX^\top)^{-1}\xi
+\]
+is the sum of a vector of $\ker X$ and a vector of the row space, which are orthogonal, so $\norm{\hat w-w_\star}^2=w_\star^\top(I_p-P)w_\star+\xi^\top(XX^\top)^{-1}\xi$. The row space of $XO$ is $O^\top$ times the row space of $X$, so $P(XO)=O^\top P(X)O$, and $\tr P=\norm P_F^2=n$; \cref{lem:doubledescent:rotation} gives $\E P=\frac npI_p$, so the first term has mean $r^2(1-n/p)$. The second term has conditional mean $\sigma^2\tr\bigl((XX^\top)^{-1}\bigr)$, and \cref{lem:doubledescent:wishart}, with the roles of $n$ and $p$ exchanged, gives $\sigma^2n/(p-n-1)$ for $p\ge n+2$, and $+\infty$ for $p\in\{n,n+1\}$. Without noise only the first term remains.
+
+\emph{Test error.} The estimator $\hat w$ is independent of the test pair, so \eqref{eq:doubledescent:loss} holds conditionally on the training data; take expectations.
+\end{proof}
+
+\begin{corollary}[Weak features; \textcite{BreimanFreedman1983}, \textcite{BelkinEtAl2020}]\label[corollary]{cor:doubledescent:weak}
+Under \cref{ass:doubledescent:weak}, let $\sigma_S^2=\sigma^2+\norm{w_{\star,S^c}}^2>0$. The minimum-norm estimator on the features in $S$ has test error
+\[
+  \E\bigl(y-\ip{\hat w,z_S}\bigr)^2=\begin{cases}
+  \sigma_S^2\,\dfrac{n-1}{n-p-1}, & p\le n-2,\\[1.4ex]
+  +\infty, & \abs{p-n}\le1,\\[0.8ex]
+  \norm{w_{\star,S}}^2\Bigl(1-\dfrac np\Bigr)+\sigma_S^2\,\dfrac{p-1}{p-n-1}, & p\ge n+2.
+  \end{cases}
+\]
+\end{corollary}
+
+\begin{proof}
+Write the labels as $y_i=\ip{w_{\star,S},z_{i,S}}+\xi_i$ with $\xi_i=\ip{w_{\star,S^c},z_{i,S^c}}+\eps_i$. The coordinates of each $z_i$ are independent, so $\xi$ is independent of $X$, and its entries are independent with mean $0$ and variance $\sigma_S^2$. \Cref{ass:doubledescent:design} holds with target $w_{\star,S}$ and noise level $\sigma_S$, and at a test point the same decomposition gives the test error $\sigma_S^2+\E\norm{\hat w-w_{\star,S}}^2$. Insert \eqref{eq:doubledescent:exact} and use $1+\frac p{n-p-1}=\frac{n-1}{n-p-1}$ and $1+\frac n{p-n-1}=\frac{p-1}{p-n-1}$.
+\end{proof}
+
+Each added feature moves signal from $\sigma_S^2$ into $\norm{w_{\star,S}}^2$, where it can be learned; this creates a classical U below the threshold (\cref{sec:doubledescent:reading}).
+
+The \term{proportional limit}\index{proportional limit} keeps $p/n$ fixed while both grow, so that bias and variance both stay of order one.
+
+\begin{corollary}[Proportional limit]\label[corollary]{cor:doubledescent:limit}
+Under \cref{ass:doubledescent:design}, let $n\to\infty$ and $p/n\to\gamma\in(0,\infty)$, with $r$ and $\sigma>0$ fixed (the target $w_\star\in\R^p$ changes with $p$ but keeps its norm). Then $\E\norm{\hat w-w_\star}^2\to\cR_0(\gamma)$, with
+\begin{equation}\label{eq:doubledescent:limit}
+  \cR_0(\gamma)=\begin{cases}\sigma^2\,\dfrac{\gamma}{1-\gamma}, & \gamma<1,\\[1.2ex] +\infty, & \gamma=1,\\[0.6ex] r^2\Bigl(1-\dfrac1\gamma\Bigr)+\dfrac{\sigma^2}{\gamma-1}, & \gamma>1.\end{cases}
+\end{equation}
+\end{corollary}
+
+\begin{proof}
+For $\gamma\ne1$, eventually $\abs{p-n}\ge2$, and $p<n$ exactly when $\gamma<1$; divide numerators and denominators in \eqref{eq:doubledescent:exact} by $n$ and let $p/n\to\gamma$. For $\gamma=1$, the bounds $\frac p{n-p-1}\ge\frac1{n/p-1}$ for $p\le n-2$ and $\frac n{p-n-1}\ge\frac1{p/n-1}$ for $p\ge n+2$ show that the risk tends to $+\infty$, and it is infinite when $\abs{p-n}\le1$.
+\end{proof}
+
+\section{The solution: ridge and the Marchenko--Pastur law}\label{sec:doubledescent:ridge}
+
+The ridgeless risk depends on $X$ only through $\tr\bigl((X^\top X)^{-1}\bigr)$ and a projection, whose means have closed forms. The ridge risk depends on the whole spectrum of $\hat\Sigma$, which has a deterministic limit in the proportional regime.
+
+\paragraph{The Marchenko--Pastur law.} For $\gamma>0$ let $t_\pm=(1\pm\sqrt\gamma)^2$, and let $\mu_\gamma$ be the probability measure on $[0,\infty)$ given by
+\begin{equation}\label{eq:doubledescent:mp}
+  \mu_\gamma(\dd t)=\Bigl(1-\frac1\gamma\Bigr)_+\delta_0(\dd t)+\frac{\sqrt{(t_+-t)(t-t_-)}}{2\pi\gamma\,t}\,\ind\{t_-\le t\le t_+\}\dd t .
+\end{equation}
+Its \term{Stieltjes transform}\index{Stieltjes transform} $m_\gamma(z)=\int\frac{\mu_\gamma(\dd t)}{t-z}$, defined for $z\in\C\setminus[0,\infty)$, is the solution of
+\begin{equation}\label{eq:doubledescent:mpquad}
+  \gamma z\,m^2+(z-1+\gamma)\,m+1=0
+\end{equation}
+with $\Im m>0$ when $\Im z>0$, and $m>0$ when $z<0$.\sidenote{We checked \eqref{eq:doubledescent:mp} and \eqref{eq:doubledescent:mpquad} in this normalization numerically, integrating the density against $1/(t-z)$ for $\gamma\in\{0.3,0.8,1,1.5,4\}$ and several $z$: the residuals are below $10^{-10}$.} The empirical spectral distribution of $\hat\Sigma$ is $\mu_p=\frac1p\sum_{i=1}^p\delta_{\lambda_i(\hat\Sigma)}$, so that $\frac1p\tr f(\hat\Sigma)=\int f\dd\mu_p$ for every function $f$ on $[0,\infty)$.
+
+\begin{theorem}[\textcite{MarchenkoPastur1967}; proved in \cref{thm:toolkit:mp}]\label{thm:doubledescent:mp}\index{Marchenko--Pastur law}
+Let $X\in\R^{n\times p}$ have independent $\cN(0,1)$ entries, and let $n\to\infty$ with $p/n\to\gamma\in(0,\infty)$. Then, almost surely, $\mu_p$ converges weakly to $\mu_\gamma$.
+\end{theorem}
+
+We use the theorem through two spectral functions of $\lambda>0$,
+\[
+  v_p(\lambda)=\int\frac{\lambda\,\mu_p(\dd t)}{t+\lambda}=\frac1p\tr\bigl(\lambda(\hat\Sigma+\lambda I)^{-1}\bigr),\quad
+  v(\lambda)=\int\frac{\lambda\,\mu_\gamma(\dd t)}{t+\lambda}=\lambda m_\gamma(-\lambda).
+\]
+Since $1-v_p(\lambda)$ is the effective number of parameters of ridge regression per parameter, $v_p$ is the fraction of directions decided by the penalty rather than by the data. Multiplying \eqref{eq:doubledescent:mpquad} at $z=-\lambda$ by $-\lambda$ shows that $v(\lambda)$ solves $\gamma v^2+(1-\gamma+\lambda)v-\lambda=0$, whose roots have product $-\lambda/\gamma<0$; so $v(\lambda)$ is the positive root,
+\begin{equation}\label{eq:doubledescent:v}
+  v(\lambda)=\frac{\sqrt{(1-\gamma+\lambda)^2+4\gamma\lambda}-(1-\gamma+\lambda)}{2\gamma}.
+\end{equation}
+
+\begin{lemma}[Ridge risk in spectral form]\label[lemma]{lem:doubledescent:ridgespectral}
+Under \cref{ass:doubledescent:design}, for every $n$, $p$, and $\lambda>0$,
+\begin{equation}\label{eq:doubledescent:ridgefinite}
+  \E\norm{\hat w_\lambda-w_\star}^2=r^2\,\E\!\int\frac{\lambda^2\,\mu_p(\dd t)}{(t+\lambda)^2}+\sigma^2\,\frac pn\,\E\!\int\frac{t\,\mu_p(\dd t)}{(t+\lambda)^2},
+\end{equation}
+and the two integrals are $v_p(\lambda)-\lambda v_p'(\lambda)$ and $v_p'(\lambda)$. In particular the risk depends on $w_\star$ only through $r$.
+\end{lemma}
+
+\begin{proof}
+Insert $y=Xw_\star+\xi$ into \eqref{eq:doubledescent:ridge} and use $(\hat\Sigma+\lambda I)^{-1}\hat\Sigma-I=-\lambda(\hat\Sigma+\lambda I)^{-1}$:
+\[
+  \hat w_\lambda-w_\star=-\lambda(\hat\Sigma+\lambda I)^{-1}w_\star+(\hat\Sigma+\lambda I)^{-1}\frac{X^\top\xi}n .
+\]
+Conditionally on $X$ the second term has mean zero, so the cross term vanishes in expectation, and its squared norm has conditional mean $\frac{\sigma^2}{n^2}\tr\bigl((\hat\Sigma+\lambda I)^{-1}X^\top X(\hat\Sigma+\lambda I)^{-1}\bigr)=\frac{\sigma^2}n\tr\bigl(\hat\Sigma(\hat\Sigma+\lambda I)^{-2}\bigr)$. The first term contributes $\lambda^2w_\star^\top F(X)w_\star$ with $F(X)=(\hat\Sigma+\lambda I)^{-2}$, which satisfies $F(XO)=O^\top F(X)O$ and $\norm{F(X)}_{\op}\le\lambda^{-2}$, so \cref{lem:doubledescent:rotation} gives $\E F(X)=\frac1p\E\tr F(X)\cdot I_p$. Writing both traces as integrals against $\mu_p$ gives \eqref{eq:doubledescent:ridgefinite}. Finally $v_p'(\lambda)=\int\frac{t}{(t+\lambda)^2}\dd\mu_p$, and $\frac{\lambda}{t+\lambda}-\frac{\lambda t}{(t+\lambda)^2}=\frac{\lambda^2}{(t+\lambda)^2}$.
+\end{proof}
+
+So the risk at a fixed $w_\star$ equals the risk averaged over a target uniform on the sphere of radius $r$, the form in which the result is usually stated.
+
+\begin{theorem}[Ridge regression in the proportional limit]\label{thm:doubledescent:ridge}
+Under \cref{ass:doubledescent:design}, let $n\to\infty$ and $p/n\to\gamma\in(0,\infty)$, with $r$, $\sigma$, and $\lambda>0$ fixed. Then
+\begin{equation}\label{eq:doubledescent:ridgelimit}
+  \E\norm{\hat w_\lambda-w_\star}^2\to\cR_\lambda(\gamma)=r^2\bigl(v(\lambda)-\lambda v'(\lambda)\bigr)+\sigma^2\gamma\,v'(\lambda),
+\end{equation}
+with $v$ given by \eqref{eq:doubledescent:v}. In terms of the Stieltjes transform, the bias is $r^2\lambda^2m_\gamma'(-\lambda)$ and the variance is $\sigma^2\gamma\bigl(m_\gamma(-\lambda)-\lambda m_\gamma'(-\lambda)\bigr)$. As $\lambda\to0$, $\cR_\lambda(\gamma)\to\cR_0(\gamma)$ for every $\gamma\ne1$.
+\end{theorem}
+
+\begin{proof}
+The plan is to pass to the limit in \cref{lem:doubledescent:ridgespectral}: \cref{thm:doubledescent:mp} gives the limit of $\E v_p$, convexity gives the limit of $\E v_p'$, and the quadratic equation evaluates both.
+
+\emph{The function $v$.} The integrand $t\mapsto\lambda/(t+\lambda)$ is bounded and continuous on $[0,\infty)$, so $v_p(\lambda)\to v(\lambda)$ almost surely by \cref{thm:doubledescent:mp}, and $\E v_p(\lambda)\to v(\lambda)$ by dominated convergence, since $0\le v_p\le1$.
+
+\emph{Its derivative.} For each $t\ge0$ the function $\lambda\mapsto-\lambda/(t+\lambda)$ is convex, with derivative $-t/(t+\lambda)^2$ of absolute value at most $1/(4\lambda)$, because $(t+\lambda)^2\ge4t\lambda$. Hence $f_n=-\E v_p$ is convex and differentiable on $(0,\infty)$, with $f_n'=-\E v_p'$, and it converges pointwise to $f=-v$, which is differentiable by \eqref{eq:doubledescent:v}. Convexity places $f_n'(\lambda)$ between the difference quotients $\frac{f_n(\lambda)-f_n(\lambda-h)}h$ and $\frac{f_n(\lambda+h)-f_n(\lambda)}h$ for small $h>0$; letting $n\to\infty$ and then $h\to0$ gives $f_n'(\lambda)\to f'(\lambda)$, that is, $\E v_p'(\lambda)\to v'(\lambda)$. With $p/n\to\gamma$, \eqref{eq:doubledescent:ridgefinite} converges to \eqref{eq:doubledescent:ridgelimit}. The Stieltjes form follows from $v(\lambda)=\lambda m_\gamma(-\lambda)$ by the chain rule: $v'(\lambda)=m_\gamma(-\lambda)-\lambda m_\gamma'(-\lambda)$, and $v-\lambda v'=\lambda^2m_\gamma'(-\lambda)$.
+
+\emph{The ridgeless limit.} Differentiating $\gamma v^2+(1-\gamma+\lambda)v-\lambda=0$ in $\lambda$, and using $2\gamma v+1-\gamma+\lambda=\sqrt{(1-\gamma+\lambda)^2+4\gamma\lambda}$ from \eqref{eq:doubledescent:v}, gives
+\[
+  v'(\lambda)=\frac{1-v(\lambda)}{\sqrt{(1-\gamma+\lambda)^2+4\gamma\lambda}} .
+\]
+As $\lambda\to0$ the square root tends to $\abs{1-\gamma}>0$, and $v(\lambda)\to\frac{\abs{1-\gamma}-(1-\gamma)}{2\gamma}=(1-\frac1\gamma)_+$. For $\gamma<1$ this gives $v\to0$ and $v'\to\frac1{1-\gamma}$, so $\cR_\lambda(\gamma)\to\sigma^2\frac\gamma{1-\gamma}$; for $\gamma>1$ it gives $v\to1-\frac1\gamma$ and $v'\to\frac1{\gamma(\gamma-1)}$, so $\cR_\lambda(\gamma)\to r^2(1-\frac1\gamma)+\frac{\sigma^2}{\gamma-1}$. Both agree with \eqref{eq:doubledescent:limit}.
+\end{proof}
+
+The limit $v(0+)=(1-\frac1\gamma)_+$ is the mass of $\mu_\gamma$ at zero, the fraction of directions that $n$ examples cannot see, and the bias of the ridgeless estimator per unit of $r^2$. How much ridge is best? The answer is explicit at every sample size.
+
+\begin{proposition}[Optimal ridge]\label[proposition]{prop:doubledescent:optimal}
+Under \cref{ass:doubledescent:design}, with $r>0$ and $\sigma>0$:
+\begin{enumerate}
+\item for all $n$ and $p$, the risk $\E\norm{\hat w_\lambda-w_\star}^2$ is minimized over $\lambda>0$ at $\lambda^\star=\sigma^2p/(nr^2)$, where it equals $r^2\,\E v_p(\lambda^\star)$;
+\item for fixed $p$, the minimal risk does not increase with $n$;
+\item as $n\to\infty$ and $p/n\to\gamma$, the minimal risk converges to
+\begin{equation}\label{eq:doubledescent:optrisk}
+  \cR^\star(\gamma)=\frac{r^2}2\Bigl(\sqrt{b^2+4s}-b\Bigr),\qquad s=\frac{\sigma^2}{r^2},\quad b=\frac1\gamma-1+s,
+\end{equation}
+which increases continuously from $0$ to $r^2$ as $\gamma$ increases from $0$ to $\infty$; in particular it is finite at $\gamma=1$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+\emph{Part (i).} By \cref{lem:doubledescent:ridgespectral} the risk is $\E\int g_\lambda\dd\mu_p$ with $g_\lambda(t)=\frac{r^2\lambda^2+ct}{(t+\lambda)^2}$ and $c=\sigma^2p/n$. For each $t\ge0$,
+\[
+  \frac{\partial g_\lambda(t)}{\partial\lambda}=\frac{2r^2\lambda(t+\lambda)-2(r^2\lambda^2+ct)}{(t+\lambda)^3}=\frac{2t\,(r^2\lambda-c)}{(t+\lambda)^3},
+\]
+so $\lambda\mapsto g_\lambda(t)$ decreases on $(0,\lambda^\star]$ and increases on $[\lambda^\star,\infty)$, with $\lambda^\star=c/r^2$; integrating against $\mu_p$ and taking expectations preserves both monotonicities. At $\lambda^\star$ we have $c=r^2\lambda^\star$, so $g_{\lambda^\star}(t)=\frac{r^2\lambda^\star(\lambda^\star+t)}{(t+\lambda^\star)^2}=\frac{r^2\lambda^\star}{t+\lambda^\star}$, whose integral against $\mu_p$ is $r^2v_p(\lambda^\star)$.
+
+\emph{Part (ii).} The idea is that ridge with $\lambda^\star$ is the best estimator linear in the labels when the target is random and isotropic, and that this class grows with $n$. Let $w_\star$ be uniform on the sphere of radius $r$, independent of $(X,\xi)$; by \cref{lem:doubledescent:ridgespectral} this does not change the risk of a ridge estimator. For $A\in\R^{p\times n}$ depending on $X$ only, $\E w_\star w_\star^\top=\frac{r^2}pI_p$ and $\E\xi\xi^\top=\sigma^2I_n$ give
+\[
+  \E\bigl[\norm{Ay-w_\star}^2\bigm| X\bigr]=\frac{r^2}p\norm{AX-I_p}_F^2+\sigma^2\norm A_F^2 ,
+\]
+a strictly convex quadratic function of $A$, whose gradient $\frac{2r^2}p(AX-I_p)X^\top+2\sigma^2A$ vanishes exactly at $A=X^\top(XX^\top+\frac{\sigma^2p}{r^2}I_n)^{-1}=(X^\top X+\frac{\sigma^2p}{r^2}I_p)^{-1}X^\top$: ridge with $n\lambda=\sigma^2p/r^2$, that is, with $\lambda=\lambda^\star$. Now append one example. Among the matrices allowed with $n+1$ examples is the one that applies the optimal $n$-example matrix to the first $n$ labels and ignores the last, with the conditional risk of the optimal $n$-example estimator. The optimal $(n+1)$-example estimator does at least as well for every $X$, hence on average.
+
+\emph{Part (iii).} By \cref{thm:doubledescent:ridge}, $\E v_p(\lambda)\to v(\lambda)$ for each $\lambda$, and the bound $\abs{v_p'}\le\frac1{4\lambda}$ allows the moving point $\lambda^\star=\sigma^2p/(nr^2)\to s\gamma$: $\abs{\E v_p(\lambda^\star)-\E v_p(s\gamma)}\le\abs{\lambda^\star-s\gamma}/(4\min(\lambda^\star,s\gamma))\to0$. So the minimal risk tends to $r^2v(s\gamma)$. Substituting $\lambda=s\gamma$ in $\gamma v^2+(1-\gamma+\lambda)v-\lambda=0$ and dividing by $\gamma$ gives $v^2+bv-s=0$, whose positive root gives \eqref{eq:doubledescent:optrisk}. The map $b\mapsto\frac12(\sqrt{b^2+4s}-b)=\frac{2s}{\sqrt{b^2+4s}+b}$ is decreasing, and $b$ decreases with $\gamma$, so $\cR^\star$ increases; as $\gamma\to0$, $b\to\infty$ and $\cR^\star\to0$, and as $\gamma\to\infty$, $b\to s-1$ and $\cR^\star\to\frac{r^2}2\bigl((s+1)-(s-1)\bigr)=r^2$.
+\end{proof}
+
+In the unnormalized form $\norm{y-Xw}^2+n\lambda\norm w^2$ the optimal penalty $n\lambda^\star=\sigma^2p/r^2$ is the noise variance divided by the variance of one coordinate of the target, whatever $n$ is; ridge with this penalty is the posterior mean for the prior $w_\star\sim\cN(0,\frac{r^2}pI_p)$ and Gaussian noise. Part (ii) is the sample-wise monotonicity theorem of \textcite{NakkiranEtAl2021}, proved there for Gaussian noise by an interlacing argument; the argument above uses only second moments.
+
+\section{Reading the solution}\label{sec:doubledescent:reading}
+
+\Cref{fig:doubledescent:risk} compares \cref{thm:doubledescent:exact} and \cref{cor:doubledescent:weak} with simulations at $n=40$; every simulated point lies within about two standard errors of its curve.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=15mm},hplot,
+  width=0.5\linewidth,height=0.37\linewidth,ymode=log,unbounded coords=jump,
+  xmin=0,log ticks with fixed point,
+  ytick={0.25,0.5,1,2,4,8},yticklabels={$0.25$,$0.5$,$1$,$2$,$4$,$8$}]
+\nextgroupplot[xlabel={number of features $p$},ylabel={test error},xmax=200,ymin=0.2,ymax=12,
+  title={(a) well specified}]
+\addplot[guide,domain=0:200,samples=2] {1.25};
+\addplot[guide,domain=0:200,samples=2] {0.25};
+\addplot[guide] coordinates {(40,0.2) (40,12)};
+\addplot[theory] table[x=p,y=wellspec] {figures/data/01-doubledescent-risk-theory.dat};
+\addplot[simulation] table[x=p,y=wellspec] {figures/data/01-doubledescent-risk-mc.dat};
+\node[font=\scriptsize,text=muted,anchor=south east] at (axis cs:198,1.27) {null risk};
+\node[font=\scriptsize,text=muted,anchor=south east] at (axis cs:198,0.255) {noise floor};
+\nextgroupplot[xlabel={number of features $p$},xmax=100,ymin=0.4,ymax=12,
+  title={(b) weak features, $d=100$}]
+\addplot[guide,domain=0:100,samples=2] {1};
+\addplot[guide] coordinates {(40,0.4) (40,12)};
+\addplot[theory] table[x=p,y=weakdecay] {figures/data/01-doubledescent-risk-theory.dat};
+\addlegendentry{decaying signal}
+\addplot[theory2] table[x=p,y=weakeven] {figures/data/01-doubledescent-risk-theory.dat};
+\addlegendentry{evenly spread}
+\addplot[simulation,forget plot] table[x=p,y=weakdecay] {figures/data/01-doubledescent-risk-mc.dat};
+\addplot[simulation2,forget plot] table[x=p,y=weakeven] {figures/data/01-doubledescent-risk-mc.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Test error of minimum-norm least squares against the number $p$ of features, for $n=40$ examples; the dashed vertical line marks $p=n$. Curves: \cref{thm:doubledescent:exact} and \cref{cor:doubledescent:weak}. Points: averages over $4000$ independent training sets per point (seed $20261017$), each fit scored by its exact test error \eqref{eq:doubledescent:loss}. (a)~Well specified, $r^2=1$, $\sigma^2=0.25$; the second descent bottoms out at $p^\star=82$. (b)~Weak features without label noise, $d=100$, $r=1$, the learner using the first $p$ coordinates; the signal is spread evenly ($w_{\star,j}^2=1/d$, squares) or decays ($w_{\star,j}^2\propto j^{-0.8}$, circles). Points with $\abs{p-n}\le3$ are omitted: there the simulated average has infinite mean or variance (\cref{ex:doubledescent:wishart}).}
+\label{fig:doubledescent:risk}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{The anatomy of the peak.} Below the threshold the risk is pure variance, $\sigma^2\,\E\tr\bigl((X^\top X)^{-1}\bigr)=\sigma^2\frac pn\,\E\int t^{-1}\mu_p(\dd t)$: the noise is amplified by the inverse eigenvalues of $\hat\Sigma$, and the small ones dominate. In the limit, letting $z\to0$ in \eqref{eq:doubledescent:mpquad} gives $\int t^{-1}\mu_\gamma(\dd t)=\frac1{1-\gamma}$ for $\gamma<1$, the factor in \eqref{eq:doubledescent:limit}. As $\gamma$ increases to $1$ the lower edge $t_-=(1-\sqrt\gamma)^2$ of the spectrum moves down to $0$; at $\gamma=1$ the density \eqref{eq:doubledescent:mp} behaves like $1/(\pi\sqrt t)$ near $0$, and the inverse moment diverges. At finite size the smallest singular value of $X$ is close to $\sqrt n-\sqrt p$ when $p<n$ \parencite{Silverstein1985} but only of order $n^{-1/2}$ when $p=n$ \parencite{Edelman1988}.\sidenote{In the language of \textcite{SpiglerEtAl2019}, $p=n$ is the isostatic point of a jamming transition, at which the degrees of freedom equal the constraints and the response of the fitted weights to the noise diverges.} Past the threshold the bias $r^2(1-n/p)$ grows, because the interpolator lives in an $n$-dimensional subspace and sees a shrinking fraction of the target, while the variance falls like $\sigma^2n/(p-n)$, because with more directions available the $n$ noise values are interpolated by a shorter weight vector, whose squared length the test error pays. The second descent is the variance falling faster than the bias grows.
+
+\paragraph{Where the second descent ends.} Treat $p$ in \eqref{eq:doubledescent:exact} as a real variable. On $p>n+1$ the derivative of the test error is $r^2n/p^2-\sigma^2n/(p-n-1)^2$, so if $\sigma<r$, then the test error is smallest at
+\begin{equation}\label{eq:doubledescent:pstar}
+  p^\star=\frac{(n+1)\,r}{r-\sigma},\qquad \E\Loss(\hat w)=\sigma^2+r^2-\frac n{n+1}(r-\sigma)^2 ,
+\end{equation}
+and if $\sigma\ge r$, then it decreases to the null risk without reaching it. In \cref{fig:doubledescent:risk}(a), $p^\star=82$ and the minimal test error is $1.006$, against a null risk of $1.25$. In the proportional limit the optimum is $\gamma^\star=r/(r-\sigma)$, with test error $2\sigma r$, below the null risk by $(r-\sigma)^2$ \parencite{HastieEtAl2022}. The same formulas give a window of harm: minimum-norm least squares predicts worse than the zero predictor exactly when
+\begin{equation}\label{eq:doubledescent:window}
+  \frac{r^2}{r^2+\sigma^2}<\gamma<\frac{r^2}{r^2-\sigma^2}
+\end{equation}
+(the upper end is $+\infty$ when $\sigma\ge r$; \cref{ex:doubledescent:optimum}). The window contains the threshold and widens with the noise. Here, however, a learner with more features also faces a truth with more coordinates, and $p^\star$ is only a local minimum, the global one being at $p\to0$; the weak-features model compares learners on one fixed truth.
+
+\paragraph{Weak features.} When the features are ordered by importance and the signal is spread over many of them, the curve shows every phase of \cref{obs:doubledescent:dd}: the decaying profile of \cref{fig:doubledescent:risk}(b) descends to $0.755$ at $p=10$, peaks at the threshold, and descends again to $0.596$ at $p=90$, below the bottom of the U. If the signal is concentrated on few features, the U wins instead: with $w_{\star,j}^2\propto j^{-2}$ the best model has $p\le n$ \parencite{BelkinEtAl2020}, in line with the classical analysis of \textcite{BreimanFreedman1983}. When the signal is spread evenly, $w_{\star,j}^2=r^2/d$, the first descent disappears: for $p\le n-2$ the test error $(\sigma^2+r^2(1-p/d))\frac{n-1}{n-p-1}$ increases with $p$ as soon as $d\ge n$, so the best classical model uses no features at all, while for $n+2\le p\le d$ \cref{cor:doubledescent:weak} gives (\cref{ex:doubledescent:even})
+\begin{equation}\label{eq:doubledescent:even}
+  \E\Loss=\sigma^2+r^2-\frac{2nr^2}d+\frac n{p-n-1}\Bigl(\sigma^2+r^2\Bigl(1-\frac{n+1}d\Bigr)\Bigr),
+\end{equation}
+which decreases in $p$. The best interpolating model uses all $d$ features, and it beats the null risk, hence every classical model, if and only if $r^2/\sigma^2>d/(d-n-1)$, the condition of \textcite{BelkinEtAl2020}. Each added feature brings signal $r^2/d$; below the threshold it costs more than that in variance, above it it lowers the variance too.
+
+\paragraph{More data can hurt.} Fix $p$ and vary $n$. For $n\le p-2$ the risk $r^2(1-n/p)+\sigma^2\frac n{p-n-1}$ increases with $n$ as soon as $(p-n-1)^2<\frac{\sigma^2}{r^2}p(p-1)$: in a window of width about $p\sigma/r$ below $n=p$, each new example makes the interpolator worse. This is the sample-wise double descent of \textcite{Nakkiran2019} (\cref{ex:doubledescent:samplewise}).
+
+\paragraph{Regularization removes the peak.} \Cref{fig:doubledescent:ridge} compares \cref{thm:doubledescent:ridge} with simulations. A fixed ridge parameter lowers the peak and leaves a bump; the optimal $\lambda^\star=\sigma^2\gamma/r^2$ leaves the increasing curve \eqref{eq:doubledescent:optrisk}, whose value at the threshold, $\frac{r^2}2(\sqrt{s^2+4s}-s)$, is below $\sigma r$. With optimal tuning the risk increases with $\gamma$ at fixed signal energy and decreases with $n$ at fixed $p$ (\cref{prop:doubledescent:optimal}): in this model the peak is a property of the ridgeless estimator, not of the data.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,height=0.5\linewidth,xlabel={$\gamma=p/n$},ylabel={test error},xmin=0,xmax=4,ymin=0.2,ymax=2,
+  unbounded coords=jump,legend pos=north east,legend columns=1]
+\addplot[muted,line width=0.8pt] table[x=gamma,y=ridgeless] {figures/data/01-doubledescent-ridge-theory.dat};
+\addlegendentry{$\lambda=0$}
+\addplot[theory3] table[x=gamma,y=lam0p01] {figures/data/01-doubledescent-ridge-theory.dat};
+\addlegendentry{$\lambda=0.01$}
+\addplot[theory2] table[x=gamma,y=lam0p1] {figures/data/01-doubledescent-ridge-theory.dat};
+\addlegendentry{$\lambda=0.1$}
+\addplot[theory] table[x=gamma,y=optimal] {figures/data/01-doubledescent-ridge-theory.dat};
+\addlegendentry{$\lambda=\lambda^\star$}
+\addplot[simulation,forget plot] table[x=gamma,y=lam0p01] {figures/data/01-doubledescent-ridge-mc.dat};
+\addplot[simulation2,forget plot] table[x=gamma,y=lam0p1] {figures/data/01-doubledescent-ridge-mc.dat};
+\addplot[simulation,mark=triangle*,mark size=2pt,mark options={fill=sea,draw=white,line width=0.2pt},color=sea,forget plot] table[x=gamma,y=optimal] {figures/data/01-doubledescent-ridge-mc.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{Test error of ridge regression against $\gamma=p/n$, for $r^2=1$ and $\sigma^2=0.25$. Curves: the limits \eqref{eq:doubledescent:ridgelimit}, \eqref{eq:doubledescent:limit}, and \eqref{eq:doubledescent:optrisk}. Points: simulations with $n=200$ and $p=\gamma n$, averaged over $500$ training sets per point (seed $1017$), for $\lambda=0.01$ (circles), $\lambda=0.1$ (squares), and $\lambda=\lambda^\star$ (triangles); the largest deviation from the curves is $1.9$ standard errors.}
+\label{fig:doubledescent:ridge}
+\end{figure}
+
+\section{What the model gets wrong}\label{sec:doubledescent:wrong}
+
+\paragraph{What was thrown away.} With fixed features the model cannot say what a trained network gains over random features, and its $p$ counts directions chosen before the data are seen. Without anisotropy the spectrum plays no role, yet the spectrum decides how much of the target an interpolator sees and where the fitted noise goes (\cref{ex:doubledescent:aniso,ex:doubledescent:spiked}); real feature spectra decay, often as power laws (\cref{ch:scaling}). With a linear target and independent noise, misspecification enters only as white noise, whereas what a small network cannot represent is structured and correlated with the input. Without time, early stopping enters only through its resemblance to ridge \parencite{AdvaniEtAl2020}, and the epoch-wise curve not at all. With square loss, interpolation is exact fitting; for classification with the logistic loss it is separation, and gradient descent selects a maximum-margin interpolator (\cref{ch:margin}).
+
+\paragraph{Where it breaks.} \emph{The axis.} The model puts the peak at a parameter count, $p=n$; trained networks put it elsewhere. \Textcite{SpiglerEtAl2019} found that the jamming threshold of fully connected networks grows linearly with the number of examples for random labels but sublinearly on MNIST. \Textcite{NakkiranEtAl2020} found that the peak follows the effective model complexity, which moves with training time, label noise, and augmentation, so that one architecture sits on either side of the threshold depending on how long it is trained. The count of $nK$ parameters for $K$ outputs \parencite{BelkinEtAl2019} fits least squares with $K$ outputs, and random features with a trained last layer, but no theory predicts it for a network trained end to end. The model's $p$ is at best an effective number of fitted directions, which it does not tell us how to compute.
+
+\emph{Time.} The model has no epoch-wise double descent: for isotropic features, the test error of gradient flow from zero, computed from the Marchenko--Pastur law, has a single minimum in time at every value of $\gamma$ and $\sigma/r$ that we checked numerically. \Textcite{HeckelYilmaz2021} showed that epoch-wise double descent arises when parts of a model are learned at different speeds, so that bias--variance trade-offs are superposed, and removed it from a convolutional network and a ResNet by changing the step sizes of some layers; \textcite{PezeshkiEtAl2022} derived it from fast and slow features in a teacher--student model (\cref{ex:doubledescent:epochwise}).
+
+\emph{The tail.} As $\gamma\to\infty$ the test error of the isotropic interpolator tends to the null risk: the variance vanishes, but so does the fraction $n/p$ of the target that the interpolator sees. Isotropic features never overfit benignly, yet networks interpolate noisy labels and predict well \parencite{ZhangEtAl2017}. In linear regression, benign overfitting needs structure in the covariance.
+
+\begin{theorem}[\textcite{BartlettEtAl2020}, Gaussian case]\label{thm:doubledescent:bllt}\index{benign overfitting}
+Let $x\sim\cN(0,\Sigma)$ in $\R^p$ with $p>n$ and $\Sigma$ positive definite with eigenvalues $\lambda_1\ge\dots\ge\lambda_p$, and let $y=\ip{w_\star,x}+\eps$ with $\eps\sim\cN(0,\sigma^2)$ independent of $x$. Define the effective ranks
+\[
+  r_k=\frac{\sum_{i>k}\lambda_i}{\lambda_{k+1}},\qquad R_k=\frac{\bigl(\sum_{i>k}\lambda_i\bigr)^2}{\sum_{i>k}\lambda_i^2},
+\]
+and let $k^*$ be the smallest $k\ge0$ with $r_k\ge bn$. There are universal constants $b,c,c_1>1$ such that, for $\delta\in(0,1)$ with $\log(1/\delta)<n/c$, the excess risk $\cE=\norm{\Sigma^{1/2}(X^+y-w_\star)}^2$ satisfies the following. If $k^*\ge n/c_1$, then $\E\cE\ge\sigma^2/c$. Otherwise $\E\cE\ge\frac{\sigma^2}c\bigl(\frac{k^*}n+\frac n{R_{k^*}}\bigr)$, and with probability at least $1-\delta$,
+\[
+  \cE\le c\norm{w_\star}^2\norm\Sigma_{\op}\max\Bigl\{\sqrt{\frac{r_0}n},\frac{r_0}n,\sqrt{\frac{\log(1/\delta)}n}\Bigr\}+c\log(1/\delta)\,\sigma^2\Bigl(\frac{k^*}n+\frac n{R_{k^*}}\Bigr).
+\]
+\end{theorem}
+
+The theorem names what the isotropic model lacks. The variance needs a \emph{small head}, $k^*\ll n$, few directions of large variance that cost $\sigma^2k^*/n$, and a \emph{heavy, flat tail}, $R_{k^*}\gg n$, many directions of small, comparable variance that absorb the fitted noise at the cost $\sigma^2n/R_{k^*}$, the analogue of $\sigma^2n/(p-n-1)$. The bias needs $r_0=\tr\Sigma/\norm\Sigma_{\op}\ll n$, so that the tail does not drown the head. For $\Sigma=I_p$ with $p\ge bn$, $k^*=0$ and $R_0=p$, so the variance vanishes as $p/n\to\infty$; but $r_0=p$, and the bias $r^2(1-n/p)$ of \cref{thm:doubledescent:exact} does not vanish. \Cref{ex:doubledescent:spiked} builds a benign covariance by hand.
+
+\emph{The counting.} \Textcite{CurthEtAl2023} found that in the non-deep experiments of \textcite{BelkinEtAl2019} the horizontal axis switches at the threshold from one way of adding capacity to another, and that against an effective number of parameters measured at test points the curves fold back into a U. Our model shows the mechanism in closed form. The prediction of $X^+y$ at a test point $x_0$ is $\ip{\hat s(x_0),y}$ with smoothing weights $\hat s(x_0)=(X^+)^\top x_0$, and with $p_{\mathrm{eff}}=n\,\E\norm{\hat s(x_0)}^2$ the variance in \cref{thm:doubledescent:exact} is $\sigma^2p_{\mathrm{eff}}/n$ on both sides of the threshold. But $p_{\mathrm{eff}}=np/(n-p-1)$ below the threshold and $n^2/(p-n-1)$ above it: past $p=n$, every added feature makes the estimator effectively simpler.
+
+\emph{The cure.} Optimal ridge removes the peak in this model, at a positive $\lambda^\star$. For anisotropic data the optimal ridge parameter can be zero or even negative \parencite{KobakEtAl2020,TsiglerBartlett2023}: many low-variance directions already act as a ridge, and an interpolator is then optimal, not merely harmless. The isotropic model cannot represent this.
+
+\paragraph{Fine structure.} Random nonlinear features were solved by \textcite{MeiMontanari2022}: in the proportional limit they behave like linear features plus independent noise, the ridgeless peak stays at $N=n$ features, and the best test error is reached as $N/n\to\infty$, with a ridge parameter that vanishes above a critical signal-to-noise ratio. For anisotropic covariances the ridge risk is given by deterministic equivalents that generalize \cref{thm:doubledescent:ridge} \parencite{HastieEtAl2022,AtanasovEtAl2026}, which power-law spectra turn into the scaling laws of \cref{ch:scaling}. Between benign and catastrophic overfitting lies tempered overfitting, a finite excess risk bounded away from zero, as for kernels with power-law spectra and, empirically, for interpolating networks \parencite{MallinarEtAl2022}; \textcite{LiangRakhlin2020} analyze kernel interpolation in high dimension. Gradient flow in the random-features model gives model-wise, sample-wise, and epoch-wise descents in one exact solution \parencite{BodinMacris2021}, and in toy models of superposition double descent separates memorizing data points from learning features (\cref{ch:superposition}; \cite{HenighanEtAl2023}). Open: a solvable model with feature learning that predicts where the peak of a trained network sits, and how high it is.
+
+\section{Model card}\label{sec:doubledescent:card}
+
+\modelcard{Test error falls, peaks where the model first fits the training set, and falls again, in model size, training time, and sample size.}
+{Least squares on $p$ isotropic Gaussian features from $n$ examples, minimum-norm or ridge; weak features: $p$ of the $d$ features of a fixed truth.}
+{Exact risk at every $(n,p)$ (\cref{thm:doubledescent:exact}); ridge risk from the Marchenko--Pastur law (\cref{thm:doubledescent:ridge}); optimal ridge $\lambda^\star=\sigma^2p/(nr^2)$ (\cref{prop:doubledescent:optimal}).}
+{An infinite peak at $p=n$; the second descent ends at $p^\star=(n+1)r/(r-\sigma)$, near test error $2\sigma r$; a window of harm; more data hurting below the threshold; no peak under optimal ridge.}
+{The axis (networks peak at an effective complexity); no epoch-wise descent; no benign overfitting with isotropic features; one peak only.}
+{Random features and Gaussian equivalence; anisotropic deterministic equivalents; tempered overfitting; several time scales for the epoch-wise curve.}
+
+The rotational invariance that made the risk computable returns in the kernel lower bound of \cref{ch:lazy}, in the single-index and committee models of \cref{ch:singleindex,ch:committee}, and in the in-context regression of \cref{ch:icl}, whose optimal one-step learner is compared there with ridge. The Marchenko--Pastur law is the first spectrum of the book; kernel spectra follow in \cref{ch:lazy}, and power-law spectra, which turn deterministic equivalents into scaling laws, in \cref{ch:scaling}. The minimum-norm interpolator is the first implicit bias of the book; a reparameterization changes the norm to $\ell_1$ in \cref{ch:diagonal}, and the logistic loss gives the maximum margin in \cref{ch:margin}. Epoch-wise double descent needs features learned at different speeds, the staged learning of \cref{ch:deeplinear}.
+
+\begin{exercises}
+\item \consolidation (Inverse Wishart matrices.) Let $X\in\R^{n\times p}$ have independent $\cN(0,1)$ entries. (a) For $n\ge p+2$, show that $\E[(X^\top X)^{-1}]=I_p/(n-p-1)$ with \cref{lem:doubledescent:rotation}, using $\norm A_F\le\tr A$ for positive semidefinite $A$. (b) Show that $\E[T^{-2}]=\frac1{(k-2)(k-4)}$ for $T\sim\chi^2_k$ with $k\ge5$, and $\E[T^{-2}]=+\infty$ for $k\le4$. (c) Deduce that $\tr\bigl((X^\top X)^{-1}\bigr)$ has finite variance if and only if $p\le n-4$, and that with Gaussian noise the simulated test error of $X^+y$ has infinite variance for $p\in\{n-3,n-2,n+2,n+3\}$.\label{ex:doubledescent:wishart}
+
+\item \consolidation (Gradient descent finds the minimum norm.) Run gradient descent $w_{t+1}=w_t-\eta\nabla\Lhat(w_t)$ from $w_0$ with $0<\eta<2/\lmax(\hat\Sigma)$. (a) Show that $w_t\to X^+y+(I_p-P)w_0$, with $P$ the orthogonal projection onto the row space of $X$. (b) Let $p>n$ and $w_0\sim\cN(0,\alpha^2I_p)$, independent of the data. Show that the limit has risk $\E\norm{X^+y-w_\star}^2+\alpha^2(p-n)$.\label{ex:doubledescent:gd}
+
+\item \consolidation (The overparameterized optimum.) (a) Derive \eqref{eq:doubledescent:pstar}, and show that the test error decreases on $p\ge n+2$ when $\sigma\ge r$. (b) Show that in the proportional limit the optimum is $\gamma^\star=r/(r-\sigma)$, with test error $2\sigma r$. (c) Prove that $\sigma^2+\cR_0(\gamma)>\sigma^2+r^2$ exactly in the window \eqref{eq:doubledescent:window}.\label{ex:doubledescent:optimum}
+
+\item \consolidation (More data can hurt.) Fix $p$, $r$, and $\sigma>0$, and treat the risk $r^2(1-n/p)+\sigma^2n/(p-n-1)$ as a function of a real variable $n<p-1$. (a) Show that it increases with $n$ exactly when $(p-n-1)^2<\frac{\sigma^2}{r^2}p(p-1)$. (b) For $p=100$, $r=1$, and $\sigma=\frac12$, show that among $n\le98$ the risk is smallest at $n=49$, where it equals $0.755$, and that at least $135$ examples are needed to beat this value. (c) Why does this not contradict \cref{prop:doubledescent:optimal}(ii)?\label{ex:doubledescent:samplewise}
+
+\item \consolidation (Moments of the Marchenko--Pastur law.) (a) Show that $\E\frac1p\tr\hat\Sigma=1$ and $\E\frac1p\tr\hat\Sigma^2=1+\frac{p+1}n$. (b) Substitute the expansion $m_\gamma(z)=-\sum_{k\ge0}z^{-k-1}\int t^k\mu_\gamma(\dd t)$, valid for large $\abs z$, in \eqref{eq:doubledescent:mpquad}, and show that the first two moments of $\mu_\gamma$ are $1$ and $1+\gamma$. (c) Show that $\int_{(0,\infty)}t^{-1}\mu_\gamma(\dd t)$ equals $\frac1{1-\gamma}$ for $\gamma<1$ and $\frac1{\gamma(\gamma-1)}$ for $\gamma>1$. \hint{in (c), let $\lambda\to0$ in $v'(\lambda)$.}\label{ex:doubledescent:moments}
+
+\item \variation (Weak features with evenly spread signal.) Under \cref{ass:doubledescent:weak}, let $w_{\star,j}^2=r^2/d$ for every $j$ and $S=\{1,\dots,p\}$. (a) Derive \eqref{eq:doubledescent:even}, show that it decreases in $p$ on $n+2\le p\le d$, and show that its value at $p=d$ is below the null risk exactly when $r^2/\sigma^2>d/(d-n-1)$. (b) Let $p/n\to\gamma$ and $d/n\to\delta>1$. Show that on $1<\gamma\le\delta$ the test error tends to $\sigma^2+r^2-\frac{2r^2}\delta+\frac{\sigma^2+r^2(1-1/\delta)}{\gamma-1}$. (c) Let the learner use ridge on its $p$ features with the best $\lambda$ for that $p$. Show that the test error then does not increase with $p$, at every $n$. \hint{adapt \cref{prop:doubledescent:optimal}(ii): give $w_\star$ a random sign pattern and permutation, so that $\E w_\star w_\star^\top=\frac{r^2}dI_d$, and note that a learner with $p+1$ features may ignore one.}\label{ex:doubledescent:even}
+
+\item \variation (Anisotropic design.) Let the rows of $X$ and the test inputs be independent $\cN(0,\Sigma)$ with $\Sigma$ positive definite, so that $\Loss(w)=\sigma^2+\norm{\Sigma^{1/2}(w-w_\star)}^2$. (a) Show that for $p\le n-2$ the test error of least squares is $\sigma^2\frac{n-1}{n-p-1}$, whatever $\Sigma$ is. (b) For $p\ge n+2$, show that $\Sigma^{-1/2}(X\Sigma^{-1/2})^+y$ has the risk of \cref{thm:doubledescent:exact} with $r=\norm{\Sigma^{1/2}w_\star}$. Why does the proof of the theorem not apply to $X^+y$ itself?\label{ex:doubledescent:aniso}
+
+\item \variation\hard (Benign overfitting with a spiked covariance.) Let $x=(z,\sqrt\epsilon\,u)$ with independent standard Gaussian $z\in\R^k$ and $u\in\R^q$, let $y=\ip{w_\star,z}+\eps$ with $w_\star\in\R^k$ and noise variance $\sigma^2$, and let $\hat w=(\hat w_z,\hat w_u)$ be the minimum-norm interpolator of $n<q$ examples, with data matrices $Z$ and $U$. (a) Show that $\hat w_z=Z^\top(ZZ^\top+\epsilon UU^\top)^{-1}y$ and that the excess risk is $\norm{\hat w_z-w_\star}^2+\epsilon\norm{\hat w_u}^2$. (b) Suppose for a moment that $UU^\top=qI_n$. Show that $\hat w_z$ is then ridge regression on the head with $n\lambda=\epsilon q$, and that $\epsilon\norm{\hat w_u}^2\le\norm y^2/q$; this is the implicit ridge of \textcite{KobakEtAl2020}. (c) Check numerically, with $k=5$, $\norm{w_\star}=1$, $\sigma^2=\frac14$, $n\in\{100,200,400\}$, $q=n^2/10$, and $\epsilon q/n=0.5/\sqrt n$, that the excess risk is about $0.04$, $0.02$, and $0.01$, although the noise is fitted exactly. (d) Compute the effective ranks of \cref{thm:doubledescent:bllt} for this covariance and check its conditions when $k$ is fixed, $q/n\to\infty$, and $\epsilon q/n\to0$. \hint{in (b), $Z^\top(ZZ^\top+cI_n)^{-1}=(Z^\top Z+cI_k)^{-1}Z^\top$.}\label{ex:doubledescent:spiked}
+
+\item \simulation (Random ReLU features.) Take $d=100$, $n=300$, a unit vector $w_\star$, $x\sim\cN(0,I_d)$, and $y=\ip{w_\star,x}+\eps$ with $\eps\sim\cN(0,0.1)$. For $N$ from $30$ to $4000$, draw $v_1,\dots,v_N\sim\cN(0,I_d/d)$, fit minimum-norm least squares on the features $\relu(\ip{v_j,x})$, and estimate the test error on $2000$ fresh points, averaging over $20$ draws. (a) Observe a minimum near $0.83$ around $N=100$, a peak above $7$ near $N=n$, and a second descent to about $0.19$ at $N=4000$. (b) Write $\relu(g)=\mu_0+\mu_1g+\mu_\star\zeta(g)$ for $g\sim\cN(0,1)$, with $\zeta$ of unit variance and uncorrelated with $1$ and $g$; show that $\mu_0=1/\sqrt{2\pi}$, $\mu_1=\frac12$, and $\mu_\star^2=\frac14-\frac1{2\pi}$. (c) Explain why the peak sits at $N=n$ rather than $N=d$, using the picture of \textcite{MeiMontanari2022}: linear features plus independent noise of variance $\mu_\star^2$.\label{ex:doubledescent:relu}
+
+\item \simulation (Epoch-wise double descent from two time scales.) Take $n=100$ examples, $40$ fast features of variance $1$ and $20$ slow features of variance $\epsilon=0.01$, a target with signal energy $1$ on each group, and noise variance $\sigma^2=0.3$. Run gradient descent from zero with step $\eta=0.05$ for $2\times10^5$ steps, record the test error $\sigma^2+\norm{\Sigma^{1/2}(w_t-w_\star)}^2$ on a logarithmic grid of steps, and average over $400$ draws. (a) Observe a first minimum near step $25$ (test error about $1.69$), a bump near step $200$ (about $1.89$), a second minimum near step $1.3\times10^4$ (about $0.72$), and a slow rise toward the least-squares value $\sigma^2\frac{n-1}{n-p-1}\approx0.76$ of \cref{ex:doubledescent:aniso}. (b) Explain each phase with the time scales $1/\eta$ and $1/(\eta\epsilon)$: before the slow features are learned, their signal acts as noise for the fast ones, as in the weak-features model. (c) Give the slow features the step size $\eta/\epsilon$, a preconditioning in the spirit of \textcite{HeckelYilmaz2021}, and observe a single minimum, about $0.63$ near step $100$.\label{ex:doubledescent:epochwise}
+
+\item \research (A solvable model of epoch-wise double descent.) In \cref{ex:doubledescent:epochwise} the time scales are put in by hand, as in the linear models of \textcite{HeckelYilmaz2021} and \textcite{PezeshkiEtAl2022} and the random-feature model of \textcite{BodinMacris2021}. Open: a model in which training creates the time scales, for instance a two-layer network that learns features in stages as in \cref{ch:deeplinear}, and which predicts when the epoch-wise peak occurs and how its height depends on the label noise.\label{ex:doubledescent:researchepoch}
+
+\item \research (Where is the peak of a network?) Here the peak sits at $p=n$, and \textcite{NakkiranEtAl2020} place the peak of trained networks where the effective model complexity equals the size of the training set. Open: compute the effective model complexity of a two-layer network trained by gradient descent from its width, input dimension, data distribution, and training time, in some solvable limit, and compare it with the parameter count. The random-features case of \cref{ex:doubledescent:relu}, where it is $N=n$, is a first step; the question is what feature learning does to it.\label{ex:doubledescent:researchpeak}
+\end{exercises}
+
+\notesandrefs
+\Cref{thm:doubledescent:exact} is elementary, and its two halves were found decades apart. Below the threshold, \textcite{BreimanFreedman1983} computed the test error of least squares on the first $p$ of infinitely many Gaussian regressors, treating the omitted ones as a second source of noise; their formula is the first case of \cref{cor:doubledescent:weak}, and they concluded that the best $p$ is a vanishing fraction of $n$. Above the threshold, \textcite{BelkinEtAl2020} proved the formula and the weak-features corollary, while \textcite{HastieEtAl2022}, \textcite{MuthukumarEtAl2020}, and \textcite{BartlettEtAl2020}, all first posted in 2019, analyzed interpolation with general covariances. The inverse Wishart mean behind \cref{lem:doubledescent:wishart} is classical (\cref{thm:toolkit:inv-wishart}).
+
+The proportional asymptotics of ridge are due to \textcite{DobribanWager2018}, for general covariances; we followed the isotropic form of \textcite{HastieEtAl2022}. The proof of \cref{prop:doubledescent:optimal}(ii) is the familiar argument that an optimal linear estimator cannot get worse with more data. In the statistical mechanics of learning, the pseudo-inverse rule for the linear perceptron was a standard solvable case, and its peak at $\alpha=n/p=1$, where the network fits the training set perfectly and generalizes not at all, was well understood by the early 1990s \parencite{ValletEtAl1989,OpperEtAl1990}. \Textcite{KroghHertz1992} found the optimal weight decay to be the noise variance divided by the variance of a teacher weight, independent of the number of examples, which is $n\lambda^\star$ in \cref{prop:doubledescent:optimal}, and \textcite{AdvaniEtAl2020} showed that in the same linear model optimal early stopping is nearly as good as optimal ridge, with neither showing a peak.
+
+\paragraph{Translating the literature.} \Textcite{HastieEtAl2022} use our $\gamma$, $r$, $\sigma$, and ridge normalization; they write $\beta$ for $w_\star$, and their risk $R_X(\hat\beta;\beta)$ is our risk conditional on $X$, without the noise floor. \Textcite{DobribanWager2018} write $w$ for $w_\star$ and $\alpha^2$ for $r^2$, set the noise variance to $1$, include the noise in their risk, and write $v$ for the companion Stieltjes transform, of the spectrum of $\frac1nXX^\top$, which is not our $v$; their $\lambda^*=\gamma/\alpha^2$ is our $\lambda^\star$ at $\sigma=1$. \Textcite{BelkinEtAl2020} write $D$, $T$, and $\beta$ for our $d$, $S$, and $w_\star$, and their risk includes the noise. \Textcite{NakkiranEtAl2021} penalize $\lambda\norm\beta^2$ next to the unnormalized squared loss, so their $\lambda$ is our $n\lambda$, and their $d$ is our $p$: their $\lambda_{\mathrm{opt}}=d\sigma^2/\norm{\beta^*}^2$ is our $n\lambda^\star$. \Textcite{MeiMontanari2022} write $N$ for the number of features, $\psi_1=N/d$, and $\psi_2=n/d$, so that our $\gamma$ is their $\psi_1/\psi_2$.
+
+\printchapterbib
+\end{refsection}
