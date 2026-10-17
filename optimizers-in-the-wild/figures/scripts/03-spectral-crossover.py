@@ -25,6 +25,9 @@ Output: figures/data/03-spectral-crossover-theory.dat (beta, R, onestep_S, onest
 """
 import os
 
+for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_var, "2")  # the machine is shared: at most two BLAS threads
+
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))

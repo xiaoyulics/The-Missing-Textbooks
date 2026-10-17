@@ -23,6 +23,10 @@ Output: figures/data/03-spectral-ns-curves.dat (s, cub1..cub5, muon1..muon5, pe1
         figures/data/03-spectral-ns-points.dat (s, the same columns, bfloat16 measurements)
 """
 import os
+
+for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_var, "2")  # the machine is shared: at most two BLAS threads
+
 from math import inf, sqrt
 
 import numpy as np
