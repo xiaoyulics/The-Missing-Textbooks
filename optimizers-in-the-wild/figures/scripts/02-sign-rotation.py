@@ -13,7 +13,9 @@ Panel (b): the long-run average of ||grad L||_1 against the step size eta.  Theo
 eta/2 * tr H (exact on the diagonal problem) and eta/2 * L_inf of the rotated Hessian (the floor of
 Theorem thm:sign:descent), where L_inf = max_s s^T H s over sign vectors s is estimated by
 sign power iteration plus single-flip local search (a lower bound on L_inf; the certified lower
-bound lmax * ||Q^T e_1||_1^2 of Proposition prop:sign:rotation is printed as well).
+bound lmax * ||Q^T e_1||_1^2 of Proposition prop:sign:rotation is printed as well, and so is a
+certified upper bound from the semidefinite program of Exercise ex:sign:sdp, which bounds both
+L_inf and the best coordinatewise ||L||_1).
 
 Writes figures/data/02-sign-rotation-loss.dat and figures/data/02-sign-rotation-floor.dat.
 Runs in a few seconds on one core.
@@ -100,6 +102,25 @@ def linf_estimate(hm, rng, starts=40):
     return best
 
 
+def sdp_upper_bound(hm, rank=8, sweeps=200, seed=0):
+    """Certified upper bound on min{||L||_1 : diag(L) >= H}, hence on max_s s^T H s.
+
+    Burer-Monteiro coordinate ascent ("mixing method") for max tr(HX), X = V V^T with unit rows,
+    then the dual candidate L_i = <(HV)_i, v_i>, shifted by -lambda_min(diag(L) - H) if needed so
+    that diag(L) - H is positive semidefinite (Exercise ex:sign:sdp).  Uses its own seed.
+    """
+    v = np.random.default_rng(seed).standard_normal((D, rank))
+    v /= np.linalg.norm(v, axis=1, keepdims=True)
+    off = hm - np.diag(np.diag(hm))
+    for _ in range(sweeps):
+        for i in range(D):
+            w = off[i] @ v
+            v[i] = w / np.linalg.norm(w)
+    lvec = np.einsum("ij,ij->i", hm @ v, v)
+    shift = max(0.0, -float(np.linalg.eigvalsh(np.diag(lvec) - hm).min()))
+    return float(lvec.sum() + D * shift)
+
+
 def floor_average(hm, x0, eta):
     """Average of ||grad||_1 over the final cycle (runs until the orbit has period 2)."""
     x = x0.copy()
@@ -146,9 +167,11 @@ def main():
             f.write(f"{eta:.4g} {eta * tr / 2:.6e} {eta * linf / 2:.6e} {fd:.6e} {fr:.6e}\n")
             print(f"eta={eta}: diag {fd:.6g} (theory {eta * tr / 2:.6g}), "
                   f"rot {fr:.6g} (eta*Linf/2 {eta * linf / 2:.6g})")
+    upper = sdp_upper_bound(hr)
     print(f"d={D}, tr H={tr:.6f}, Linf(local search)={linf:.4f}, certified lower bound={cert:.4f}, "
+          f"certified upper bound on Linf and on the best ||L||_1 (SDP)={upper:.4f}, "
           f"E-bound 1+2(d-1)/pi={1 + 2 * (D - 1) / np.pi:.4f}, ratio Linf/trH={linf / tr:.2f}, "
-          f"(2/pi) d lmax/trH={2 * D / (np.pi * tr):.2f}")
+          f"(1+2(d-1)/pi) lmax/trH={(1 + 2 * (D - 1) / np.pi) / tr:.2f}")
     print("panel (a): sign descent on the rotated problem from t=1000 on:", ls_r[1000], ls_r[T])
     print("max |exact - simulated| sign diag:",
           max(abs(0.5 * np.sum(h * sign_diag_exact(h, theta0, ETA_SIGN, t) ** 2) - ls_d[t]) for t in ts))

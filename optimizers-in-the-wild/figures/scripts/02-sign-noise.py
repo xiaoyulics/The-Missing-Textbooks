@@ -9,10 +9,11 @@ balance, pi(x + eta) P_down(x + eta) = pi(x) P_up(x), with P_down = P(g > 0), P_
 computed exactly (normal and binomial distribution functions, in logarithms).  Curves: the exact stationary
 E|grad L|; points: long simulations (time and ensemble averages).
 
-Panel (b): the rare class of Proposition prop:sign:rareclass.  Labels y ~ Bernoulli(pi), one bias b,
-cross-entropy loss, minibatch gradient sigmoid(b) - mean(y).  If (1 - pi)^B > 1/2, signSGD drifts
-to -infinity with speed eta (2 (1 - pi)^B - 1) per step (exact once sigmoid(b) < 1/B, which holds
-from b = b* when B < 1/pi).  Points: averages of b_t over runs; lines: the exact drift.  Signum
+Panel (b): the rare class of Proposition prop:sign:rareclass.  Labels y ~ Bernoulli(nu), one bias b,
+cross-entropy loss, minibatch gradient sigmoid(b) - mean(y).  If (1 - nu)^B > 1/2, signSGD drifts
+to -infinity with speed eta (2 (1 - nu)^B - 1) per step (exact once sigmoid(b) < 1/B, which holds
+from b = b* when B < 1/nu); in the code the class frequency nu is called pic.  Points: averages
+of b_t over runs; lines: the exact drift.  Signum
 (sign of an EMA of minibatch gradients, beta = 0.9) is shown for comparison.
 
 Writes figures/data/02-sign-noise-eta.dat and figures/data/02-sign-noise-rare.dat.
@@ -149,7 +150,7 @@ def panel_b(rng):
             f.write(f"{t:d} {bstar:.6f} {th[0]:.6f} {th[1]:.6f} {th[2]:.6f} "
                     f"{cols['sim16'][j]:.6f} {cols['sim32'][j]:.6f} {cols['sim64'][j]:.6f} "
                     f"{cols['signum16'][j]:.6f}\n")
-    print("threshold batch size ln2/(-ln(1-pi)) =", np.log(2) / -np.log(1 - pic))
+    print("threshold batch size ln2/(-ln(1-nu)) =", np.log(2) / -np.log(1 - pic))
 
 
 def main():

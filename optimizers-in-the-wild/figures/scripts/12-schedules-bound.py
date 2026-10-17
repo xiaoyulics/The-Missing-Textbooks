@@ -15,7 +15,9 @@ of the discrete bound; SGD: best of 17 log-spaced peaks between eta_0/4 and 4 et
 final value relative to linear decay (c = 1).
 
 Output: figures/data/12-schedules-bound.dat, -bound-sgd.dat, -bound-tuned.dat, -bound-tunedcurve.dat.
-Runtime: about 15 seconds (numpy only, seeds 21 and 22).
+Printed: the ratios quoted in the text and the entries of the table of the text (J[phi] by quadrature
+and the exact discrete bound; no randomness, computed after the data files are written).
+Runtime: about 15 seconds (numpy and scipy.integrate, seeds 21 and 22).
 """
 import os
 import numpy as np
@@ -123,6 +125,41 @@ def main():
         a, b = bound_terms(shape)
         fin = sgd(np.array([f * eta0 * shape for f in facs]), d, runs=40, rng=rng, record=False)
         print("%s: SGD tuned rel %.3f, bound tuned rel %.3f" % (nm, fin.min() / ref_s, 2 * D * G * np.sqrt(a * b) / ref_b))
+    table_checks()
+
+
+def table_checks():
+    """Entries of the table of the text: Phi(0), J by quadrature, the limit sqrt(J/Phi(0)) of the best
+    bound times sqrt(T)/(DG), and the exact discrete value 2 sqrt(a b T) at T = 10^4 and 10^5 for the
+    shape eta_t = phi(t/(T+1)) (no randomness)."""
+    from scipy.integrate import quad
+
+    def J_of(phi, brk):
+        pts = lambda s: [x for x in brk if x > s] or None
+        Phi = lambda s: quad(phi, s, 1, points=pts(s), limit=400)[0]
+        Psi = lambda s: quad(lambda u: phi(u) ** 2, s, 1, points=pts(s), limit=400)[0]
+        integral = quad(lambda s: phi(s) * Psi(s) / Phi(s) ** 2, 0, 1, points=list(brk) or None, limit=400)[0]
+        return Psi(0) / Phi(0) + integral, Phi(0)
+
+    def discrete(phi, T):
+        a, b = bound_terms(np.vectorize(phi)(np.arange(1, T + 1) / (T + 1)))
+        return 2 * np.sqrt(a * b * T)
+
+    shapes = [("linear decay", lambda s: 1 - s, ()),
+              ("cosine to zero", lambda s: 0.5 * (1 + np.cos(np.pi * s)), ())]
+    for c in [0.1, 0.2, 0.5]:
+        shapes.append(("WSD linear c=%.1f" % c, lambda s, c=c: 1.0 if s <= 1 - c else (1 - s) / c, (1 - c,)))
+    shapes.append(("WSD 1-sqrt c=0.2", lambda s: 1.0 if s <= 0.8 else 1 - np.sqrt((s - 0.8) / 0.2), (0.8,)))
+    for name, phi, brk in shapes:
+        J, P0 = J_of(phi, brk)
+        print("table: %-17s Phi(0) %.4f  J %.4f  limit %.4f  discrete %.4f (T=1e4) %.4f (T=1e5)" % (
+            name, P0, J, np.sqrt(J / P0), discrete(phi, 10 ** 4), discrete(phi, 10 ** 5)))
+    print("table: constant, sqrt(1+H_{T-1}) at T=1e4: %.4f" % np.sqrt(1 + np.sum(1 / np.arange(1, 10 ** 4))))
+    rho = 0.1
+    for T in [10 ** 4, 10 ** 5]:
+        best = discrete(lambda s: rho + (1 - rho) * 0.5 * (1 + np.cos(np.pi * s)), T)
+        J = best ** 2 * (rho + (1 - rho) / 2)
+        print("table: cosine to 0.1, T=%d: best %.4f, J - 0.1 ln T = %.4f" % (T, best, J - rho * np.log(T)))
 
 
 if __name__ == "__main__":
