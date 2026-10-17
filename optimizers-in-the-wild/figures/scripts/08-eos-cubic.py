@@ -7,7 +7,7 @@ In the coordinates A = log x^2 and y, its continuous limit (time tau = eta*t) is
 which conserves H(A, y) = y^2 + e^A/2 - alpha*A.
 
 Outputs (figures/data/):
-  08-eos-cubic-levels.dat  closed level curves {H = h} through the two starting points
+  08-eos-cubic-levels.dat  closed level curves {H = h} through the two starting points (H = 2 and H = 9.46)
                             (columns a1 y1 a2 y2; 361 points each, angle parameterization)
   08-eos-cubic-phase.dat   gradient descent iterates (A_t, y_t), every 25 steps, for the two orbits
                             (columns a1 y1 a2 y2), eta = 0.002, alpha = 1, two periods each
@@ -78,7 +78,9 @@ def gd_orbit(A0, y0, eta, alpha, steps):
 
 def main():
     alpha, eta = 1.0, 0.002
-    starts = [(np.log(2 * alpha), 0.5), (np.log(1e-4), -0.5)]  # a small cycle; x0 = 0.01 below the edge
+    # a medium cycle (H = 2, started at A = log(2 alpha) with y > 0) and a large one,
+    # started below the edge with a small oscillation x0 = 0.01
+    starts = [(np.log(2 * alpha), np.sqrt(2.0 - phi(np.log(2 * alpha), alpha))), (np.log(1e-4), -0.5)]
     # periods, to choose the run lengths (two periods each)
     hs = [H(A0, y0, alpha) for A0, y0 in starts]
 
