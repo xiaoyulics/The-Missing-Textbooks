@@ -19,7 +19,7 @@ squared norm of the parameters; w_r ~ N(0, I_d/d), b_r = 0, a_r ~ N(0, 0.01) at 
 (a small output scale, far from the lazy regime).
 
 Writes figures/data/06-lazy-gap-kernel.dat and figures/data/06-lazy-gap-net.dat.
-Deterministic (numpy seeds 100-102, torch seeds 0-2); about 90 seconds.
+Deterministic (numpy seeds 100-102, torch seeds 0-2); about 45 seconds on a laptop CPU.
 """
 import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):

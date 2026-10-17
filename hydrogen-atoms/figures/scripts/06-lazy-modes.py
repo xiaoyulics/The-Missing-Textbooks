@@ -19,7 +19,7 @@ K_inf(x, x') = <xt, xt'> E[tanh'(u) tanh'(v)], (u, v) standard Gaussians with co
 <xt, xt'>, computed by Gauss-Hermite quadrature (80 x 80 nodes).
 
 Writes figures/data/06-lazy-modes-theory.dat and figures/data/06-lazy-modes-sim.dat.
-Deterministic (seed 6); runs in about 15 seconds on a laptop CPU.
+Deterministic (seed 6); runs in about 10 seconds on a laptop CPU.
 """
 import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):

@@ -16,7 +16,7 @@ descent, moves its parameters by D = sqrt( sum_k c_k^2 (1 - (1 - eta lam_k)^s)^2
 c_k^2 = ||projection of y on the eigenspace k||^2 (the RKHS norm of the fitted part of y),
 and E||W_0||_F^2 = 3m, so the predicted relative change is D / sqrt(3m).
 
-Writes figures/data/06-lazy-width.dat. Deterministic (seeds 0..3); about 40 seconds.
+Writes figures/data/06-lazy-width.dat. Deterministic (seeds 0..3); about 50 seconds on a laptop CPU.
 """
 import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
