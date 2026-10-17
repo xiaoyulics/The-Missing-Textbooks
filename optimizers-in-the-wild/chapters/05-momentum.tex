@@ -6,7 +6,7 @@
 \begin{refsection}[chapters/05-momentum.bib]
 
 \begin{chaptersummary}
-Almost every optimizer averages its gradients with a coefficient near $0.9$, and every normalized optimizer, from sign descent with momentum to Lion and Muon, has the average built in. On a quadratic the average accelerates gradient descent and has stability regions of its own, among them the threshold $38$ behind Adam's edge of stability; with additive noise, heavy-ball momentum is to first order a larger step size. For normalized steepest descent in a general norm we prove a $T^{-1/4}$ rate with momentum, and show by an example that without memory a normalized step can stall at a gradient as large as the noise, whatever its step size. Simulations separate the bias of a normalized step, which memory removes, from its fluctuations, which memory enlarges; nothing here explains why $0.9$ works so widely.
+Almost every optimizer averages its gradients with a coefficient near $0.9$, and every normalized optimizer, from sign descent with momentum to Lion and Muon, has the average built in. On a quadratic the average accelerates gradient descent and has stability regions of its own, among them the threshold $38$ behind Adam's edge of stability; with additive noise, heavy-ball momentum is to first order a larger step size. For normalized steepest descent in a general norm we prove a $T^{-1/4}$ rate with momentum, and show by an example that without memory a normalized step can stall at a gradient of the size of the noise, however small its step size. Simulations separate the bias of a normalized step, which memory removes, from its fluctuations, which memory enlarges; nothing here explains why $0.9$ works so widely.
 \end{chaptersummary}
 
 \section{In the wild: momentum \texorpdfstring{$0.9$}{0.9}, almost everywhere}\label{sec:momentum:wild}
@@ -29,7 +29,7 @@ With small batches, SGD with momentum $\beta$ and learning rate $\eta$ in PyTorc
 Every widely used normalized optimizer steps along an average of past gradients. Without the average and without large batches, sign descent can stall or fail to converge; with momentum and large batches, it comes close to Adam on transformers.
 \end{observation}
 
-The optimizers are Signum, the sign of an exponential moving average \parencite{BernsteinEtAl2018}, Lion and Muon.\sidenote{The name Signum, for sign descent with momentum, is from \textcite{BernsteinEtAl2018}, who also analysed majority vote over workers for distributed training.} \Textcite{KunstnerEtAl2023} found that the advantage of sign descent with momentum over SGD grows with the batch size. In theory, sign descent with stochastic gradients can fail to converge \parencite{KarimireddyEtAl2019}, and \textcite{CutkoskyMehta2020} analysed normalized SGD with momentum and without large minibatches. How much of the need for memory is due to small batches is less well documented than the practice.
+The optimizers are Signum, the sign of an exponential moving average \parencite{BernsteinEtAl2018}, Lion and Muon.\sidenote{The name Signum, for sign descent with momentum, is from \textcite{BernsteinEtAl2018}, who also analyzed majority vote over workers for distributed training.} \Textcite{KunstnerEtAl2023} found that the advantage of sign descent with momentum over SGD grows with the batch size. In theory, sign descent with stochastic gradients can fail to converge \parencite{KarimireddyEtAl2019}, and \textcite{CutkoskyMehta2020} analyzed normalized SGD with momentum and without large minibatches. How much of the need for memory is due to small batches is less well documented than the practice.
 
 \begin{observation}[Momentum moves the edge of stability; \textcite{CohenEtAl2022}]\label[observation]{obs:momentum:edge}
 In full-batch training with Adam and $\beta_1=0.9$, the largest eigenvalue of the preconditioned Hessian rises to about $38/\eta$ and hovers there, as the sharpness of gradient descent hovers at $2/\eta$ \parencite{CohenEtAl2021}.
@@ -48,7 +48,7 @@ Let $g_t$ be the gradient or stochastic gradient at $\theta_t$, $\eta>0$ and $0\
 \item \emph{EMA momentum}\index{momentum!exponential moving average} (Adam's first moment): $m_t=\beta m_{t-1}+(1-\beta)g_t$, $\theta_{t+1}=\theta_t-\eta m_t$, with $m_{-1}=0$.
 \item \emph{Quasi-hyperbolic momentum}\index{quasi-hyperbolic momentum} \parencite{MaYarats2019}: $m_t$ as in (ii) and $\theta_{t+1}=\theta_t-\eta\bigl((1-\nu)g_t+\nu m_t\bigr)$, $0\le\nu\le1$. It is EMA momentum for $\nu=1$, gradient descent for $\nu=0$, and for $\nu=\beta$ \emph{Nesterov momentum in EMA form}, the form used by Muon.
 \item \emph{Nesterov momentum}\index{momentum!Nesterov}: $\theta_{t+1}=y_t-\eta\nabla\Loss(y_t)$ with $y_t=\theta_t+\beta(\theta_t-\theta_{t-1})$; its PyTorch form is $b_t=\beta b_{t-1}+g_t$, $\theta_{t+1}=\theta_t-\eta(g_t+\beta b_t)$.
-\item \emph{Normalized steepest descent with momentum}: $m_t$ as in (ii) and $\theta_{t+1}=\theta_t+\eta u_t$ with $u_t\in\lmo(m_t)$.
+\item \emph{Normalized steepest descent with momentum}: $m_t$ as in (ii) and $\theta_{t+1}=\theta_t+\eta u_t$ with $u_t\in\argmin_{\norm{u}\le1}\ip{m_t,u}$.
 \end{enumerate}
 \end{definition}
 
@@ -63,14 +63,14 @@ For (i), $\theta_{t+1}-\theta_t=-\eta\beta b_{t-1}-\eta g_t=\beta(\theta_t-\thet
 For a normalized step the conventions do not matter, since $\lmo(cm)=\lmo(m)$ for $c>0$. We study the filter in three settings.
 
 \begin{assumption}[Quadratic loss, additive noise]\label[assumption]{ass:momentum:quadratic}
-$\Loss(\theta)=\frac12(\theta-\theta^\star)^\top H(\theta-\theta^\star)$ on $\R^d$, where $H$ is symmetric with eigenvalues $h_1\ge\dots\ge h_d>0$ and orthonormal eigenvectors $v_1,\dots,v_d$; $L=h_1$, $\mu=h_d$, $\kappa=L/\mu$. The stochastic gradient is $g_t=H(\theta_t-\theta^\star)+\zeta_t$, with $\zeta_0,\zeta_1,\dots$ independent and identically distributed, independent of the initialization, of mean zero and covariance $C$. Exact gradients are the case $C=0$.
+The loss is $\Loss(\theta)=\frac12(\theta-\theta^\star)^\top H(\theta-\theta^\star)$ on $\R^d$, where $H$ is symmetric with eigenvalues $h_1\ge\dots\ge h_d>0$ and orthonormal eigenvectors $v_1,\dots,v_d$; $L=h_1$, $\mu=h_d$, $\kappa=L/\mu$. The stochastic gradient is $g_t=H(\theta_t-\theta^\star)+\zeta_t$, with $\zeta_0,\zeta_1,\dots$ independent and identically distributed, independent of the initialization, of mean zero and covariance $C$. Exact gradients are the case $C=0$.
 \end{assumption}
 
 \begin{assumption}[Smooth loss, unbiased noise]\label[assumption]{ass:momentum:smooth}
-$\Loss\colon\R^d\to\R$ is bounded below by $\Loss^\star$ and $L$-smooth with respect to a norm $\norm{\cdot}$. The stochastic gradient is $g_t=\nabla\Loss(\theta_t)+\zeta_t$ with $\E[\zeta_t\mid\cF_t]=0$ and $\E[\norm{\zeta_t}_2^2\mid\cF_t]\le\sigma^2$, where $\theta_0$ is fixed and $\cF_t$ is generated by $\zeta_0,\dots,\zeta_{t-1}$. The constant $\chi=\max_{z\ne0}\norm{z}_*/\norm{z}_2$ compares the dual norm with the Euclidean norm.
+The loss $\Loss\colon\R^d\to\R$ is bounded below by $\Loss^\star$ and $L$-smooth with respect to a norm $\norm{\cdot}$. The stochastic gradient is $g_t=\nabla\Loss(\theta_t)+\zeta_t$ with $\E[\zeta_t\mid\cF_t]=0$ and $\E[\norm{\zeta_t}_2^2\mid\cF_t]\le\sigma^2$, where $\theta_0$ is fixed and $\cF_t$ is generated by $\zeta_0,\dots,\zeta_{t-1}$. The constant $\chi=\max_{z\ne0}\norm{z}_*/\norm{z}_2$ compares the dual norm with the Euclidean norm.
 \end{assumption}
 
-Setting (a) is \cref{ass:momentum:quadratic} with $C=0$; setting (b), with noise, is the \term{noisy quadratic model}\index{noisy quadratic model} of \textcite{ZhangEtAl2019} (\cref{ch:noise}); setting (c) is \cref{ass:momentum:smooth} with normalized steps, where $\chi=1$ for $\ell_2$, $\sqrt d$ for $\ell_\infty$, and $\sqrt{\min(m,n)}$ for the spectral norm on $m\times n$ matrices.
+Setting (a) is \cref{ass:momentum:quadratic} with $C=0$; setting (b), with noise, is the \term{noisy quadratic model}\index{noisy quadratic model} of \textcite{ZhangEtAl2019} (\cref{ch:noise}); setting (c) is \cref{ass:momentum:smooth} with normalized steps, where $\chi=1$ for $\ell_2$, $\sqrt d$ for $\ell_\infty$, and $\sqrt{\min(m,n)}$ for the spectral norm on $m\times n$ matrices. We write $h_i$ for the eigenvalues that the rest of the book calls $\lambda_i$, so that the curvature of a single coordinate can be written $h$, without a subscript.
 
 \begin{dictionary}
 the coefficient $\beta$ & $0.9$ for SGD, Adam's $\beta_1$ and Lion's step; $0.95$ for Muon; $0.99$ for Lion's state\\
@@ -139,7 +139,7 @@ The plan is to apply the Jury test to $z^2+a_1z+a_0$, with $u=\eta h>0$, $a_1=-\
 For $\nu=1$ this is EMA momentum, and for $\nu=\beta$ the denominator is $(1-\beta)(1+2\beta)$. By \cref{lem:momentum:forms}(i)--(ii), heavy ball with step $\eta$, in either form, is EMA momentum with step $\eta/(1-\beta)$; by \cref{lem:momentum:forms}(iii)--(iv), both forms of Nesterov momentum with step $\eta$ follow the recursion of Nesterov momentum in EMA form with step $\eta/(1-\beta)$. Substituting $\eta/(1-\beta)$ for $\eta$ in the first two thresholds gives the last two.
 \end{proof}
 
-Adam's convention widens the stable range of $\eta h$ by $(1+\beta)/(1-\beta)$, $19$ at $\beta=0.9$; PyTorch's only by $1+\beta$, since it also multiplies the effective step by $1/(1-\beta)$. Nesterov's look-ahead shrinks the range below gradient descent's $2$, by amplifying the coordinate that flips sign at every step. These are the thresholds that \cref{ch:eos} meets at the edge of stability (\cref{obs:momentum:edge}).
+Adam's convention widens the stable range of $\eta h$ by $(1+\beta)/(1-\beta)$, $19$ at $\beta=0.9$; PyTorch's only by $1+\beta$, since it also multiplies the effective step by $1/(1-\beta)$. In PyTorch's convention Nesterov's look-ahead shrinks the range below gradient descent's $2$, by amplifying the coordinate that flips sign at every step. These are the thresholds that \cref{ch:eos} meets at the edge of stability (\cref{obs:momentum:edge}).
 
 \begin{theorem}[Heavy ball on quadratics; \textcite{Polyak1964}]\label{thm:momentum:heavyball}\index{acceleration}
 Under \cref{ass:momentum:quadratic} with exact gradients and $\mu<L$, let $r=(\sqrt\kappa-1)/(\sqrt\kappa+1)$, and run heavy ball with $\eta=4/(\sqrt L+\sqrt\mu)^2$, $\beta=r^2$ and $\theta_{-1}=\theta_0$.
@@ -198,7 +198,7 @@ In the noisy quadratic model each coordinate is such a recursion, with noise var
 
 \section{The theory: normalized steps with memory}\label{sec:momentum:normalized}
 
-We drop the quadratic and the linearity. The algorithm is \cref{def:momentum:forms}(v): $m_t=\beta m_{t-1}+(1-\beta)g_t$ from a given $m_{-1}$, and a step of length at most $\eta$ along a steepest direction $u_t\in\lmo(m_t)$ of the average (\cref{ch:steepest}), chosen as a measurable function of $m_t$; when $m_t=0$, every point of the unit ball is allowed. The first lemma says that a steepest direction of $m$ is a good direction for $g$ when $m$ is close to $g$.
+We drop the quadratic and the linearity. The algorithm is \cref{def:momentum:forms}(v): $m_t=\beta m_{t-1}+(1-\beta)g_t$ from a given $m_{-1}$, and a step of length at most $\eta$ along a steepest unit direction $u_t$ of the average, a minimizer of $\ip{m_t,u}$ over the unit ball (\cref{ch:steepest}), chosen as a measurable function of $m_t$; when $m_t=0$, every point of the unit ball is allowed. The first lemma says that a steepest direction of $m$ is a good direction for $g$ when $m$ is close to $g$.
 
 \begin{lemma}[A steepest direction of a nearby vector]\label[lemma]{lem:momentum:direction}
 For all $m,g\in\R^d$ and every $u$ with $\norm u\le1$ and $\ip{m,u}=-\norm m_*$,
@@ -257,7 +257,7 @@ Insert this and divide by $\eta T$.
 \end{proof}
 
 \begin{corollary}[Rates]\label[corollary]{cor:momentum:rate}
-(i) With $1-\beta=T^{-1/2}$ and $\eta=(\Delta_0/L)^{1/2}T^{-3/4}$, the right side of \eqref{eq:momentum:normalized} is at most $\bigl(3\sqrt{L\Delta_0}+2\chi\sigma\bigr)T^{-1/4}+2\norm{m_{-1}-\nabla\Loss(\theta_0)}_*T^{-1/2}+\frac12\sqrt{L\Delta_0}\,T^{-3/4}$. (ii) Without momentum, $\beta=0$, it is $\Delta_0/(\eta T)+L\eta/2+2\chi\sigma$, whose noise term does not decrease with $\eta$ or $T$.
+(i) If $\Delta_0>0$, then with $1-\beta=T^{-1/2}$ and $\eta=(\Delta_0/L)^{1/2}T^{-3/4}$ the right side of \eqref{eq:momentum:normalized} is at most $\bigl(3\sqrt{L\Delta_0}+2\chi\sigma\bigr)T^{-1/4}+2\norm{m_{-1}-\nabla\Loss(\theta_0)}_*T^{-1/2}+\frac12\sqrt{L\Delta_0}\,T^{-3/4}$. (ii) Without momentum, $\beta=0$, it is $\Delta_0/(\eta T)+L\eta/2+2\chi\sigma$, whose noise term does not decrease with $\eta$ or $T$.
 \end{corollary}
 
 \begin{proof}
@@ -278,7 +278,7 @@ and consequently $\liminf_{t\to\infty}\E\abs{\nabla\Loss(\theta_t)}\ge b-5\eta=\
 The plan is to show that below $b$ the iterate is a random walk with drift toward $b$, and to control its distance below $b$ with an exponential supermartingale. Let $V_t=(b-\theta_t)_+$ and $W_t=2^{V_t/\eta}$; we show $\E[W_{t+1}\mid\theta_t]\le\frac78W_t+4$. If $-3b<\theta_t\le b-\eta$, then the step is $-\eta$ when $\zeta_t=3b$ (probability $\frac14$, since $\theta_t+3b>0$) and $+\eta$ when $\zeta_t=-b$ (probability $\frac34$, since $\theta_t-b<0$), and in both cases $\theta_{t+1}\le b$; so $W_{t+1}\in\{2W_t,W_t/2\}$ and $\E[W_{t+1}\mid\theta_t]=\frac78W_t$. If $\theta_t\le-3b$, then the step is $+\eta$ with probability at least $\frac34$, which gives $W_{t+1}\le\max(W_t/2,1)$, and otherwise $W_{t+1}\le2W_t$; so $\E[W_{t+1}\mid\theta_t]\le\frac78W_t+\frac34$. If $b-\eta<\theta_t<b$, then $V_{t+1}\le V_t+\eta<2\eta$ and $W_{t+1}<4$. If $\theta_t\ge b$, then $\theta_{t+1}\ge\theta_t-\eta\ge b-\eta$ and $W_{t+1}\le2$. Taking expectations, $\E W_{t+1}\le\frac78\E W_t+4$, so $\E W_t\le(\frac78)^tW_0+32$, and Jensen's inequality for $v\mapsto2^{v/\eta}$ gives $2^{\E V_t/\eta}\le\E W_t$, the first claim. Its right side tends to $\eta\log_232=5\eta$, and $\abs{\nabla\Loss(\theta_t)}=\abs{\theta_t}\ge b-V_t$.
 \end{proof}
 
-In one dimension every normalized step is a sign step, so the proposition covers all norms. Its mechanism is a \term{bias of the normalized step}\index{bias of a normalized step}: for $0<\theta<b$ the noise, usually slightly negative and occasionally very positive, gives the stochastic gradient the wrong sign three times in four, and the expected step $+\eta/2$ points uphill. A small step averages the signs, and the average of the signs is what is wrong; momentum takes the sign of an average, and by \cref{thm:momentum:normalized} the floor drops to $\eta/2+2\beta\eta/(1-\beta)+2\sigma\sqrt{(1-\beta)/(1+\beta)}$. The bias needs asymmetric noise: with symmetric noise a normalized step never points uphill on average, in every norm (\cref{ex:momentum:symmetric}).
+In one dimension every norm is a multiple of $\abs{\cdot}$ and every normalized step a sign step, so the proposition covers all norms, with $\eta$ rescaled. Its mechanism is a \term{bias of the normalized step}\index{bias of a normalized step}: for $0<\theta<b$ the noise, usually slightly negative and occasionally very positive, gives the stochastic gradient the wrong sign three times in four, and the expected step $+\eta/2$ points uphill. A small step averages the signs, and the average of the signs is what is wrong; momentum takes the sign of an average, and by \cref{thm:momentum:normalized} the floor drops to $\eta/2+2\beta\eta/(1-\beta)+2\sigma\sqrt{(1-\beta)/(1+\beta)}$. The bias needs asymmetric noise: with symmetric noise a normalized step never points uphill on average, in every norm (\cref{ex:momentum:symmetric}).
 
 \subsection{Averaging the iterates}\index{averaging!of iterates}
 
@@ -303,7 +303,7 @@ The plan is to bound $T(F(x_T)-F(x^\star))$ by the linear regret of the sequence
 which telescopes to $\sum_{t\le T}\ip{g_t,z_t-x^\star}\ge T(F(x_T)-F(x^\star))$. Expanding $\norm{z_{t+1}-x^\star}_2^2$ gives $\sum_{t\le T}\ip{\tilde g_t,z_t-x^\star}\le\norm{z_1-x^\star}_2^2/(2\gamma)+\frac\gamma2\sum_{t\le T}\norm{\tilde g_t}_2^2$ (\cref{thm:toolkit:ogd}), and $\E\ip{\tilde g_t,z_t-x^\star}=\E\ip{g_t,z_t-x^\star}$ because $z_t$ is determined by the past. Taking expectations of both bounds gives the claim.
 \end{proof}
 
-This is \term{schedule-free} SGD\index{schedule-free methods} with $\beta=1$; with $\beta=0$ it is SGD with Polyak--Ruppert averaging, and the bound follows from Jensen's inequality. \Textcite{DefazioEtAl2024} prove it for every interpolation $y_t=(1-\beta)z_t+\beta x_t$, $\beta\in[0,1]$: a constant step with a uniform average matches a well-decayed step (\cref{ch:schedules}).\sidenote{The AlgoPerf benchmark of the schedule-free field guide \parencite{DahlEtAl2023} measures the time to reach target metrics on a fixed set of workloads; its self-tuning track admits no workload-specific hyperparameter search.} A \term{moving average of the weights}\index{averaging!of weights}, $\bar\theta_t=\beta_e\bar\theta_{t-1}+(1-\beta_e)\theta_t$, acts differently (\cref{ex:momentum:modelema}).
+This is \term{schedule-free} SGD\index{schedule-free methods} with $\beta=1$; with $\beta=0$ it is SGD with Polyak--Ruppert averaging, and the bound follows from Jensen's inequality. \Textcite{DefazioEtAl2024} prove the bound $DG/\sqrt T$, for $G$-Lipschitz stochastic losses, at every interpolation $y_t=(1-\beta)z_t+\beta x_t$, $\beta\in[0,1]$: a constant step with a uniform average matches a well-decayed step (\cref{ch:schedules}).\sidenote{The AlgoPerf benchmark of the schedule-free field guide \parencite{DahlEtAl2023} measures the time to reach target metrics on a fixed set of workloads; its self-tuning track admits no workload-specific hyperparameter search.} A \term{moving average of the weights}\index{averaging!of weights}, $\bar\theta_t=\beta_e\bar\theta_{t-1}+(1-\beta_e)\theta_t$, acts differently (\cref{ex:momentum:modelema}).
 
 \begin{heuristic}
 For a coordinate that relaxes in fewer steps than the window $1/(1-\beta_e)$, the weight average has the variance of gradient descent with step $(1-\beta_e)/h$, as after a cooldown; a slower coordinate is only delayed, by $\beta_e/(1-\beta_e)$ steps. A weight average is a cooldown of the stiff coordinates only.
@@ -349,7 +349,7 @@ For a coordinate that relaxes in fewer steps than the window $1/(1-\beta_e)$, th
 \label{fig:momentum:linear}
 \end{figure}
 
-\paragraph{Normalized steps: bias and fluctuations.} \Cref{thm:momentum:normalized} is a worst-case bound. Two examples that can be analysed closely show how typical problems differ: \cref{prop:momentum:floor} with momentum ($h\theta^2/2$ on $\R$, skewed noise, $\sigma=1$), and, at the other extreme, $h\norm\theta_2^2/2$ in dimension $1000$ with isotropic Gaussian noise and $\ell_2$-normalized steps.
+\paragraph{Normalized steps: bias and fluctuations.} \Cref{thm:momentum:normalized} is a worst-case bound. Two examples that can be analyzed closely show how typical problems differ: \cref{prop:momentum:floor} with momentum ($h\theta^2/2$ on $\R$, skewed noise, $\sigma=1$), and, at the other extreme, $h\norm\theta_2^2/2$ in dimension $1000$ with isotropic Gaussian noise and $\ell_2$-normalized steps.
 
 \begin{heuristic}
 \emph{One dimension.} Write $m_t=h\tilde\theta_t+\momentumzbar_t$: the average $\tilde\theta_t$ of the iterates is within $\beta\eta/(1-\beta)$ of $\theta_t$, and the average $\momentumzbar_t$ of the noise is stationary, with correlation time about $1/(1-\beta)$ and the law of $\momentumzbar=(1-\beta)\sum_{k\ge0}\beta^k\zeta_k$. For small $\eta$ the steps average, over many correlation times, to $-\eta(1-2F(-h\theta))$, with $F$ the distribution function of $\momentumzbar$; the drift vanishes where $F(-h\theta)=\frac12$, so as $\eta\to0$ the stationary gradient concentrates at the \emph{bias}
@@ -379,7 +379,7 @@ independent of $\eta$ and $h$; without memory it is $b=\sigma/\sqrt3$. With memo
 \addplot[simulation,error bars/.cd,y dir=both,y explicit] table[x=x,y=mean,y error expr=2*\thisrow{se}] {figures/data/05-momentum-skew-sim.dat};
 \addplot[simulation2] table[x=x,y=sd] {figures/data/05-momentum-skew-sim.dat};
 \addplot[sea,only marks,mark=o,mark size=2.6pt,line width=0.8pt,forget plot] coordinates {(1,0.57735)};
-\legend{exact bias as $\eta\rightarrow0$,fluctuation (heuristic),bound of the theorem,simulated mean,simulated s.d.}
+\legend{bias as $\eta\rightarrow0$ (derived),fluctuation (heuristic),bound of the theorem,simulated mean,simulated s.d.}
 \nextgroupplot[xlabel={$1-\beta$},ylabel={root mean square of $\norm{\nabla\Loss}_2$},ymode=log,xmin=0.004,xmax=1.4,ymin=0.04,ymax=8,
   legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize,/tikz/every even column/.append style={column sep=3mm}},legend columns=2,legend cell align=left]
 \addplot[theory] table[x=x,y=rmsA] {figures/data/05-momentum-isotropic.dat};
@@ -391,7 +391,7 @@ independent of $\eta$ and $h$; without memory it is $b=\sigma/\sqrt3$. With memo
 \end{groupplot}
 \end{tikzpicture}
 \end{fullwidth}
-\caption{Normalized steps with memory; $1-\beta$ decreases to the right. Left: sign steps with momentum on $\theta^2/2$ with the skewed noise of \cref{prop:momentum:floor}, $\sigma=1$, $\eta=10^{-4}$; $2000$ chains ($4000$ for $\beta\ge0.95$) from $\theta_0=0$, $25000$ burn-in and $40000$ measured steps, seed $0$; points: mean (two standard errors) and standard deviation of the stationary gradient. Curves: the exact limit \eqref{eq:momentum:bias} from the fixed-point equation of the law of $\momentumzbar$ (for $\beta\ge\frac12$; the circle is $\beta=0$), the heuristic \eqref{eq:momentum:fluct}, and the stationary part of \eqref{eq:momentum:normalized}. Right: $\ell_2$-normalized steps with momentum on $\norm\theta_2^2/2$ in $\R^{1000}$, isotropic Gaussian noise, $\sigma=1$; four runs, $3000$ burn-in, $8000$ measured steps, seed $0$ (points), against \eqref{eq:momentum:iso} (curves) and the bound for $\eta=0.01$ (dashed). Scripts \texttt{05-momentum-skew.py}, \texttt{05-momentum-isotropic.py}.}
+\caption{Normalized steps with memory; $1-\beta$ decreases to the right. Left: sign steps with momentum on $\theta^2/2$ with the skewed noise of \cref{prop:momentum:floor}, $\sigma=1$, $\eta=10^{-4}$; $2000$ chains ($4000$ for $\beta\ge0.95$) from $\theta_0=0$, $25000$ burn-in and $40000$ measured steps, seed $0$; points: mean (two standard errors) and standard deviation of the stationary gradient. Curves: the derived limit \eqref{eq:momentum:bias}, with the median computed exactly from the fixed-point equation of the law of $\momentumzbar$ (for $\beta\ge\frac12$; the circle is $\beta=0$), the heuristic \eqref{eq:momentum:fluct}, and the stationary part of \eqref{eq:momentum:normalized}. Right: $\ell_2$-normalized steps with momentum on $\norm\theta_2^2/2$ in $\R^{1000}$, isotropic Gaussian noise, $\sigma=1$; four runs, $3000$ burn-in, $8000$ measured steps, seed $0$ (points), against \eqref{eq:momentum:iso} (curves) and the bound for $\eta=0.01$ (dashed). Scripts \texttt{05-momentum-skew.py}, \texttt{05-momentum-isotropic.py}.}
 \label{fig:momentum:normalized}
 \end{figure}
 
