@@ -14,9 +14,11 @@ Theory (exact recursions; eta optimized on a grid of 400 log-spaced values below
   rconst                ratio T_sgd/T_pre, constant step, last iterate, c = h
   ravg                  same with tail averaging (average of the last fraction 1-f of the iterates,
                         f in {0,0.1,...,0.9,1} optimized with eta), exact formula for the average
-  rlin                  same with a linear decay of the step to zero over the run
-  riso                  constant step, last iterate, isotropic noise c_i = 1/1000 * sum_j h_j / ...
-                        normalized so that tr(C) is the same as for c = h
+  rlin                  same with a linear decay of the step to zero over the run (peak step size
+                        searched on a coarse grid, then refined; computed at the Monte Carlo batch
+                        sizes only, nan elsewhere)
+  riso                  constant step, last iterate, isotropic noise c_i = (1/d) sum_j h_j, which
+                        has the same trace as c = h
 Simulation (Monte Carlo, seeds fixed): 32 runs at the theory-optimal eta for each B in
   {1,4,16,64,256,1024,4096}; the reported step is the first step at which the 32-run average loss,
   smoothed by a trailing mean over the last 2% of the steps, is below the target.
@@ -24,7 +26,7 @@ Simulation (Monte Carlo, seeds fixed): 32 runs at the theory-optimal eta for eac
   mcrms                 RMSProp (Adam with beta1 = 0, beta2 = 0.999, bias correction, epsilon = 0),
                         16 runs, eta tuned over 4 values around eta_pre/sqrt(B); B <= 64 only
 Outputs: figures/data/14-transformers-batch.dat (theory), 14-transformers-batch-mc.dat (Monte Carlo).
-Runtime: about 80 seconds on one core.
+Runtime: about one minute on one core.
 """
 import os
 import numpy as np
