@@ -109,9 +109,11 @@ def main():
         for i, c in enumerate(cs_sgd):
             f.write("%.5g " % c + " ".join("%.6g" % sgd_cols[k][i] for k in keys) + "\n")
     with open(os.path.join(DATA, "12-schedules-cooldown-opt.dat"), "w") as f:
-        f.write("key T cstar loss\n")
-        for (key, T, ch, Lh, cx, Lx) in opt_rows:
-            f.write("%s %d %.4f %.6g\n" % (key, T, ch, Lh))
+        f.write("T cstara05 lossa05 cstara1 lossa1\n")
+        for T in TS:
+            r05 = [r for r in opt_rows if r[0] == "a05" and r[1] == T][0]
+            r1 = [r for r in opt_rows if r[0] == "a1" and r[1] == T][0]
+            f.write("%d %.4f %.6g %.4f %.6g\n" % (T, r05[2], r05[3], r1[2], r1[3]))
 
 
 if __name__ == "__main__":

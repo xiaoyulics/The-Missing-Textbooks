@@ -1,0 +1,600 @@
+% Chapter 15 of Optimizers in the Wild: implicit bias and the margin of a norm.
+\newcommand{\biasP}{\mathcal{P}_n}
+\newcommand{\biasqmin}{q_{\min}}
+\newcommand{\biasbar}{\bar\gamma}
+\newcommand{\biasU}{\mathcal{U}^\star}
+\newcommand{\biasartanh}{\operatorname{artanh}}
+
+\casechapter{Where Steepest Descent Ends}{Implicit bias and the margin of a norm}{Adaptive methods and generalization}{ch:bias}
+\begin{refsection}[chapters/15-bias.bib]
+
+\begin{chaptersummary}
+When a model can fit its training data exactly, training does not stop at zero training error: the loss keeps falling, the weights keep growing, and what the optimizer still decides is the direction in which they grow; adaptive methods have been reported to choose directions that generalize worse than those of stochastic gradient descent. For a linear classifier on separable data with the exponential loss we prove that normalized steepest descent in a norm maximizes the margin measured in that norm, with an explicit bound for every sequence of step sizes: gradient descent finds the $\ell_2$ maximum-margin classifier, sign descent and Adam without memory the $\ell_\infty$ one, coordinate descent (boosting) the $\ell_1$ one, and orthogonalized updates the spectral one, while decoupled weight decay stops the march at radius $1/\lambda$, within $\lambda\log n$ of the maximum margin. On a dataset in the spirit of Wilson et al.\ the $\ell_\infty$ bias misclassifies every negative test example and the $\ell_2$ bias none; on another the roles reverse. The idealization misses depth, noise, Adam's $\epsilon$, finite training times, and the evidence that well-tuned adaptive methods need not generalize worse.
+\end{chaptersummary}
+
+\section{In the wild: the solutions optimizers choose}\label{sec:bias:wild}
+
+Two optimizers that reach the same training loss need not reach the same network. Most of this book compares optimizers by how fast they reduce the loss; this chapter asks where they end, and whether the end point explains a difference in test error. The question became pressing in 2017, when \textcite{WilsonEtAl2017} compared AdaGrad, RMSProp and Adam with stochastic gradient descent on image classification, character-level language modeling and parsing, and concluded that practitioners should reconsider the use of adaptive methods for training neural networks. Practice in computer vision had settled on stochastic gradient descent with momentum already; their paper gave the habit a reason.\sidenote{In this chapter ``learning rate'' (in the practice sections) and ``step size'' (in the theory) are synonyms, as everywhere in the book.}
+
+\begin{practice}[ResNets, \textcite{HeEtAl2016}; \textcite{WilsonEtAl2017}; \textcite{KeskarSocher2017}]
+Train convolutional networks for image classification with SGD with momentum $0.9$ and weight decay; for ResNets on ImageNet, a learning rate of $0.1$ for a batch of $256$ examples, divided by $10$ whenever the error plateaus, and weight decay $10^{-4}$. When test accuracy is what counts, prefer SGD to Adam, or start with Adam and switch to SGD later in training. Train transformers with Adam or AdamW.
+\end{practice}
+
+The first sentence is a documented recipe. The second is partly folklore: it rests on comparisons whose outcome, as we shall see, depends on how the optimizers were tuned. The third is the subject of \cref{ch:transformers}. The evidence comes in three kinds.
+
+\begin{observation}[\textcite{WilsonEtAl2017}]\label{obs:bias:wilson}
+On image classification (CIFAR-10), character-level language modeling and two parsing benchmarks, the solutions found by AdaGrad, RMSProp and Adam had higher test error than those found by well-tuned SGD, in some cases even when the adaptive methods reached a lower training loss. On a constructed linear classification problem trained with the square loss, the adaptive methods provably converge to a classifier that labels every new example positive, while gradient descent converges to the minimum-norm interpolant, which labels every new example correctly.
+\end{observation}
+
+The constructed problem is the clean part of the evidence, and \cref{ex:bias:wilson} rebuilds it for the margin. The benchmark comparisons are the contested part. The second kind of evidence is that training past zero training error still changes the solution. \Textcite{SoudryEtAl2018} trained a convolutional network on CIFAR-10 with SGD, momentum and the cross-entropy loss beyond the point of zero training error: the training loss kept decaying roughly like $1/t$, the norm of the last layer's weights grew roughly like $\log t$, and while the validation loss rose, the validation error kept improving slowly.\sidenote{\Textcite{HofferHubaraSoudry2017} made a related observation for large batches: much of the generalization gap of large-batch training closes if one trains for more steps.}
+
+\begin{observation}[\textcite{ChoiEtAl2019}; \textcite{LoshchilovHutter2019}]\label{obs:bias:tuning}
+When every hyperparameter of each optimizer is tuned, including Adam's $\epsilon$ and its momentum, the adaptive methods matched or beat momentum SGD on every workload of \textcite{ChoiEtAl2019} (an unrefereed preprint). They explain the result by inclusion: Adam with a large $\epsilon$ behaves like momentum SGD with a rescaled learning rate, so a search over Adam's hyperparameters contains SGD. With weight decay decoupled from the gradient step, Adam's test error on image classification comes close to that of SGD with momentum \parencite{LoshchilovHutter2019}.
+\end{observation}
+
+The third kind of evidence is geometric. \Cref{ch:decay} shows that AdamW with weight decay $\lambda$ keeps its weights in an $\ell_\infty$ ball of radius $1/\lambda$, and that without memory it is the Frank--Wolfe method on that ball \parencite{XieLi2024}. So the optimizers do not merely move at different speeds: they move in different geometries, and the geometry leaves a trace in the weights.
+
+The status, then: that adaptive methods generalize worse is observed in some settings and not in others, and it is not a law. What is solid is that the solution reached at a given training loss depends on the optimizer. The question for the theory is: \emph{when the training data can be fit exactly, where does steepest descent in a given norm end up, and can the answer explain why two optimizers with the same training loss generalize differently?}
+
+\section{The idealization: separable data and the margin of a norm}\label{sec:bias:ideal}
+
+\begin{assumption}[Separable linear classification]\label{ass:bias:separable}
+The examples $x_1,\dots,x_n$ lie in a finite-dimensional real inner-product space $V$: either $\R^d$ with $\ip{\theta,x}=\theta^\top x$, or $\R^{K\times d}$ with $\ip{W,X}=\tr(W^\top X)$. The labels are $y_i\in\{-1,+1\}$. The space carries a norm $\norm{\cdot}$ with dual norm $\norm{\cdot}_*$, and $R=\max_i\norm{x_i}_*$. The data are \term{linearly separable}\index{separable data} through the origin: some $\theta$ has $y_i\ip{\theta,x_i}>0$ for every $i$. The classifier is $x\mapsto\sign\ip{\theta,x}$, and the training loss is the exponential loss
+\begin{equation}\label{eq:bias:loss}
+  \Loss(\theta)=\frac1n\sum_{i=1}^n\exp\bigl(-y_i\ip{\theta,x_i}\bigr).
+\end{equation}
+\end{assumption}
+
+Only the products $z_i=y_ix_i$ matter, and we call them the \emph{signed examples}. We write $q_i(\theta)=\ip{\theta,z_i}$ for the margin of example $i$, which is positive when the example is classified correctly, and $\biasqmin(\theta)=\min_iq_i(\theta)$.
+
+\begin{definition}[The margin of a norm]\label[definition]{def:bias:margin}
+For $\theta\ne0$ the \term{normalized margin}\index{margin!normalized} is $\biasbar(\theta)=\biasqmin(\theta)/\norm\theta$. The \term{maximum margin}\index{margin!of a norm} of the data in the norm $\norm{\cdot}$ is
+\[
+  \gamma=\max_{\norm u\le1}\ \min_{i\le n}\ \ip{u,z_i},
+\]
+and the \term{max-margin set}\index{maximum-margin classifier} is $\biasU=\{u:\norm u\le1,\ \biasqmin(u)=\gamma\}$; its elements are the maximum-margin classifiers. When several norms are in play we write $\gamma_2,\gamma_\infty,\gamma_1,\gamma_{\op}$.
+\end{definition}
+
+The maximum exists because $\biasqmin$ is continuous and the unit ball is compact; $\gamma\ge0$ because $u=0$ is allowed, and $\gamma>0$ exactly when the data are separable. Every $u\in\biasU$ has $\norm u=1$ when $\gamma>0$, since $u/\norm u$ would otherwise have a larger margin. The normalized margin is scale-free, and $\biasbar(\theta)\le\gamma$ for every $\theta\ne0$. Its geometric meaning: the distance from a point $x$ to the hyperplane $\{\ip{\theta,\cdot}=0\}$, measured in the dual norm, is $\abs{\ip{\theta,x}}/\norm\theta$ (Exercise~\ref{ex:bias:distance}). So the $\ell_2$ maximum-margin classifier is the hard-margin support vector machine through the origin \parencite{CortesVapnik1995}, the $\ell_\infty$ one maximizes the $\ell_1$ distance from the hyperplane to the nearest example, and the $\ell_1$ one maximizes the $\ell_\infty$ distance.\sidenote{Separating planes that maximize the distance in an arbitrary norm were studied by \textcite{Mangasarian1999}, who showed that the distance is measured by the dual norm of the normal vector.}
+
+The optimizers are the normalized steepest descent methods of \cref{ch:steepest}:
+\begin{equation}\label{eq:bias:nsd}
+  \theta_{t+1}=\theta_t+\eta_t\lmo\bigl(\nabla\Loss(\theta_t)\bigr),\qquad \lmo(g)\in\argmin_{\norm u\le1}\ip{g,u},
+\end{equation}
+with step sizes $\eta_t>0$ that may depend on the iterates so far, and with every choice of $\lmo$ when the minimizer is not unique. Each step has length at most $\eta_t$ in the norm, and $\ip{g,\lmo(g)}=-\norm g_*$. In the $\ell_2$ norm this is normalized gradient descent; in the $\ell_\infty$ norm it is sign descent, which is Adam with $\beta_1=\beta_2=0$ and $\epsilon=0$ (\cref{ch:sign}); in the $\ell_1$ norm it is greedy coordinate descent; and in the spectral norm on matrices it is the orthogonalized update of Muon without momentum (\cref{ch:spectral}).
+
+\paragraph{What was thrown away, and why.} \emph{Features.} The model is linear in fixed features: the last layer of a network whose lower layers are frozen. It is the smallest model in which the loss has no minimizer and the optimizer must choose a direction; \cref{sec:bias:beyond} returns to homogeneous networks. \emph{Non-separable data.} Overparameterized classifiers interpolate their training data, and the interesting regime is the one after the training error has reached zero. \emph{The loss.} The exponential loss has the tail of the logistic and cross-entropy losses and makes the algebra exact: its gradient is a softmax-weighted sum of the signed examples. The logistic loss has the same limits \parencite{SoudryEtAl2018,JiTelgarsky2021}. \emph{Noise, memory and preconditioning.} Full-batch gradients, no momentum, no second-moment estimate; their effect on the limit is collected in \cref{sec:bias:beyond}. \emph{Finite time.} The theorem describes the end of training, with explicit rates, and the rates turn out to be the crux.
+
+\begin{dictionary}
+signed examples $z_i=y_ix_i$, margins $q_i(\theta)$ & training examples and the logit of the correct class minus the largest other logit\\
+separability, $\Loss\to0$ without a minimizer & training past zero training error with the cross-entropy loss\\
+the norm of steepest descent & the optimizer's geometry: $\ell_2$ for SGD, $\ell_\infty$ for sign descent and Adam, spectral for Muon, $\ell_1$ for boosting\\
+normalized margin $\biasbar(\theta)$ & the worst example's logit gap per unit of weight norm, in the optimizer's norm\\
+maximum margin $\gamma$ & the best worst-case confidence the geometry allows\\
+softmax weights $p_i(\theta)$ & per-example weights in the gradient: hard examples dominate\\
+smoothed margin $-\log(n\Loss)$ & the training loss on a logarithmic scale\\
+distance travelled $\tau_T=\sum_{t<T}\eta_t$ & the area under the learning-rate schedule\\
+the ball $\norm\theta\le1/\lambda$ & decoupled weight decay $\lambda$ (\cref{ch:decay})
+\end{dictionary}
+
+The chapter derives one optimizer that the book has not met: boosting is $\ell_1$ steepest descent on the exponential loss, with the features given by weak classifiers $h_j$, $x_{ij}=h_j(x_i)\in\{-1,1\}$.\sidenote{That AdaBoost is coordinate descent on the exponential loss was pointed out by Breiman and developed by \textcite{FriedmanHastieTibshirani2000}; \textcite{Friedman2001} turned it into gradient boosting with general losses and shrinkage.}
+
+\begin{fieldguide}{AdaBoost}{\textcite{FreundSchapire1997}}
+\fgrow{update}{example weights $p_i\propto e^{-y_i\ip{\theta,x_i}}$; pick $j\in\argmax_j\abs{\sum_ip_iy_ih_j(x_i)}$; $\theta_j\leftarrow\theta_j+\alpha\,\sign(\sum_ip_iy_ih_j(x_i))$}
+\fgrow{norm}{$\ell_1$ on the weights of the weak classifiers: normalized steepest descent \eqref{eq:bias:nsd} with exact line search, $\alpha=\biasartanh(r)$, where $r$ is the edge \eqref{eq:bias:edge}}
+\fgrow{preconditioner}{none}
+\fgrow{averages}{none; the example weights $p$ are the dual variables of \cref{lem:bias:duality}}
+\fgrow{state}{one weight per example and per weak classifier used}
+\fgrow{in the wild}{decision stumps or small trees as weak classifiers; in gradient boosting, shrinkage of each step by a small factor \parencite{Friedman2001}}
+\fgrow{caution}{with its full line-search step AdaBoost can stop short of the maximum $\ell_1$ margin \parencite{RudinDaubechiesSchapire2004}; small steps reach it (\cref{cor:bias:steps})}
+\end{fieldguide}
+
+\paragraph{What one had to notice.} On separable data the training loss has infimum zero and no minimizer, so every descent method sends $\norm{\theta_t}$ to infinity, and the only thing that can converge is the direction $\theta_t/\norm{\theta_t}$. The exponential tail turns the gradient into a softmax over the examples, concentrated on those with the smallest margins; late in training the optimizer sees only these support vectors, and it pushes the weights in the direction that raises the smallest margins fastest \emph{per unit of its own norm}. \Textcite{SoudryEtAl2018} made this precise for gradient descent, and \textcite{GunasekarEtAl2018} saw that the norm of the step decides which margin is maximized.
+
+\section{The theory: the margin of a norm}\label{sec:bias:theory}
+
+Throughout this section \cref{ass:bias:separable} holds, so that $\gamma>0$. We write $\biasP=\{p\in\R^n:p_i\ge0,\ \sum_ip_i=1\}$ for the probability simplex.
+
+\subsection{Duality, and a gradient that never vanishes}
+
+The maximum margin has a dual description, which identifies the examples that matter.
+
+\begin{lemma}[Duality of margins]\label[lemma]{lem:bias:duality}
+Let $C=\conv\{z_1,\dots,z_n\}$. Then
+\[
+  \gamma=\min_{p\in\biasP}\Bigl\lVert\sum_{i=1}^np_iz_i\Bigr\rVert_*=\min_{c\in C}\norm c_*,
+\]
+so the maximum margin is the dual-norm distance from the origin to the convex hull of the signed examples, and the data are separable if and only if $0\notin C$. If $u^\star\in\biasU$ and $p^\star$ attains the minimum, with $c^\star=\sum_ip^\star_iz_i$, then:
+\begin{enumerate}
+\item $\ip{u^\star,c^\star}=\norm{c^\star}_*=\gamma$, so $u^\star$ maximizes $\ip{u,c^\star}$ over the unit ball: it is a value of $\lmo(-c^\star)$;
+\item $p^\star_i=0$ for every $i$ with $q_i(u^\star)>\gamma$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to prove the two inequalities between $\gamma$ and $\delta=\min_{c\in C}\norm c_*$ separately: one is Hölder's inequality, the other the separating hyperplane theorem. The minimum $\delta$ is attained because $C$ is compact and the dual norm is continuous.
+
+For every $u$ with $\norm u\le1$ and every $p\in\biasP$, a minimum is at most an average, and Hölder's inequality (\cref{lem:toolkit:dualnorm}) bounds the average:
+\[
+  \biasqmin(u)\le\sum_ip_iq_i(u)=\Bigl\langle u,\sum_ip_iz_i\Bigr\rangle\le\Bigl\lVert\sum_ip_iz_i\Bigr\rVert_* .
+\]
+Maximizing over $u$ and minimizing over $p$ gives $\gamma\le\delta$.
+
+For the reverse inequality, if $\delta=0$ there is nothing to prove, because $\gamma\ge0$. If $\delta>0$, the open set $B=\{v:\norm v_*<\delta\}$ and $C$ are disjoint convex sets, and the separating hyperplane theorem gives $\theta\ne0$ and $b\in\R$ with $\ip{\theta,v}\le b\le\ip{\theta,c}$ for all $v\in B$ and $c\in C$. The supremum of $\ip{\theta,v}$ over $B$ is $\delta\norm\theta$, by the bidual formula $\norm\theta=\max_{\norm v_*\le1}\ip{\theta,v}$ (\cref{lem:toolkit:dualnorm}). Hence $u=\theta/\norm\theta$ satisfies $q_i(u)\ge b/\norm\theta\ge\delta$ for every $i$, and $\gamma\ge\delta$. The data are separable if and only if some $\theta$ has $\biasqmin(\theta)>0$, that is, if and only if $\gamma>0$, which we have just shown to be equivalent to $\delta>0$, that is, to $0\notin C$.
+
+Finally, for $u^\star$ and $p^\star$ as in the statement, the same chain reads
+\[
+  \gamma=\biasqmin(u^\star)\le\sum_ip^\star_iq_i(u^\star)=\ip{u^\star,c^\star}\le\norm{u^\star}\norm{c^\star}_*\le\norm{c^\star}_*=\gamma ,
+\]
+so every inequality is an equality. The middle one gives (i), since $\max_{\norm u\le1}\ip{u,c^\star}=\norm{c^\star}_*$, and the maximizers of $\ip{u,c^\star}$ are the minimizers of $\ip{-c^\star,u}$. The first one says that $\sum_ip^\star_i(q_i(u^\star)-\gamma)=0$, a sum of nonnegative terms, which gives (ii).
+\end{proof}
+
+The examples with $p^\star_i>0$ are \term{support vectors}\index{support vector}: they attain the minimum margin. Part (i) says something about steepest descent, which the proofs below make quantitative: if the optimizer's weights on the examples settle at $p^\star$, its step settles at a maximum-margin direction.
+
+\begin{lemma}[The gradient is at least the margin times the loss]\label[lemma]{lem:bias:gradient}
+For every $\theta\in V$, with the softmax weights $p_i(\theta)=e^{-q_i(\theta)}/\sum_je^{-q_j(\theta)}$,
+\[
+  \nabla\Loss(\theta)=-\Loss(\theta)\sum_{i=1}^np_i(\theta)\,z_i,\qquad \gamma\,\Loss(\theta)\le\norm{\nabla\Loss(\theta)}_*\le R\,\Loss(\theta).
+\]
+In particular $\nabla\Loss$ never vanishes, $\Loss$ has no minimizer, and $\inf\Loss=0$.
+\end{lemma}
+
+\begin{proof}
+Differentiating \eqref{eq:bias:loss} gives $\nabla\Loss(\theta)=-\frac1n\sum_ie^{-q_i(\theta)}z_i$, which is the formula because $\frac1n\sum_je^{-q_j(\theta)}=\Loss(\theta)$. The weights $p(\theta)$ lie in $\biasP$, so \cref{lem:bias:duality} gives $\norm{\sum_ip_iz_i}_*\ge\gamma$, and the triangle inequality gives $\norm{\sum_ip_iz_i}_*\le\sum_ip_i\norm{z_i}_*\le R$. Since $\gamma>0$ and $\Loss>0$, the gradient never vanishes, and a convex differentiable function without stationary points has no minimizer. Finally $\Loss(su^\star)\le e^{-s\gamma}$ for $u^\star\in\biasU$ and $s>0$, which tends to $0$.
+\end{proof}
+
+We call the ratio
+\begin{equation}\label{eq:bias:edge}
+  r(\theta)=\frac{\norm{\nabla\Loss(\theta)}_*}{\Loss(\theta)}\in[\gamma,R]
+\end{equation}
+the \term{edge}\index{edge} of the step at $\theta$, the name it has in boosting, where $r$ is the weighted correlation of the best weak classifier with the labels. The lemma is the key inequality of the chapter: the gradient never becomes small faster than the loss.
+
+\begin{lemma}[One normalized step]\label[lemma]{lem:bias:step}
+For every $\theta\in V$ and $\eta>0$, with $u=\lmo(\nabla\Loss(\theta))$ and $r=r(\theta)$,
+\[
+  \Loss(\theta+\eta u)\le\Bigl(\cosh(\eta R)-\frac rR\sinh(\eta R)\Bigr)\Loss(\theta)\le\exp\Bigl(-\eta r+\frac{\eta^2R^2}2\Bigr)\Loss(\theta).
+\]
+\end{lemma}
+
+\begin{proof}
+The plan is to write the ratio of the two losses as an average of exponentials of bounded numbers whose mean is $\eta r$, and to bound that average first by the chord of the exponential and then by a Gaussian bound. Let $s_i=\ip{u,z_i}$. Since $\norm u\le1$, Hölder's inequality gives $\abs{s_i}\le R$, and by \cref{lem:bias:gradient} and $\ip{g,\lmo(g)}=-\norm g_*$,
+\[
+  \sum_ip_i(\theta)\,s_i=\Bigl\langle u,\sum_ip_i(\theta)z_i\Bigr\rangle=-\frac{\ip{u,\nabla\Loss(\theta)}}{\Loss(\theta)}=r .
+\]
+Because $q_i(\theta+\eta u)=q_i(\theta)+\eta s_i$, the ratio of losses is $\Loss(\theta+\eta u)/\Loss(\theta)=\sum_ip_i(\theta)e^{-\eta s_i}$. The function $s\mapsto e^{-\eta s}$ is convex, so on $[-R,R]$ it lies below its chord:
+\[
+  e^{-\eta s}\le\frac{R-s}{2R}\,e^{\eta R}+\frac{R+s}{2R}\,e^{-\eta R}=\cosh(\eta R)-\frac sR\sinh(\eta R).
+\]
+Averaging with the weights $p_i(\theta)$ gives the first inequality. For the second, fix $\rho\in[-1,1]$ and put $D(x)=\cosh x-\rho\sinh x$ and $N(x)=\sinh x-\rho\cosh x$ for $x\ge0$, so that $D\ge e^{-x}>0$, $D'=N$ and $N'=D$. The function $f(x)=\log D(x)+\rho x$ has $f(0)=0$, $f'(x)=N(x)/D(x)+\rho$, so $f'(0)=0$, and
+\[
+  f''(x)=\frac{D(x)^2-N(x)^2}{D(x)^2}=1-\Bigl(\frac{N(x)}{D(x)}\Bigr)^2\le1 .
+\]
+Taylor's theorem with integral remainder gives $f(x)\le x^2/2$, that is, $D(x)\le\exp(-\rho x+x^2/2)$. With $x=\eta R$ and $\rho=r/R\in[0,1]$ this is the second inequality.
+\end{proof}
+
+The second bound is Hoeffding's lemma for a variable with values in $[-R,R]$; the first is attained when every $s_i$ equals $\pm R$, as in AdaBoost with weak classifiers valued in $\{-1,1\}$.
+
+\subsection{The theorem}
+
+The proof follows the \term{smoothed margin}\index{smoothed margin}
+\[
+  \psi(\theta)=-\log\bigl(n\Loss(\theta)\bigr)=-\log\sum_{i=1}^ne^{-q_i(\theta)},
+\]
+a soft minimum of the margins, which satisfies
+\begin{equation}\label{eq:bias:psi}
+  \biasqmin(\theta)-\log n\le\psi(\theta)\le\biasqmin(\theta),
+\end{equation}
+because $e^{-\biasqmin}\le\sum_ie^{-q_i}\le ne^{-\biasqmin}$. We write
+\[
+  \tau_T=\sum_{t<T}\eta_t
+\]
+for the distance travelled in $T$ steps, an upper bound on $\norm{\theta_T}$.
+
+\begin{theorem}[The margin of a norm; after \textcite{GunasekarEtAl2018}]\label{thm:bias:margin}
+Assume \cref{ass:bias:separable}. Let $\theta_0=0$ and let $\theta_t$ follow \eqref{eq:bias:nsd} with step sizes $\eta_t>0$, which may depend on $\theta_0,\dots,\theta_t$, and with every choice of $\lmo$. Then for every $T\ge1$:
+\begin{enumerate}
+\item $\Loss(\theta_T)\le\exp\bigl(-\gamma\tau_T+\frac{R^2}2\sum_{t<T}\eta_t^2\bigr)$ and $\norm{\theta_T}\le\tau_T$;
+\item if $\gamma\tau_T>\log n+\frac{R^2}2\sum_{t<T}\eta_t^2$, then $\theta_T$ classifies every training example correctly, and
+\begin{equation}\label{eq:bias:bound}
+  \gamma-\frac{\log n+\frac{R^2}2\sum_{t<T}\eta_t^2}{\tau_T}\ \le\ \biasbar(\theta_T)\ \le\ \gamma .
+\end{equation}
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to show that the smoothed margin grows by at least $\gamma\eta_t-R^2\eta_t^2/2$ per step while the norm grows by at most $\eta_t$, and to divide. By \cref{lem:bias:step} at $\theta=\theta_t$, and by $r(\theta_t)\ge\gamma$ (\cref{lem:bias:gradient}),
+\[
+  \psi(\theta_{t+1})-\psi(\theta_t)=-\log\frac{\Loss(\theta_{t+1})}{\Loss(\theta_t)}\ge\eta_tr(\theta_t)-\frac{R^2\eta_t^2}2\ge\gamma\eta_t-\frac{R^2\eta_t^2}2 .
+\]
+Summing over $t<T$, with $\psi(\theta_0)=\psi(0)=-\log n$,
+\begin{equation}\label{eq:bias:psigrowth}
+  \psi(\theta_T)\ge\gamma\tau_T-\frac{R^2}2\sum_{t<T}\eta_t^2-\log n .
+\end{equation}
+Since $n\Loss(\theta_T)=e^{-\psi(\theta_T)}$, this is the bound on the loss in (i). The bound on the norm follows from the triangle inequality, because each step has norm $\eta_t\norm{\lmo(\cdot)}\le\eta_t$.
+
+For (ii), let $A_T$ denote the right side of \eqref{eq:bias:psigrowth}, which is positive by hypothesis. By \eqref{eq:bias:psi}, $\biasqmin(\theta_T)\ge\psi(\theta_T)\ge A_T>0$, so every example is classified correctly and $\theta_T\ne0$. Dividing by $\norm{\theta_T}\le\tau_T$ gives $\biasbar(\theta_T)\ge A_T/\norm{\theta_T}\ge A_T/\tau_T$, which is the lower bound in \eqref{eq:bias:bound}. The upper bound holds because $\theta_T/\norm{\theta_T}$ lies in the unit ball, so $\biasbar(\theta_T)=\biasqmin(\theta_T/\norm{\theta_T})\le\gamma$.
+\end{proof}
+
+The bound has two error terms. The term $\log n/\tau_T$ is the price of starting from uniform weights on the examples; it is all that remains when the steps shrink at a fixed distance $\tau_T$, the limit of a flow. The term $R^2\sum\eta_t^2/(2\tau_T)$ is the price of taking finite steps. What the step sizes must do follows at once.
+
+\begin{corollary}[Step sizes]\label[corollary]{cor:bias:steps}
+In the setting of \cref{thm:bias:margin}:
+\begin{enumerate}
+\item If $\eta_t\to0$ and $\sum_t\eta_t=\infty$, then $\biasbar(\theta_t)\to\gamma$, every limit point of $\theta_t/\norm{\theta_t}$ lies in $\biasU$, and if $\biasU=\{u^\star\}$, then $\theta_t/\norm{\theta_t}\to u^\star$.
+\item For $\eta_t=c/(R\sqrt{t+1})$ with $c>0$, whenever the right side is below $\gamma$,
+\[
+  \gamma-\biasbar(\theta_T)\le R\,\frac{\log n+\frac{c^2}2(1+\log T)}{2c\,(\sqrt{T+1}-1)} .
+\]
+\item For a constant step $\eta_t=\eta$, whenever the right side is below $\gamma$, $\gamma-\biasbar(\theta_T)\le\log n/(\eta T)+R^2\eta/2$. Hence $\liminf_t\biasbar(\theta_t)\ge\gamma-R^2\eta/2$, and for a known horizon $T$ the step $\eta=\sqrt{2\log n/T}/R$ gives $\gamma-\biasbar(\theta_T)\le R\sqrt{2\log n/T}$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+The plan is to show that the error term of \eqref{eq:bias:bound} tends to zero and to use compactness for the directions. (i) Given $\eps>0$, choose $t_0$ with $\eta_t\le\eps$ for $t\ge t_0$. Then $\sum_{t<T}\eta_t^2\le\sum_{t<t_0}\eta_t^2+\eps\tau_T$, and since $\tau_T\to\infty$ the error term of \eqref{eq:bias:bound} has limit superior at most $R^2\eps/2$; as $\eps$ is arbitrary, $\biasbar(\theta_t)\to\gamma$. For large $t$ the iterate is nonzero, and $u_t=\theta_t/\norm{\theta_t}$ lies on the unit sphere, which is compact. If $u_{t_k}\to\bar u$, then $\norm{\bar u}=1$ and, by continuity of $\biasqmin$, $\biasqmin(\bar u)=\lim_k\biasbar(\theta_{t_k})=\gamma$, so $\bar u\in\biasU$. If $\biasU=\{u^\star\}$, every subsequence of $(u_t)$ has a further subsequence converging to $u^\star$, so $u_t\to u^\star$. (ii) Compare sums with integrals: $\sum_{k=1}^Tk^{-1/2}\ge2(\sqrt{T+1}-1)$ and $\sum_{k=1}^Tk^{-1}\le1+\log T$, and insert both in \eqref{eq:bias:bound}. (iii) Here $\tau_T=\eta T$ and $\sum_{t<T}\eta_t^2=\eta^2T$; the bound $\log n/(\eta T)+R^2\eta/2$ is minimized at the stated $\eta$, where its two terms are equal.
+\end{proof}
+
+So step sizes that decay to zero but not too fast reach the maximum margin, at the rate $\tilde O(1/\sqrt T)$ for $\eta_t\propto1/\sqrt t$. A constant step is guaranteed only to come within $R^2\eta/2$; whether it reaches the maximum is a question the theorem leaves open, and \cref{sec:bias:reading} shows that in our experiments it does.
+
+\begin{remark}[Hedge against a best response]\label[remark]{rem:bias:hedge}
+The proof is a regret bound in disguise. The weights $p_t=p(\theta_t)$ evolve by multiplicative weights, $p_{t+1,i}\propto p_{t,i}\exp(-\eta_t\ip{u_t,z_i})$ with $u_t=\lmo(\nabla\Loss(\theta_t))$, and by \cref{lem:bias:gradient} the step $u_t$ maximizes $\ip{u,\sum_ip_{t,i}z_i}$ over the unit ball: it is a best response to $p_t$ in the zero-sum game $\max_u\min_p\ip{u,\sum_ip_iz_i}$, whose value is $\gamma$ by \cref{lem:bias:duality}. Normalized steepest descent is the Hedge algorithm over the examples played against a best-responding classifier, and \eqref{eq:bias:psigrowth} is the regret bound of Hedge for the losses $\eta_t\ip{u_t,z_i}$. \Textcite{FreundSchapire1999} explained boosting through this game.
+\end{remark}
+
+The theorem of \textcite{GunasekarEtAl2018} concerns the unnormalized method $\theta_{t+1}=\theta_t-\eta_t\nabla\Loss(\theta_t)^\sharp$, whose step has length $\eta_t\norm{\nabla\Loss(\theta_t)}_*$ (\cref{ch:steepest}); they prove, for every norm and every initialization, that the normalized margin converges to $\gamma$ when the step sizes are bounded and small enough relative to $1/(R^2\Loss)$. The case of a constant step from $\theta_0=0$ follows from \cref{thm:bias:margin}, with a rate.
+
+\begin{corollary}[Unnormalized steepest descent]\label[corollary]{cor:bias:unnormalized}
+Assume \cref{ass:bias:separable}, let $0<\eta\le1/R^2$, $\theta_0=0$, and $\theta_{t+1}=\theta_t-\eta\nabla\Loss(\theta_t)^\sharp$. Then $\Loss(\theta_T)\le1/(1+\eta\gamma^2T/2)$, and whenever the right side is below $\gamma$,
+\[
+  \gamma-\biasbar(\theta_T)\le R\,\frac{\log n+\frac12+R^2/\gamma^2}{\log(1+\eta\gamma^2T/2)} .
+\]
+In particular $\biasbar(\theta_T)\to\gamma$, and the limit points of $\theta_T/\norm{\theta_T}$ lie in $\biasU$.
+\end{corollary}
+
+\begin{proof}
+The plan is to read the method as normalized steepest descent with the adaptive step $\eta_t=\eta\norm{\nabla\Loss(\theta_t)}_*$, which is allowed in \cref{thm:bias:margin}, and to control $\tau_T$ and $\sum\eta_t^2$ through the loss. Since $g^\sharp=-\norm g_*\lmo(g)$, the iteration is \eqref{eq:bias:nsd} with this $\eta_t$, and $\eta_t=\eta r_t\Loss_t$ with $r_t=r(\theta_t)$ and $\Loss_t=\Loss(\theta_t)$. By \cref{lem:bias:step},
+\[
+  \Loss_{t+1}\le\Loss_t\exp\Bigl(-\eta r_t^2\Loss_t\Bigl(1-\frac{\eta R^2\Loss_t}2\Bigr)\Bigr).
+\]
+We show by induction that $\Loss_t\le1$, which holds at $t=0$. If $\Loss_t\le1$, then $\eta R^2\Loss_t\le1$, the inner factor is at least $\frac12$, and with $r_t\ge\gamma$ we get $\Loss_{t+1}\le\Loss_t\exp(-\eta\gamma^2\Loss_t/2)\le\Loss_t\le1$. The inequality $e^{-x}\le1/(1+x)$ then gives $1/\Loss_{t+1}\ge1/\Loss_t+\eta\gamma^2/2$, hence $\Loss_T\le1/(1+\eta\gamma^2T/2)$.
+
+Since $q_i(\theta)\le R\norm\theta$, we have $\Loss(\theta)\ge e^{-R\norm\theta}$, so $\tau_T\ge\norm{\theta_T}\ge\log(1/\Loss_T)/R\ge\log(1+\eta\gamma^2T/2)/R$. And since $\eta_t\le\eta R\Loss_t$,
+\[
+  \frac{R^2}2\sum_{t\ge0}\eta_t^2\le\frac{\eta^2R^4}2\sum_{t\ge0}\frac1{(1+\eta\gamma^2t/2)^2}\le\frac{\eta^2R^4}2\Bigl(1+\frac2{\eta\gamma^2}\Bigr)\le\frac12+\frac{R^2}{\gamma^2},
+\]
+using $\eta R^2\le1$. Inserting the two bounds in \eqref{eq:bias:bound} gives the rate, and the limit points are handled as in \cref{cor:bias:steps}.
+\end{proof}
+
+The rate is logarithmic: to halve the gap one must square the number of steps. For gradient descent, \textcite{SoudryEtAl2018} proved that the direction converges to the support vector machine at the rate $1/\log t$. The reason is visible in the proof: an unnormalized step shrinks with the gradient, the gradient shrinks with the loss, and the distance travelled grows only like $\log t$. A normalized method keeps a step of fixed length, travels a distance proportional to $t$ for a constant step, and reaches the regime of its bias polynomially fast. This is the margin side of the book's recurring theme (\cref{ch:steepest}): normalized updates.
+
+\subsection{Four geometries}
+
+\begin{corollary}[What each optimizer maximizes]\label[corollary]{cor:bias:instances}
+Let $\eta_t\to0$ with $\sum_t\eta_t=\infty$, and $\theta_0=0$.
+\begin{enumerate}
+\item \emph{Normalized gradient descent} ($\ell_2$; $\lmo(g)=-g/\norm g_2$; $R=\max_i\norm{x_i}_2$): $\theta_t/\norm{\theta_t}_2$ converges to the hard-margin support vector machine direction, the unique element of $\biasU$.
+\item \emph{Sign descent} ($\ell_\infty$; $\lmo(g)=-\sign(g)$, with every value in $[-1,1]$ allowed in coordinates where $g$ vanishes; $R=\max_i\norm{x_i}_1$): the normalized $\ell_\infty$ margin converges to $\gamma_\infty$, the value of the linear program $\max\{s:\ip{u,z_i}\ge s\ \text{for all}\ i,\ \norm u_\infty\le1\}$.
+\item \emph{Greedy coordinate descent} ($\ell_1$; $\lmo(g)=-\sign(g_j)e_j$ for some $j\in\argmax_j\abs{g_j}$; $R=\max_i\norm{x_i}_\infty$): the normalized $\ell_1$ margin converges to $\gamma_1$, the value of a linear program; with weak classifiers as features this is boosting with small steps.
+\item \emph{Orthogonalized updates} (spectral norm on $\R^{K\times d}$; $\lmo(G)=-\polar(G)$; $R=\max_i\norm{X_i}_{\nuc}$): the normalized spectral margin converges to $\gamma_{\op}=\max\{\min_i\ip{W,Z_i}:\norm W_{\op}\le1\}$, the value of a semidefinite program.
+\end{enumerate}
+In (ii)--(iv), every limit point of the normalized iterates is a maximum-margin classifier, and the iterates converge in direction when $\biasU$ is a single point.
+\end{corollary}
+
+\begin{proof}
+The linear minimization oracles and dual norms are those of \cref{ch:steepest,ch:sign,ch:spectral} (the spectral one through von Neumann's trace inequality, \cref{thm:toolkit:vonneumann}), so everything but the uniqueness in (i) is \cref{cor:bias:steps}(i). If $u\ne u'$ both lay in $\biasU$ for the $\ell_2$ norm, then $v=(u+u')/2$ would have $\biasqmin(v)\ge\gamma$ and $\norm v_2<1$, because the Euclidean ball is strictly convex, and $v/\norm v_2$ would have a margin larger than $\gamma$.
+\end{proof}
+
+A multiclass linear classifier fits case (iv). For $K$ classes and $W\in\R^{K\times d}$ with rows $w_c$, the margin of example $i$ is $\min_{c\ne y_i}(w_{y_i}-w_c)^\top x_i=\min_{c\ne y_i}\ip{W,Z_{ic}}$ with the rank-one matrices $Z_{ic}=(e_{y_i}-e_c)x_i^\top$, whose nuclear norm is $\sqrt2\norm{x_i}_2$. The multiclass exponential loss $\frac1{n(K-1)}\sum_i\sum_{c\ne y_i}e^{-\ip{W,Z_{ic}}}$, a relative of the cross-entropy $\log(1+\sum_{c\ne y_i}e^{-\ip{W,Z_{ic}}})$ with the same tail, is the loss \eqref{eq:bias:loss} for the $n(K-1)$ signed examples $Z_{ic}$. So orthogonalized updates on the last layer maximize its spectral-norm margin; in practice Muon is used for hidden layers and Adam for the output layer (\cref{ch:spectral}), which is one reason the statement should be read as a model, not as a description.
+
+The $\ell_1$ and $\ell_\infty$ problems are linear programs, and their solutions have a shape that the Euclidean one lacks.
+
+\begin{proposition}[Sparse and dense maximum margins]\label[proposition]{prop:bias:vertices}
+Let $V=\R^d$. (i) Some $\ell_1$-maximum-margin classifier has at most $n$ nonzero coordinates. (ii) Some $\ell_\infty$-maximum-margin classifier has at least $d+1-n$ coordinates equal to $\pm1$. (iii) If $\biasU$ is a single point, that point has the property of (i), respectively (ii).
+\end{proposition}
+
+\begin{proof}
+The plan is to write each problem as a linear program and use that a linear program over a polyhedron without lines, with a finite optimum, has an optimal vertex. For $\ell_\infty$ the program is $\max s$ over $(u,s)\in\R^{d+1}$ subject to $\ip{u,z_i}\ge s$ ($i\le n$) and $-1\le u_j\le1$ ($j\le d$). Its feasible set contains no line, because the box bounds $u$ and then $s$ is bounded above, and the optimum is finite. At a vertex, $d+1$ linearly independent constraints are active, of which at most $n$ are margin constraints, so at least $d+1-n$ are box constraints, and no coordinate can have both of its box constraints active: at least $d+1-n$ coordinates equal $\pm1$. For $\ell_1$, write $u=u^+-u^-$ with $u^\pm\ge0$; the program is $\max s$ subject to $\ip{u^+-u^-,z_i}\ge s$, $\sum_j(u^+_j+u^-_j)\le1$ and $u^\pm\ge0$, in $2d+1$ variables. Its feasible set contains no line, and at a vertex $2d+1$ linearly independent constraints are active, at most $n+1$ of them margin or norm constraints; so at least $2d-n$ of the $2d$ nonnegativity constraints are active, at most $n$ of the numbers $u^\pm_j$ are nonzero, and $u$ has at most $n$ nonzero coordinates. Every optimal $(u^+,u^-,s)$ gives a classifier in $\biasU$, because $\norm{u^+-u^-}_1\le\sum_j(u^+_j+u^-_j)$.
+
+For (iii), suppose $\biasU=\{u^\star\}$. In the $\ell_\infty$ program, every optimum has $u=u^\star$ and $s=\gamma$, so the optimum is unique and is the optimal vertex. In the $\ell_1$ program, every optimum has $u^+-u^-=u^\star$ with $\norm{u^\star}_1=1$, and $\sum_j(u_j^++u_j^-)\le1=\norm{u^+-u^-}_1$ forces $u^+$ and $u^-$ to be the positive and negative parts of $u^\star$: again the optimum is unique and is a vertex.
+\end{proof}
+
+So when $d\gg n$, the end point of sign descent saturates all but at most $n-1$ of its weights at $\pm1$: the $\ell_\infty$ geometry charges nothing for using a feature at full weight, and every feature that helps the worst-case margin, however little, gets full weight. The end point of coordinate descent uses at most $n$ features. The end point of gradient descent lies in the span of the support vectors (\cref{lem:bias:duality}(i): in the $\ell_2$ case $u^\star=c^\star/\norm{c^\star}_2$). These are three different priors on the interpolating solution, and the next example shows that the choice can decide the test error.
+
+\begin{example}[A dataset on which the $\ell_\infty$ bias fails]\label[example]{ex:bias:wilson}
+Take $n_+\ge1$ positive and $n_-\ge1$ negative examples, in the spirit of the construction of \textcite{WilsonEtAl2017}. Each example has three shared features and some features of its own. Let $e_{(i)}$ be the indicator vector of the features owned by example $i$: one feature for a positive example and five for a negative one, disjoint across examples. The examples are
+\[
+  x_i=\bigl(y_i,\ 1,\ 1,\ e_{(i)}\bigr)\in\R^{3+n_++5n_-}.
+\]
+The first feature is the label, the second and third are constant, and the owned features let every example be memorized. A new example with label $y$ has the same three shared features, $(y,1,1)$, and features of its own that no training example has. Every classifier trained on the sample puts weight zero on those (the maximum-margin classifiers live on the training features, and a steepest descent method started at zero never moves a coordinate in which every gradient vanishes), so it scores a new example by $y\,\theta_1+\theta_2+\theta_3$. New labels are $+1$ with probability $p\in(0,1)$.
+\end{example}
+
+\begin{proposition}[The two biases on the example]\label[proposition]{prop:bias:wilson}
+On the dataset of \cref{ex:bias:wilson}, for every $n_+,n_-\ge1$:
+\begin{enumerate}
+\item The $\ell_\infty$ max-margin set is the single point $u_\infty$ with $u_1=u_2=u_3=1$, $u=1$ on the features owned by positive examples and $u=-1$ on those owned by negative examples, and $\gamma_\infty=4$. It scores every new example by $y+2>0$, so its test error is $1-p$.
+\item Put $P=3+1/n_+$, $Q=3+5/n_-$, $A_+=(Q+1)/(PQ-1)$ and $A_-=(P+1)/(PQ-1)$. The $\ell_2$ max-margin direction is that of $\theta_2=\sum_i\alpha_iz_i$ with $\alpha_i=A_+/n_+$ for positive and $\alpha_i=A_-/n_-$ for negative examples. Every training example is a support vector, and $\theta_2$ is also the minimum-norm solution of $\ip{\theta,x_i}=y_i$ for all $i$. It scores a new positive example by $3A_+-A_->0$ and a new negative one by $A_+-3A_-<0$, so its test error is $0$.
+\item The $\ell_1$ max-margin set is $\{e_1\}$, with $\gamma_1=1$; its test error is $0$.
+\end{enumerate}
+Consequently, from $\theta_0=0$ with $\eta_t\to0$ and $\sum\eta_t=\infty$, the test error of sign descent tends to $1-p$ and those of normalized gradient descent and of coordinate descent tend to $0$. If $n_+>n_-$, sign descent and Adam with $\epsilon=0$, for all $\beta_1,\beta_2$ and all step sizes, move along the ray $\{su_\infty:s>0\}$ from the first step on, so their test error is $1-p$ at every step.
+\end{proposition}
+
+\begin{proof}
+The plan is to identify each maximizer by a direct bound for $\ell_\infty$ and $\ell_1$ and by the KKT conditions for $\ell_2$, and then to follow sign descent and Adam along the ray.
+
+(i) For $\norm u_\infty\le1$ and a positive example $i$, $q_i(u)=u_1+u_2+u_3+u_{(i)}\le4$, with equality only if all four coordinates equal $1$. For a negative example $j$ and such a $u$, $q_j(u)=u_1-u_2-u_3-\sum_{k\in(j)}u_k=-1-\sum_{k\in(j)}u_k$, which is at least $4$ only if $u_k=-1$ on the five features of $j$. Since $u_\infty$ gives every example the margin $4$, it is the only point of $\biasU$, and $\gamma_\infty=4$. It scores a new example by $y+1+1\ge1$.
+
+(ii) The $\ell_2$ problem is equivalent to minimizing $\frac12\norm\theta_2^2$ subject to $q_i(\theta)\ge1$, whose solution $\theta_2$ has the direction of the $\ell_2$ max-margin classifier. Its KKT conditions, $\theta=\sum_i\alpha_iz_i$ with $\alpha\ge0$, $q_i(\theta)\ge1$ and $\alpha_i(q_i(\theta)-1)=0$, are sufficient for this convex problem. With the stated $\alpha$, the coordinates of $\theta=\sum_i\alpha_iz_i$ are $a=A_++A_-$ in the first feature, $c=A_+-A_-$ in the second and third, $A_+/n_+$ in each feature owned by a positive example and $-A_-/n_-$ in each feature owned by a negative one. The margins of the positive and of the negative examples are therefore
+\[
+  a+2c+\frac{A_+}{n_+}=PA_+-A_-\qquad\text{and}\qquad a-2c+\frac{5A_-}{n_-}=QA_--A_+ ,
+\]
+and the stated $A_\pm$ solve the system that sets both to $1$. They are positive because $P,Q>3$, so the KKT conditions hold with every constraint active; the solution is unique because the objective is strictly convex. Since all constraints are active, $\theta_2$ also minimizes the norm subject to $q_i(\theta)=1$, that is, to $\ip{\theta,x_i}=y_i$. The scores of new examples are $a+2c=3A_+-A_-=(3Q+2-P)/(PQ-1)$, positive because $3Q>9>P$, and $-a+2c=A_+-3A_-=(Q-3P-2)/(PQ-1)$, negative because $Q\le8<3P+2$.
+
+(iii) With uniform weights, $\bar z=\frac1n\sum_iz_i$ has first coordinate $1$ and all other coordinates of absolute value less than $1$, so $\gamma_1\le\norm{\bar z}_\infty=1$ by \cref{lem:bias:duality}, and $e_1$ gives every example the margin $1$. If $u\in\biasU$, take a positive $i$ and a negative $j$; then $q_i(u)+q_j(u)=2u_1+u_{(i)}-\sum_{k\in(j)}u_k\ge2$, while the left side is at most $2\abs{u_1}+\abs{u_{(i)}}+\sum_{k\in(j)}\abs{u_k}\le2\norm u_1\le2$, with equality only if $u=e_1$. It scores a new example by $y$.
+
+For the consequences, \cref{cor:bias:instances} gives convergence of the directions to $u_\infty$, $\theta_2/\norm{\theta_2}_2$ and $e_1$, and the score of a new example is a continuous function of the direction that does not vanish at these limits. Finally, let $n_+>n_-$ and $\theta=su_\infty$ with $s\ge0$. All margins equal $4s$, the weights $p_i(\theta)$ are uniform, and $\nabla\Loss(\theta)=-\Loss(\theta)\,\bar z$, where $\sign(\bar z)=u_\infty$: the second and third coordinates of $\bar z$ are $(n_+-n_-)/n>0$ and the owned features carry the signs of their owners. Sign descent therefore moves to $(s+\eta_t)u_\infty$. For Adam with $\epsilon=0$, if all gradients so far are positive multiples of $-\bar z$, then in coordinate $j$ the moments are $m_{t,j}=-\bar z_jM_t$ and $v_{t,j}=\bar z_j^2V_t$ for scalars $M_t,V_t>0$ common to all coordinates, so the update $-\eta_t\hat m_t/\sqrt{\hat v_t}$ is a positive multiple of $\sign(\bar z)=u_\infty$; by induction the iterates stay on the ray.
+\end{proof}
+
+The $\ell_\infty$ geometry gives the two constant features full weight because they help the positive examples, which own one feature each, to catch up with the negative ones, which own five; on a new example the constant features then outvote the label. The $\ell_2$ geometry gives each feature a weight proportional to its usefulness, and the constant features get the small weight $c$. Nothing in this is special to $\ell_\infty$ being bad: with a dense ground truth the roles reverse (Exercise~\ref{ex:bias:dense}). In the original construction the adaptive methods are trained on the square loss, and the solution they reach is proportional to $\sign(X^\top y)$, which for $n_+>n_-$ is our $u_\infty$; gradient descent reaches the minimum-norm interpolant, which is our $\theta_2$. On this dataset the square loss and the exponential loss end at the same classifiers, and our version needs no condition on $n_+$ and $n_-$ for the limits.
+
+\section{The theory: weight decay, adaptive methods and networks}\label{sec:bias:beyond}
+
+\subsection{Weight decay stops the march}
+
+With decoupled weight decay the iterates no longer run to infinity. \Cref{ch:decay} shows that normalized steepest descent with decoupled weight decay $\lambda$,
+\[
+  \theta_{t+1}=(1-\eta_t\lambda)\theta_t+\eta_t\lmo\bigl(\nabla\Loss(\theta_t)\bigr),
+\]
+is the Frank--Wolfe method on the ball $\{\norm\theta\le1/\lambda\}$, which for a convex objective that is smooth on the ball, and the Frank--Wolfe schedule $\eta_t\lambda=2/(t+2)$, converges to the minimum of the objective over the ball. The exponential loss is convex and smooth on bounded sets, so AdamW without memory ends at a minimizer of $\Loss$ over the $\ell_\infty$ ball of radius $1/\lambda$. Where is that?
+
+\begin{proposition}[The end point at radius $B$]\label[proposition]{prop:bias:decay}
+Assume \cref{ass:bias:separable}, let $B>0$, and let $\theta_B$ minimize $\Loss$ over $\{\norm\theta\le B\}$. Then $\norm{\theta_B}=B$ and $\Loss(\theta_B)\le e^{-\gamma B}$, and if $B>\log(n)/\gamma$,
+\[
+  \gamma-\frac{\log n}B\le\biasbar(\theta_B)\le\gamma .
+\]
+\end{proposition}
+
+\begin{proof}
+If $\norm{\theta_B}<B$, then $\theta_B$ would be a local and hence, by convexity, a global minimizer of $\Loss$ on $V$, which does not exist (\cref{lem:bias:gradient}). Comparing with $Bu^\star$ for some $u^\star\in\biasU$ gives $\Loss(\theta_B)\le\Loss(Bu^\star)\le e^{-\gamma B}$. Then $e^{-\biasqmin(\theta_B)}\le n\Loss(\theta_B)\le ne^{-\gamma B}$, so $\biasqmin(\theta_B)\ge\gamma B-\log n$, and dividing by $\norm{\theta_B}=B$ gives the lower bound.
+\end{proof}
+
+So decoupled weight decay replaces the endless march along a direction by a point at radius $1/\lambda$, whose margin is within $\lambda\log n$ of the maximum: AdamW without memory ends within $\lambda\log n$ of the $\ell_\infty$ maximum margin, and its end point approaches the $\ell_\infty$ maximum-margin direction as $\lambda\to0$. That the norm-constrained or regularized minimizers of the exponential and logistic losses approach the maximum-margin direction as the constraint is relaxed is the \term{regularization path}\index{regularization path} picture of \textcite{RossetZhuHastie2004}; the proposition gives it a rate. The same proposition covers the ordinary $L_2$ penalty (Exercise~\ref{ex:bias:penalty}).
+
+\subsection{Adam, AdamW and Muon}
+
+The theorem covers the memoryless versions of the optimizers. For the versions with memory, the following has been proved; we state the results and do not prove them.
+\begin{itemize}
+\item \emph{Momentum.} Heavy-ball and Nesterov momentum on top of gradient descent do not change the limit: it is still the $\ell_2$ maximum-margin direction \parencite{WangEtAl2022}. Averaging changes the speed, not the norm.
+\item \emph{Adam.} On separable data with the logistic loss and decaying step sizes, and with the $\epsilon$ in the denominator neglected, Adam converges in direction to an $\ell_\infty$ maximum-margin classifier, in polynomial time for a general class of decaying step sizes \parencite{ZhangZouCao2024}. With a fixed $\epsilon>0$ the limit is different: the gradients on separable data tend to zero, $\sqrt{\hat v_t}$ eventually falls below $\epsilon$, and Adam becomes gradient descent with momentum and a rescaled step; \textcite{WangEtAl2021} proved that RMSProp and Adam then maximize the $\ell_2$ margin, for homogeneous networks and in particular for linear models, while AdaGrad, whose preconditioner keeps the whole history, does not.
+\item \emph{AdamW.} If AdamW converges with non-increasing step sizes whose sum diverges, its limit is a KKT point of minimizing the loss subject to $\norm\theta_\infty\le1/\lambda$ \parencite{XieLi2024}; for a linear model on separable data this is the end point of \cref{prop:bias:decay}.
+\item \emph{Spectral descent and Muon.} For multiclass separable data and the cross-entropy loss, normalized steepest descent in the spectral norm and Muon converge to the spectral-norm maximum-margin classifier \parencite{FanSchmidtThrampoulidis2025}.
+\item \emph{Mirror descent} with the potential $\norm\theta_p^p$ maximizes the $\ell_p$ margin, a way to reach a chosen geometry with a smooth potential \parencite{SunEtAl2022}.
+\end{itemize}
+
+\subsection{Homogeneous networks}
+
+The linear analysis extends to networks whose output is a homogeneous function of the parameters: a ReLU network without biases, of depth $a$, satisfies $f(x;c\theta)=c^af(x;\theta)$ for $c>0$. Write $q_i(\theta)=y_if(x_i;\theta)$ and define $\Loss$ and $\psi$ by \eqref{eq:bias:loss} and \eqref{eq:bias:psi} with these margins. The witness $u^\star$ of the linear case is no longer available, but Euler's identity for homogeneous functions takes its place.
+
+\begin{proposition}[The smoothed margin never decreases]\label[proposition]{prop:bias:homogeneous}
+Let $f(x;\theta)$ be continuously differentiable in $\theta\in V$ and homogeneous of degree $a>0$. Let $\theta(t)$, $t\ge t_0$, be absolutely continuous with $\norm{\dot\theta(t)}\le1$ and $\ip{\nabla\Loss(\theta(t)),\dot\theta(t)}=-\norm{\nabla\Loss(\theta(t))}_*$ for almost every $t$, a normalized steepest flow in the norm $\norm{\cdot}$, and suppose that $n\Loss(\theta(t_0))<1$. Then the smoothed normalized margin $\tilde\gamma(t)=\psi(\theta(t))/\norm{\theta(t)}^a$ is nondecreasing on $[t_0,\infty)$, and $\biasqmin(\theta(t))/\norm{\theta(t)}^a\ge\tilde\gamma(t_0)>0$ for every $t\ge t_0$.
+\end{proposition}
+
+\begin{proof}
+The plan is to show that $\log\psi$ grows at least as fast as $a\log\norm\theta$. Differentiating $f(x;c\theta)=c^af(x;\theta)$ at $c=1$ gives Euler's identity $\ip{\nabla q_i(\theta),\theta}=a\,q_i(\theta)$. Hence, using $\biasqmin\ge\psi$ from \eqref{eq:bias:psi},
+\[
+  \ip{-\nabla\Loss(\theta),\theta}=\frac an\sum_ie^{-q_i(\theta)}q_i(\theta)\ge a\Loss(\theta)\biasqmin(\theta)\ge a\Loss(\theta)\psi(\theta),
+\]
+and the definition of the dual norm gives $\norm{\nabla\Loss(\theta)}_*\ge\ip{-\nabla\Loss(\theta),\theta}/\norm\theta\ge a\Loss(\theta)\psi(\theta)/\norm\theta$ whenever $\theta\ne0$. Along the flow, for almost every $t$,
+\[
+  \frac{d}{dt}\psi(\theta(t))=-\frac{\ip{\nabla\Loss(\theta),\dot\theta}}{\Loss(\theta)}=\frac{\norm{\nabla\Loss(\theta)}_*}{\Loss(\theta)}\ge\frac{a\,\psi(\theta)}{\norm\theta}.
+\]
+So $\psi$ is nondecreasing while it is positive; it is positive at $t_0$, so it stays at least $\psi(\theta(t_0))>0$, and then $\theta(t)$ stays away from $0$, because $\abs{q_i(\theta)}\le M\norm\theta^a$ with $M$ the maximum of $\abs{f(x_i;\cdot)}$ over the unit sphere. The function $t\mapsto\norm{\theta(t)}$ is absolutely continuous with derivative at most $\norm{\dot\theta(t)}\le1$. Therefore, for almost every $t$,
+\[
+  \frac{d}{dt}\log\psi(\theta(t))\ge\frac a{\norm{\theta(t)}}\ge\frac a{\norm{\theta(t)}}\,\frac{d}{dt}\norm{\theta(t)}=\frac{d}{dt}\Bigl(a\log\norm{\theta(t)}\Bigr),
+\]
+so $\log\tilde\gamma(t)=\log\psi(\theta(t))-a\log\norm{\theta(t)}$ is an absolutely continuous function with a nonnegative derivative almost everywhere, hence nondecreasing. The last claim follows from $\biasqmin\ge\psi$.
+\end{proof}
+
+For linear models ($a=1$) the proposition is the continuous-time shadow of \cref{thm:bias:margin}. For networks it is the first half of the known picture.
+
+\begin{theorem*}[\textcite{LyuLi2020}; \textcite{JiTelgarsky2020}; \textcite{TsilivisVardiKempe2025}]
+For homogeneous networks trained by gradient flow on the exponential or logistic loss from a point where $n\Loss<1$, so that every training example is classified correctly, the smoothed normalized margin increases, the loss tends to zero, and every limit point of $\theta/\norm\theta_2$ is the direction of a KKT point of $\min\frac12\norm\theta_2^2$ subject to $q_i(\theta)\ge1$ for all $i$ (Lyu and Li, who also treat ReLU networks through Clarke subdifferentials, and gradient descent with small steps); under a definability condition the direction converges (Ji and Telgarsky). For steepest flows in other norms, the margin measured in that norm increases and the limit points are KKT points of the corresponding max-margin problem (Tsilivis, Vardi and Kempe).
+\end{theorem*}
+
+\begin{proofsketch}
+\Cref{prop:bias:homogeneous} is the monotonicity for differentiable networks. At a KKT point $\bar\theta$, rescaled so that $\biasqmin(\bar\theta)=1$, the parameter vector is a nonnegative combination of the gradients $\nabla q_i(\bar\theta)$ of the examples that attain the minimum margin. Along the flow, $-\nabla\Loss=\frac1n\sum_ie^{-q_i}\nabla q_i$ is such a combination, with weights concentrating on the examples of smallest margin as $\norm\theta\to\infty$. It therefore suffices to show that $\theta$ and $-\nabla\Loss$ align along a sequence of times. The inequality in the proof of \cref{prop:bias:homogeneous} is an equality only when they are aligned, and since $\tilde\gamma$ is bounded by the maximum normalized margin, the integrated deficit is finite, which forces alignment along a sequence. Omitted: the quantitative version of both steps (approximate KKT points and their limits), which is the core of \textcite{LyuLi2020}, and its extension to dual norms, which is in \textcite{TsilivisVardiKempe2025}.
+\end{proofsketch}
+
+A KKT point is a stationary point of the margin problem, not necessarily a maximizer. \Textcite{VardiShamirSrebro2022} show that for ReLU networks the limit need not be even a local maximizer of the margin, while for some linear networks it is.
+
+\section{Reading the theory}\label{sec:bias:reading}
+
+\paragraph{Three norms, three classifiers.} \Cref{fig:bias:geometry} shows the duality of \cref{lem:bias:duality} on six examples in the plane. The three maximum-margin classifiers are different, and each is determined by a different support set: the $\ell_1$ classifier uses one feature, the $\ell_\infty$ classifier gives both features full weight, and the $\ell_2$ classifier lies between them, determined by two support vectors. In the plane of signed examples, each classifier is the normal of the line that separates the convex hull from the largest dual ball around the origin.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=18mm},wplot,width=66mm,height=66mm,axis equal image]
+\nextgroupplot[xlabel={feature $1$},ylabel={feature $2$},xmin=-1.05,xmax=1.05,ymin=-1.05,ymax=1.05,xtick={-1,0,1},ytick={-1,0,1},title={examples and classifiers}]
+\addplot[theory3] table[x=sepl1x,y=sepl1y] {figures/data/15-bias-geometry-lines.dat};
+\addplot[theory] table[x=sepl2x,y=sepl2y] {figures/data/15-bias-geometry-lines.dat};
+\addplot[theory2] table[x=seplinfx,y=seplinfy] {figures/data/15-bias-geometry-lines.dat};
+\addplot[only marks,mark=*,mark size=2.2pt,color=sea,mark options={fill=sea,draw=white}] table[x=x1,y=x2,restrict expr to domain={\thisrow{y}}{0.5:1.5}] {figures/data/15-bias-geometry-points.dat};
+\addplot[only marks,mark=square*,mark size=2.0pt,color=seadeep,mark options={fill=seadeep,draw=white}] table[x=x1,y=x2,restrict expr to domain={\thisrow{y}}{-1.5:-0.5}] {figures/data/15-bias-geometry-points.dat};
+\legend{$\ell_1$,$\ell_2$,$\ell_\infty$,positive,negative}
+\nextgroupplot[xlabel={$z_1$},ylabel={$z_2$},xmin=-0.15,xmax=1.05,ymin=-0.6,ymax=0.6,xtick={0,0.5,1},ytick={-0.5,0,0.5},title={signed examples and dual balls}]
+\addplot[fill=seafoam,draw=sea!60,line width=0.5pt] table[x=z1,y=z2] {figures/data/15-bias-geometry-hull.dat};
+\addplot[sandline!55!black,line width=0.8pt] table[x=sx,y=sy] {figures/data/15-bias-geometry-balls.dat};
+\addplot[sea,line width=0.8pt] table[x=cx,y=cy] {figures/data/15-bias-geometry-balls.dat};
+\addplot[seadeep,line width=0.8pt,dashed] table[x=dx,y=dy] {figures/data/15-bias-geometry-balls.dat};
+\addplot[guide] table[x=supl1x,y=supl1y] {figures/data/15-bias-geometry-lines.dat};
+\addplot[guide] table[x=supl2x,y=supl2y] {figures/data/15-bias-geometry-lines.dat};
+\addplot[guide] table[x=suplinfx,y=suplinfy] {figures/data/15-bias-geometry-lines.dat};
+\addplot[-stealth,sandline!55!black,line width=0.9pt] table[x=dirl1x,y=dirl1y] {figures/data/15-bias-geometry-lines.dat};
+\addplot[-stealth,sea,line width=0.9pt] table[x=dirl2x,y=dirl2y] {figures/data/15-bias-geometry-lines.dat};
+\addplot[-stealth,seadeep,line width=0.9pt] table[x=dirlinfx,y=dirlinfy] {figures/data/15-bias-geometry-lines.dat};
+\addplot[only marks,mark=*,mark size=1.6pt,color=ink] table[x=z1,y=z2] {figures/data/15-bias-geometry-points.dat};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Three geometries on one dataset (script \texttt{15-bias-geometry.py}). Left: six examples (circles positive, squares negative) and the three maximum-margin classifiers through the origin: $\ell_1$ (solid, the vertical line: one feature), $\ell_2$ (solid, between), $\ell_\infty$ (dashed: both features with full weight). Right: the signed examples $z_i=y_ix_i$, their convex hull, and the largest dual balls around the origin that it does not enter: the $\ell_\infty$ square for the $\ell_1$ margin ($\gamma_1=0.42$), the circle for the $\ell_2$ margin ($\gamma_2=0.506$) and the $\ell_1$ diamond for the $\ell_\infty$ margin ($\gamma_\infty=0.57$). Dashed: the separating lines $\ip{u^\star,c}=\gamma$; arrows: the maximum-margin directions $u^\star$, normal to them. The values agree with the linear and quadratic programs to $10^{-6}$.}
+\label{fig:bias:geometry}
+\end{figure}
+
+\paragraph{Each optimizer maximizes its own margin.} \Cref{fig:bias:margins} runs the four optimizers of \cref{cor:bias:instances} from zero. In each panel the points rise to the maximum margin of the optimizer's own norm, computed by a linear or quadratic program or, for the spectral norm, by cutting planes on the dual problem of \cref{lem:bias:duality}. The decaying-step bound of \cref{cor:bias:steps}(ii) lies below its points and reaches the line slowly; the constant-step bound stalls at $\gamma-R^2\eta/2$, a gap of $0.025R$ here, while the constant-step points do not stall. \Cref{tab:bias:cross} measures the end points in all norms: each optimizer comes within $2\cdot10^{-3}$ of the maximum margin of its own norm and stays well below the maximum margins of the others; coordinate descent, for instance, ends with an $\ell_\infty$ margin $11\%$ below $\gamma_\infty$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 2,horizontal sep=17mm,vertical sep=19mm},wplot,width=80mm,height=50mm,xmode=log,xmin=1,xmax=1e5,xlabel={step $t$},ylabel={normalized margin}]
+\nextgroupplot[title={$\ell_2$: normalized gradient descent},ymin=0,ymax=0.34,legend style={at={(0.98,0.04)},anchor=south east,font=\scriptsize},legend cell align=left]
+\addplot[theory] table[x=t,y=l2] {figures/data/15-bias-margins-gamma.dat};
+\addplot[theory3,restrict y to domain=-0.5:1] table[x=t,y=l2decb] {figures/data/15-bias-margins.dat};
+\addplot[theory2,restrict y to domain=-0.5:1] table[x=t,y=l2conb] {figures/data/15-bias-margins.dat};
+\addplot[simulation] table[x=t,y=l2dec] {figures/data/15-bias-margins.dat};
+\addplot[simulation2] table[x=t,y=l2con] {figures/data/15-bias-margins.dat};
+\legend{maximum margin $\gamma$,bound: decaying,bound: constant,run: decaying,run: constant}
+\nextgroupplot[title={$\ell_\infty$: sign descent},ymin=0,ymax=0.41]
+\addplot[theory] table[x=t,y=linf] {figures/data/15-bias-margins-gamma.dat};
+\addplot[theory3,restrict y to domain=-0.5:1] table[x=t,y=linfdecb] {figures/data/15-bias-margins.dat};
+\addplot[theory2,restrict y to domain=-0.5:1] table[x=t,y=linfconb] {figures/data/15-bias-margins.dat};
+\addplot[simulation] table[x=t,y=linfdec] {figures/data/15-bias-margins.dat};
+\addplot[simulation2] table[x=t,y=linfcon] {figures/data/15-bias-margins.dat};
+\nextgroupplot[title={$\ell_1$: coordinate descent},ymin=0,ymax=0.19]
+\addplot[theory] table[x=t,y=l1] {figures/data/15-bias-margins-gamma.dat};
+\addplot[theory3,restrict y to domain=-0.5:1] table[x=t,y=l1decb] {figures/data/15-bias-margins.dat};
+\addplot[theory2,restrict y to domain=-0.5:1] table[x=t,y=l1conb] {figures/data/15-bias-margins.dat};
+\addplot[simulation] table[x=t,y=l1dec] {figures/data/15-bias-margins.dat};
+\addplot[simulation2] table[x=t,y=l1con] {figures/data/15-bias-margins.dat};
+\nextgroupplot[title={spectral: orthogonalized updates},ymin=0,ymax=0.25]
+\addplot[theory] table[x=t,y=op] {figures/data/15-bias-margins-gamma.dat};
+\addplot[theory3,restrict y to domain=-0.5:1] table[x=t,y=opdecb] {figures/data/15-bias-margins.dat};
+\addplot[theory2,restrict y to domain=-0.5:1] table[x=t,y=opconb] {figures/data/15-bias-margins.dat};
+\addplot[simulation] table[x=t,y=opdec] {figures/data/15-bias-margins.dat};
+\addplot[simulation2] table[x=t,y=opcon] {figures/data/15-bias-margins.dat};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Normalized margins of normalized steepest descent in four norms, from $\theta_0=0$, with decaying steps $\eta_t=1/(R\sqrt{t+1})$ (circles) and a constant step $\eta=0.05/R$ (squares), $R=\max_i\norm{z_i}_*$. Horizontal lines: the exact maximum margins. Curves: the lower bound \eqref{eq:bias:bound} of \cref{thm:bias:margin} for each schedule. Vector panels: $n=16$ separable examples in $\R^5$ on the unit sphere; spectral panel: a linear classifier $W\in\R^{3\times4}$ on $12$ examples in three classes, as $24$ signed matrices of nuclear norm one. One run per schedule, fixed seeds (script \texttt{15-bias-margins.py}).}
+\label{fig:bias:margins}
+\end{figure}
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+end point of & \multicolumn{3}{c}{normalized margin measured in} \\
+\cmidrule(l){2-4}
+ & $\ell_2$ & $\ell_\infty$ & $\ell_1$ \\
+\midrule
+normalized gradient descent & $\mathbf{0.3108}$ & $0.3666$ & $0.1673$\\
+sign descent & $0.3020$ & $\mathbf{0.3750}$ & $0.1598$\\
+coordinate descent & $0.2921$ & $0.3350$ & $\mathbf{0.1709}$\\
+maximum margin $\gamma$ & $0.3115$ & $0.3766$ & $0.1717$\\
+\midrule
+ & Frobenius & max-entry & spectral\\
+\midrule
+normalized gradient descent & $\mathbf{0.2085}$ & $0.2891$ & $0.2231$\\
+sign descent & $0.1855$ & $\mathbf{0.3451}$ & $0.2099$\\
+orthogonalized updates & $0.2067$ & $0.2992$ & $\mathbf{0.2276}$\\
+maximum margin $\gamma$ & $0.2094$ & $0.3467$ & $0.2286$\\
+\bottomrule
+\end{tabular}
+\caption{The end points of \cref{fig:bias:margins} (decaying steps, $T=10^5$) measured in every norm, for the vector data (top) and the matrix data (bottom; ``max-entry'' is the $\ell_\infty$ norm of the entries). Each optimizer approaches the maximum margin of its own norm (bold) and not those of the others.}
+\label{tab:bias:cross}
+\end{table}
+
+\paragraph{The distance travelled is the clock.} The gaps $\gamma-\biasbar(\theta_t)$ of the runs in \cref{fig:bias:margins} obey a simpler law than the theorem: at $t=10^5$, the gap times the distance travelled, $(\gamma-\biasbar(\theta_t))\,\tau_t$, is $0.46$ for $\ell_2$, $0.49$--$0.51$ for $\ell_\infty$, $0.57$ for $\ell_1$ and $0.68$ for the spectral norm, and it is the same for the two schedules within $4\%$, although their distances differ by a factor of eight. So the margin is a function of the distance travelled, as for the flow, and it approaches the maximum like $C/\tau_t$ with $C$ well below the flow bound $\log n=2.77$ (for the spectral data $\log24=3.18$). The finite-step term $R^2\sum\eta_t^2/(2\tau_t)$ of \eqref{eq:bias:bound} is a price that these runs do not pay. The reason, as far as we can see, is that near the maximum-margin direction a step changes the small margins by nearly the same amount, so the variance that Hoeffding's lemma charges for is small, and what is left cancels over consecutive steps. Whether this holds for every dataset and every norm is open as far as we know (Exercise~\ref{ex:bias:constant}); for the $\ell_2$ norm, where the dual problem is smooth, \textcite{JiTelgarsky2021} prove an $O(1/t)$ margin rate for gradient descent with aggressive step sizes.
+
+The law turns into time scales. A normalized method with a constant step $\eta$ comes within $\eps$ of its maximum margin after about $C/(\eps\eta)$ steps; with $\eta_t\propto1/\sqrt t$ after about $(C/\eps)^2$; unnormalized gradient descent with a constant step travels only a distance of order $\log t$ (\cref{cor:bias:unnormalized}) and needs a number of steps exponential in $1/\eps$. On separable data, Adam, sign descent and Muon are in the regime of their implicit bias after polynomially many steps; plain gradient descent creeps toward its own.
+
+\paragraph{Where AdamW ends.} \Cref{fig:bias:decay} follows \cref{prop:bias:decay} on the vector data. The exact end point at radius $B=1/\lambda$, computed by constrained minimization, and AdamW without memory, run with the Frank--Wolfe schedule, agree to $2\cdot10^{-4}$. At $\lambda=0.1$, the default of language-model training (\cref{ch:decay}), the end point has $\ell_\infty$ margin $0.340$, about $10\%$ below $\gamma_\infty=0.377$; the guaranteed $\gamma_\infty-\lambda\log n$ is $0.099$ there. Over the range shown the exact gap is close to $0.4/B$, so the bound's $\log n/B$ has the right order in $B$ and a constant about seven times too large.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[wplot,xmode=log,xmin=1,xmax=300,ymin=0,ymax=0.42,xlabel={radius $B=1/\lambda$ of the $\ell_\infty$ ball},ylabel={$\ell_\infty$ margin of the end point},legend style={at={(0.98,0.04)},anchor=south east,font=\scriptsize}]
+\addplot[guide] table[x=B,y=gamma] {figures/data/15-bias-decay.dat};
+\addplot[theory] table[x=B,y=exact] {figures/data/15-bias-decay.dat};
+\addplot[theory2,restrict y to domain=-0.5:1] table[x=B,y=bound] {figures/data/15-bias-decay.dat};
+\addplot[simulation] table[x=B,y=fw] {figures/data/15-bias-decay-fw.dat};
+\addplot[muted,line width=0.4pt,densely dotted] coordinates {(10,0) (10,0.42)};
+\node[font=\scriptsize,text=muted,anchor=south west] at (axis cs:10.5,0.005) {$\lambda=0.1$};
+\legend{$\gamma_\infty$,exact end point,bound $\gamma_\infty-\lambda\log n$,AdamW without memory}
+\end{axis}
+\end{tikzpicture}
+\caption{Where AdamW without memory ends on the data of \cref{fig:bias:margins}: the $\ell_\infty$ margin of the minimizer of the exponential loss over $\{\norm\theta_\infty\le B\}$ (curve, constrained minimization), the lower bound of \cref{prop:bias:decay} (dashed), and AdamW with $\beta_1=\beta_2=0$, $\epsilon=0$ and $\eta_t\lambda=2/(t+2)$ after $2\cdot10^4$ steps (points). Script \texttt{15-bias-decay.py}.}
+\label{fig:bias:decay}
+\end{figure}
+
+\paragraph{The example, in numbers.} On the dataset of \cref{ex:bias:wilson} the predictions are exact: test error $1-p$ for sign descent and for Adam with $\epsilon=0$, and $0$ for gradient descent and coordinate descent, for every sample with both classes. For $n_+=6$ and $n_-=4$, scaled so that every training margin is at least $1$, the $\ell_2$ classifier scores a new positive example by $0.93$ and a new negative one by $-0.58$, while the $\ell_\infty$ classifier scores them by $0.75$ and $0.25$: both classify the training set with room to spare, and only one of them reads the label.
+
+\paragraph{Where agreement must fail.} The predictions concern directions, so they fail when the direction is not determined. If $\biasU$ has more than one point, which happens for the $\ell_1$ and $\ell_\infty$ norms, the theorem fixes the margin but not the limit inside $\biasU$, which then depends on the step sizes and even on the floating-point arithmetic (Exercise~\ref{ex:bias:tie}). And the theorem says nothing about the early steps, before $\gamma\tau_t$ exceeds $\log n$, when the iterates are not yet in the regime of their bias.
+
+\section{What the theory misses}\label{sec:bias:misses}
+
+\paragraph{What was idealized away.} \emph{Fixed features.} In a network the features move, and the bias depends on the parametrization as well as on the optimizer: for diagonal linear networks, gradient descent from a small initialization behaves like an $\ell_1$ method and from a large one like an $\ell_2$ method \parencite{WoodworthEtAl2020,MoroshkoEtAl2020}. For homogeneous networks the limit is a KKT point of a margin problem, not a maximizer. \emph{Separability and infinite time.} The theory describes the end of a training run that fits its data exactly and runs long enough for $\gamma\tau_t\gg\log n$. Language-model pretraining makes about one pass over its data and never interpolates it, so the theory does not apply there at all; in vision, training stops after a fixed budget, often not long after the training error reaches zero. \emph{Full batch, no noise.} Minibatch noise changes the trajectory and the time scales. \emph{Memory and $\epsilon$.} Momentum leaves the limit unchanged, but Adam's $\epsilon$ does not (\cref{sec:bias:beyond}). \emph{The example.} The dataset of \cref{ex:bias:wilson} is built to make a point; it shows that an implicit bias can decide the test error, not that it does so on real data.
+
+\paragraph{Where it breaks.} (1) \emph{The generalization gap is not robust.} With every hyperparameter tuned, adaptive methods matched or beat momentum SGD in the study of \textcite{ChoiEtAl2019}, and decoupled weight decay closed most of the gap on image classification \parencite{LoshchilovHutter2019}. On transformers the adaptive methods are preferred, for reasons of optimization speed \parencite{ZhangEtAl2020,KunstnerEtAl2023} (\cref{ch:transformers}). The max-margin mechanism predicts a gap only when the data are interpolated, training runs into the regime of the bias, and the data favour one geometry over another; the comparisons that report gaps do not check these conditions, and the ones that find none do not either. (2) \emph{Adam's $\epsilon$ decides the limit.} With a fixed $\epsilon>0$, Adam's long-run bias is the $\ell_2$ margin, not the $\ell_\infty$ one \parencite{WangEtAl2021}: the $\ell_\infty$ bias is a transient that lasts while the gradients are large compared with $\epsilon$. On separable data the gradients decay like the loss, so the transient ends; whether it ends within a training run depends on $\epsilon$ and on how fast the loss falls (Exercise~\ref{ex:bias:eps}). (3) \emph{KKT is not maximality.} For ReLU networks the limit direction can fail to be even a local maximizer of the margin \parencite{VardiShamirSrebro2022}. (4) \emph{Margins do not reliably rank deep networks.} Spectrally normalized margins separate networks trained on true labels from networks trained on random ones \parencite{BartlettFosterTelgarsky2017}, but in a large-scale comparison of complexity measures, norm- and margin-based measures predicted generalization less well than sharpness-based ones \parencite{JiangEtAl2020}, and \textcite{NagarajanKolter2019} built settings in which every uniform-convergence bound, margin-based or not, is vacuous although the classifier generalizes. (5) \emph{The step-size conditions are too cautious, and the loss matters.} Gradient descent on the logistic loss with an arbitrary constant step size, even one that makes the loss oscillate, still converges in direction to the $\ell_2$ maximum margin, while on the exponential loss large steps can diverge \parencite{WuBravermanLee2023}; and constant normalized steps converge in our experiments where \cref{cor:bias:steps} guarantees only $\gamma-R^2\eta/2$.
+
+\paragraph{Repairs and open problems.} Faster margin rates: \textcite{NacsonEtAl2019} improved the $1/\log t$ rate of gradient descent with aggressive step sizes, \textcite{JiTelgarsky2021} obtained $O(1/t)$ through a primal--dual analysis in which gradient descent induces mirror descent on the example weights, and \textcite{JiSrebroTelgarsky2021} accelerated the dual to obtain $\tilde O(1/t^2)$. Other geometries: mirror descent with $\ell_p$ potentials \parencite{SunEtAl2022}; steepest flows on homogeneous networks \parencite{TsilivisVardiKempe2025}; Adam, AdamW, spectral descent and Muon (\cref{sec:bias:beyond}). Non-separable data: gradient descent converges in a well-defined sense even when the data cannot be separated \parencite{JiTelgarsky2019}. Open: (a) whether constant normalized steps reach the maximum margin in the $\ell_1$, $\ell_\infty$ and spectral norms, and at the rate $1/\tau_t$ observed in \cref{fig:bias:margins}; (b) the implicit bias of Muon, with momentum and with a different norm for each layer, in a deep network; (c) a theory that predicts, from properties of the data, which geometry generalizes better, and so the sign of the difference between Adam and SGD.
+
+\section{Back in the wild}\label{sec:bias:back}
+
+\fieldnotes{Prefer SGD to adaptive methods when test accuracy counts, or switch from Adam to SGD late; partly folklore, with mixed evidence.}
+{A linear classifier on separable data, the exponential loss, normalized steepest descent in a norm; weight decay as a norm ball.}
+{The normalized margin is at least $\gamma-(\log n+\frac{R^2}2\sum\eta_t^2)/\sum\eta_t$ for every step-size sequence, so steepest descent maximizes the margin of its own norm; the end point with weight decay is within $\lambda\log n$; on a constructed dataset the $\ell_\infty$ bias errs on all negative examples and the $\ell_2$ bias on none.}
+{SGD $\to$ $\ell_2$ SVM, sign descent and Adam with negligible $\epsilon$ $\to$ $\ell_\infty$, boosting $\to$ $\ell_1$, orthogonalized updates $\to$ spectral margin; gaps of order $1/\tau_t$ for normalized steps and $1/\log t$ for plain gradient descent.}
+{Depth and moving features, noise, Adam's $\epsilon$, finite training, non-interpolating regimes such as language-model pretraining, and the empirical fragility of the generalization gap.}
+{An optimizer's norm is a prior on the interpolating solution (proved in the idealization); which prior generalizes depends on the data, in both directions (shown by examples); ``SGD generalizes better'' is folklore whose evidence depends on tuning.}
+
+What should a practitioner take from this? First, when a model can interpolate its training data and is trained far past zero training error, the choice of optimizer is also a choice of solution, and the chapter says which one: the classifier that maximizes the worst-case margin in the optimizer's own norm. That is proved in the idealization, and it is the cleanest sense in which the optimizer matters beyond speed. Second, nothing in the theory says that the $\ell_2$ prior is the better one. The dataset of \cref{ex:bias:wilson} penalizes the $\ell_\infty$ prior, and a dataset with a dense ground truth penalizes the $\ell_2$ prior (Exercise~\ref{ex:bias:dense}); the rule that SGD generalizes better is folklore, supported in some comparisons and removed by tuning in others. Third, the knobs that decide the end point are known: the norm of the update, Adam's $\epsilon$ (which turns the $\ell_\infty$ bias into an $\ell_2$ one once gradients become small), the weight decay (which stops the march at radius $1/\lambda$), and the length of training measured as distance travelled.
+
+The chapter closes the unification line of the book on the side of solutions rather than speed. The norms of \cref{ch:steepest,ch:sign,ch:spectral} reappear as the norms in which margins are maximized; the moving averages of \cref{ch:momentum} leave the limit unchanged; the preconditioners of \cref{ch:adaptive} change it, through the norm they define (Exercise~\ref{ex:bias:precond}); and the norm ball of decoupled weight decay (\cref{ch:decay}) turns the limit direction into a point. The other half of Part V, \cref{ch:transformers}, is about speed, and there the evidence favours Adam.
+
+\begin{exercises}
+\item \consolidation (Three margins of two examples.) Let the signed examples be $z_1=(5,1)$ and $z_2=(4,3)$. (a) Show that $\gamma_1=4$ with $\biasU=\{e_1\}$, $\gamma_2=11/\sqrt5$ with $\biasU=\{(2,1)/\sqrt5\}$, and $\gamma_\infty=6$ with $\biasU=\{(1,1)\}$. (b) Verify \cref{lem:bias:duality} by finding the point of the segment $[z_1,z_2]$ closest to the origin in the $\ell_\infty$, $\ell_2$ and $\ell_1$ norms. (c) Which example is a support vector in each geometry?\label{ex:bias:twopoints}
+
+\item \consolidation (Distance in the dual norm.) For $\theta\ne0$ and $x\in V$, show that $\min\{\norm{x-h}_*:\ip{\theta,h}=0\}=\abs{\ip{\theta,x}}/\norm\theta$. Deduce that $\biasbar(\theta)$ is the smallest dual-norm distance from an example to the hyperplane $\{\ip{\theta,\cdot}=0\}$, signed by correctness.\label{ex:bias:distance}
+
+\item \consolidation (Every initialization.) Prove \cref{thm:bias:margin} from an arbitrary $\theta_0$: whenever the right side is below $\gamma$,
+\[
+  \gamma-\biasbar(\theta_T)\le\frac{(R+\gamma)\norm{\theta_0}+\log n+\frac{R^2}2\sum_{t<T}\eta_t^2}{\norm{\theta_0}+\tau_T}.
+\]
+\hint{$\psi(\theta_0)\ge-R\norm{\theta_0}-\log n$ and $\norm{\theta_T}\le\norm{\theta_0}+\tau_T$.}\label{ex:bias:init}
+
+\item \consolidation\hard (AdaBoost's margin.) Let every $\abs{z_{ij}}$ equal $1$, as for weak classifiers valued in $\{-1,1\}$, so that $R=1$ in the $\ell_1$ geometry. (a) Show that the step $\eta=\biasartanh(r)$ minimizes the first bound of \cref{lem:bias:step} and that, with it, $\Loss(\theta_{t+1})=\sqrt{1-r_t^2}\,\Loss(\theta_t)$ exactly; this is AdaBoost. (b) Deduce that AdaBoost's normalized $\ell_1$ margin satisfies $\liminf_t\biasbar(\theta_t)\ge-\frac12\log(1-\gamma^2)/\biasartanh(\gamma)$, which is about $\gamma/2$ for small $\gamma$. \hint{the function $r\mapsto-\frac12\log(1-r^2)/\biasartanh(r)$ is increasing on $(0,1)$, and $r_t\ge\gamma$.}\label{ex:bias:adaboost}
+
+\item \consolidation (A tie.) Let $z_1=(2,0)$ and $z_2=(1,2)$. (a) Show that $\gamma_\infty=2$ and that the $\ell_\infty$ max-margin set is $\{(1,s):\frac12\le s\le1\}$. (b) Show that sign descent from $0$ moves exactly along $(1,1)$, so that $\biasbar(\theta_t)=2$ from the first step on. (c) In double precision, $e^{-x}$ underflows to $0$ for $x$ above about $745$. Explain why a run of sign descent with a constant step, which computes the softmax weights in floating point, leaves the ray $(1,1)$ once $\tau_t$ exceeds about $745$, and why its margin stays $2$.\label{ex:bias:tie}
+
+\item \variation (Preconditioning changes the norm.) Let $P\succ0$ be fixed and run normalized steepest descent in the norm $\norm\theta_P=\sqrt{\theta^\top P\theta}$. (a) Show that the step is $-\eta_tP^{-1}g/\norm g_{P^{-1}}$: preconditioned normalized gradient descent. (b) Show that its limit direction is the $\ell_2$ maximum-margin direction of the transformed examples $P^{-1/2}x_i$, mapped back by $P^{-1/2}$. (c) For a diagonal $D\succ0$ and the norm $\norm{D\theta}_\infty$, write the step and the max-margin problem. Conclude that a frozen preconditioner changes the implicit bias, and a moving average does not change it in the sense of \textcite{WangEtAl2022}.\label{ex:bias:precond}
+
+\item \variation (A dense ground truth.) Let the labels of $x\sim\cN(0,I_2)$ be $\sign(x_1+x_2)$ and let the training set be the single example $x=(1,\frac12)$ with label $+1$. (a) Show that $u_\infty=(1,1)$ and $u_2=(2,1)/\sqrt5$. (b) For a classifier $u$, show that the test error is the angle between $u$ and $(1,1)$ divided by $\pi$. (c) Deduce test errors $0$ for the $\ell_\infty$ classifier and $\arccos(3/\sqrt{10})/\pi\approx0.102$ for the $\ell_2$ one.\label{ex:bias:dense}
+
+\item \variation (Multiclass margins.) For $K$ classes and $W\in\R^{K\times d}$, verify that the multiclass margin is $\min_{c\ne y_i}\ip{W,Z_{ic}}$ with $Z_{ic}=(e_{y_i}-e_c)x_i^\top$, that $\norm{Z_{ic}}_{\nuc}=\sqrt2\norm{x_i}_2$ and $\norm{Z_{ic}}_F=\sqrt2\norm{x_i}_2$, and write down the four instances of \cref{cor:bias:instances} for $W$ (Frobenius, entrywise $\ell_\infty$, entrywise $\ell_1$, spectral). Which of them has a limit that is unique for generic data?\label{ex:bias:multiclass}
+
+\item \variation (Coupled weight decay.) Let $\theta_\lambda$ minimize $\Loss(\theta)+\frac\lambda2\norm\theta_2^2$. (a) Show that $\theta_\lambda$ minimizes $\Loss$ over the ball of radius $\norm{\theta_\lambda}_2$, so that \cref{prop:bias:decay} applies with $B=\norm{\theta_\lambda}_2$. (b) By comparing with $Bu^\star$ for $B=\log(1/\lambda)/\gamma_2$, show that $\Loss(\theta_\lambda)\to0$ as $\lambda\to0$, hence $\norm{\theta_\lambda}_2\to\infty$ and $\biasbar(\theta_\lambda)\to\gamma_2$.\label{ex:bias:penalty}
+
+\item \simulation (Adam's $\epsilon$ on the example.) On the dataset of \cref{ex:bias:wilson} with $n_+=6$ and $n_-=4$, run Adam with $\beta_1=0.9$, $\beta_2=0.999$, bias correction, steps $0.05/\sqrt{t+1}$ and $\epsilon\in\{0,10^{-8},10^{-3}\}$ for $10^5$ steps from zero, and record the score $(\theta_2+\theta_3-\theta_1)/\norm\theta_\infty$ of a new negative example. Observe that it stays at $1$ (misclassified) for $\epsilon=0$, as \cref{prop:bias:wilson} proves, and for $\epsilon=10^{-8}$ over this horizon, but that for $\epsilon=10^{-3}$ it starts to fall once the loss is small enough that $\sqrt{\hat v_t}$ is comparable to $\epsilon$. Explain why it can become negative, and estimate when.\label{ex:bias:eps}
+
+\item \simulation (The distance is the clock.) Rerun \texttt{15-bias-margins.py} with constant steps $0.2/R$ and $0.01/R$ and with decaying steps $0.3/(R\sqrt{t+1})$. Check that $(\gamma-\biasbar(\theta_t))\,\tau_t$ approaches the same constant for every schedule in each norm, and compare that constant with $\log n$ and with the asymptote $R^2\eta/2$ of the constant-step bound.\label{ex:bias:clock}
+
+\item \simulation (AdaBoost and shrinkage.) Draw random matrices $Z\in\{-1,1\}^{n\times d}$ with $4\le n,d\le12$, keep the separable ones, and run AdaBoost (step $\biasartanh(r_t)$) and coordinate descent with the constant step $0.05$ for $3000$ steps. Compare their final $\ell_1$ margins with $\gamma_1$ from the linear program and with the bound of Exercise~\ref{ex:bias:adaboost}. Observe that AdaBoost sometimes ends visibly below $\gamma_1$, while the small steps do not; this is the phenomenon studied by \textcite{RudinDaubechiesSchapire2004} and \textcite{RatschWarmuth2005}.\label{ex:bias:boost}
+
+\item \research (Constant steps.) Prove that normalized steepest descent with a constant step $\eta$ in the $\ell_\infty$ or $\ell_1$ norm satisfies $\biasbar(\theta_t)\to\gamma$, ideally at the rate $O(1/\tau_t)$ of \cref{fig:bias:margins}, or find a dataset on which the margin stays below $\gamma$. For the $\ell_2$ norm the smoothness of the dual problem gives such rates \parencite{JiTelgarsky2021}; the difficulty for $\ell_1$ and $\ell_\infty$ is that the step jumps between vertices of the ball and never settles.\label{ex:bias:constant}
+
+\item \research (Muon in depth.) For a two-layer linear network $x\mapsto W_2W_1x$ trained with orthogonalized updates applied to each layer (with a shared step length in a max norm over the layers, \cref{ch:modular}), \cref{prop:bias:homogeneous} applies with $a=2$. Characterize the KKT points of the corresponding max-margin problem in terms of the end-to-end matrix $W_2W_1$, compare with gradient descent (whose limits relate to the nuclear norm of $W_2W_1$ in related settings), and determine the effect of momentum. As far as we know the answer is open.\label{ex:bias:muon}
+\end{exercises}
+
+\notesandrefs
+Maximum margins entered machine learning with the support vector machine \parencite{CortesVapnik1995}, and margins in other norms with boosting. \Textcite{FreundSchapire1997} introduced AdaBoost, \textcite{SchapireEtAl1998} explained its resistance to overfitting by the growth of the $\ell_1$ margins of the training examples, and \textcite{FreundSchapire1999} cast boosting as a repeated zero-sum game played by multiplicative weights, the view of \cref{rem:bias:hedge}. \Textcite{FriedmanHastieTibshirani2000} and \textcite{Friedman2001} read boosting as coordinate descent on the exponential loss; \textcite{RossetZhuHastie2004} showed that boosting with small steps follows a regularization path that ends at the $\ell_1$ maximum margin; \textcite{RudinDaubechiesSchapire2004} found that AdaBoost itself can cycle and stop short of it; \textcite{RatschWarmuth2005} and \textcite{Telgarsky2013} gave step sizes and shrinkage schemes with margin guarantees. Long before gradient descent, boosting was understood as an optimizer whose end point maximizes a margin, the $\ell_1$ one.
+
+\Textcite{SoudryEtAl2018} proved that gradient descent on separable data converges in direction to the $\ell_2$ support vector machine at the rate $1/\log t$, and \textcite{JiTelgarsky2019} extended the picture to non-separable data. \Textcite{GunasekarEtAl2018} asked which geometry an optimizer carries and showed that steepest descent in a norm converges to the maximum margin in that norm; \cref{thm:bias:margin} proves a version of their result for normalized steps, through the Hoeffding step of \cref{lem:bias:step} and the regret argument of \cref{rem:bias:hedge}, which gives an explicit bound for every step-size sequence. Rates were improved by aggressive and normalized steps \parencite{NacsonEtAl2019,JiTelgarsky2021} and by acceleration of the dual \parencite{JiSrebroTelgarsky2021}. The geometric reading of margins in a general norm as distances in the dual norm is due to \textcite{Mangasarian1999}.
+
+For networks, \textcite{LyuLi2020} proved that gradient flow and gradient descent on homogeneous networks increase a smoothed margin and converge to KKT points of the $\ell_2$ max-margin problem, \textcite{JiTelgarsky2020} proved directional convergence, \textcite{VardiShamirSrebro2022} showed that the KKT points need not be local maximizers, and \textcite{TsilivisVardiKempe2025} extended the picture to steepest flows in general norms. For adaptive methods, \textcite{WangEtAl2021} showed that Adam and RMSProp with a fixed $\epsilon$ share the $\ell_2$ bias of gradient descent, \textcite{WangEtAl2022} that momentum does too, \textcite{ZhangZouCao2024} that Adam with negligible $\epsilon$ converges to the $\ell_\infty$ maximum margin, \textcite{XieLi2024} that AdamW solves an $\ell_\infty$-constrained problem, and \textcite{FanSchmidtThrampoulidis2025} that spectral descent and Muon maximize the spectral margin on multiclass data. The view of optimizers as steepest descent in norms that organizes this book is that of \textcite{BernsteinNewhouse2024}. Volume 2 of this series, \emph{The Hydrogen Atoms of Deep Learning}, Chapter 4, treats the Euclidean case for gradient flow.
+
+The empirical debate began with \textcite{WilsonEtAl2017}, was continued by \textcite{KeskarSocher2017}, who switched from Adam to SGD during training, and by \textcite{LoshchilovHutter2019}, whose decoupled weight decay narrowed the gap, and was reframed by \textcite{ChoiEtAl2019}, who found that comparisons follow the inclusion relations among optimizers once all hyperparameters are tuned.
+
+\paragraph{Translating the literature.} \Textcite{GunasekarEtAl2018} write $w$ for our $\theta$ and $\{(x_n,y_n)\}_{n=1}^N$ for the data (our $n$ is their $N$); their steepest descent step $\Delta w_t\in\argmin_v\ip{\nabla\Loss(w_t),v}+\frac12\norm v^2$ is our $-\nabla\Loss^\sharp$, so their method is the unnormalized one of \cref{cor:bias:unnormalized}, and their step size $\eta_t$ corresponds to our normalized step $\eta_t\norm{\nabla\Loss(w_t)}_*$. \Textcite{SoudryEtAl2018} write $\hat w$ for the $\ell_2$ max-margin solution scaled to have minimum margin $1$ (our $u_2/\gamma_2$). \Textcite{LyuLi2020} write $L$ for the order of homogeneity (our $a$; in this book $L$ is a smoothness constant), $\bar\gamma$ for the normalized margin $\biasqmin/\norm\theta_2^a$ and $\tilde\gamma$ for the smoothed one, and use the sum of the losses, so that their condition $\Loss<1$ is our $n\Loss<1$. In the boosting literature the example weights $D_t$ are our $p(\theta_t)$, the edge $1-2\eps_t$ of the chosen weak classifier with weighted error $\eps_t$ is our $r(\theta_t)$, and AdaBoost's step $\alpha_t=\frac12\log((1-\eps_t)/\eps_t)$ is our $\biasartanh(r(\theta_t))$.
+
+\printchapterbib
+\end{refsection}

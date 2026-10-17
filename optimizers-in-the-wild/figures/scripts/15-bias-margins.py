@@ -14,7 +14,7 @@ where R = max_i ||z_i||_* (dual norm). Recorded: the normalized margin min_i <th
 at 41 log-spaced steps, and the lower bound of the margin theorem,
     gamma - (log n + R^2/2 sum_{s<t} eta_s^2) / sum_{s<t} eta_s.
 Output: figures/data/15-bias-margins.dat, figures/data/15-bias-margins-gamma.dat; the cross-norm
-margins of Table 15.1 are printed. numpy and scipy only; deterministic seeds; about 40 s on a laptop CPU.
+margins of Table 15.1 are printed. numpy and scipy only; deterministic seeds; about 15 s on a laptop CPU.
 """
 import os
 import numpy as np
@@ -69,16 +69,18 @@ def nucn(G):
     return np.linalg.svd(G, compute_uv=False).sum()
 
 
-def mm_op(Zs, iters=1500, tol=1e-9):
+def mm_op(Zs, iters=2000, tol=1e-7):
     """Kelley's cutting planes for min_p ||sum p_i Z_i||_nuc; returns (lower, upper, W)."""
     N = len(Zs)
+    Zflat = Zs.reshape(N, -1)
     p = np.ones(N) / N
-    cuts, up, low, Wb = [], np.inf, -np.inf, None
+    cuts, rows, up, low, Wb = [], [], np.inf, -np.inf, None
     for _ in range(iters):
         M = np.tensordot(p, Zs, axes=1)
         up = min(up, nucn(M))
         cuts.append(polar(M))
-        C = np.array([[np.sum(Wk * Zi) for Zi in Zs] for Wk in cuts])
+        rows.append(Zflat @ cuts[-1].ravel())          # <W_k, Z_i> for the new cut
+        C = np.array(rows)
         r = linprog(np.r_[np.zeros(N), 1.0], A_ub=np.hstack([C, -np.ones((len(cuts), 1))]),
                     b_ub=np.zeros(len(cuts)), A_eq=np.r_[np.ones(N), 0.0][None, :], b_eq=[1.0],
                     bounds=[(0, None)] * N + [(None, None)], method="highs")
@@ -86,7 +88,7 @@ def mm_op(Zs, iters=1500, tol=1e-9):
         lam = np.maximum(-r.ineqlin.marginals, 0)
         W = np.tensordot(lam / lam.sum(), np.array(cuts), axes=1)
         W = W / opn(W)
-        m = min(np.sum(W * Zi) for Zi in Zs)
+        m = np.min(Zflat @ W.ravel())
         if m > low:
             low, Wb = m, W
         if up - low < tol:
@@ -145,17 +147,23 @@ def weights(m):
     return w / w.sum()
 
 
+RECSET = set(int(k) for k in REC)
+
+
 def run(norm, etas, A, shape=None):
     """normalized steepest descent on the exponential loss of the signed examples A (rows)."""
     th = np.zeros(A.shape[1])
+    AT = np.ascontiguousarray(A.T)
     out = []
     for t in range(T):
-        g = -(A.T @ weights(A @ th))                    # gradient up to a positive factor
-        if shape is not None and norm == "op":
-            th = th + etas[t] * lmo(g.reshape(shape), "op").ravel()
+        m = A @ th
+        w = np.exp(m.min() - m)
+        g = -(AT @ w)                                   # gradient up to a positive factor
+        if norm == "op":
+            th += etas[t] * lmo(g.reshape(shape), "op").ravel()
         else:
-            th = th + etas[t] * lmo(g, norm)
-        if t + 1 in REC:
+            th += etas[t] * lmo(g, norm)
+        if t + 1 in RECSET:
             nn = opn(th.reshape(shape)) if norm == "op" else NORM[norm](th)
             out.append(np.min(A @ th) / nn)
     return np.array(out), th

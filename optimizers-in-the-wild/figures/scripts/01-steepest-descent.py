@@ -14,7 +14,7 @@ Output 1: figures/data/01-steepest-descent-onestep.dat  (one step from theta_0, 
 Output 2: figures/data/01-steepest-descent-floor.dat  (sign descent theta <- theta - eta sign(g))
   T         number of steps (log-spaced, 1 ... 1e5)
   avgA, bdA running average (1/T) sum_{t<T} |grad L(theta_t)|_1 and the bound Delta_0/(eta T) + eta trH/2,
-            for eta = 0.1;  avgB, bdB for eta = 0.01;  avgC, bdC for eta = 0.001
+            for eta = 0.1;  avgB, bdB for eta = 0.01
   env       the bound at the best step for each horizon, sqrt(2 trH Delta_0 / T)
 The script also prints the numbers quoted in the text. Deterministic; runs in about ten seconds.
 """
@@ -76,10 +76,10 @@ def floor(h, th0):
     trH = h.sum()
     D0 = loss(h, th0)
     Ts = np.unique(np.round(np.logspace(0, 5, 41)).astype(int))
-    print(f"max_i |theta_0i| = {np.abs(th0).max():.4f}; crossover T = 2 Delta_0/(trH eta^2) for eta = 0.1, 0.01, 0.001:",
-          [round(2 * D0 / (trH * e * e)) for e in (0.1, 0.01, 0.001)])
+    print(f"max_i |theta_0i| = {np.abs(th0).max():.4f}; crossover T = 2 Delta_0/(trH eta^2) for eta = 0.1, 0.01:",
+          [round(2 * D0 / (trH * e * e)) for e in (0.1, 0.01)])
     cols = []
-    for eta in (0.1, 0.01, 0.001):
+    for eta in (0.1, 0.01):
         th = th0.copy()
         S, k = 0.0, 0
         avg = np.empty(len(Ts))
@@ -114,7 +114,7 @@ def main():
     Ts, cols = floor(h, th0)
     path = os.path.join(DATA, "01-steepest-descent-floor.dat")
     with open(path, "w") as f:
-        f.write("T avgA bdA avgB bdB avgC bdC env\n")
+        f.write("T avgA bdA avgB bdB env\n")
         for i, T in enumerate(Ts):
             f.write(f"{T} " + " ".join(f"{c[i]:.6e}" for c in cols) + "\n")
     print("wrote", os.path.normpath(path))
