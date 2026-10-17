@@ -37,6 +37,15 @@ mkdir -p .tools && /usr/bin/lipo -thin arm64 -output .tools/biber /Library/TeX/t
 
 The build scripts use `.tools/biber` when it exists. The folder is ignored by git.
 
+*Source Sans on older TeX Live.* The class loads the `sourcesans` font package. Some distributions (for example Debian's and Ubuntu's TeX Live 2023) ship only the older `sourcesanspro`. A local wrapper fixes this without touching the class; put it in your personal tree, for example `~/texmf/tex/latex/sourcesans/sourcesans.sty`:
+
+```latex
+\ProvidesPackage{sourcesans}
+\DeclareOption*{\PassOptionsToPackage{\CurrentOption}{sourcesanspro}}
+\ProcessOptions\relax
+\RequirePackage{sourcesanspro}
+```
+
 ## How a volume is made
 
 1. A plan, `OUTLINE.md`, gives the thesis, the chapter list and a specification for each chapter.
