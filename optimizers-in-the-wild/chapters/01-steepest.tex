@@ -21,7 +21,7 @@ Because these rules fix the size of the step, the size of an update is measured,
 In the language-model training runs of Liu and coauthors, who scaled Muon up to train the Moonlight models, the root-mean-square of AdamW's update of a weight matrix, in units of the learning rate, typically lay between $0.2$ and $0.4$. Rescaled to root-mean-square $0.2$, the Muon update could reuse the learning rate and weight decay tuned for AdamW.
 \end{observation}
 
-This is one report, from the team that trained Moonlight, in 2025; the older observation behind it is that Adam's update behaves like a sign when the gradients are consistent from step to step \parencite{BallesHennig2018}. The logic of the rule is that a learning rate is a length, and lengths in different norms can be converted. A second observation shows that normalization matters.
+This is one report, from the team that trained Moonlight, in 2025; the older observation behind it is that Adam's update behaves like a sign when the gradients are consistent across steps \parencite{BallesHennig2018}. The logic of the rule: a learning rate is a length, and lengths in different norms can be converted. A second observation shows that normalization matters.
 
 \begin{observation}[\textcite{KunstnerEtAl2023}]\label[observation]{obs:steepest:sign}
 Transformers for language modeling and question answering, trained with full-batch gradients so that noise plays no role, still train much faster with Adam than with gradient descent, and sign descent with momentum closes most of the gap.
@@ -127,7 +127,7 @@ Part (iii) says that $\frac12\norm{\cdot}_*^2$ is the convex conjugate of $\frac
 Let $g\in\R^d$ and $G\in\R^{m\times n}$ be nonzero, and let $M(g)=\argmin_{\norm{u}\le1}\ip{g,u}$ be the set of steepest unit directions of the norm at hand.
 \begin{enumerate}
 \item ($\ell_2$ and Frobenius.) The dual of $\norm{\cdot}_2$ is $\norm{\cdot}_2$, $M(g)=\{-g/\norm{g}_2\}$ and $g^\sharp=g$. Likewise $\norm{\cdot}_F$ is self-dual, $\lmo(G)=-G/\norm{G}_F$ and $G^\sharp=G$.
-\item ($\ell_\infty$.) The dual norm is $\norm{g}_1$, and $M(g)=\{u\in[-1,1]^d:u_i=-\sign(g_i)\text{ whenever }g_i\ne0\}$. We choose $\lmo(g)=-\sign(g)$, so that $g^\sharp=\norm{g}_1\sign(g)$, and call normalized steepest descent in $\ell_\infty$ \term{sign descent}\index{sign descent}.
+\item ($\ell_\infty$.) The dual norm is $\norm{g}_1$, and $M(g)=\{u\in[-1,1]^d:u_i=-\sign(g_i)\text{ whenever }g_i\ne0\}$. We choose $\lmo(g)=-\sign(g)$, so $g^\sharp=\norm{g}_1\sign(g)$; normalized steepest descent in $\ell_\infty$ is \term{sign descent}\index{sign descent}.
 \item ($\ell_1$.) The dual norm is $\norm{g}_\infty$, and $M(g)$ is the convex hull of the vectors $-\sign(g_i)e_i$ with $\abs{g_i}=\norm{g}_\infty$. For one such $i$, $\lmo(g)=-\sign(g_i)e_i$ and $g^\sharp=g_ie_i$: unnormalized steepest descent in $\ell_1$ is greedy coordinate descent, the \term{Gauss--Southwell rule}\index{Gauss--Southwell rule}.
 \item (Maxima over blocks.) Let $\R^d=\R^{d_1}\times\dots\times\R^{d_K}$ with $\theta=(\theta_1,\dots,\theta_K)$, give the $k$th factor a norm $\norm{\cdot}_{(k)}$ with dual $\norm{\cdot}_{(k),*}$ and steepest unit directions $M_k$, and let $\norm{\theta}=\max_k\norm{\theta_k}_{(k)}$. Then $\norm{g}_*=\sum_k\norm{g_k}_{(k),*}$, $M(g)=M_1(g_1)\times\dots\times M_K(g_K)$, $\lmo(g)=(\lmo_{(k)}(g_k))_k$, and $g^\sharp=-\bigl(\sum_j\norm{g_j}_{(j),*}\bigr)(\lmo_{(k)}(g_k))_k$.
 \item (Columns and rows.) $\norm{W}_{1\to2}=\max_j\norm{We_j}_2$ and $\norm{W}_{2\to\infty}=\max_i\norm{W^\top e_i}_2$. Their duals are the sum of the column norms and the sum of the row norms, and $\lmo$ normalizes each column, respectively row, of $G$ to unit length and reverses its sign, mapping a zero column or row to zero.
@@ -164,7 +164,7 @@ The steepest unit direction is unique for the Euclidean and Frobenius norms, who
 \end{remark}
 
 \begin{remark}[Steepest descent is not mirror descent]\label[remark]{rem:steepest:mirror}
-\term{Mirror descent}\index{mirror descent} \parencite{NemirovskyYudin1983,BeckTeboulle2003} carries the iterate, not the gradient, to the dual space: with a differentiable, strongly convex mirror map $\psi$ it sets $\nabla\psi(\theta_{t+1})=\nabla\psi(\theta_t)-\eta g_t$. Take $\psi=\frac12\norm{\cdot}^2$ for a norm whose square is differentiable and strictly convex. Then $g^\sharp$ is the only maximizer of the strictly concave function $u\mapsto\ip{g,u}-\psi(u)$ (\cref{lem:steepest:basic}(iii)), so by the first-order condition $\nabla\psi$ and $g\mapsto g^\sharp$ are inverse maps, and with $z_t=\nabla\psi(\theta_t)$ mirror descent reads $\theta_{t+1}=(z_t-\eta g_t)^\sharp$, while steepest descent reads $\theta_{t+1}=z_t^\sharp-\eta g_t^\sharp$. The two agree for all $\theta_t$ and $g_t$ if and only if the sharp operator is additive, hence linear by \cref{lem:steepest:basic}(iv); then $\norm{g}_*^2=\ip{g,g^\sharp}$ is a quadratic form, the norm comes from an inner product, $\norm{u}=\norm{u}_P$, and both methods are the preconditioned step $\theta_t-\eta P^{-1}g_t$. For the max, $\ell_1$ and spectral norms, $\frac12\norm{\cdot}^2$ is neither differentiable nor strictly convex, so mirror descent in these geometries uses other maps, such as the negative entropy, and it is analyzed through Bregman divergences rather than the descent inequality.
+\term{Mirror descent}\index{mirror descent} \parencite{NemirovskyYudin1983,BeckTeboulle2003} carries the iterate, not the gradient, to the dual space: with a differentiable, strongly convex mirror map $\psi$ it sets $\nabla\psi(\theta_{t+1})=\nabla\psi(\theta_t)-\eta g_t$. Take $\psi=\frac12\norm{\cdot}^2$ for a norm whose square is differentiable and strictly convex. Then $g^\sharp$ is the only maximizer of the strictly concave function $u\mapsto\ip{g,u}-\psi(u)$ (\cref{lem:steepest:basic}(iii)), so by the first-order condition $\nabla\psi$ and $g\mapsto g^\sharp$ are inverse maps, and with $z_t=\nabla\psi(\theta_t)$ mirror descent reads $\theta_{t+1}=(z_t-\eta g_t)^\sharp$, while steepest descent reads $\theta_{t+1}=z_t^\sharp-\eta g_t^\sharp$. The two agree for all $\theta_t$ and $g_t$ if and only if the sharp operator is additive, hence linear by \cref{lem:steepest:basic}(iv); then $\norm{g}_*^2=\ip{g,g^\sharp}$ is a quadratic form, the norm comes from an inner product, $\norm{u}=\norm{u}_P$, and both methods are the preconditioned step $\theta_t-\eta P^{-1}g_t$. For the max, $\ell_1$ and spectral norms, $\frac12\norm{\cdot}^2$ is neither differentiable nor strictly convex, so mirror descent there uses other maps, such as the negative entropy, and is analyzed through Bregman divergences, not the descent inequality.
 \end{remark}
 
 \section{The theory: descent in a general norm}\label{sec:steepest:descent}
@@ -188,7 +188,7 @@ The right side is smallest at $u=-\nabla\Loss(\theta)^\sharp/L$, where it equals
   \frac1T\sum_{t<T}\norm{g_t}_*\le\frac{\Delta_0}{\eta T}+\frac{L\eta}2 ,
 \end{equation}
 and if $\Delta_0>0$, the right side is smallest, equal to $\sqrt{2L\Delta_0/T}$, at $\eta=\sqrt{2\Delta_0/(LT)}$.
-\item (Unnormalized, convex.) If moreover $\Loss$ is convex with a minimizer $\theta^\star$, and $R=\sup\{\norm{\theta-\theta^\star}:\Loss(\theta)\le\Loss(\theta_0)\}$ is finite, then unnormalized steepest descent with step size $1/L$ satisfies $\Delta_T\le2LR^2/(T+4)$ for all $T\ge0$.
+\item (Unnormalized, convex.) If moreover $\Loss$ is convex with a minimizer $\theta^\star$, and $R=\sup\{\norm{\theta-\theta^\star}:\Loss(\theta)\le\Loss(\theta_0)\}$ is finite, then the method of (ii) satisfies $\Delta_T\le2LR^2/(T+4)$ for all $T\ge0$.
 \end{enumerate}
 \end{theorem}
 
@@ -226,11 +226,11 @@ Let $\Loss(\theta)=\frac12\theta^\top H\theta-\ip{b,\theta}$ with $H$ symmetric,
 \begin{enumerate}
 \item For every norm, $L_{\norm\cdot}=\max_{\norm{u}\le1}u^\top Hu$.
 \item $L_{\ell_2}=\lmax(H)$, $L_{\ell_1}=\max_iH_{ii}$, and $L_{\ell_\infty}=\norm{H}_{\infty\to1}=\max_{s\in\{-1,1\}^d}s^\top Hs$, which satisfies $\tr H\le L_{\ell_\infty}\le d\,\lmax(H)$, with $L_{\ell_\infty}=\tr H$ when $H$ is diagonal.
-\item At a point with gradient $g\ne0$, the guaranteed decrease $\norm{g}_*^2/(2L_{\norm\cdot})$ of \cref{thm:steepest:descent}(i) is larger for $\ell_\infty$ than for $\ell_2$ if and only if
+\item At a gradient $g\ne0$, the guaranteed decrease $\norm{g}_*^2/(2L_{\norm\cdot})$ of \cref{thm:steepest:descent}(i) is larger for $\ell_\infty$ than for $\ell_2$ if and only if
 \begin{equation}\label{eq:steepest:whichnorm}
   \frac{\norm{g}_1^2}{\norm{g}_2^2}>\frac{\norm{H}_{\infty\to1}}{\lmax(H)},
 \end{equation}
-and the right side is at least $\tr H/\lmax(H)$, with equality when $H$ is diagonal.
+and the right side is at least $\tr H/\lmax(H)$, with equality for diagonal $H$.
 \item For every norm, the step $-g^\sharp/L_{\norm\cdot}$ decreases $\Loss$ by at least $\norm{g}_*^2/(2L_{\norm\cdot})$ and at most twice as much, and by exactly the lower value if and only if $\lmo(g)$ maximizes $u^\top Hu$ over the unit ball; for $\ell_\infty$ and diagonal $H$, this holds whenever no coordinate of $g$ vanishes.
 \end{enumerate}
 \end{proposition}
@@ -335,7 +335,7 @@ Let $\Loss(\theta)=\frac12\theta^\top H\theta$ with $H$ positive semidefinite.
 \begin{equation}\label{eq:steepest:identity}
   \frac1T\sum_{t<T}\norm{g_t}_1=\frac{\Delta_0-\Delta_T}{\eta T}+\frac{\eta\tr H}2 ,
 \end{equation}
-and from step $\max_i\abs{\theta_{0,i}}/\eta$ on the iterates lie on a cycle of period two, with $\Delta_T<\frac12\eta^2\tr H$. So the two sides of \eqref{eq:steepest:normalized}, with $L=\tr H=L_{\ell_\infty}$, differ by exactly $\Delta_T/(\eta T)$, and the running average tends to the floor $\eta\tr H/2$.
+and from step $\max_i\abs{\theta_{0,i}}/\eta$ on the iterates lie on a cycle of period two, with $\Delta_T<\frac12\eta^2\tr H$. So the two sides of \eqref{eq:steepest:normalized} with $L=\tr H=L_{\ell_\infty}$ differ by exactly $\Delta_T/(\eta T)$, and the average tends to the floor $\eta\tr H/2$.
 \end{enumerate}
 \end{proposition}
 
