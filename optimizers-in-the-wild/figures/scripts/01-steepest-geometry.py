@@ -9,7 +9,7 @@ from the origin, so the three lines are ordered by the three dual norms.
   01-steepest-geometry-lmo.dat      x y dual         lmo(g) and |g|_*, one row per norm: l1, l2, l-inf
                                     ax ay du dv      one end of the supporting line and its extent
 Right panel. Normalized steepest descent theta <- theta + eta lmo(H theta) in the three norms on the
-quadratic L(theta) = theta^T H theta / 2, H = R diag(1, 0.12) R^T with R the rotation by 30 degrees,
+quadratic L(theta) = theta^T H theta / 2, H = Q diag(1, 0.12) Q^T with Q the rotation by 30 degrees,
 from theta_0 = (-2.4, 1.3) with eta = 0.2, for 40 steps; and level sets of L.
   01-steepest-geometry-traj.dat     t x2 y2 xinf yinf x1 y1
   01-steepest-geometry-levels.dat   phi xa ya xb yb xc yc xd yd   level sets L = 0.02, 0.15, 0.5, 1.3448
@@ -73,8 +73,8 @@ def main():
 
     # ---------------- right panel: trajectories on a 2-D quadratic ----------------
     rot = np.deg2rad(30.0)
-    R = np.array([[np.cos(rot), -np.sin(rot)], [np.sin(rot), np.cos(rot)]])
-    H = R @ np.diag([1.0, 0.12]) @ R.T
+    Q = np.array([[np.cos(rot), -np.sin(rot)], [np.sin(rot), np.cos(rot)]])
+    H = Q @ np.diag([1.0, 0.12]) @ Q.T
     th0 = np.array([-2.4, 1.3])
     eta, T = 0.2, 40
     paths = {}
@@ -91,7 +91,7 @@ def main():
           [(t, float(paths[2][t, 0]), float(paths[2][t, 1]), float(paths[np.inf][t, 0]),
             float(paths[np.inf][t, 1]), float(paths[1][t, 0]), float(paths[1][t, 1]))
            for t in range(T + 1)])
-    # level sets {theta : theta^T H theta / 2 = c}: theta = R diag(1/sqrt(h)) (cos, sin) sqrt(2c)
+    # level sets {theta : theta^T H theta / 2 = c}: theta = Q diag(1/sqrt(h)) (cos, sin) sqrt(2c)
     levels = [0.02, 0.15, 0.5, float(0.5 * th0 @ H @ th0)]
     print("levels", [round(c, 4) for c in levels])
     phis = np.linspace(0, 2 * np.pi, 121)
@@ -100,7 +100,7 @@ def main():
         r = [float(p)]
         for c in levels:
             z = np.sqrt(2 * c) * np.array([np.cos(p) / np.sqrt(1.0), np.sin(p) / np.sqrt(0.12)])
-            x = R @ z
+            x = Q @ z
             r += [float(x[0]), float(x[1])]
         rows.append(r)
     write("01-steepest-geometry-levels.dat", ["phi", "xa", "ya", "xb", "yb", "xc", "yc", "xd", "yd"], rows)
