@@ -4,8 +4,9 @@ Writes
   figures/data/11-superposition-loss.dat   loss versus sparsity S at importance ratio r=0.5:
       exact losses of the dedicated and antipodal configurations, the numerically minimized loss,
       and the exact loss of parameters found by Adam on sampled data (three seeds);
-  figures/data/11-superposition-phase.dat  phase boundary in the (r, S) plane: the numerically
-      computed boundary and the two proven sufficient conditions.
+  figures/data/11-superposition-phase.dat  the numerically computed phase boundary S_c(r);
+  figures/data/11-superposition-phasecurves.dat  the two proven sufficient conditions
+      r = kappa(S)/v(S) and S = (2+r)/(2+5r).
 The expected loss is evaluated by exact integration over v (closed form) and Gauss-Legendre
 quadrature over u. Runs in about a minute on one CPU thread.
 """
@@ -88,9 +89,9 @@ r = 0.5
 rows = []
 for S in np.round(np.arange(0.0, 0.96, 0.05), 2):
     tr = [train(S, r, seed) for seed in range(3)]
-    rows.append((S, r * vS(S), (1 + r) * (1 - S)**2 / 6, gmin(S, r).fun, min(tr), max(tr)))
+    rows.append((S, r * vS(S), (1 + r) * (1 - S)**2 / 6, gmin(S, r).fun, *tr))
 with open("figures/data/11-superposition-loss.dat", "w") as f:
-    f.write("S dedicated antipodal optimum trainedmin trainedmax\n")
+    f.write("S dedicated antipodal optimum seed0 seed1 seed2\n")
     for row in rows:
         f.write(" ".join(f"{z:.6g}" for z in row) + "\n")
 
@@ -108,9 +109,14 @@ for r in [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0]:
         Sc = (lo + hi) / 2
     Sk = 0.0 if r >= 1 else brentq(lambda S: ratio(S) - r, 1e-9, 0.9999)
     Sa = (2 + r) / (2 + 5 * r)
-    out.append((r, Sc, Sk, Sa, min(Sk, Sa)))
-    print(r, Sc, Sk, Sa, flush=True)
+    out.append((r, Sc))
+    print(r, Sc, flush=True)
 with open("figures/data/11-superposition-phase.dat", "w") as f:
-    f.write("r numeric kappa antipodal proven\n")
+    f.write("r numeric\n")
     for row in out:
         f.write(" ".join(f"{z:.6g}" for z in row) + "\n")
+with open("figures/data/11-superposition-phasecurves.dat", "w") as f:
+    f.write("r kappa antipodal\n")
+    for r in np.linspace(0.02, 1.0, 50):
+        Sk = 0.0 if r >= 1 else brentq(lambda S: ratio(S) - r, 1e-9, 0.9999)
+        f.write(f"{r:.4f} {Sk:.6f} {(2 + r) / (2 + 5 * r):.6f}\n")
