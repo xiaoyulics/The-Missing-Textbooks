@@ -2,8 +2,8 @@
 
 Loss L(W) = 1/2 tr((W - W*) A (W - W*)^T) on 128 x 128 matrices (the layer loss (1/2n)||WX - Y||_F^2 with
 Y = W* X and A = X X^T / n). Inputs: A = Q diag(a) Q^T with a_i = i^(-1/2), i = 1..128, so the stable rank of
-the inputs is tr A / a_1 = 21.2. Start: W_0 = 0, with W* = -U diag(e) Q^T, e_i = i^(-beta), so the error is
-aligned with the eigenbasis of A ("aligned case"); beta controls how concentrated the error is on the stiff
+the inputs is tr A / a_1 = 21.2. Start: W_0 = 0, with W* = -U diag(e) Q^T, e_i = i^(-alpha), so the error is
+aligned with the eigenbasis of A ("aligned case"); alpha controls how concentrated the error is on the stiff
 directions. Q and U are Haar-random orthogonal matrices (seed 11).
 
 Methods, both with the step sizes of the chapter's theorem (no tuning):
@@ -20,8 +20,8 @@ c = sum_i a_i |e_i| / sum_i a_i. Closed forms for one step; scalar recursions fo
 Simulation (points): the same methods iterated on the dense 128 x 128 matrices, with the polar factor and the
 nuclear norm from numpy's SVD; columns sim_onestep_S, sim_onestep_F, sim_iters_S, sim_iters_F.
 
-Output: figures/data/03-spectral-crossover-theory.dat (beta, R, onestep_S, onestep_F, guar_F, iters_S, iters_F)
-        figures/data/03-spectral-crossover-sim.dat    (beta, sim_onestep_S, sim_onestep_F, sim_iters_S, sim_iters_F)
+Output: figures/data/03-spectral-crossover-theory.dat (alpha, R, onestep_S, onestep_F, guar_F, iters_S, iters_F)
+        figures/data/03-spectral-crossover-sim.dat    (alpha, sim_onestep_S, sim_onestep_F, sim_iters_S, sim_iters_F)
 """
 import os
 
@@ -33,14 +33,14 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "..", "data")
 N = 128
-ALPHA = 0.5
+INPUT_EXP = 0.5   # input spectrum a_i = i^(-1/2)
 TARGET = 1e-2
-a = np.arange(1, N + 1, dtype=float) ** (-ALPHA)
+a = np.arange(1, N + 1, dtype=float) ** (-INPUT_EXP)
 LF, LOP = a[0], a.sum()
 
 
-def scalar_theory(beta, Tmax=100000):
-    e0 = np.arange(1, N + 1, dtype=float) ** (-beta)
+def scalar_theory(alpha, Tmax=100000):
+    e0 = np.arange(1, N + 1, dtype=float) ** (-alpha)
     loss = lambda e: 0.5 * np.sum(a * e * e)
     L0 = loss(e0)
     g = a * e0
@@ -71,9 +71,9 @@ def haar(k, rng):
     return Q * np.sign(np.diag(R))
 
 
-def matrix_sim(beta, Q, U, Tmax=100000):
+def matrix_sim(alpha, Q, U, Tmax=100000):
     A = (Q * a) @ Q.T
-    E0 = (U * np.arange(1, N + 1, dtype=float) ** (-beta)) @ Q.T   # E = W - W*
+    E0 = (U * np.arange(1, N + 1, dtype=float) ** (-alpha)) @ Q.T   # E = W - W*
     loss = lambda E: 0.5 * np.sum((E @ A) * E)
     L0 = loss(E0)
 
@@ -109,10 +109,10 @@ def crossing(x, y):
 
 
 def main():
-    betas = np.round(np.arange(0, 1.5001, 0.0125), 4)
-    rows = [(b,) + scalar_theory(b) for b in betas]
+    alphas = np.round(np.arange(0, 1.5001, 0.0125), 4)
+    rows = [(b,) + scalar_theory(b) for b in alphas]
     with open(os.path.join(DATA, "03-spectral-crossover-theory.dat"), "w") as f:
-        f.write("beta R onestep_S onestep_F guar_F iters_S iters_F\n")
+        f.write("alpha R onestep_S onestep_F guar_F iters_S iters_F\n")
         for r in rows:
             f.write("%.4f %.6e %.6e %.6e %.6e %d %d\n" % r)
     rng = np.random.default_rng(11)
@@ -121,7 +121,7 @@ def main():
     for b in np.round(np.arange(0, 1.5001, 0.1), 4):
         sims.append((b,) + matrix_sim(b, Q, U))
     with open(os.path.join(DATA, "03-spectral-crossover-sim.dat"), "w") as f:
-        f.write("beta sim_onestep_S sim_onestep_F sim_iters_S sim_iters_F\n")
+        f.write("alpha sim_onestep_S sim_onestep_F sim_iters_S sim_iters_F\n")
         for r in sims:
             f.write("%.4f %.6e %.6e %d %d\n" % r)
     # agreement and crossovers
@@ -132,11 +132,11 @@ def main():
     print("stable rank of inputs tr A / a_1 = %.3f" % (LOP / LF))
     print("max |one-step decrease: matrix - theory| = %.1e;  iteration-count mismatches: %s" % (dev, mism))
     B = np.array([r[0] for r in rows])
-    print("predicted crossover (R = 1):            beta = %.3f" % crossing(B, np.array([r[1] - 1 for r in rows])))
-    print("one-step crossover (actual decreases):  beta = %.3f" % crossing(B, np.array([r[2] - r[3] for r in rows])))
-    print("multi-step crossover (iterations):      beta = %.3f" % crossing(B, np.array([r[6] - r[5] for r in rows], float)))
+    print("predicted crossover (R = 1):            alpha = %.3f" % crossing(B, np.array([r[1] - 1 for r in rows])))
+    print("one-step crossover (actual decreases):  alpha = %.3f" % crossing(B, np.array([r[2] - r[3] for r in rows])))
+    print("multi-step crossover (iterations):      alpha = %.3f" % crossing(B, np.array([r[6] - r[5] for r in rows], float)))
     for r in rows[::8]:
-        print("  beta %.3f  R %.3f  one-step S %.3f F %.3f (guar F %.3f)  iters S %d F %d" % r)
+        print("  alpha %.3f  R %.3f  one-step S %.3f F %.3f (guar F %.3f)  iters S %d F %d" % r)
 
 
 if __name__ == "__main__":

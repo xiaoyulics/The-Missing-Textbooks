@@ -25,10 +25,22 @@ Output 2, figures/data/07-kronecker-power.dat: the effective exponent log kappa_
 against the power s, theory |1 - q s|, and "measured" from the asymptotic rate rho of a run of the
 matrix iteration with estimated factors at the best step, kappa = (1 + rho)/(1 - rho).
 
+Options for the exercise "The V and its floor" (they print the exponents and do not touch the figure's data files):
+  --kA, --kC   condition numbers of A and C (default 30 and 30),
+  --N          number of sampled gradients behind the factors (default 1000).
+
 numpy only; deterministic seed; runs in a few seconds on one core.
 """
+import argparse
 import os
 import numpy as np
+
+ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+ap.add_argument("--kA", type=float, default=30.0, help="condition number of A")
+ap.add_argument("--kC", type=float, default=30.0, help="condition number of C")
+ap.add_argument("--N", type=int, default=1000, help="number of sampled gradients")
+args = ap.parse_args()
+FIGURE = (args.kA, args.kC, args.N) == (30.0, 30.0, 1000)   # the published figure's parameters
 
 rng = np.random.default_rng(2026)
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
@@ -44,7 +56,7 @@ def haar(k):
     return Q * np.sign(np.diag(R))
 
 
-m, n, kA, kC = 16, 24, 30.0, 30.0
+m, n, kA, kC = 16, 24, args.kA, args.kC
 alpha = np.geomspace(1.0, 1.0 / kA, m)
 gamma = np.geomspace(1.0, 1.0 / kC, n)
 UA, UC = haar(m), haar(n)
@@ -134,20 +146,28 @@ def measured_exponent(L, R, s):
     PL, PR = psd_pow(L, -s), psd_pow(R, -s)
     T = int(min(30000, 30 * hi / lo + 300))
     E = E0.copy()
-    window = []
+    logratio = 0.0                       # log of the loss ratio over the last 100 steps
     for t in range(T):
+        prev = loss(E)
         E = E - eta * PL @ (A @ E @ C) @ PR
-        if t >= T - 101:
-            window.append(loss(E))
-        elif t % 50 == 0:
-            E /= np.linalg.norm(E)       # rescale (the iteration is linear) to avoid underflow
-    rho = (window[-1] / window[0]) ** (1 / (2 * (len(window) - 1)))
+        if t >= T - 100:
+            logratio += np.log(loss(E) / prev)
+        E /= np.linalg.norm(E)           # rescale every step (the iteration is linear): no underflow
+    rho = np.exp(logratio / 200)
     return np.log((1 + rho) / (1 - rho)) / np.log(kH)
 
 
-N, T = 1000, 250
+N, T = args.N, 250
 L1, R1 = sample_factors(1, N)
 L2, R2 = sample_factors(2, N)
+svals = np.linspace(0, 1, 17)
+if not FIGURE:                           # the exercise "The V and its floor": print the V, leave the data files alone
+    print(f"kappa_A = {kA:g}, kappa_C = {kC:g}, N = {N}; exponent log kappa / log kappa(H)")
+    print("   s     q=1 measured  |1-s|    q=2 measured  |1-2s|")
+    for s in svals:
+        print(f"{s:6.4f}  {measured_exponent(L1, R1, s):10.4f}  {abs(1 - s):7.4f}  "
+              f"{measured_exponent(L2, R2, s):12.4f}  {abs(1 - 2 * s):7.4f}")
+    raise SystemExit
 cols = {
     "gd_th": theory_frozen(1, 0.0, T), "gd_sim": sim_frozen(np.eye(m), np.eye(n), 0.0, T),
     "shq1_th": theory_frozen(1, 0.25, T), "shq1_sim": sim_frozen(L1, R1, 0.25, T),
@@ -160,7 +180,6 @@ with open(os.path.join(OUT, "07-kronecker-ladder.dat"), "w") as f:
     for t in range(T + 1):
         f.write(f"{t} " + " ".join(f"{cols[k][t]:.6e}" for k in cols) + "\n")
 
-svals = np.linspace(0, 1, 17)
 with open(os.path.join(OUT, "07-kronecker-power.dat"), "w") as f:
     f.write("s q1_th q1_sim q2_th q2_sim\n")
     for s in svals:
