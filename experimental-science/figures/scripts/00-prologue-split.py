@@ -1,10 +1,13 @@
 """Prologue: ten runs of the same method, split into two groups of five.
 
-Ten runs of one configuration of the digits MLP differ only in their seeds. For each of
-the 126 ways to split them into two groups of five, compare the groups by
-  (a) Welch's t-test on one outcome per run (the run is the experimental unit), and
-  (b) a t-test that pools every point of every learning curve as if each were an
-      independent observation (pseudoreplication).
+Ten runs of one configuration of the digits MLP (two hidden layers of 32 units, plain SGD,
+20% label noise) differ only in their initialization and data-order seeds, 0 to 9. For each
+of the 126 ways to split them into two groups of five, compare the groups by
+  (a) Welch's t-test on one outcome per run, its mean test accuracy over the second half
+      of training (the run is the experimental unit), and
+  (b) Student's t-test on the 30 evaluation points of the second half of every learning
+      curve, pooled as if each were an independent observation (sacrificial
+      pseudoreplication, in Hurlbert's terms).
 Writes figures/data/00-prologue-curves.dat (the learning curves of the most extreme split)
 and figures/data/00-prologue-pvalues.dat (sorted p-values of both tests), and prints the
 numbers quoted in the prologue. Runtime: a few seconds.

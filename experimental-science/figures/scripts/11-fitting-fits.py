@@ -116,13 +116,19 @@ def small_grid():
 
 
 def best_of(f, starts, opts=TIGHT, keep=False):
-    best, rows = None, []
+    """Fit from every start and return the end point with the lowest objective. The objective
+    is evaluated at the returned point: after an abnormal termination of the line search,
+    scipy's r.fun can belong to a rejected trial point rather than to r.x."""
+    best, best_f, rows = None, np.inf, []
     for x0 in starts:
         r = fit(f, x0, opts)
+        fx = f(r.x)[0] if np.all(np.isfinite(r.x)) else np.inf
         if keep:
-            rows.append((r.fun, *r.x, r.nit, int(r.success)))
-        if np.isfinite(r.fun) and np.all(np.isfinite(r.x)) and (best is None or r.fun < best.fun):
-            best = r
+            rows.append((fx, *r.x, r.nit, r.status))
+        if np.isfinite(fx) and fx < best_f:
+            best, best_f = r, fx
+    if best is not None:
+        best.fun = best_f
     return (best, np.array(rows)) if keep else best
 
 
@@ -169,6 +175,9 @@ def published_numbers():
     for rho in (0.0, 0.5):
         v = (s / al) ** 2 + (s / be) ** 2 - 2 * rho * (s / al) * (s / be)
         print(f"  delta method for a with SE 0.02 on each exponent, rho={rho}: SE(a)={a * (1 - a) * np.sqrt(v):.4f}")
+    width = 2 * norm.ppf(0.9) * 0.018          # 80% interval from Besiroglu et al.'s SE(a) = 0.018
+    print(f"  80% interval from SE(a)=0.018: width {width:.4f} = {width / 0.001:.1f} x the published 0.001; "
+          f"runs needed for 0.001: 240 x {(width / 0.001) ** 2:.0f} = {240 * (width / 0.001) ** 2:,.0f}")
     hw = (0.455 - 0.454) / 2
     se = hw / norm.ppf(0.9)
     print(f"  Hoffmann's 10-90% interval (0.454, 0.455): SE(a) about {se:.5f}; "
@@ -194,6 +203,13 @@ def main():
     sds = [np.std(lnL[(logK == k) & (N == nn) & (D == dd)], ddof=1) for k, nn, dd in cells]
     sigma = float(np.sqrt(np.mean(np.square(sds))))
     print(f"pooled within-cell sd of log loss: {sigma:.4f} (median {np.median(sds):.4f})")
+    med_sd = [np.median([s for (k, _, _), s in zip(cells, sds) if k == kk]) for kk in sorted(set(logK))]
+    print("median within-cell sd of log loss by slice, smallest to largest budget: "
+          + " ".join(f"{v:.4f}" for v in med_sd) + f" (ratio {med_sd[0] / med_sd[-1]:.1f})")
+    worst = max(cells, key=lambda c: np.ptp(lnL[(logK == c[0]) & (N == c[1]) & (D == c[2])]))
+    Lw = np.sort(L[(logK == worst[0]) & (N == worst[1]) & (D == worst[2])])
+    print(f"widest cell: N={worst[1]:.0f}, D={worst[2]:.0f} ({worst[2] / 64:.0f} steps), losses {np.round(Lw, 4)}; "
+          f"the highest is {Lw[-1] / Lw[:-1].mean():.2f} times the mean of the others")
 
     # ---- the recipe ---------------------------------------------------------------------
     grid = hoffmann_grid()
@@ -218,6 +234,27 @@ def main():
     order = np.argsort(-counts)[:6]
     print("  most common end points (objective / best, count, a): " + "; ".join(
         f"{vals[i]:.4f} x{counts[i]} a={np.nanmedian(avals[keyv == vals[i]]):.3f}" for i in order))
+    status = starts[:, 7].astype(int)
+    gabs = np.array([np.max(np.abs(f_sum(x)[1])) for x in starts[:, 1:6]])
+    print(f"  termination: {np.sum(status == 0)} starts on a tolerance test, {np.sum(status == 2)} on a failed "
+          f"line search (largest gradient component there {gabs[status == 2].max():.1e}), "
+          f"{np.sum(status == 1)} on the iteration limit; largest gradient component over all end points "
+          f"{gabs.max():.1e}")
+    # which part of the law has vanished over the data at the end points not at the optimum
+    tN = np.array([np.max(np.exp(x[0] - x[3] * lnN)) for x in starts[:, 1:6]]) / L.min()
+    tD = np.array([np.max(np.exp(x[1] - x[4] * lnD)) for x in starts[:, 1:6]]) / L.min()
+    tE = np.exp(starts[:, 3]) / L.min()
+    gone = lambda t: t < 1e-4            # below 1e-4 of the smallest loss at every run
+    kinds = {"the floor E has": gone(tE) & ~gone(tN) & ~gone(tD), "the data term has": gone(tD) & ~gone(tN),
+             "the size term has": gone(tN) & ~gone(tD), "both power-law terms have": gone(tN) & gone(tD)}
+    for nm, sel in kinds.items():
+        sel = sel & ~at_best
+        if sel.any():
+            print(f"  end points where {nm} vanished over the data: {sel.sum()}, objective / best "
+                  f"{fvals[sel].min() / rec.fun:.3f} to {fvals[sel].max() / rec.fun:.3f}, "
+                  f"a from {avals[sel].min():.3f} to {avals[sel].max():.3f}")
+    print(f"  end points off the optimum with every part of the law present: "
+          f"{np.sum(~at_best & ~np.any(list(kinds.values()), axis=0))}")
     gnorm = np.max(np.abs(f_sum(th)[1]))
     print(f"  largest gradient component at the recipe's end point: {gnorm:.2e}")
     r_res = law(th, N, D)
@@ -233,7 +270,8 @@ def main():
     thm = mean_fit.x
     print(f"\n== averaged objective, default tolerances [{time.time() - t0:.0f} s] ==")
     print(f"  {describe(thm)}  nit {mean_fit.nit}  {mean_fit.message}")
-    print(f"  its value of the summed objective: {f_sum(thm)[0]:.6g} vs converged {rec.fun:.6g}")
+    print(f"  its value of the summed objective: {f_sum(thm)[0]:.6g} vs converged {rec.fun:.6g} "
+          f"(relative excess {(f_sum(thm)[0] - rec.fun) / rec.fun:.1e})")
     print(f"  median iterations over starts: averaged {np.median(mstarts[:, 6]):.0f}, "
           f"summed and converged {np.median(starts[:, 6]):.0f}")
     mf = np.array([f_sum(x)[0] if np.all(np.isfinite(x)) else np.nan for x in mstarts[:, 1:6]])

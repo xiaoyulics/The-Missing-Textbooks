@@ -10,6 +10,7 @@ A series of textbooks that should exist but don't.
 |---|-------|---------|-----|
 | 1 | *Dissolving Problems: A Casebook of Theory-Building* (333 pp.) | [`dissolving-problems/`](dissolving-problems/) | [`Dissolving-Problems.pdf`](dissolving-problems/Dissolving-Problems.pdf) |
 | 2 | *The Hydrogen Atoms of Deep Learning: Solvable Models and What They Get Wrong* (394 pp.) | [`hydrogen-atoms/`](hydrogen-atoms/) | [`Hydrogen-Atoms-of-Deep-Learning.pdf`](hydrogen-atoms/Hydrogen-Atoms-of-Deep-Learning.pdf) |
+| 4 | *Deep Learning as an Experimental Science: A Laboratory Manual* (365 pp.) | [`experimental-science/`](experimental-science/) | [`Deep-Learning-as-an-Experimental-Science.pdf`](experimental-science/Deep-Learning-as-an-Experimental-Science.pdf) |
 
 ## Layout
 
@@ -17,6 +18,7 @@ A series of textbooks that should exist but don't.
 template/              the series class (missingbook.cls), a short sample, build script, README
 dissolving-problems/   volume 1: main.tex, chapters/, frontmatter/, tools/, STYLE.md, OUTLINE.md
 hydrogen-atoms/        volume 2: main.tex, hydrogen.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
+experimental-science/  volume 4: main.tex, laboratory.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
 ```
 
 A new volume is a sibling folder with its own `main.tex` (`\documentclass{missingbook}`), per-chapter `.tex` and `.bib` files, and a copy of `dissolving-problems/tools/`.

@@ -68,7 +68,8 @@ def draw_images(cls, count, pools, g):
 
 
 def make_batch(B, g, pools, cond, shots):
-    """Tokens (B, 2*shots+1, 74) [or (B,1,74) for `none`], the answer, the query's class."""
+    """Tokens (B, 2*shots+1, 74) [or (B,1,74) for `none`], the answer, the query's class and
+    the other class."""
     two = torch.rand(B, 10, generator=g).argsort(1)[:, :2]               # two distinct classes
     c1, c2 = two[:, 0], two[:, 1]
     which = torch.randint(0, 2, (B,), generator=g)
@@ -100,9 +101,9 @@ def make_batch(B, g, pools, cond, shots):
         answer = new[:, 0]
     tq = torch.cat([XN[q_idx], torch.zeros(B, 10)], 1)[:, None]
     if cond == "none":
-        return tq, answer, qc
+        return tq, answer, qc, oc
     tc = torch.cat([XN[ctx_idx], F.one_hot(lab, 10).float()], 2)
-    return torch.cat([tc, tq], 1), answer, qc
+    return torch.cat([tc, tq], 1), answer, qc, oc
 
 
 class TinyTransformer(nn.Module):
@@ -159,12 +160,12 @@ def evaluate(model, seed):
                 res[(cond, shots)] = res[(cond, SHOTS_EVAL[0])]
                 continue
             g = torch.Generator().manual_seed(90_000 + 100 * shots + CONDS.index(cond))
-            tok, ans, qc = make_batch(N_EVAL, g, POOL_TE, cond, shots)
+            tok, ans, qc, oc = make_batch(N_EVAL, g, POOL_TE, cond, shots)
             pred = model(tok).argmax(1)
             res[(cond, shots)] = 100.0 * (pred == ans).float().mean().item()
             if cond == "flipped":
                 # how often the network outputs the label the demonstrations assign to its class
-                res[("follows", shots)] = 100.0 * (pred != qc).float().mean().item()
+                res[("follows", shots)] = 100.0 * (pred == oc).float().mean().item()
     return res
 
 

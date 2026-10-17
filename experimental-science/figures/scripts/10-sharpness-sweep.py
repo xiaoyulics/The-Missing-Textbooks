@@ -22,7 +22,7 @@ of the pooled tau into pairs within and between widths. Controls: the gap of the
 measures). The rows of Table 10.1 are printed in LaTeX form.
 
 Data: scikit-learn digits, labkit split 0 with test_frac=0.7: 539 training and 1258 test images.
-One to four minutes with two threads, depending on the load of the machine.
+One to five minutes with two threads, depending on the load of the machine.
 Run from the volume root:  python3 figures/scripts/10-sharpness-sweep.py
 Options: an integer N trains on the first N training images only; --shared-seeds reproduces the
 first version reported in the text, in which every configuration reused the seeds 0 and 1.
@@ -218,7 +218,7 @@ def analyse(rows, measure, outcome="gap", label=None):
         out["psi_" + f], out["psi_" + f + "_hw"] = m, h
         psis.append(m)
     out["Psi"] = float(np.mean(psis))
-    # pair decomposition of the pooled tau (Proposition 10.x): pairs within and between width strata
+    # pair decomposition of the pooled tau (Simpson's decomposition, part (ii)): pairs within and between width strata
     w_arr = np.array([r["width"] for r in rows])
     x = np.array([r[measure] for r in rows], float)
     y = np.array([r[outcome] for r in rows], float)

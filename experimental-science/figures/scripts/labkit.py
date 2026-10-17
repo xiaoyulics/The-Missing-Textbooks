@@ -14,8 +14,8 @@ so that each source of randomness can be varied while the others are held fixed.
 
 Two datasets are built in. `digits` is the 8x8 handwritten-digit data shipped with
 scikit-learn (1797 images, 10 classes): no download is needed. `teacher` is a synthetic
-regression task, labels produced by a random two-layer network plus Gaussian noise, whose
-size can be varied over several decades for scaling experiments.
+regression task, labels produced by a random tanh network with one hidden layer plus
+Gaussian noise, whose size can be varied over several decades for scaling experiments.
 
 Usage from a script in figures/scripts/:
 
@@ -89,11 +89,11 @@ def digits(split=0, test_frac=0.3, train_size=None, label_noise=0.0, noise=0):
 
 def teacher(n_train, n_test=4096, d=8, width=32, noise_sd=0.1, task=0, split=0):
     """A synthetic regression task: y = f*(x) + noise, with x ~ N(0, I_d) and f* a random
-    two-layer tanh network of the given width (seed `task`), scaled so that f*(x) has unit
-    variance. The irreducible test loss (mean squared error) is noise_sd**2, by default
-    0.01. Training and test inputs are drawn with seed `split`. With d = 8 the test loss
-    of the MLP student falls smoothly with both its width and n_train over about two
-    decades each, which makes the task suitable for scaling experiments.
+    tanh network with one hidden layer of the given width (seed `task`), scaled so that
+    f*(x) has unit variance. The irreducible test loss (mean squared error) is noise_sd**2,
+    by default 0.01. Training and test inputs are drawn with seed `split`. With d = 8 the
+    test loss of the MLP student falls smoothly with both its width and n_train over about
+    two decades each, which makes the task suitable for scaling experiments.
     Returns float32 tensors (Xtr, ytr, Xte, yte) with y of shape (n, 1).
     """
     g = torch.Generator().manual_seed(30_000 + task)

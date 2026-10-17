@@ -217,15 +217,23 @@ def main():
     m_all = len(YTE)
     v_fixed = var_s + (var_i + var_si) / m_all
     v_rand = (var_s + var_i + var_si) / m_all
-    print(f"  all {m_all} images under one random format: sd {math.sqrt(v_fixed):.3f}, reversal "
+    print(f"  all {m_all} images under one random format: sd {math.sqrt(v_fixed):.3f}, reversal (normal model) "
           f"{stats.norm.cdf(-abs(Delta) / math.sqrt(v_fixed)):.3f}; a fresh random format for each image: "
-          f"sd {math.sqrt(v_rand):.3f}, reversal {stats.norm.cdf(-abs(Delta) / math.sqrt(v_rand)):.3f}")
+          f"sd {math.sqrt(v_rand):.3f}, reversal (normal model) {stats.norm.cdf(-abs(Delta) / math.sqrt(v_rand)):.3f}")
     rr = np.random.default_rng(16)
     fz = rr.integers(0, len(GRAMMAR), size=(R_BUDGET, m_all))
     zz = rr.integers(0, m_all, size=(R_BUDGET, m_all))
     est = D[fz, zz].mean(1)
-    print(f"    simulated (images and formats drawn with replacement, {R_BUDGET} times): sd {est.std():.3f}, "
-          f"reversal {np.mean(est < 0) + 0.5 * np.mean(est == 0):.3f}")
+    print(f"    simulated, a fresh format for each image (images and formats drawn with replacement, {R_BUDGET} times): "
+          f"sd {est.std():.3f}, reversal {np.mean(est < 0) + 0.5 * np.mean(est == 0):.3f}")
+    r1 = np.random.default_rng(17)      # a generator of its own, so that the other resamples are unchanged
+    f1 = r1.integers(0, len(GRAMMAR), size=R_REV)
+    est1 = np.empty(R_REV)
+    for lo in range(0, R_REV, 2000):    # in blocks, to keep the index arrays small
+        z1 = r1.integers(0, m_all, size=(min(2000, R_REV - lo), m_all))
+        est1[lo:lo + len(z1)] = D[f1[lo:lo + len(z1), None], z1].mean(1)
+    print(f"    simulated, one format for all images (images drawn with replacement, {R_REV} times): "
+          f"sd {est1.std():.3f}, reversal {np.mean(est1 < 0) + 0.5 * np.mean(est1 == 0):.3f}")
     Fstar = math.sqrt(BUDGET * var_s / var_i)
     print(f"  crossed design, budget {BUDGET}: best number of formats F* = sqrt(N) sd_s/sd_i = {Fstar:.1f}, "
           f"sd at F* {math.sqrt(2 * math.sqrt(var_s * var_i) / math.sqrt(BUDGET) + var_si / BUDGET):.3f}")

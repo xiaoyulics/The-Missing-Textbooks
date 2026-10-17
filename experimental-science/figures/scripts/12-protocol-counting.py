@@ -170,4 +170,11 @@ if __name__ == "__main__":
         print(f"   N~ = 1e{e10}: N/N~ = {1 + u:8.2f}, epsilon = {eps:.3f}, relabel {a_h/eps:.3f},"
               f" kaplan {fam['kaplan'][-1]:.3f}")
     print(f"   limit as N~ -> 0 (kaplan): {aD_h / (aD_h + aN_h / 3):.3f}")
+    # the part (iii) exponent over Kaplan et al.'s range of sizes (768 to 1.5e9), on a fine grid
+    ng = np.logspace(math.log10(768), math.log10(1.5e9), 20001)
+    ug = omega * ng ** (-2 / 3)
+    eg = (1 + ug / 3) / (1 + ug)
+    kg = aD_h / (aD_h + aN_h * eg - (2 / 3) ** 2 * ug / ((1 + ug) ** 2 * eg))
+    print(f"   over 768..1.5e9 (kaplan): {kg[0]:.3f} at 768, maximum {kg.max():.3f} at N~ = {ng[kg.argmax()]:.2g},"
+          f" {kg[-1]:.3f} at 1.5e9")
     lk.write_dat(OUT + "-family.dat", fam)

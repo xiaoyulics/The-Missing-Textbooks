@@ -82,23 +82,23 @@ carries one word.
 | | | | **Part I. Noise** | |
 | 1 | seeds | 01-seeds.tex | Seeds — The spread of a single method | vanished |
 | 2 | instability | 02-instability.tex | Instability — Why a fixed seed does not fix a run | narrowed |
-| 3 | aggregates | 03-aggregates.tex | Many Tasks, Few Runs — Aggregates, intervals and multiplicity | narrowed |
+| 3 | aggregates | 03-aggregates.tex | Many Tasks, Few Runs — Aggregates, intervals, and multiplicity | narrowed |
 | | | | **Part II. Fair Comparison** | |
 | 4 | budgets | 04-budgets.tex | Tuning Budgets — How an unequal search decides a comparison | reversed |
 | 5 | controls | 05-controls.tex | Controls — Random search as the placebo arm | vanished |
 | 6 | confounding | 06-confounding.tex | Confounding — The architecture and the recipe | confounded |
-| 7 | heldfixed | 07-heldfixed.tex | What Was Held Fixed — Batch size, steps and the generalization gap | confounded |
+| 7 | heldfixed | 07-heldfixed.tex | What Was Held Fixed — Batch size, steps, and the generalization gap | confounded |
 | | | | **Part III. Causes** | |
 | 8 | ablations | 08-ablations.tex | Ablations — Interactions and the home-field advantage | narrowed |
 | 9 | mechanisms | 09-mechanisms.tex | Mechanisms — Intervening on the explanation | misattributed |
 | 10 | sharpness | 10-sharpness.tex | Correlation in a Sweep — Flat minima and the measures of generalization | narrowed |
 | | | | **Part IV. Scale** | |
 | 11 | fitting | 11-fitting.tex | Fitting a Scaling Law — Chinchilla's third approach and its replication | unreplicated |
-| 12 | protocol | 12-protocol.tex | The Protocol Behind the Exponent — Kaplan, Chinchilla and the learning-rate schedule | reversed |
+| 12 | protocol | 12-protocol.tex | The Protocol Behind the Exponent — Kaplan, Chinchilla, and the learning-rate schedule | reversed |
 | 13 | extrapolation | 13-extrapolation.tex | Extrapolation — Predicting the large from the small | narrowed |
 | | | | **Part V. Measurement** | |
 | 14 | emergence | 14-emergence.tex | The Metric Makes the Phenomenon — Emergent abilities and the smooth change beneath them | artifact |
-| 15 | instruments | 15-instruments.tex | The Instrument's Settings — Prompts, formats and demonstrations as nuisance factors | narrowed |
+| 15 | instruments | 15-instruments.tex | The Instrument's Settings — Prompts, formats, and demonstrations as nuisance factors | narrowed |
 | – | epilogue | 16-epilogue.tex | Epilogue — The laboratory notebook | (special chapter) |
 | A | toolkit | 17-toolkit.tex | A Statistical Toolkit (appendix) | |
 
@@ -357,9 +357,9 @@ NeurIPS 2019 reproducibility program); PyTorch reproducibility documentation.
 
 ---
 
-### Chapter 3. Many Tasks, Few Runs — Aggregates, intervals and multiplicity (key: aggregates)
+### Chapter 3. Many Tasks, Few Runs — Aggregates, intervals, and multiplicity (key: aggregates)
 
-`\labchapter{Many Tasks, Few Runs}{Aggregates, intervals and multiplicity}{Algorithm X is the new state of the art on Atari 100k.}{Point estimates over a few runs per game, 2019--2021, as audited by Agarwal et al.\ (2021)}{Narrowed: with interval estimates over many runs, several claimed improvements shrink or reverse.}{ch:aggregates}`
+`\labchapter{Many Tasks, Few Runs}{Aggregates, intervals, and multiplicity}{Algorithm X is the new state of the art on Atari 100k.}{Point estimates over a few runs per game, 2019--2021, as audited by Agarwal et al.\ (2021)}{Narrowed: with interval estimates over many runs, several claimed improvements shrink or reverse.}{ch:aggregates}`
 
 **The claim.** Sample-efficient Atari (26 games, 100k interactions) papers reported the median
 human-normalized score over 3–10 runs and claimed state of the art by its point estimate.
@@ -605,9 +605,9 @@ He et al. 2019 ("Bag of tricks"); Shapley 1953; Pearl 2009; Imbens & Rubin 2015.
 
 ---
 
-### Chapter 7. What Was Held Fixed — Batch size, steps and the generalization gap (key: heldfixed)
+### Chapter 7. What Was Held Fixed — Batch size, steps, and the generalization gap (key: heldfixed)
 
-`\labchapter{What Was Held Fixed}{Batch size, steps and the generalization gap}{Large-batch training generalizes worse because it converges to sharp minima.}{Keskar et al.\ (2017)}{Confounded: matched in steps and learning rate, most of the gap disappears; the sharpness explanation is examined in Chapter 10.}{ch:heldfixed}`
+`\labchapter{What Was Held Fixed}{Batch size, steps, and the generalization gap}{Large-batch training generalizes worse because it converges to sharp minima.}{Keskar et al.\ (2017)}{Confounded: matched in steps and learning rate, most of the gap disappears; the sharpness explanation is examined in Chapter 10.}{ch:heldfixed}`
 
 **The claim.** Keskar, Mudigere, Nocedal, Smelyanskiy & Tang (2017, ICLR): large-batch training reaches
 worse test accuracy than small-batch training, and converges to sharp minimizers (verify settings:
@@ -906,9 +906,9 @@ data-constrained scaling); Caballero et al. 2023 (ICLR); Huber 1964; Efron & Tib
 
 ---
 
-### Chapter 12. The Protocol Behind the Exponent — Kaplan, Chinchilla and the learning-rate schedule (key: protocol)
+### Chapter 12. The Protocol Behind the Exponent — Kaplan, Chinchilla, and the learning-rate schedule (key: protocol)
 
-`\labchapter{The Protocol Behind the Exponent}{Kaplan, Chinchilla and the learning-rate schedule}{Model size should grow much faster than data: $N_{\mathrm{opt}}\propto C^{0.73}$.}{Kaplan et al.\ (2020)}{Reversed: with schedules matched to each budget and parameters counted consistently, parameters and data grow at about the same rate.}{ch:protocol}`
+`\labchapter{The Protocol Behind the Exponent}{Kaplan, Chinchilla, and the learning-rate schedule}{Model size should grow much faster than data: $N_{\mathrm{opt}}\propto C^{0.73}$.}{Kaplan et al.\ (2020)}{Reversed: with schedules matched to each budget and parameters counted consistently, parameters and data grow at about the same rate.}{ch:protocol}`
 
 **The claim.** Kaplan et al. (2020): for a fixed compute budget, most of the increase should go to model
 size ($N_{\mathrm{opt}}\propto C^{0.73}$, data $\propto C^{0.27}$; verify), so large models trained on
@@ -1071,9 +1071,9 @@ Clopper & Pearson 1934; Hanley & Lippman-Hand 1983 (rule of three).
 
 ---
 
-### Chapter 15. The Instrument's Settings — Prompts, formats and demonstrations as nuisance factors (key: instruments)
+### Chapter 15. The Instrument's Settings — Prompts, formats, and demonstrations as nuisance factors (key: instruments)
 
-`\labchapter{The Instrument's Settings}{Prompts, formats and demonstrations as nuisance factors}{In-context learning barely depends on whether the demonstrations' labels are correct.}{Min et al.\ (2022)}{Narrowed: the effect depends on model scale, task and format; larger models can follow flipped labels.}{ch:instruments}`
+`\labchapter{The Instrument's Settings}{Prompts, formats, and demonstrations as nuisance factors}{In-context learning barely depends on whether the demonstrations' labels are correct.}{Min et al.\ (2022)}{Narrowed: the effect depends on model scale, task and format; larger models can follow flipped labels.}{ch:instruments}`
 
 **The claim.** Min et al. (2022, EMNLP): replacing the labels of in-context demonstrations by random labels
 barely hurts performance across many models and tasks; the label space, the input distribution and the

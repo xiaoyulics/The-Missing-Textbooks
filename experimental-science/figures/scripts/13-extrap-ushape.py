@@ -11,7 +11,8 @@ can just fit the noisy training set, then falls again (double descent). Two wind
 curve are fitted by a straight line in (ln N, ln error) on all runs in the window, and the
 fit is extrapolated with the t prediction interval for one new run: window A
 on the first descent and window B on the rise, the miniature of an inverse-scaling trend.
-The local slope of the curve over sliding windows of three widths is also reported.
+Inside each window the line is checked by a lack-of-fit F test against the means of its
+widths. The local slope of the curve over sliding windows of three widths is also reported.
 
 Writes figures/data/13-extrapolation-ushape-*.dat and prints the numbers quoted in the text.
 About two to three minutes with two threads.
@@ -110,6 +111,13 @@ for name, ws in [("A", [4, 6, 8, 12]), ("B", [16, 24, 32, 48, 64])]:
     pred, (b, hb), s, n = window_fit(idx)
     print(f"\nwindow {name}: widths {ws}, N {N[idx[0]]}-{N[idx[-1]]}, {n} runs; slope {b:.3f} per ln N "
           f"(95% interval {b - hb:.3f} to {b + hb:.3f}; {b * np.log(10):.3f} per decade), residual sd {s:.3f}")
+    # lack-of-fit F test of the line against the means of the widths in the window (pure error
+    # from the six runs per width)
+    ss_pe = sum(((Yl[i] - Yl[i].mean()) ** 2).sum() for i in idx)
+    ss_lof = s ** 2 * (n - 2) - ss_pe
+    F_lof = (ss_lof / (len(idx) - 2)) / (ss_pe / (n - len(idx)))
+    print(f"  lack of fit of the line inside the window: F = {F_lof:.2f} on ({len(idx) - 2}, {n - len(idx)}) "
+          f"degrees of freedom, p = {stats.f.sf(F_lof, len(idx) - 2, n - len(idx)):.3f}")
     g = np.sort(np.r_[grid[grid > x[idx[0]]], x[idx[0]], x[idx[-1]]])
     p, h = pred(g)
     inside = g <= x[idx[-1]] + 1e-9
@@ -124,9 +132,8 @@ for name, ws in [("A", [4, 6, 8, 12]), ("B", [16, 24, 32, 48, 64])]:
         inside = np.abs(Yl[i] - p0) <= h0
         tot += n_s
         cov += inside.sum()
-        if WIDTHS[i] in (64, 128, 256, 512, 1024, 2048):
-            print(f"  w={WIDTHS[i]:5d}: predicted {100 * np.exp(p0):6.2f}% [{100 * np.exp(p0 - h0):.2f}, "
-                  f"{100 * np.exp(min(p0 + h0, 0)):.2f}]  observed mean {m[i]:.2f}%  runs inside {inside.sum()}/{n_s}")
+        print(f"  w={WIDTHS[i]:5d}: predicted {100 * np.exp(p0):6.2f}% [{100 * np.exp(p0 - h0):.2f}, "
+              f"{100 * np.exp(min(p0 + h0, 0)):.2f}]  observed mean {m[i]:.2f}%  runs inside {inside.sum()}/{n_s}")
     print(f"  runs beyond the window inside their 95% prediction interval: {cov}/{tot}")
 
 # the first descent fitted by a law with a floor, err = E + A N^-alpha (least squares in logs)
