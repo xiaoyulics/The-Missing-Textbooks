@@ -1,5 +1,5 @@
 """Figure 2 of Chapter 1 (Double Descent): test error of ridge regression in the
-proportional limit (Theorem 1.9 and Proposition 1.10) versus gamma = p/n, for
+proportional limit (ridge theorem and optimal-ridge proposition) versus gamma = p/n, for
 several ridge parameters and for the optimal one, compared with simulations at
 n = 200.
 
@@ -12,6 +12,8 @@ Writes figures/data/01-doubledescent-ridge-theory.dat and
 figures/data/01-doubledescent-ridge-mc.dat. Deterministic; about 20 s on a laptop.
 """
 import os
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")   # small matrices: threads only add overhead
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))

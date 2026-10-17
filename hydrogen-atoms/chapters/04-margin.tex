@@ -1,0 +1,441 @@
+% Chapter 4 of The Hydrogen Atoms of Deep Learning: training past zero error.
+\newcommand{\marginu}{u^\star}
+\newcommand{\marginwhat}{\hat w}
+\newcommand{\marginwt}{\tilde w}
+\newcommand{\marginsm}{\tilde\gamma}
+\newcommand{\marginS}{\mathcal S}
+
+\casechapter{Training Past Zero Error}{Logistic regression on separable data}{Linear classifiers, exponential-tailed losses}{ch:margin}
+\begin{refsection}[chapters/04-margin.bib]
+
+\begin{chaptersummary}
+Networks trained with the cross-entropy reach zero training error long before training stops, and what happens afterwards matters: the loss keeps falling like $1/t$, the weights grow like $\log t$, and the classifier keeps changing. The hydrogen atom of this regime is a linear classifier trained by gradient flow on the exponential loss over linearly separable data. We prove that the loss is at most $1/(1+\gamma^{\star2}t)$, that the norm grows like $\log t/\gamma^\star$, that the normalized margin is within a factor $1-\log n/\log(\gamma^{\star2}t/n)$ of the maximal margin $\gamma^\star$, and that the direction of the weights converges to the hard-margin support vector machine; the same holds for gradient descent, and a monotone smoothed margin carries the argument to homogeneous networks. The model is right about the direction and wrong about the speed: every rate is logarithmic, and for nonlinear networks the limit is a stationary point of the margin problem that need not be a maximizer.
+\end{chaptersummary}
+
+\section{The phenomenon: the loss keeps falling after the errors stop}\label{sec:margin:phenomenon}
+
+A classifier trained with the cross-entropy never finishes. Once every training point is classified correctly, the loss is still positive, and it can be lowered further by scaling up the logits; no finite set of weights attains its infimum. Large networks reach this regime early: \textcite{ZhangEtAl2017} showed that standard architectures for image classification drive the training error to zero even when the labels are replaced by random ones, and on real labels zero training error is the ordinary state of affairs long before the end of training. What does gradient descent do in the time that remains?
+
+\Textcite{SoudryEtAl2018} gave a detailed answer for a convolutional network on CIFAR-10 trained by stochastic gradient descent with momentum at a constant learning rate. After the training error reached zero, the training loss decayed roughly like $t^{-1}$ in the number of iterations, the Euclidean norm of the last weight layer grew roughly like $\log t$, the validation loss eventually started to \emph{increase}, and the validation error, in contrast, kept slowly improving.\sidenote{The opposite movements of validation loss and validation error matter in practice: early stopping on the validation loss would have stopped training while the error was still improving.} A year earlier \textcite{HofferHubaraSoudry2017} had found, across several architectures, that the distance of the weights from their initialization grows logarithmically with the number of updates, and that the generalization gap of large-batch training closes when the number of updates is matched to that of small-batch training: train longer, generalize better.
+
+\begin{observation}[\textcite{SoudryEtAl2018}; \textcite{HofferHubaraSoudry2017}]\label[observation]{obs:margin:late}
+For networks trained with the cross-entropy past zero training error, at a constant learning rate: the training loss decays roughly like $1/t$ and the weight norm grows roughly like $\log t$; the classifier keeps changing; the test loss can increase while the test error decreases.
+\end{observation}
+
+The status of the observation is uneven. The rates of the loss and of the norm have been seen repeatedly and are what the model below predicts. ``The test error keeps improving'' is weaker: it was reported for particular runs, it depends on the data, and it fails in simple settings. In a linear model trained on a high-dimensional Gaussian mixture we found the test error drifting slightly \emph{upward} after the training error reached zero (\cref{sec:margin:wrong}). What is robust is that the training does not stop: the predictor keeps moving, slowly, and in a definite direction.
+
+Boosting saw the same phenomenon first. \Textcite{SchapireEtAl1998} observed that AdaBoost, which greedily minimizes an exponential loss, keeps lowering its test error after the training error reaches zero, and explained it by the growth of the training margins.\sidenote{For a voting classifier the margin of a training example is the weighted vote for its correct label minus the largest weighted vote for an incorrect label, normalized by the total weight.} The explanation was disputed for boosting, and margin-based explanations of deep networks are disputed today (\cref{sec:margin:wrong}). But the mechanism they point to is real, and in the model of this chapter it is exact.
+
+Three questions follow. Where does the predictor go once the training set is fit, given that it never converges? How fast? And does the answer depend on the loss, the step size and the architecture?
+
+\section{The model: a linear classifier and an exponential tail}\label{sec:margin:model}
+
+The data are $n$ pairs $(x_i,y_i)$ with $x_i\in\R^d$ and labels $y_i\in\{-1,+1\}$. A linear classifier predicts $\sgn\ip{w,x}$, and the \term{margin} of the training point $i$ is $q_i(w)=y_i\ip{w,x_i}$\index{margin}; the point is classified correctly when $q_i(w)>0$. It is convenient to fold the labels into the data, $z_i=y_ix_i$, so that $q_i(w)=\ip{w,z_i}$. The training loss is the \term{exponential loss}\index{exponential loss}
+\begin{equation}\label{eq:margin:loss}
+  \Lhat(w)=\frac1n\sum_{i=1}^ne^{-\ip{w,z_i}},\qquad \nabla\Lhat(w)=-\frac1n\sum_{i=1}^ne^{-\ip{w,z_i}}z_i ,
+\end{equation}
+and we train it by gradient flow, $\dot w(t)=-\nabla\Lhat(w(t))$, from $w(0)=0$; gradient descent comes in \cref{sec:margin:steps}. The logistic loss $\frac1n\sum_i\log(1+e^{-q_i})$ has the same tail, $\log(1+e^{-q})=e^{-q}(1+o(1))$ as $q\to\infty$, and gives the same results with more bookkeeping (\cref{ex:margin:logistic}).\sidenote{With $K$ classes the cross-entropy of logits $f_1,\dots,f_K$ with correct class $c$ is $\log\bigl(1+\sum_{k\ne c}e^{-(f_c-f_k)}\bigr)$, again exponential in the logit gaps $f_c-f_k$; \textcite{SoudryEtAl2018} treat the multiclass case.}
+
+\begin{assumption}[Separable, bounded data]\label[assumption]{ass:margin:data}
+Every $z_i$ satisfies $\norm{z_i}\le1$, and some $u\in\R^d$ satisfies $\ip{u,z_i}>0$ for every $i$.
+\end{assumption}
+
+The bound on the norms only fixes units: rescaling the data by $c$ rescales time by $c^{-2}$ and margins by $c$. Separability is the substance.
+
+\begin{definition}[Normalized margin and maximal margin]\label[definition]{def:margin:margin}
+The \term{normalized margin}\index{margin!normalized} of $w\ne0$ is $\gamma(w)=\min_iq_i(w)/\norm w$. The \term{maximal margin} is $\gamma^\star=\max_{\norm u=1}\min_i\ip{u,z_i}$, and a unit vector attaining it is a \term{max-margin direction}\index{max-margin direction}. The \term{support vectors}\index{support vector} are the points with $\ip{\marginu,z_i}=\gamma^\star$.
+\end{definition}
+
+The normalized margin is invariant under $w\mapsto cw$ for $c>0$, as the predictions are. The maximum exists because $u\mapsto\min_i\ip{u,z_i}$ is continuous on the compact unit sphere, and by \cref{ass:margin:data} it is positive; by the Cauchy--Schwarz inequality $\gamma^\star\le\min_i\norm{z_i}\le1$. In the language of support vector machines, $\gamma^\star$ is the largest width of a slab around a hyperplane through the origin that separates the two classes, and $\marginwhat=\marginu/\gamma^\star$ is the solution of the hard-margin problem\index{hard-margin SVM} $\min\norm w$ subject to $\ip{w,z_i}\ge1$ for all $i$ \parencite{BoserGuyonVapnik1992,CortesVapnik1995}.
+
+\paragraph{What was thrown away.} Everything below the last layer: the features $x_i$ are fixed, and only a linear readout is trained. Stochastic gradients, momentum, adaptive methods, weight decay and normalization layers are gone, and the step size is infinitesimal. Two simplifications are deliberate and right to make first. Separability is the defining property of the regime ``past zero error'': a network that fits its training set has, in particular, last-layer features on which the training set is separable. And the exponential loss isolates the one property of the cross-entropy that matters here, the exponential tail, without the curvature near $q=0$ that complicates the beginning of training and is irrelevant at its end.
+
+\begin{dictionary}
+linear predictor $\ip{w,x}$ on fixed inputs $x_i$ & the last layer of a network, on the features of the layer below\\
+exponential loss $e^{-q}$ & cross-entropy, whose tail is $e^{-q}$ in the logit gap\\
+separable data, $\gamma^\star>0$ & zero training error, reached early by overparameterized networks\\
+$\Lhat(w(t))\approx1/(\gamma^{\star2}t)$ & training loss decaying like $1/t$\\
+$\norm{w(t)}\approx\log t/\gamma^\star$ & weight norms and logit scales growing like $\log t$\\
+direction $w/\norm w$, normalized margin $\gamma(w)$ & the classifier itself, and the quantity it slowly improves\\
+max-margin direction $\marginu$, support vectors & hard-margin SVM on the features; Karush--Kuhn--Tucker points for homogeneous networks\\
+time $t$ & learning rate times number of steps\\
+\end{dictionary}
+
+\paragraph{What one had to notice.} That a loss without a minimizer still determines a limit, the limit of the \emph{direction}; and that the exponential tail turns the gradient into a soft minimum. Write $w=\beta u$ with $\norm u=1$. Then
+\[
+  -\log\bigl(n\Lhat(\beta u)\bigr)=-\log\sum_ie^{-\beta\ip{u,z_i}}
+\]
+is a free energy at inverse temperature $\beta$, and as $\beta\to\infty$ it tends to the ground-state energy $\beta\min_i\ip{u,z_i}$: the Boltzmann weights $e^{-\beta\ip{u,z_i}}/\sum_je^{-\beta\ip{u,z_j}}$, which are the weights of the points in the gradient \eqref{eq:margin:loss}, concentrate on the points of smallest margin. Gradient descent on the loss at large norm is gradient ascent on the smallest margin.\sidenote{The function $-\log\sum_ie^{-q_i}$ is the log-sum-exp, or soft minimum, of the margins: it lies between $\min_iq_i-\log n$ and $\min_iq_i$.}\index{free energy} Training past zero error is a slow quench to zero temperature, and its ground state is the support vector machine.
+
+\section{The solution: the loss, the norm, and the margin}\label{sec:margin:solution}
+
+We first describe the target, the max-margin direction, by a lemma that collects the convex geometry we need. Write $\Delta_n=\{p\in\R^n:p_i\ge0,\ \sum_ip_i=1\}$ for the probability simplex and $C=\{\sum_ip_iz_i:p\in\Delta_n\}$ for the convex hull of the points $z_i$.
+
+\begin{lemma}[The max-margin direction]\label[lemma]{lem:margin:svm}
+Under \cref{ass:margin:data}:
+\begin{enumerate}
+\item The max-margin direction $\marginu$ is unique.
+\item The point $z^\star$ of $C$ closest to the origin is $z^\star=\gamma^\star\marginu$; equivalently, $\gamma^\star=\min_{p\in\Delta_n}\norm{\sum_ip_iz_i}$.
+\item Write $z^\star=\sum_ip^\star_iz_i$ with $p^\star\in\Delta_n$. Then $p^\star_i>0$ only for support vectors, and $\marginwhat=\marginu/\gamma^\star=\sum_i\alpha_iz_i$ with $\alpha_i=p^\star_i/\gamma^{\star2}\ge0$ and $\sum_i\alpha_i=1/\gamma^{\star2}$.
+\item If a unit vector $u$ satisfies $\min_i\ip{u,z_i}\ge\gamma^\star-\delta$ with $\delta\ge0$, then $\norm{u-\marginu}^2\le2\delta/\gamma^\star$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+\emph{Part (i).} Suppose that unit vectors $u_1\ne u_2$ both attain $\gamma^\star$. Their midpoint $v=\frac12(u_1+u_2)$ satisfies $\ip{v,z_i}\ge\gamma^\star$ for every $i$, and $\norm v<1$ by strict convexity of the Euclidean ball. Then $v\ne0$, and $v/\norm v$ has margin at least $\gamma^\star/\norm v>\gamma^\star$, a contradiction.
+
+\emph{Part (ii).} The set $C$ is compact and convex, so it has a unique point $z^\star$ closest to the origin, characterized by $\ip{z-z^\star,z^\star}\ge0$ for every $z\in C$. By \cref{ass:margin:data} every $z\in C$ has $\ip{u,z}>0$ for the separating $u$, so $z^\star\ne0$. For every unit vector $u$, the minimum of the linear function $\ip{u,\cdot}$ over $C$ is attained at a vertex, so
+\[
+  \min_i\ip{u,z_i}=\min_{z\in C}\ip{u,z}\le\ip{u,z^\star}\le\norm{z^\star},
+\]
+and hence $\gamma^\star\le\norm{z^\star}$. Conversely, for $u=z^\star/\norm{z^\star}$ the characterization of $z^\star$ gives $\ip{u,z}\ge\ip{u,z^\star}=\norm{z^\star}$ for every $z\in C$, in particular for every $z_i$. So $\gamma^\star=\norm{z^\star}$, this $u$ attains it, and by part (i) $u=\marginu$.
+
+\emph{Part (iii).} By part (ii), $\gamma^\star=\ip{\marginu,z^\star}=\sum_ip^\star_i\ip{\marginu,z_i}$, a convex combination of numbers that are all at least $\gamma^\star$. So every $i$ with $p^\star_i>0$ has $\ip{\marginu,z_i}=\gamma^\star$. Dividing $z^\star=\gamma^\star\marginu$ by $\gamma^{\star2}$ gives the formula for $\marginwhat$, and $\sum_i\alpha_i=1/\gamma^{\star2}$ because $p^\star\in\Delta_n$.
+
+\emph{Part (iv).} Because $z^\star\in C$, the first display of part (ii) gives $\ip{u,z^\star}\ge\min_i\ip{u,z_i}\ge\gamma^\star-\delta$, that is, $\ip{u,\marginu}\ge1-\delta/\gamma^\star$. Since both vectors have norm one, $\norm{u-\marginu}^2=2-2\ip{u,\marginu}\le2\delta/\gamma^\star$.
+\end{proof}
+
+Part (iii) is the Karush--Kuhn--Tucker condition\index{Karush--Kuhn--Tucker point} of the hard-margin problem: $\marginwhat$ is a nonnegative combination of the support vectors. Part (ii) is the classical duality between the hard-margin support vector machine and the nearest point of a convex hull.\sidenote{The weights $p^\star_i$ are the Lagrange multipliers of the hard-margin problem, normalized to sum to one.} Part (iv) turns margins into angles: a direction whose margin is within $\delta$ of the best is within $\sqrt{2\delta/\gamma^\star}$ of $\marginu$. \Cref{fig:margin:geometry} shows the picture.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[scale=1.55,font=\small]
+\fill[seamist] (1.6,0.3) -- (1.9,1.4) -- (1.3,2.0) -- (0.6,1.3) -- cycle;
+\draw[sea,line width=0.6pt] (1.6,0.3) -- (1.9,1.4) -- (1.3,2.0) -- (0.6,1.3) -- cycle;
+\draw[muted,densely dashed] (-0.55,0.55) -- (1.35,-1.35);
+\draw[muted,densely dotted] (2.15,-0.25) -- (0.05,1.85);
+\draw[->,ink,line width=0.7pt] (0,0) -- (0.95,0.95);
+\foreach \p in {(1.6,0.3),(1.9,1.4),(1.3,2.0),(0.6,1.3),(1.3,1.0),(1.5,1.5),(1.1,1.6),(1.6,0.9),(1.0,1.25)}
+  \fill[sandline!55!black] \p circle (1.3pt);
+\draw[seadeep,line width=0.9pt] (1.6,0.3) circle (2.6pt) (0.6,1.3) circle (2.6pt);
+\fill[ink] (0,0) circle (0.9pt) node[below left] {$0$};
+\fill[ink] (0.95,0.95) circle (1.1pt);
+\draw[muted,line width=0.4pt] (0.98,0.9) -- (1.16,0.58);
+\node[anchor=north] at (1.18,0.58) {$z^\star$};
+\node[anchor=north,text=muted] at (1.25,-1.25) {$\{w:\ip{\marginu,w}=0\}$};
+\node[anchor=west,text=sea] at (1.95,1.75) {$C$};
+\node[anchor=west,text=seadeep] at (1.7,0.25) {support vector};
+\end{tikzpicture}
+\caption{The geometry of \cref{lem:margin:svm} in the plane. The points are the $z_i=y_ix_i$; their convex hull $C$ is shaded. The point $z^\star$ of $C$ closest to the origin has norm $\gamma^\star$ and direction $\marginu$. The decision boundary (dashed) is orthogonal to $\marginu$, and the support vectors (circled) lie on the dotted line $\ip{\marginu,z}=\gamma^\star$; $z^\star$ is a convex combination of them.}\label{fig:margin:geometry}
+\end{figure}
+
+Two inequalities connect the loss to the geometry. The first bounds the gradient in terms of the loss; the second bounds the smallest margin.
+
+\begin{lemma}[Gradient and soft minimum]\label[lemma]{lem:margin:grad}
+Under \cref{ass:margin:data}, every $w\in\R^d$ satisfies
+\begin{gather}
+  \gamma^\star\,\Lhat(w)\le\ip{-\nabla\Lhat(w),\marginu}\le\norm{\nabla\Lhat(w)}\le\Lhat(w),\label{eq:margin:grad}\\
+  -\log\bigl(n\Lhat(w)\bigr)\le\min_iq_i(w)\le\gamma^\star\norm w .\label{eq:margin:softmin}
+\end{gather}
+\end{lemma}
+
+\begin{proof}
+For \eqref{eq:margin:grad}: by \eqref{eq:margin:loss}, $\ip{-\nabla\Lhat(w),\marginu}=\frac1n\sum_ie^{-q_i(w)}\ip{z_i,\marginu}$, and every $\ip{z_i,\marginu}\ge\gamma^\star$; the middle inequality is the Cauchy--Schwarz inequality; and the triangle inequality with $\norm{z_i}\le1$ gives the last. For \eqref{eq:margin:softmin}: the sum $n\Lhat(w)=\sum_ie^{-q_i(w)}$ is at least its largest term $e^{-\min_iq_i(w)}$, which gives the left inequality; the right one holds for $w=0$, and for $w\ne0$ it is the definition of $\gamma^\star$ applied to $w/\norm w$.
+\end{proof}
+
+The lower bound in \eqref{eq:margin:grad} says that the loss has no flat directions while it is positive: the gradient always has a component of size at least $\gamma^\star\Lhat$ along $\marginu$. This is what drives everything.
+
+\begin{theorem}[Loss, norm, and margin under gradient flow]\label{thm:margin:main}
+Under \cref{ass:margin:data}, gradient flow on \eqref{eq:margin:loss} from $w(0)=0$ exists for all $t\ge0$, and for every $t\ge0$:
+\begin{enumerate}
+\item $\dfrac1{1+t}\le\Lhat(w(t))\le\dfrac1{1+\gamma^{\star2}t}$; in particular every training point is classified correctly for $t>(n-1)/\gamma^{\star2}$;
+\item $\dfrac1{\gamma^\star}\log\dfrac{1+\gamma^{\star2}t}n\le\norm{w(t)}\le\dfrac1{\gamma^{\star2}}\log\bigl(1+\gamma^{\star2}t\bigr)$;
+\item $\min_iq_i(w(t))\ge\gamma^\star\norm{w(t)}-\log n$;
+\item for $t>(n-1)/\gamma^{\star2}$ the normalized margin satisfies
+\begin{equation}\label{eq:margin:rate}
+  \gamma\bigl(w(t)\bigr)\ge\gamma^\star\Bigl(1-\frac{\log n}{\log\bigl((1+\gamma^{\star2}t)/n\bigr)}\Bigr).
+\end{equation}
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to show that the loss decays at least like $1/t$, because the gradient is at least $\gamma^\star$ times the loss, and then to follow the free energy $N(t)=-\log(n\Lhat(w(t)))$, which by \eqref{eq:margin:softmin} sits below the smallest margin and grows at least $\gamma^\star$ times as fast as the path length of $w$.
+
+\emph{Existence.} The loss \eqref{eq:margin:loss} is infinitely differentiable, so the flow exists on a maximal interval $[0,T)$. Along it $\frac{\dd}{\dd t}\Lhat(w(t))=-\norm{\nabla\Lhat(w(t))}^2\le0$, so $\Lhat(w(t))\le\Lhat(0)=1$, and by \eqref{eq:margin:grad} $\norm{\dot w}\le\Lhat\le1$. Then $\norm{w(t)}\le t$ stays bounded on bounded intervals, the solution cannot blow up, and $T=\infty$. Write $\Lhat(t)$ for $\Lhat(w(t))$.
+
+\emph{Part (i).} By \eqref{eq:margin:grad}, $\gamma^{\star2}\Lhat^2\le\norm{\nabla\Lhat}^2\le\Lhat^2$, so the derivative $-\norm{\nabla\Lhat}^2$ of $\Lhat(t)$ lies between $-\Lhat^2$ and $-\gamma^{\star2}\Lhat^2$. The loss is positive, so we may divide by $\Lhat^2$: the derivative of $1/\Lhat(t)$ lies between $\gamma^{\star2}$ and $1$. Integrating from $0$, where $1/\Lhat=1$,
+\[
+  1+\gamma^{\star2}t\le\frac1{\Lhat(t)}\le1+t .
+\]
+If $1+\gamma^{\star2}t>n$, then $\Lhat(t)<1/n$, so every term $e^{-q_i}/n$ is less than $1/n$ and every margin is positive.
+
+\emph{Part (iii).} Differentiate $N(t)=-\log(n\Lhat(t))$ and use the lower bound of \eqref{eq:margin:grad}, $\norm{\nabla\Lhat}\ge\gamma^\star\Lhat$, once:
+\[
+  \dot N=\frac{\norm{\nabla\Lhat}^2}{\Lhat}\ge\gamma^\star\norm{\nabla\Lhat}=\gamma^\star\norm{\dot w}.
+\]
+Integrate from $0$ to $t$. The length of the path is at least the distance between its endpoints, so with $N(0)=-\log n$ and $w(0)=0$,
+\begin{equation}\label{eq:margin:Ngrowth}
+  N(t)\ge-\log n+\gamma^\star\int_0^t\norm{\dot w(s)}\,\dd s\ge\gamma^\star\norm{w(t)}-\log n .
+\end{equation}
+The left inequality of \eqref{eq:margin:softmin} gives $\min_iq_i(w(t))\ge N(t)$, which proves part (iii).
+
+\emph{Part (ii).} For the lower bound, chain the right inequality of \eqref{eq:margin:softmin}, the left one, and part (i):
+\[
+  \gamma^\star\norm{w(t)}\ge\min_iq_i(w(t))\ge-\log\bigl(n\Lhat(t)\bigr)\ge\log\frac{1+\gamma^{\star2}t}n .
+\]
+For the upper bound, $\norm{\dot w}=\norm{\nabla\Lhat}\le\Lhat$ by \eqref{eq:margin:grad}, so by part (i)
+\[
+  \norm{w(t)}\le\int_0^t\Lhat(s)\,\dd s\le\int_0^t\frac{\dd s}{1+\gamma^{\star2}s}=\frac1{\gamma^{\star2}}\log\bigl(1+\gamma^{\star2}t\bigr).
+\]
+\emph{Part (iv).} For $t>(n-1)/\gamma^{\star2}$ the lower bound of part (ii) is positive, so $w(t)\ne0$. Dividing part (iii) by $\norm{w(t)}$ gives $\gamma(w(t))\ge\gamma^\star-\log n/\norm{w(t)}$, and the lower bound of part (ii) turns this into \eqref{eq:margin:rate}.
+\end{proof}
+
+The time $(n-1)/\gamma^{\star2}$ to zero training error is a cousin of Novikoff's bound: the perceptron makes at most $1/\gamma^{\star2}$ mistakes on data with $\norm{z_i}\le1$ \parencite{Novikoff1962}.\sidenote{Novikoff presented the bound at a symposium held at the Polytechnic Institute of Brooklyn in April 1962; the paper is cited with the year 1962 or 1963.} The factor $n$ comes from the normalization of the loss: zero training error needs $\Lhat<1/n$, not $\Lhat<1$.
+
+\begin{corollary}[Directional convergence]\label[corollary]{cor:margin:direction}
+Under the hypotheses of \cref{thm:margin:main}, for $t>(n-1)/\gamma^{\star2}$,
+\[
+  \Bigl\|\frac{w(t)}{\norm{w(t)}}-\marginu\Bigr\|^2\le\frac{2\log n}{\log\bigl((1+\gamma^{\star2}t)/n\bigr)} .
+\]
+In particular $w(t)/\norm{w(t)}\to\marginu$ as $t\to\infty$.
+\end{corollary}
+
+\begin{proof}
+\index{directional convergence}By \eqref{eq:margin:rate} the unit vector $u=w(t)/\norm{w(t)}$ has $\min_i\ip{u,z_i}\ge\gamma^\star-\delta$ with $\delta=\gamma^\star\log n/\log((1+\gamma^{\star2}t)/n)$. Part (iv) of \cref{lem:margin:svm} gives $\norm{u-\marginu}^2\le2\delta/\gamma^\star$.
+\end{proof}
+
+The rate of \eqref{eq:margin:rate} is $O(\log n/\log t)$ in the margin, and \textcite{JiTelgarsky2021} prove a rate $O(\ln n/\ln t)$ of convergence to the max-margin direction for gradient descent with a constant step size and show that it is tight in both $n$ and $t$. The rate of the corollary, $O((\log t)^{-1/2})$ in the angle, is not: the direction converges at the rate $O(1/\log t)$ for almost every data set, and at the rate $O(\log\log t/\log t)$ for some degenerate ones \parencite{SoudryEtAl2018}. The heuristic derivation below shows where the faster rate comes from, and what its constant is.
+
+\begin{heuristic}[Heuristic derivation of the asymptotic expansion]
+Guess that $w(t)=\marginwhat\log t+\marginwt+o(1)$ for fixed vectors $\marginwhat$ and $\marginwt$, and that the error term may be differentiated, so that $\dot w(t)=\marginwhat/t+o(1/t)$. Insert this into the flow. The point $i$ contributes
+\[
+  \frac1ne^{-\ip{w(t),z_i}}z_i=\frac1nt^{-\ip{\marginwhat,z_i}}e^{-\ip{\marginwt,z_i}}z_i\bigl(1+o(1)\bigr)
+\]
+to $\dot w(t)$. A point with $\ip{\marginwhat,z_i}<1$ would contribute a term decaying more slowly than $1/t$, which nothing could balance; so $\ip{\marginwhat,z_i}\ge1$ for all $i$. The points with $\ip{\marginwhat,z_i}>1$ contribute $o(1/t)$, and matching the terms of order $1/t$ leaves
+\[
+  \marginwhat=\sum_{i\in\marginS}\alpha_iz_i,\qquad \alpha_i=\frac1ne^{-\ip{\marginwt,z_i}}>0,\qquad \marginS=\{i:\ip{\marginwhat,z_i}=1\}.
+\]
+These are the Karush--Kuhn--Tucker conditions of the convex problem $\min\norm w$ subject to $\ip{w,z_i}\ge1$, which are sufficient for optimality; so $\marginwhat=\marginu/\gamma^\star$ is the hard-margin solution, and $\marginS$ is the set of support vectors. If the support vectors are linearly independent, then the coefficients $\alpha_i$ are determined by $\marginwhat$, and the equations
+\begin{equation}\label{eq:margin:wtilde}
+  \ip{\marginwt,z_i}=-\log(n\alpha_i)\qquad\text{for }i\in\marginS
+\end{equation}
+fix the component of $\marginwt$ in the span of the support vectors; the orthogonal component is set during the transient. Three predictions follow. The loss is dominated by the support vectors, and by part (iii) of \cref{lem:margin:svm},
+\[
+  \Lhat(w(t))\approx\frac1t\sum_{i\in\marginS}\alpha_i=\frac1{\gamma^{\star2}t}.
+\]
+The norm is $\norm{w(t)}=\log t/\gamma^\star+\ip{\marginu,\marginwt}+o(1)$. And the normalized margin is
+\[
+  \frac{\gamma(w(t))}{\gamma^\star}=\frac{\log t+a}{\log t+b}+o\Bigl(\frac1{\log t}\Bigr),\qquad a=\min_{i\in\marginS}\ip{\marginwt,z_i},\quad b=\gamma^\star\ip{\marginu,\marginwt},
+\]
+a gap of order $(b-a)/\log t$, while the angle to $\marginu$ is about $\gamma^\star\norm{P^\perp\marginwt}/\log t$, with $P^\perp$ the projection orthogonal to $\marginu$. A point with $r_i=\ip{\marginwhat,z_i}>1$ perturbs the expansion by a term of order $t^{1-r_i}$, so the expansion is accurate once $t^{r_i-1}$ is large for every non-support vector.
+\end{heuristic}
+
+\Textcite{SoudryEtAl2018} made this rigorous for gradient descent with small constant steps: for almost every separable data set the residual $w(t)-\marginwhat\log t$ stays bounded, and in degenerate cases it may grow like $\log\log t$ in directions orthogonal to the support vectors. The heuristic also explains the sharpness of part (i) of \cref{thm:margin:main}: the upper bound $1/(1+\gamma^{\star2}t)$ is attained asymptotically, while the lower bound $1/(1+t)$ is off by the factor $\gamma^{\star2}$.
+
+\section{The solution: steps and networks}\label{sec:margin:steps}
+
+Two extensions bring the model closer to practice: finite steps, and networks. The first is a short induction. The second needs one new idea, a smoothed margin that increases along the flow.
+
+\begin{proposition}[Gradient descent]\label[proposition]{prop:margin:gd}
+Under \cref{ass:margin:data}, let $w_{k+1}=w_k-\eta\nabla\Lhat(w_k)$ with $w_0=0$ and $0<\eta\le\frac12$, and write $\Lhat_k=\Lhat(w_k)$. For every $k\ge0$:
+\begin{enumerate}
+\item $\Lhat_k\le1/(1+\frac12\eta\gamma^{\star2}k)$;
+\item $\min_iq_i(w_k)\ge\gamma^\star\norm{w_k}-\log n-\eta\bigl(\gamma^\star\eta+2/\gamma^\star\bigr)$;
+\item $\norm{w_k}\ge\frac1{\gamma^\star}\log\bigl((1+\frac12\eta\gamma^{\star2}k)/n\bigr)$.
+\end{enumerate}
+In particular $\gamma(w_k)\to\gamma^\star$ and $w_k/\norm{w_k}\to\marginu$ as $k\to\infty$.
+\end{proposition}
+
+The proof rests on a one-step inequality, which replaces the identity $\frac{\dd}{\dd t}\Lhat=-\norm{\nabla\Lhat}^2$ of the flow.
+
+\begin{lemma}[One step]\label[lemma]{lem:margin:step}
+Let $w\in\R^d$, $g=\nabla\Lhat(w)$ and $w^+=w-\eta g$, and suppose that $\eta\Lhat(w)\le\frac12$. Then
+\[
+  \Lhat(w^+)\le\Lhat(w)-\eta\norm g^2\bigl(1-\eta\Lhat(w)\bigr).
+\]
+\end{lemma}
+
+\begin{proof}
+Put $v=-g=\frac1n\sum_ie^{-q_i(w)}z_i$ and $b_i=\eta\ip{v,z_i}$, so that $q_i(w^+)=q_i(w)+b_i$. By \eqref{eq:margin:grad} and $\norm{z_i}\le1$, $\abs{b_i}\le\eta\norm v\le\eta\Lhat(w)\le\frac12$. On $[-1,1]$ the function $e^{-b}$ lies below $1-b+b^2$: the difference $h(b)=1-b+b^2-e^{-b}$ has $h(0)=h'(0)=0$ and $h''(b)=2-e^{-b}$, which is positive for $b>-\log2$, so $h\ge0$ on $[-\log2,1]$; on $[-1,-\log2]$ the function $h$ is concave, with $h(-1)=3-e>0$ and $h(-\log2)=\log2+(\log2)^2-1>0$, so $h>0$ there too. Hence
+\[
+  \Lhat(w^+)=\frac1n\sum_ie^{-q_i(w)}e^{-b_i}\le\frac1n\sum_ie^{-q_i(w)}\bigl(1-b_i+b_i^2\bigr).
+\]
+Expand the right side term by term. The constant terms give $\Lhat(w)$. The linear terms give $-\frac\eta n\sum_ie^{-q_i(w)}\ip{v,z_i}=-\eta\norm v^2$, by the definition of $v$. In the quadratic terms $b_i^2\le\eta^2\norm v^2$, so they give at most $\eta^2\Lhat(w)\norm v^2$.
+\end{proof}
+
+\begin{proof}[Proof of \cref{prop:margin:gd}]
+The plan is to repeat the proof of \cref{thm:margin:main} with sums instead of integrals, using \cref{lem:margin:step} and absorbing the second-order terms into a constant. Write $g_k=\nabla\Lhat(w_k)$.
+
+\emph{Part (i).} We show by induction that $\Lhat_k$ is nonincreasing, so that $\eta\Lhat_k\le\eta\Lhat_0=\eta\le\frac12$ for all $k$. If $\eta\Lhat_k\le\frac12$, then \cref{lem:margin:step} and \eqref{eq:margin:grad} give
+\[
+  \Lhat_{k+1}\le\Lhat_k-\frac\eta2\norm{g_k}^2\le\Lhat_k\bigl(1-c\Lhat_k\bigr),\qquad c=\frac{\eta\gamma^{\star2}}2 ,
+\]
+so $\Lhat_{k+1}\le\Lhat_k$ and the induction proceeds. Since $0\le c\Lhat_k<1$ and $1/(1-x)\ge1+x$ for $x\in[0,1)$, inverting gives $1/\Lhat_{k+1}\ge1/\Lhat_k+c$, and summing from $\Lhat_0=1$ gives $1/\Lhat_k\ge1+ck$.
+
+\emph{Part (ii).} Let $N_k=-\log(n\Lhat_k)$ and $a_k=\eta\norm{g_k}^2(1-\eta\Lhat_k)/\Lhat_k$. \Cref{lem:margin:step} says $\Lhat_{k+1}\le\Lhat_k(1-a_k)$, and $a_k\le\eta\Lhat_k\le\frac12$ by \eqref{eq:margin:grad}; since $-\log(1-x)\ge x$ for $x\in[0,1)$, we get $N_{k+1}-N_k\ge a_k$. Now bound $a_k$ below, using $\norm{g_k}\ge\gamma^\star\Lhat_k$ from \eqref{eq:margin:grad} and then, with $\Delta w_k=w_{k+1}-w_k$, the bound $\norm{\Delta w_k}=\eta\norm{g_k}\le\eta\Lhat_k$:
+\[
+  a_k\ge\gamma^\star\eta\norm{g_k}\bigl(1-\eta\Lhat_k\bigr)=\gamma^\star\norm{\Delta w_k}-\gamma^\star\eta\Lhat_k\norm{\Delta w_k}\ge\gamma^\star\norm{\Delta w_k}-\gamma^\star\eta^2\Lhat_k^2 .
+\]
+Summing over $k<K$, using the triangle inequality $\sum_{k<K}\norm{\Delta w_k}\ge\norm{w_K}$ and $N_0=-\log n$,
+\[
+  N_K\ge\gamma^\star\norm{w_K}-\log n-\gamma^\star\eta^2\sum_{k\ge0}\Lhat_k^2 .
+\]
+By part (i) and the comparison of a decreasing sum with an integral, $\sum_{k\ge0}\Lhat_k^2\le\sum_{k\ge0}(1+ck)^{-2}\le1+\int_0^\infty(1+cs)^{-2}\dd s=1+1/c$, and $\gamma^\star\eta^2(1+1/c)=\gamma^\star\eta^2+2\eta/\gamma^\star$. Finally $\min_iq_i(w_K)\ge N_K$ by \eqref{eq:margin:softmin}.
+
+\emph{Part (iii).} As in the proof of \cref{thm:margin:main}, \eqref{eq:margin:softmin} and part (i) give $\gamma^\star\norm{w_k}\ge\min_iq_i(w_k)\ge N_k\ge\log((1+ck)/n)$.
+
+\emph{The limits.} Parts (ii) and (iii) give $\gamma(w_k)\ge\gamma^\star-(\log n+\gamma^\star\eta^2+2\eta/\gamma^\star)/\norm{w_k}$ with $\norm{w_k}\to\infty$, and part (iv) of \cref{lem:margin:svm} turns this into directional convergence.
+\end{proof}
+
+The constant $2\eta/\gamma^\star$ is the price of discreteness, and it is harmless: it enters only through $1/\norm{w_k}$. The restriction $\eta\le\frac12$ comes from $\Lhat_0=1$ and the descent lemma; larger steps work too, but by a different mechanism (\cref{sec:margin:wrong}).
+
+\paragraph{Homogeneous networks.} Let $f(x;\theta)$ be a network with parameters $\theta\in\R^p$, and suppose that it is \term{positively homogeneous}\index{homogeneous network} of degree $L\ge1$ in $\theta$: $f(x;c\theta)=c^Lf(x;\theta)$ for every $c>0$. A ReLU network without biases and with $L$ layers is homogeneous of degree $L$; a linear classifier has $L=1$.\sidenote{A bias in the first layer can be absorbed by appending a constant coordinate to $x$, which keeps the network homogeneous; biases in later layers cannot.} Training uses the margins $q_i(\theta)=y_if(x_i;\theta)$ in the loss $\Lhat(\theta)=\frac1n\sum_ie^{-q_i(\theta)}$, and the normalized margin is now $\min_iq_i(\theta)/\norm\theta^L$. The free energy of the proof of \cref{thm:margin:main}, divided by the matching power of the norm, becomes the \term{smoothed margin}\index{margin!smoothed}
+\[
+  \marginsm(\theta)=\frac{-\log\bigl(n\Lhat(\theta)\bigr)}{\norm\theta^L},
+\]
+which by \eqref{eq:margin:softmin}, whose proof uses only $n\Lhat=\sum_ie^{-q_i}$, satisfies $\marginsm(\theta)\le\min_iq_i(\theta)/\norm\theta^L\le\marginsm(\theta)+\log n/\norm\theta^L$.
+
+\begin{proposition}[The smoothed margin increases; \textcite{LyuLi2020}]\label[proposition]{prop:margin:smoothed}
+Let $\theta\mapsto f(x_i;\theta)$ be continuously differentiable and positively homogeneous of degree $L\ge1$ for every $i$, and let $\theta(t)$ solve $\dot\theta=-\nabla\Lhat(\theta)$ on an interval $[t_0,T)$. If $\Lhat(\theta(t_0))<1/n$, then on $[t_0,T)$ the loss stays below $1/n$, the norm $\norm{\theta(t)}$ is strictly increasing, and $\marginsm(\theta(t))$ is nondecreasing.
+\end{proposition}
+
+\begin{proof}
+The plan is to compute the growth rates of the numerator $\nu=-\log(n\Lhat)$ and of the denominator $\rho^L$, with $\rho=\norm\theta$, and to compare them through Euler's identity for homogeneous functions. Write $\Lhat$, $q_i$, $\nu$, $\rho$ for their values at $\theta(t)$.
+
+\emph{Preliminaries.} Along the flow $\Lhat$ is nonincreasing, so $\Lhat<1/n$ and $\nu>0$ on $[t_0,T)$. Because $e^{-q_i}\le n\Lhat$ for each $i$, every margin satisfies $q_i\ge\nu>0$. The parameter $\theta$ is never $0$, because $f(x;0)=0$ by homogeneity and $\Lhat(0)=1$. Differentiating $c\mapsto f(x;c\theta)=c^Lf(x;\theta)$ at $c=1$ gives Euler's identity $\ip{\theta,\nabla_\theta q_i(\theta)}=Lq_i(\theta)$.
+
+\emph{The norm.} By Euler's identity and $q_i\ge\nu$,
+\begin{equation}\label{eq:margin:norm}
+  \rho\dot\rho=\ip{\theta,\dot\theta}=\frac1n\sum_ie^{-q_i}\ip{\theta,\nabla q_i}=\frac Ln\sum_ie^{-q_i}q_i\ge L\nu\Lhat>0 .
+\end{equation}
+\emph{The numerator.} The flow gives $\dot\nu=-\dot{\Lhat}/\Lhat=\norm{\nabla\Lhat}^2/\Lhat$. The component of $\nabla\Lhat$ along $\theta$ is $\ip{\nabla\Lhat,\theta}/\rho=-\dot\rho$, so $\norm{\nabla\Lhat}\ge\dot\rho$ and $\dot\nu\ge\dot\rho^2/\Lhat$.
+
+\emph{The ratio.} Both $\nu$ and $\rho$ are positive, so $\log\marginsm=\log\nu-L\log\rho$ is differentiable, and
+\[
+  \frac{\dd}{\dd t}\log\marginsm=\frac{\dot\nu}\nu-\frac{L\dot\rho}\rho\ge\frac{\dot\rho^2}{\Lhat\nu}-\frac{L\dot\rho}\rho=\frac{\dot\rho}{\Lhat\nu\rho}\bigl(\rho\dot\rho-L\nu\Lhat\bigr)\ge0,
+\]
+where the last step uses $\dot\rho>0$ and \eqref{eq:margin:norm} twice.
+\end{proof}
+
+For $L=1$ the proposition is a second proof of the margin part of \cref{thm:margin:main}, without its constants (\cref{ex:margin:linearsm}). For networks it is the key step of a theory that we state without its full proof.
+
+\begin{theorem}[\textcite{LyuLi2020}; \textcite{JiTelgarsky2020}; stated with a sketch]\label{thm:margin:lyuli}
+Let $f(x;\theta)$ be locally Lipschitz, admit a chain rule for Clarke subgradients, and be positively homogeneous of degree $L\ge1$ in $\theta$, such as a ReLU network without biases, possibly with max-pooling and convolutions; let $\theta(t)$ be a gradient flow of the exponential or logistic loss, in the sense of Clarke subgradients; and suppose that $\Lhat(\theta(t_0))<1/n$ at some time $t_0$. Then:
+\begin{enumerate}
+\item $\Lhat(\theta(t))=\Theta\bigl(1/(t(\log t)^{2-2/L})\bigr)$ and $\norm{\theta(t)}=\Theta\bigl((\log t)^{1/L}\bigr)$ as $t\to\infty$;
+\item every limit point $\bar\theta$ of $\theta(t)/\norm{\theta(t)}$ is, after rescaling, a Karush--Kuhn--Tucker point of
+\begin{equation}\label{eq:margin:kkt}
+  \min\ \tfrac12\norm\theta^2\qquad\text{subject to}\quad y_if(x_i;\theta)\ge1\quad\text{for all }i ,
+\end{equation}
+and the normalized margin $\min_iq_i(\theta(t))/\norm{\theta(t)}^L$ converges, its limit being the normalized margin of every such limit point;
+\item if the network is definable in an o-minimal structure, which covers ReLU networks with the exponential and logistic losses, then $\theta(t)/\norm{\theta(t)}$ converges \parencite{JiTelgarsky2020}.
+\end{enumerate}
+\end{theorem}
+
+\begin{proofsketch}
+Part (i) follows from \cref{prop:margin:smoothed} by comparing $\nu$ and $\rho$ in the differential inequalities of its proof, as in \cref{thm:margin:main}; the logarithmic factor comes from $\nu\asymp\rho^L$. For part (ii), the Karush--Kuhn--Tucker conditions of \eqref{eq:margin:kkt} ask that $\theta$ be a nonnegative combination $\sum_i\lambda_i\nabla q_i(\theta)$ with $\lambda_i=0$ whenever $q_i(\theta)>1$. The negative gradient $\frac1n\sum_ie^{-q_i}\nabla q_i$ is such a combination with weights that, after normalization, vanish on the points of larger margin; what remains is to show that $\theta$ and $-\nabla\Lhat$ become parallel along a sequence of times, which \textcite{LyuLi2020} deduce from the integrability of $\frac{\dd}{\dd t}\log\marginsm$ and a quantitative notion of approximate Karush--Kuhn--Tucker points. Part (iii) needs a Kurdyka--{\L}ojasiewicz inequality for definable functions, unbounded and nonsmooth, which bounds the length of the curve $\theta/\norm\theta$ in a logarithmic clock. \Textcite{JiTelgarsky2020} also show that, when the network has locally Lipschitz gradients, $-\nabla\Lhat(\theta(t))$ and $\theta(t)$ become aligned. The full proofs are in the two papers.
+\end{proofsketch}
+
+For a linear classifier \eqref{eq:margin:kkt} is the hard-margin problem, which is convex, so its Karush--Kuhn--Tucker points are its solutions and the theorem returns \cref{cor:margin:direction}. For networks it is not convex, and part (ii) gives a stationary point, not a maximizer (\cref{sec:margin:wrong}).
+
+\section{Reading the solution}\label{sec:margin:reading}
+
+\Cref{thm:margin:main} and the heuristic expansion make four quantitative predictions. (i) The loss decays like $1/(\gamma^{\star2}t)$, with the constant exactly $1/\gamma^{\star2}$ at late times. (ii) The norm grows like $\log t/\gamma^\star$, with an offset $\ip{\marginu,\marginwt}$ fixed by the support vectors. (iii) The normalized margin approaches $\gamma^\star$ with a gap of order $1/\log t$: halving the gap takes squaring the training time.\sidenote{A gap $c/\log t$ at time $t$ becomes $c/(2\log t)$ at time $t^2$.} (iv) The time scale is $1/\gamma^{\star2}$: the data are fit by time $(n-1)/\gamma^{\star2}$, and the asymptotic regime begins once the non-support vectors are suppressed, when $t^{r_i-1}$ is large for every $r_i=\ip{\marginwhat,z_i}>1$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=12mm},hplot,width=0.34\linewidth,height=0.31\linewidth,
+  xmode=log,xmin=0.1,xmax=1e9,xtick={1,1e3,1e6,1e9},xlabel={time $t$}]
+\nextgroupplot[ymin=0,ymax=1.08,ylabel={$\gamma^{\star2}t\,\Lhat(w(t))$},legend style={at={(0.97,0.03)},anchor=south east}]
+\addplot[theory] table[x=t,y=lossbd] {figures/data/04-margin-flow.dat};
+\addplot[simulation,mark repeat=3] table[x=t,y=lossx] {figures/data/04-margin-flow.dat};
+\legend{bound,flow}
+\nextgroupplot[ymin=0,ymax=1.04,ylabel={$\gamma(w(t))/\gamma^\star$},legend style={at={(0.03,0.5)},anchor=west}]
+\addplot[theory3] table[x=t,y=marglo] {figures/data/04-margin-flow.dat};
+\addplot[theory,restrict x to domain=9.2:21] table[x=t,y=margas] {figures/data/04-margin-flow.dat};
+\addplot[simulation,mark repeat=5] table[x=t,y=marg] {figures/data/04-margin-flow.dat};
+\legend{bound \eqref{eq:margin:rate},expansion,flow}
+\nextgroupplot[ymin=0,ymax=80,ylabel={$\norm{w(t)}$},legend style={at={(0.03,0.97)},anchor=north west}]
+\addplot[theory3] table[x=t,y=normlo] {figures/data/04-margin-flow.dat};
+\addplot[theory,restrict x to domain=9.2:21] table[x=t,y=normas] {figures/data/04-margin-flow.dat};
+\addplot[simulation,mark repeat=5] table[x=t,y=norm] {figures/data/04-margin-flow.dat};
+\legend{lower bound,expansion,flow}
+\end{groupplot}
+\end{tikzpicture}
+\caption{Gradient flow of the exponential loss on $n=40$ points in the plane: the vectors $z_i=y_ix_i$ are drawn from $\cN(\mu,0.2^2I_2)$ with $\mu=(0.55,0.25)$ and rescaled to largest norm $1$ (seed $31$), so that $\gamma^\star=0.2034$, with two support vectors and smallest non-support ratio $r_i=1.49$. The flow is integrated with a stiff solver in the clock $\log(1+t)$. Left: $\gamma^{\star2}t\,\Lhat$ against the upper bound $\gamma^{\star2}t/(1+\gamma^{\star2}t)$ of \cref{thm:margin:main}; it reaches $0.999$ at $t=10^9$. Middle: the normalized margin, the bound \eqref{eq:margin:rate} and the heuristic expansion $\marginwhat\log t+\marginwt$ with $\marginwt$ from \eqref{eq:margin:wtilde}, drawn for $t\ge10^4$. Right: the norm, the lower bound of part (ii) and the expansion $\log t/\gamma^\star+\ip{\marginu,\marginwt}$.}\label{fig:margin:flow}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:margin:flow} tests these predictions on a data set small enough to see. In the left panel, $\gamma^{\star2}t\Lhat$ climbs to the bound and meets it: the upper bound of part (i) is the late-time law, not just a bound. The climb is slow because early on all forty points carry weight in the loss, and $\Lhat$ exceeds the single-support-vector value. In the middle panel the normalized margin starts at $0.91\gamma^\star$, the margin of the direction $\sum_iz_i$ that the flow takes first, rises through the transient, and then creeps: from $0.975\gamma^\star$ at $t=10^6$ to $0.988\gamma^\star$ at $t=10^9$. The expansion, which has no free parameter, matches it to within $0.003$ from $t=10^5$ on and to within $5\times10^{-4}$ from $t=10^7$ on. The rigorous bound \eqref{eq:margin:rate} is valid but loose, at $0.73\gamma^\star$ at $t=10^9$: it pays $\log n$ for not knowing which points are support vectors. In the right panel the norm is a straight line in $\log t$, with slope $1/\gamma^\star=4.92$ per unit of $\log t$, as the lower bound of part (ii) and the expansion say. The angle to $\marginu$ is still $0.020$ at $t=10^9$; the expansion predicts $\norm{P^\perp\marginwt}/\norm{w(t)}=1.452/71.4=0.020$.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,xmode=log,xmin=10,xmax=1e9,xtick={10,1e3,1e5,1e7,1e9},ymin=-0.004,ymax=0.012,
+  xlabel={time $t$},ylabel={margin$/\norm\theta^2$},
+  yticklabel style={/pgf/number format/fixed,/pgf/number format/precision=3},legend style={at={(0.97,0.97)},anchor=north east}]
+\addplot[guide] table[x=t,y=up] {figures/data/04-margin-relu.dat};
+\addplot[theory] table[x=t,y=sm] {figures/data/04-margin-relu.dat};
+\addplot[simulation,mark repeat=2] table[x=t,y=nm] {figures/data/04-margin-relu.dat};
+\addplot[muted,line width=0.5pt,densely dotted] coordinates {(1000,-0.004) (1000,0.012)};
+\legend{$\marginsm+\log n/\norm\theta^2$,smoothed margin $\marginsm$,normalized margin}
+\end{axis}
+\end{tikzpicture}
+\caption{A ReLU network $f(x)=\sum_{r=1}^{50}a_r\relu(\ip{w_r,x})$ without biases, homogeneous of degree $L=2$, trained by gradient flow of the exponential loss on $n=30$ points of the unit circle labeled by $\sgn(x_1x_2)$, which no linear classifier separates; weights initialized $\cN(0,0.3^2)$, seed $0$. The flow is integrated by the Euler method in the clock $\dd\tau=\Lhat\,\dd t$ with $\dd\tau=10^{-3}$. The loss drops below $1/n$ at $t\approx10^3$ (dotted line); from then on the smoothed margin never decreases, as \cref{prop:margin:smoothed} asserts, and the normalized margin lies between it and the dashed upper bound.}\label{fig:margin:relu}
+\end{figure}
+
+\Cref{fig:margin:relu} shows the network version. Before the loss reaches $1/n$ the smoothed margin is negative and the normalized margin wanders; after, the smoothed margin increases monotonically, from $2.6\times10^{-4}$ at $t=10^3$ to $4.1\times10^{-3}$ at $t=10^9$, and the normalized margin settles near $4.27\times10^{-3}$, squeezed between the two curves as $\log n/\norm\theta^2$ shrinks. The squared norm grows by about $600$ per decade of $t$, linear in $\log t$, and $\Lhat\,t\log t$ stays between $75$ and $100$ over the last three decades, as part (i) of \cref{thm:margin:lyuli} predicts for $L=2$ (\cref{ex:margin:relurate}).
+
+\paragraph{The test loss rises.} Let $(x,y)$ be a test point that the max-margin classifier gets wrong, $\ip{\marginwhat,yx}<0$. Its exponential loss grows like $t^{\abs{\ip{\marginwhat,yx}}}$ and its logistic loss like $\abs{\ip{\marginwhat,yx}}\log t$; so the average test loss eventually increases, while the test error converges to that of the max-margin classifier. This is the decoupling of \cref{obs:margin:late}, and \textcite{SoudryEtAl2018} derived it in this form. The model says that the test loss is the wrong thing to monitor when training past zero error; it does not say that the test error improves.
+
+\paragraph{Weights in the loss do not matter in the limit.} If the loss weights the points, $\Lhat(w)=\sum_ic_ie^{-\ip{w,z_i}}$ with $c_i>0$ and $\sum_ic_i=1$, then \cref{thm:margin:main} holds with $\log n$ replaced by $\log(1/\min_ic_i)$ (\cref{ex:margin:weights}): the limit direction is $\marginu$ whatever the weights. Importance weighting\index{importance weighting} for class imbalance or distribution shift therefore has an effect that fades as training continues past zero error. \Textcite{ByrdLipton2019} observed exactly this in deep networks: the effect of importance weights diminishes over training once the network separates the training data, and $\ell_2$ regularization restores part of it. Here the model's prediction holds for networks.
+
+\paragraph{Limits of the model.} Every statement is about $t\to\infty$ at fixed data. The parameter that sets the time scale is $\gamma^\star$, which can only decrease as points are added, and on hard data sets $1/\gamma^{\star2}$ is large. The logarithm makes the asymptotic regime expensive even when $\gamma^\star$ is not small. In \cref{fig:margin:flow} the transient lasts until about $t=10^5$, some four thousand times the natural unit $1/\gamma^{\star2}\approx24$; with a non-support ratio $r_i=1.15$ instead of $1.49$, we found the expansion still $0.6\%$ off at $t=10^9$.
+
+\section{What the model gets wrong}\label{sec:margin:wrong}
+
+\paragraph{What was thrown away.} \emph{Fixed features.} The model trains a linear readout on frozen inputs; in a network the features move, and the geometry that defines the margin changes during training. \Cref{thm:margin:lyuli} restores feature learning for homogeneous networks, but only at the level of stationary points, and biases, residual connections and normalization layers break homogeneity. \emph{Separability.} Real training sets contain mislabeled and ambiguous points, which a network may or may not fit; for a linear model on nonseparable data the max-margin story applies only to a separable part (\cref{ex:margin:nonsep}). \emph{Infinite time.} The theorems are statements about $t\to\infty$, and the rates are logarithmic. \emph{No regularization.} With weight decay $\lambda$ the norm stops growing at about $\log(1/\lambda)/\gamma^\star$, and the limit becomes a regularized solution, which approaches the max-margin direction only as $\lambda\to0$ \parencite{RossetZhuHastie2003,WeiEtAl2019}. \emph{The optimizer.} Gradient flow, or gradient descent with $\eta\le\frac12$; no stochasticity, momentum, adaptive preconditioning, or learning-rate schedules.
+
+\paragraph{Where it breaks.} \emph{The limit is never reached.} A gap of order $1/\log t$ means that the margin of a trained network reflects its training time and initialization as much as its limit: in \cref{fig:margin:flow} the direction is still $0.02$ away from $\marginu$ after $10^9$ time units, on forty points in the plane. Statements about ``the'' implicit bias of a network trained for $10^5$ steps should be read as statements about a point on a slow curve. \emph{Stationary is not maximal.} \Textcite{VardiShamirSrebro2022} show that the Karush--Kuhn--Tucker points of \cref{thm:margin:lyuli} are in many cases not even local maximizers of the margin, for example for depth-two ReLU networks and depth-two diagonal linear networks, while for deep linear fully connected networks and several other settings they identify conditions that guarantee local or global optimality. The physicist's picture of a quench to the ground state fails: the network can freeze in a metastable state. \emph{Margins do not predict generalization in deep networks.} Margin-based bounds such as the spectrally normalized bound of \textcite{BartlettFosterTelgarsky2017} are far from tight; \textcite{NagarajanKolter2019} found that such norm-based bounds can grow with the training set size while the test error falls, and that uniform convergence itself can be vacuous for gradient descent; and in a large-scale comparison over thousands of networks trained on CIFAR-10 and SVHN, \textcite{JiangEtAl2020} found sharpness-based measures among the most promising predictors of generalization, while several norm-based measures, spectral ones included, correlated poorly or even negatively with it. The model explains the direction of the weights, not the quality of the classifier. \emph{The test error need not improve.} In a linear model on a high-dimensional Gaussian mixture ($x_i=y_i\mu+g_i$ with $\mu=0.25\,\mathbf 1_d$, $g_i\sim\cN(0,I_d)$, $d=200$, $n=100$) we found, for each of four seeds, the exact test error of the flow rising from about $0.05\%$ at zero training error to about $0.13\%$ at $t=4\times10^6$: early-stopped gradient descent is close to the mean-difference classifier, which is near-optimal for isotropic noise, and the max-margin classifier is worse. When $d\gg n$ every training point becomes a support vector and the max-margin classifier coincides with the minimum-norm interpolator of the labels \parencite{MuthukumarEtAl2021}, which brings the double descent of \cref{ch:doubledescent} to classification. \emph{Large steps.}\index{gradient descent!large step size} \Cref{prop:margin:gd} needs $\eta\le\frac12$ to make the loss decrease monotonically. \Textcite{WuEtAl2024} show that gradient descent on logistic regression with separable data and a much larger constant step size $\eta$ first goes through a phase in which the loss oscillates, leaves it within $O(\eta)$ steps, and then decreases at the rate $\tilde O(1/(\eta t))$; with $\eta$ of the order of the step budget $T$, the loss after $T$ steps is $\tilde O(1/T^2)$, much faster than the small-step analysis allows. The monotone picture of this chapter is the wrong picture of the beginning of training at large learning rates, the regime of \cref{ch:stability}. \emph{Other optimizers, other norms.} The Euclidean norm is a property of gradient descent. Steepest descent with respect to another norm converges to the max-margin direction for that norm \parencite{GunasekarEtAl2018a}, and \textcite{ZhangZouCao2024} prove that Adam, in linear logistic regression with diminishing learning rates, converges in direction to the maximum-$\ell_\infty$-margin classifier. Networks trained with Adam, which is most of them, are not described by the $\ell_2$ geometry of this chapter. \emph{Label noise.} With noisy labels, fitting the training set means fitting the noise. Whether the max-margin classifier still generalizes depends on the dimension: \textcite{ChatterjiLong2021} prove that, with sufficient overparameterization, the max-margin classifier trained on noisy data achieves nearly optimal population risk, and \textcite{FreiChatterjiBartlett2022} prove the analogue for two-layer networks trained by gradient descent on the logistic loss. The model, which has no noise and no population, is silent on this benign overfitting.
+
+\paragraph{Fine structure.} \emph{Architecture changes the norm.} For deep linear fully connected networks the end-to-end predictor still converges to the $\ell_2$ max-margin direction, and the layers align \parencite{JiTelgarsky2019a}; for linear convolutional networks of depth $L$ the limit is a stationary point of an $\ell_{2/L}$ bridge penalty on the Fourier coefficients of the predictor \parencite{GunasekarEtAl2018b}; for diagonal linear networks it is an $\ell_1$-type margin, as the potential of \cref{ch:diagonal} suggests (\cref{ex:margin:diagonal}); and for infinitely wide two-layer networks \textcite{ChizatBach2020} characterize the limit as a max-margin classifier in a non-Hilbertian function space, which adapts to low-dimensional structure. \emph{Nonseparable data.} \Textcite{JiTelgarsky2019b} show that on general data gradient descent on logistic regression converges in direction to the max-margin predictor of a maximal separable subset, at a rate of about $\log\log t/\log t$, and recovers the offset on the nonseparable part at a rate of about $(\log t)^2/\sqrt t$. \emph{Faster rates.} The $1/\log t$ is a property of constant steps on a loss whose gradient vanishes. Gradient descent with aggressive step sizes that compensate for the vanishing gradient converges to the max-margin direction at the rate $O(\log t/\sqrt t)$ for the exponential loss \parencite{NacsonEtAl2019}, and \textcite{JiTelgarsky2021} reach $O(1/t)$ for the margin with an aggressive schedule, by reading gradient descent on the primal as mirror descent on the dual distribution $p\in\Delta_n$ of \cref{lem:margin:svm}. \emph{Boosting.} The same mathematics appeared first for boosting: \textcite{RossetZhuHastie2004} showed that boosting with infinitesimal steps follows a regularization path to an $\ell_1$ max-margin classifier, and \textcite{Telgarsky2013} that shrinkage yields approximate max-margin classifiers. \emph{Open.} Rates of directional convergence for nonlinear homogeneous networks are unknown in general, as is a description of which Karush--Kuhn--Tucker point gradient descent selects from a given initialization; and a theory of the margin at the finite training times used in practice, rather than in the limit, is missing.
+
+\section{Model card}\label{sec:margin:card}
+
+\modelcard{After zero training error, the cross-entropy keeps falling like $1/t$, the weights grow like $\log t$, and the classifier keeps changing; test loss and test error decouple.}{Linear classifier on fixed separable data with $\norm{z_i}\le1$, exponential loss, gradient flow or gradient descent with $\eta\le\frac12$ from $w=0$; homogeneous networks as an extension.}{$\Lhat\le1/(1+\gamma^{\star2}t)$; $\norm w\approx\log t/\gamma^\star$; normalized margin within $\gamma^\star\log n/\log(\gamma^{\star2}t/n)$ of $\gamma^\star$; direction converges to the hard-margin SVM; the smoothed margin of a homogeneous network increases once $\Lhat<1/n$.}{$\gamma^{\star2}t\Lhat\to1$; margin gap of order $1/\log t$; time scale $1/\gamma^{\star2}$; importance weights fade; test loss of misclassified points grows like $\log t$.}{Logarithmic rates never reached in practice; stationary points instead of maximizers for ReLU networks; margins do not predict deep-network generalization; large steps and Adam change the dynamics and the norm; label noise.}{Steepest descent and Adam ($\ell_\infty$ margins); linear convolutional and diagonal networks; Lyu--Li and Ji--Telgarsky for homogeneous networks; nonseparable data; normalized and primal--dual methods with fast rates.}
+
+The chapter is the hub of the thread on implicit bias. The diagonal networks of \cref{ch:diagonal} trained on classification data are homogeneous of degree two, and the potential that selects the sparse interpolator there becomes the $\ell_1$ margin here (\cref{ex:margin:diagonal}). The max-margin argument of \cref{ch:grokking} is \cref{thm:margin:lyuli} for a network homogeneous of degree three, with the margin problem solved in Fourier space; and the unconstrained-features model of neural collapse in \cref{ch:collapse} is a max-margin problem for the last layer and the features together, whose solution is a simplex. In all three, ``max-margin solutions as attractors'' means the limit of the dynamics studied here.
+
+Two contrasts are instructive. In \cref{ch:doubledescent} the least-squares loss has a minimizer, and gradient descent from zero converges to the minimum-norm interpolator in finite effective time; here the loss has none, and the bias appears only in the limit of the direction. And the lazy regime of \cref{ch:lazy} is the case in which the features hardly move: then the network trained past zero error behaves like the linear model of this chapter on its tangent features, and converges, in the kernel sense, to a max-margin classifier of the neural tangent kernel.
+
+\begin{exercises}
+\item \consolidation (Three points.) Let $z_1=(1,0)$, $z_2=(0,1)$ and $z_3=(0.6,0.6)$. (a) Show that $\gamma^\star=1/\sqrt2$, $\marginu=(1,1)/\sqrt2$, that the support vectors are $z_1$ and $z_2$, and that $\alpha=(1,1,0)$ in \cref{lem:margin:svm}. (b) Show that gradient flow from $0$ stays on the diagonal, $w(t)=s(t)(1,1)$, with $\dot s=\frac13(e^{-s}+0.6e^{-1.2s})$, so that the normalized margin equals $\gamma^\star$ for every $t>0$. (c) Show that $s(t)=\log(t/3)+O(t^{-1/5})$, and compare with \eqref{eq:margin:wtilde}. \hint{in (c), $u=e^s$ satisfies $\dot u=\frac13(1+0.6u^{-1/5})$.}\label{ex:margin:three}
+
+\item \consolidation (The convex bound, and the logistic loss.) Let $\ell$ be the exponential or the logistic loss and $\Lhat(w)=\frac1n\sum_i\ell(\ip{w,z_i})$, which is convex. (a) Show that gradient flow from $0$ satisfies $\Lhat(w(t))\le\Lhat(v)+\norm v^2/(2t)$ for every $v\in\R^d$ and $t>0$. \hint{differentiate $\frac12\norm{w(t)-v}^2$ and use convexity and the monotonicity of $\Lhat(w(t))$.} (b) Taking $v=\marginu\log t/\gamma^\star$, deduce $\Lhat(w(t))\le\bigl(1+(\log t)^2/(2\gamma^{\star2})\bigr)/t$ for $t\ge1$, for both losses. (c) For the logistic loss, show that $e^{-q}\le2\ell(q)$ and $\abs{\ell'(q)}\ge\ell(q)(1-2\ell(q))$ for $q\ge0$. From the first time at which $\Lhat<\frac{\log2}n$, adapt the proof of part (iii) of \cref{thm:margin:main} with $N=-\log(2n\Lhat)$, bounding the error terms by $\int\Lhat^2\,\dd t<\infty$ from (b), to prove that the normalized margin converges to $\gamma^\star$. \label{ex:margin:logistic}
+
+\item \consolidation (The smoothed margin of a linear classifier.) For $L=1$, \cref{prop:margin:smoothed} says that $\marginsm(w(t))=-\log(n\Lhat)/\norm w$ is nondecreasing after the first time $t_0$ at which $\Lhat<1/n$. (a) Show that $\marginsm(w(t))\le\gamma^\star$ for all $t$, and that $\marginsm(w(t))\to\gamma^\star$. (b) Show that monotonicity alone does not give a rate, and recover one from \eqref{eq:margin:Ngrowth}. (c) Check the monotonicity numerically for gradient descent with $\eta=\frac12$ on the data of \cref{fig:margin:flow}. \label{ex:margin:linearsm}
+
+\item \consolidation (The descent lemma, another way.) (a) Show that $\nabla^2\Lhat(w)=\frac1n\sum_ie^{-\ip{w,z_i}}z_iz_i^\top$, so that $0\preceq\nabla^2\Lhat(w)\preceq\Lhat(w)I_d$ under \cref{ass:margin:data}, and that $\Lhat$ has no global Lipschitz gradient. (b) Show that $\Lhat(w+\tau v)\le e^{\tau\norm v}\Lhat(w)$ for $\tau\ge0$, and deduce from Taylor's formula a version of \cref{lem:margin:step} with $1-\eta\Lhat(w)$ replaced by $1-\frac\eta2e^{\eta\Lhat(w)}\Lhat(w)$. (c) For which step sizes does this version give a rate from $w_0=0$? \label{ex:margin:hessian}
+
+\item \consolidation (Norm and loss from the expansion.) Assume the expansion of the heuristic derivation. (a) Show that $\gamma^\star\ip{\marginu,\marginwt}\ge\min_{i\in\marginS}\ip{\marginwt,z_i}$, so that the predicted gap $(b-a)/\log t$ is nonnegative. (b) Show that the angle between $w(t)$ and $\marginu$ is $\norm{P^\perp\marginwt}/\norm{w(t)}+o(1/\log t)$. (c) A misclassified test point has $\ip{\marginwhat,z}<0$. Show that its logistic loss is $\abs{\ip{\marginwhat,z}}\log t+O(1)$. \hint{in (a), $\marginu$ is a convex combination of the support vectors divided by $\gamma^\star$.}\label{ex:margin:expansion}
+
+\item \variation (Other norms.) Let $\norm\cdot$ be a norm on $\R^d$ with dual norm $\norm\cdot_*$, assume $\norm{z_i}_*\le1$, and let $\gamma^\star=\max_{\norm u\le1}\min_i\ip{u,z_i}>0$. Consider an absolutely continuous solution of the steepest-descent flow, in which $\dot w(t)$ maximizes $\ip{-\nabla\Lhat(w),v}$ over $\norm v\le\norm{\nabla\Lhat(w)}_*$. (a) Show that $\frac{\dd}{\dd t}\Lhat=-\norm{\nabla\Lhat}_*^2$ and $\norm{\nabla\Lhat}_*\ge\gamma^\star\Lhat$. (b) Prove parts (i)--(iv) of \cref{thm:margin:main} with $\norm\cdot$ in place of the Euclidean norm. (c) For $\norm\cdot=\norm\cdot_\infty$, show that the flow is sign gradient descent rescaled by $\norm{\nabla\Lhat}_1$, and relate the result to \textcite{ZhangZouCao2024}. (d) Show by an example in $\R^2$ that the max-margin direction for $\norm\cdot_\infty$ need not be unique, so that part (iv) of \cref{lem:margin:svm} fails. \label{ex:margin:norms}
+
+\item \variation (Weighted losses.) Let $\Lhat(w)=\sum_ic_ie^{-\ip{w,z_i}}$ with $c_i>0$ and $\sum_ic_i=1$. Show that \cref{thm:margin:main} holds with $\log n$ replaced by $\log(1/\min_ic_i)$ and $n$ in part (i) replaced by $1/\min_ic_i$. Conclude that the limit direction does not depend on the weights, and that up-weighting a rare class only delays the approach to $\marginu$. Compare with \textcite{ByrdLipton2019}. \label{ex:margin:weights}
+
+\item \variation (Nonseparable data.) Let $z_1=(1,0)$, $z_2=(-1,0)$ and $z_3=(0.6,0.8)$, so that no direction classifies all three points. (a) Show that $\inf\Lhat=\frac23$ and that it is not attained. (b) Show that gradient flow from $0$ satisfies $w_1(t)\to0$ and $w_2(t)-\frac54\log t\to\frac54\log\frac{16}{75}$, so that $w(t)/\norm{w(t)}\to(0,1)$, the max-margin direction of the separable part restricted to the orthogonal complement of the span of $z_1,z_2$. Compare with \textcite{JiTelgarsky2019b}. \hint{show first that $w_1\ge0$ and $w_1(t)=O(1/t)$, then solve for $w_2$ with $w_1=0$.}\label{ex:margin:nonsep}
+
+\item \variation\hard (Diagonal networks and the $\ell_1$ margin.) Let $f(x;u,v)=\ip{u\odot u-v\odot v,x}$, the diagonal network of \cref{ch:diagonal}, homogeneous of degree two. (a) Show that $\min\{\norm u^2+\norm v^2:u\odot u-v\odot v=\beta\}=\norm\beta_1$. (b) Deduce that $(u,v)$ is a global solution of \eqref{eq:margin:kkt} if and only if $\beta=u\odot u-v\odot v$ solves $\min\norm\beta_1$ subject to $\ip{\beta,z_i}\ge1$, the $\ell_1$ max-margin problem. (c) For $z_1=(1,0)$ and $z_2=(0.6,0.6)$, show that the $\ell_2$ max-margin solution is $\marginwhat=(1,\frac23)$, and that the solutions of the $\ell_1$ problem form the segment $\{\beta_1+\beta_2=\frac53,\ 1\le\beta_1\le\frac53\}$, which contains $\marginwhat$. The limit of the diagonal network is not determined by the $\ell_1$ problem alone. (d) By \textcite{VardiShamirSrebro2022}, the Karush--Kuhn--Tucker points of this network need not be local maximizers. Explain why part (b) does not contradict this. \hint{in (a), $u_j^2+v_j^2\ge\abs{u_j^2-v_j^2}$ for each coordinate, with equality when $u_j=0$ or $v_j=0$.}\label{ex:margin:diagonal}
+
+\item \simulation (Gradient descent and its bounds.) On the data of \cref{fig:margin:flow}, run gradient descent on the exponential loss with $\eta\in\{0.25,0.5\}$ for $2\times10^5$ steps and check parts (i) and (ii) of \cref{prop:margin:gd} at every step. The reader should find both bounds satisfied, with $\min_iq_i(w_k)-\gamma^\star\norm{w_k}$ ending near $-0.2$ for both step sizes: the constants $\log n=3.7$ and $\eta(\gamma^\star\eta+2/\gamma^\star)$ are almost entirely slack. Then try $\eta\in\{1,2,5\}$, outside the proposition: on these data the loss still decreases monotonically, and the normalized margin at time $\eta k$ is close to that of the flow. \label{ex:margin:gdsim}
+
+\item \simulation (Rates for a ReLU network.) Use the output of the script of \cref{fig:margin:relu}. (a) Plot $\norm{\theta}^2$ against $\log t$ and check that it is asymptotically linear. (b) Assuming $\marginsm\approx\bar\gamma$ constant and $\min_iq_i\approx\bar\gamma\norm\theta^2$, use \eqref{eq:margin:norm} to derive $u=\bar\gamma\norm\theta^2$ from $e^u/u\approx4\bar\gamma t/n$, and $\Lhat\approx e^{-u}/n$. The reader should find that this predicts $\Lhat(10^9)\approx3.7\times10^{-9}$ with $\bar\gamma=0.00427$, against $3.69\times10^{-9}$ simulated, and that $\Lhat\,t\log t$ varies slowly, as part (i) of \cref{thm:margin:lyuli} says for $L=2$. (c) Repeat with several initialization seeds, keeping the data fixed, and record the normalized margin at $t=10^7$; we found $0.00425$ for five seeds, so on these data the flow appears to select the same stationary point. \label{ex:margin:relurate}
+
+\item \research (Rates for networks.) For a two-layer ReLU network on separable data, bound the rate at which $\theta(t)/\norm{\theta(t)}$ converges, or the normalized margin approaches its limit. \Textcite{LyuLi2020} give rates for the loss and the norm but not for the direction; \textcite{JiTelgarsky2020} prove convergence without a rate. Even an example with a matching lower bound worse than $1/\log t$ would be new to us. \label{ex:margin:rates}
+
+\item \research (Which stationary point?) Characterize, for a two-layer ReLU network and a given data set, the Karush--Kuhn--Tucker points of \eqref{eq:margin:kkt} that gradient flow from small random initialization can reach, and decide when it reaches a global maximizer of the margin. \Textcite{VardiShamirSrebro2022} give settings with and without local optimality; a general criterion is open. \label{ex:margin:which}
+\end{exercises}
+
+\notesandrefs
+The implicit bias\index{implicit bias} of gradient descent toward the max-margin direction was proved for linear models on separable data by \textcite{SoudryEtAl2018}, whose conference version appeared at ICLR 2018; they gave the expansion $\marginwhat\log t+\rho(t)$, the rates $1/\log t$ and $\log\log t/\log t$, and the CIFAR-10 experiments of \cref{sec:margin:phenomenon}. The ideas were older in boosting, where AdaBoost minimizes an exponential loss by coordinate descent: \textcite{SchapireEtAl1998} tied its test error to the margins, \textcite{RossetZhuHastie2003} showed that regularized solutions of losses with exponential tails approach margin-maximizing separators as the regularization vanishes, \textcite{RossetZhuHastie2004} connected boosting to an $\ell_1$ max-margin classifier, and \textcite{Telgarsky2013} analyzed shrinkage. The max-margin classifier itself goes back to the support vector machines of \textcite{BoserGuyonVapnik1992} and \textcite{CortesVapnik1995}, and the margin as the quantity that controls learning to the perceptron analysis of \textcite{Novikoff1962}.
+
+Our proof of \cref{thm:margin:main} follows the free-energy argument used for homogeneous networks by \textcite{LyuLi2020}, specialized to $L=1$, with the convex geometry of \cref{lem:margin:svm} supplying the direction; the quantitative directional bound of \cref{cor:margin:direction} is a short consequence of part (iv) of that lemma. The primal--dual view, in which the normalized weights $e^{-q_i}/\sum_je^{-q_j}$ are a dual variable converging to $p^\star$, is developed by \textcite{JiTelgarsky2021}, who also show that the rate $\ln n/\ln t$ is tight. \Cref{prop:margin:gd} is a standard descent argument; the constant $\frac12$ in the step size is not optimized.
+
+For networks, \textcite{LyuLi2020} proved the monotonicity of the smoothed margin, the rates of the loss and the norm, and convergence to Karush--Kuhn--Tucker points, for homogeneous networks with locally Lipschitz outputs; \textcite{JiTelgarsky2020} proved directional convergence and alignment using o-minimal geometry. Earlier, \textcite{JiTelgarsky2019a} treated deep linear networks and \textcite{GunasekarEtAl2018a,GunasekarEtAl2018b} worked out the effect of the optimization geometry and of convolutional architectures. \Textcite{WeiEtAl2019} connected the regularized problem with small weight decay to the max-margin problem for networks, a link used in \cref{ch:grokking}.
+
+\paragraph{Translating the literature.} \Textcite{SoudryEtAl2018} absorb the labels into the inputs, writing $\mathbf x_n$ for our $z_i$ and $N$ for our $n$; their loss is the sum $\mathcal L(\mathbf w)=\sum_n\ell(\mathbf w^\top\mathbf x_n)$, which is $n$ times our $\Lhat$; they run gradient descent with step $\eta$, so that their iteration $t$ corresponds to our time $n\eta t$; their $\hat{\mathbf w}$ is our $\marginwhat=\marginu/\gamma^\star$, and their residual $\boldsymbol\rho(t)$ is our $w(t)-\marginwhat\log t$ up to the constant $\marginwhat\log(n\eta)$ that the change of clock produces. \Textcite{LyuLi2020} write $\Phi(\boldsymbol\theta;\mathbf x)$ for our $f(x;\theta)$, $q_n$ for our $q_i$, $L$ for the degree of homogeneity, as we do, and $\rho$ for $\norm\theta$; their loss is again a sum, so for the exponential loss their smoothed margin $\log(1/\mathcal L)/\rho^L$ is our $\marginsm$. The dual variable of \textcite{JiTelgarsky2021} is our vector of normalized weights $e^{-q_i}/\sum_je^{-q_j}$, whose limit is $p^\star$.
+
+\printchapterbib
+\end{refsection}

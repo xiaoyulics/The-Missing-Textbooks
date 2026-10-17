@@ -1,0 +1,422 @@
+% Chapter 16 of The Hydrogen Atoms of Deep Learning: scaling laws from spectra and from Zipf's law.
+\casechapter{Scaling Laws}{Power laws from spectra and from Zipf's law}{Power-law linear regression and quanta}{ch:scaling}
+\begin{refsection}[chapters/16-scaling.bib]
+
+\begin{chaptersummary}
+The test loss of language models falls as a power law in the number of parameters, the number of training tokens, and the compute, over many orders of magnitude, with small exponents that differ between parameters and data. Two solvable models produce such laws. In linear regression on Gaussian features whose target energy decays as $j^{-(1+b)}$ we compute the learning curve of least squares exactly at every model size $N$ and sample size $D$, and read off a parameter exponent $b$ and a data exponent $b/(1+b)$; ridge regression and the deterministic equivalent show that the spectrum of the features only converts a regularization or a training time into a number of fitted features. A memorizing learner on items with Zipf frequencies $p_k\propto k^{-(1+b)}$ gives the same two exponents, with an exact constant, and an elementary theorem allocates compute between parameters and data. The models get the mechanism of power laws but not the exponents: those are inputs, and fitted language-model data exponents exceed the models' prediction $\alpha_N/(1+\alpha_N)$, in some fits even the parameter exponent.
+\end{chaptersummary}
+
+\section{The phenomenon: smooth power laws over many decades}\label{sec:scaling:phenomenon}
+
+How much better does a model get when it is made ten times larger, or trained on ten times more data? For most of the history of machine learning the honest answer was ``it depends''. \Textcite{HestnessEtAl2017} measured it systematically in four domains, machine translation, language modeling, image processing, and speech recognition, and found that the generalization error falls as a power law in the size of the training set, that improvements of the architecture shift the curve without visibly changing its exponent, and that the model size needed to fit the data grows sublinearly with it.
+
+\Textcite{KaplanEtAl2020} made the observation quantitative for transformer language models. Measured in nats per token, the test loss of a model with $N$ non-embedding parameters trained to convergence on a large corpus followed $\Loss(N)=(N_c/N)^{\alpha_N}$ with $\alpha_N\approx0.076$ and $N_c\approx8.8\times10^{13}$, and the loss of a large model trained with early stopping on $D$ tokens followed $\Loss(D)=(D_c/D)^{\alpha_D}$ with $\alpha_D\approx0.095$ and $D_c\approx5.4\times10^{13}$. Some of the trends spanned more than seven orders of magnitude, and architectural details such as depth and width at fixed $N$ mattered little.\sidenote{Kaplan et al.\ estimate the training compute as $C\approx6ND$ floating-point operations: about $2N$ per token for the forward pass and twice that for the backward pass. We use $C=6ND$ throughout.} From these fits they concluded that a growing compute budget should be spent mostly on larger models, with the optimal number of parameters growing like $C^{0.73}$.
+
+\Textcite{HoffmannEtAl2022} revisited the allocation with more than $400$ models and three estimation procedures. The third fitted the parametric form
+\begin{equation}\label{eq:scaling:chinchilla}
+  \Loss(N,D)=\Loss_\infty+\frac A{N^{\alpha_N}}+\frac B{D^{\alpha_D}}
+\end{equation}
+(they write $E$, $\alpha$, $\beta$ for our $\Loss_\infty$, $\alpha_N$, $\alpha_D$), and reported $\alpha_N\approx0.34$ and $\alpha_D\approx0.28$. All three procedures said that parameters and tokens should grow at about the same rate, and a $70$-billion-parameter model trained on more tokens with the compute of a $280$-billion-parameter one outperformed it.\sidenote{The $70$-billion-parameter model is Chinchilla, which is why \eqref{eq:scaling:chinchilla} with fitted constants is often called the Chinchilla law; the larger model is Gopher.} The two studies disagree about the allocation, and later work traced much of the disagreement to how parameters were counted and to the small scale of the earlier fits \parencite{PearceSong2024}, and to the cost of the last layer, the warmup, and the tuning of the optimizer \parencite{PorianEtAl2024}.
+
+\begin{observation}[\textcite{HestnessEtAl2017}; \textcite{KaplanEtAl2020}; \textcite{HoffmannEtAl2022}]\label[observation]{obs:scaling:powerlaw}\index{scaling law}
+For language models trained on large corpora, the test loss, minus an irreducible part, decreases as a power law in the number of parameters when data are plentiful, and in the number of training tokens when the model is large, over several orders of magnitude, with exponents well below $1$. The loss of compute-optimal models is a power law in the compute.
+\end{observation}
+
+How robust is this? The power-law form is robust; the numbers are not. \Textcite{BesirogluEtAl2024} reconstructed the data behind the third procedure of \textcite{HoffmannEtAl2022} from its plots and refitted it: the published estimates fit the reconstructed data poorly, were inconsistent with the other two procedures, and came with confidence intervals far too narrow for a few hundred runs, while their own fit had a larger data exponent and was compatible with the first two procedures. Curves of other quantities bend, and \textcite{CaballeroEtAl2023} fit them with smoothly broken power laws. Repeating data breaks the law in $D$ slowly: up to about four epochs of repeated tokens are almost as good as fresh ones, and then the value of more compute decays \parencite{MuennighoffEtAl2023}. Choosing the data instead of sampling it can beat the law \parencite{SorscherEtAl2022}. And while the loss is smooth, some downstream abilities appear abruptly with scale \parencite{WeiEtAl2022}, although part of the abruptness comes from the choice of metric \parencite{SchaefferEtAl2023}.
+
+Three questions follow. Why a power law at all, rather than an exponential or a logarithm? What sets the exponents, and why do parameters and data have different ones? And how should compute be split between them? The models of this chapter answer the first and third exactly and the second in a form that can be checked.
+
+\section{The models: power-law features and Zipf-distributed quanta}\label{sec:scaling:model}
+
+A power law in $N$ needs a hierarchy: a model of size $N$ must capture the $N$ most important pieces of the task and miss the rest, and the missing importance must decay as a power. Two hierarchies are natural. In regression the pieces are directions of feature space, and their importance is the variance they explain; in language the pieces are items of knowledge, and their importance is how often they are used. In this chapter $N$ and $D$ follow the scaling-law literature: $N$ counts parameters, the $p$ of \cref{ch:doubledescent}, and $D$ counts training examples, the $n$ of that chapter.
+
+\begin{assumption}[Power-law features]\label[assumption]{ass:scaling:features}
+The input is a sequence of independent features $x_j\sim\cN(0,\lambda_j)$, $j=1,\dots,P$, with $P\in\{1,2,\dots\}\cup\{\infty\}$ and variances $\lambda_1\ge\lambda_2\ge\dots>0$. The label is $y=\sum_jw_{\star,j}x_j+\eps$, with $\sum_j\lambda_jw_{\star,j}^2<\infty$ and noise $\eps$ of mean $0$ and variance $\sigma^2$, independent of $x$. In the \term{power-law case}\index{power-law spectrum} $P=\infty$ and, for exponents $a>1$ and $b>0$,
+\begin{equation}\label{eq:scaling:powerlaw}
+  \lambda_j=j^{-a},\qquad \lambda_jw_{\star,j}^2=j^{-(1+b)} .
+\end{equation}
+\end{assumption}
+
+The \term{model of size $N$}\index{model size} predicts with the first $N$ features, $f(x)=\sum_{j\le N}w_jx_j$, and is fitted by least squares on $D$ independent examples $(x_i,y_i)$; its data matrix $X_N\in\R^{D\times N}$ has rows $(x_{i1},\dots,x_{iN})$, and for $N\le D$ the estimator is $\hat w_N=(X_N^\top X_N)^{-1}X_N^\top y$. Because the features are independent, the population loss of a weight vector $w$ supported on the first $N$ coordinates is
+\begin{equation}\label{eq:scaling:loss}
+  \Loss(w)=\E\bigl(y-f(x)\bigr)^2=\sigma^2+T(N)+\sum_{j\le N}\lambda_j(w_j-w_{\star,j})^2,\qquad T(N)=\sum_{j>N}\lambda_jw_{\star,j}^2 .
+\end{equation}
+The \term{approximation error}\index{approximation error} $T(N)$ is what the best model of size $N$ still misses; the \term{excess loss}\index{excess loss} is $\Loss-\sigma^2$. In the power-law case $T(N)$ is a tail of $\zeta(1+b)$, and $b$ is called the \term{source exponent}\index{source exponent}: it measures how fast the importance of the features decays, and it does not involve $a$.
+
+The second model replaces regression by recall.
+
+\begin{assumption}[Zipf-distributed quanta]\label[assumption]{ass:scaling:quanta}
+A task consists of items $k=1,2,\dots$, the \term{quanta}\index{quanta}. Each example, at training or test time, requires one item, drawn independently with probability
+\begin{equation}\label{eq:scaling:zipf}
+  p_k=\frac{k^{-(1+b)}}{\zeta(1+b)},\qquad b>0 .
+\end{equation}
+A learner answers correctly exactly when it has learned the item required. A learner of \term{capacity} $N$ can hold $N$ items; a \term{memorizing learner}\index{memorizing learner} learns every item that occurs in its $D$ training examples.
+\end{assumption}
+
+Frequencies of words follow \term{Zipf's law}\index{Zipf's law}, $p_k\propto k^{-s}$ with $s$ close to $1$ \parencite{Zipf1949}; \textcite{Hutter2021} built the memorizing learner to show that power-law learning curves with every exponent arise from Zipf-distributed data, and \textcite{MichaudEtAl2023} proposed that a language model's skills are such quanta, learned in order of decreasing frequency.\sidenote{The exponent is written $1+b$ so that $b>0$ is the exponent of the tail $\sum_{k>N}p_k$, as $b$ is the exponent of $T(N)$ in \eqref{eq:scaling:powerlaw}; \textcite{Hutter2021} writes $\alpha$ for our $b$.}
+
+\begin{dictionary}
+feature $j$, or quantum $k$ & a direction of the representation, or a skill, ranked by importance\\
+model size $N$ & number of parameters\\
+sample size $D$ & number of training tokens, each seen once\\
+variances $\lambda_j=j^{-a}$ & spectrum of the data in the network's representation, e.g.\ of a tangent kernel\\
+target energy $j^{-(1+b)}$, frequency $p_k$ & share of the loss that each direction or skill carries\\
+approximation error $T(N)$ & loss of the best model of size $N$ on infinite data\\
+noise variance $\sigma^2$ & irreducible loss $\Loss_\infty$, the entropy of the text\\
+ridge parameter $\lambda$, training time $t$ & weight decay, training time: how many directions are fitted\\
+memorizing an item seen once & learning a skill from few examples\\
+$C=6ND$ & training compute in floating-point operations\\
+\end{dictionary}
+
+\paragraph{What was thrown away, and why first.} The features are fixed and independent, so the model learns no representation and its exponents are properties of the data in a given basis; but the question ``why a power law'' is already nontrivial for fixed features, and independence makes the learning curve exact. The model of size $N$ uses the top $N$ features, which assumes that a network spends its parameters on the most important directions first, the staged learning of \cref{ch:deeplinear}. The noise is white, and it plays the role of the irreducible loss. Every example is fresh, as in one-epoch training of language models. The quanta are independent and are learned all at once; nothing is composed of anything.
+
+\paragraph{What one had to notice.} Two things. A power law in the loss needs a power-law hierarchy of importance, and real data supply them: kernel spectra of image data decay as powers \parencite{SpiglerEtAl2020},\sidenote{For kernel regression, \textcite{SpiglerEtAl2020} measured learning-curve exponents of about $0.4$ on MNIST and $0.1$ on CIFAR-10, and estimated $0.36$ and $0.07$ from kernel principal components of the data.} and word frequencies follow Zipf's law. And a finite sample makes the hierarchy visible only down to a threshold: a direction or item worth less than about $1/D$ of the loss cannot be learned from $D$ examples. The data exponent comes from where this threshold falls.
+
+\section{The solution: exact learning curves of power-law regression}\label{sec:scaling:regression}
+
+We need the size of power-law tails, then the learning curve at every $N$ and $D$, and then its asymptotics, which are the scaling laws.
+
+\begin{lemma}[Power-law tails]\label[lemma]{lem:scaling:tail}
+For $b>0$ and every integer $N\ge1$,
+\[
+  \frac{(N+1)^{-b}}{b}\le\sum_{j>N}j^{-(1+b)}\le\frac{N^{-b}}{b} .
+\]
+In particular, in the power-law case $T(N)=\frac{N^{-b}}b\,(1+O(1/N))$.
+\end{lemma}
+
+\begin{proof}
+The function $t\mapsto t^{-(1+b)}$ decreases, so $\int_j^{j+1}t^{-(1+b)}\dd t\le j^{-(1+b)}\le\int_{j-1}^jt^{-(1+b)}\dd t$ for $j\ge2$. Summing over $j>N$ gives $\int_{N+1}^\infty t^{-(1+b)}\dd t\le\sum_{j>N}j^{-(1+b)}\le\int_N^\infty t^{-(1+b)}\dd t$, and the integrals equal $(N+1)^{-b}/b$ and $N^{-b}/b$. Finally $(1+1/N)^{-b}=1+O(1/N)$.
+\end{proof}
+
+The main theorem says that, for least squares on the top $N$ features, the variances $\lambda_j$ do not matter at all: the learning curve depends on the target only through the tail $T(N)$.
+
+\begin{theorem}[Exact learning curve]\label{thm:scaling:exact}
+Under \cref{ass:scaling:features}, let $1\le N\le\min(P,D-2)$. The least-squares estimator on the first $N$ features from $D$ examples has test loss
+\begin{equation}\label{eq:scaling:exact}
+  \E\Loss(\hat w_N)=\bigl(\sigma^2+T(N)\bigr)\frac{D-1}{D-N-1} .
+\end{equation}
+If $\sigma^2+T(N)>0$ and $N\in\{D-1,D\}$, then $\E\Loss(\hat w_N)=+\infty$.
+\end{theorem}
+
+\begin{proof}
+The plan is to treat the omitted features as noise, as in the weak-features model of \cref{ch:doubledescent}, and to whiten the retained ones.
+
+\emph{The omitted features are noise.} For example $i$ write $y_i=\sum_{j\le N}w_{\star,j}x_{ij}+\xi_i$ with $\xi_i=\sum_{j>N}w_{\star,j}x_{ij}+\eps_i$; the series converges in $L^2$ because $\sum_j\lambda_jw_{\star,j}^2<\infty$. The features of example $i$ are independent and $\eps_i$ is independent of them, so $\xi_i$ is independent of $(x_{i1},\dots,x_{iN})$, has mean $0$, and has variance $T(N)+\sigma^2$; across examples the $\xi_i$ are independent. Hence the vector $\xi=(\xi_1,\dots,\xi_D)$ is independent of $X_N$ and satisfies $\E\xi\xi^\top=(\sigma^2+T(N))I_D$.
+
+\emph{Whitening.} Let $\Lambda=\diag(\lambda_1,\dots,\lambda_N)$ and $Z=X_N\Lambda^{-1/2}$, a $D\times N$ matrix with independent $\cN(0,1)$ entries, of rank $N$ almost surely (\cref{thm:toolkit:inv-wishart}). The estimator is $\hat w_N=w_{\star,\le N}+(X_N^\top X_N)^{-1}X_N^\top\xi$, and
+\[
+  \Lambda^{1/2}(\hat w_N-w_{\star,\le N})=\Lambda^{1/2}\bigl(\Lambda^{1/2}Z^\top Z\Lambda^{1/2}\bigr)^{-1}\Lambda^{1/2}Z^\top\xi=(Z^\top Z)^{-1}Z^\top\xi .
+\]
+By \eqref{eq:scaling:loss} the last sum in $\Loss(\hat w_N)$ is the squared norm of this vector.
+
+\emph{Averaging.} Conditionally on $Z$, the squared norm has mean $(\sigma^2+T(N))\tr\bigl((Z^\top Z)^{-1}Z^\top Z(Z^\top Z)^{-1}\bigr)=(\sigma^2+T(N))\tr\bigl((Z^\top Z)^{-1}\bigr)$. By the inverse Wishart mean (\cref{thm:toolkit:inv-wishart}, or \cref{lem:doubledescent:wishart}), $\E\tr\bigl((Z^\top Z)^{-1}\bigr)=N/(D-N-1)$ for $N\le D-2$, and it is $+\infty$ for $N\in\{D-1,D\}$. Adding $\sigma^2+T(N)$ from \eqref{eq:scaling:loss} gives $(\sigma^2+T(N))\bigl(1+\frac N{D-N-1}\bigr)$, which is \eqref{eq:scaling:exact}.
+\end{proof}
+
+The degenerate size $N=0$ (the zero predictor) has loss $\sigma^2+T(0)$, which \eqref{eq:scaling:exact} also gives. The formula says that a model of size $N$ pays its approximation error, and pays it again, together with the noise, inflated by the variance factor $N/(D-N-1)$: the unlearned part of the target is noise for the learner. This self-consistent noise returns in the deterministic equivalent below. In the power-law case \cref{thm:scaling:exact} turns into scaling laws.
+
+\begin{corollary}[Two scaling laws and the optimal size]\label[corollary]{cor:scaling:laws}
+Under \cref{ass:scaling:features}, suppose that $T(N)\sim cN^{-b}$ as $N\to\infty$, for some $c>0$ and $b>0$ (in the power-law case $c=1/b$), and that $\sigma>0$. Let $\cE(N,D)=\E\Loss(\hat w_N)-\sigma^2$ and $\cE^\star(D)=\min_{0\le N\le D-2}\cE(N,D)$.
+\begin{enumerate}
+\item \emph{Parameter-limited.} For fixed $N$, $\cE(N,D)\to T(N)\sim cN^{-b}$ as $D\to\infty$.
+\item \emph{Data-limited.} As $D\to\infty$,
+\begin{equation}\label{eq:scaling:datalaw}
+  \cE^\star(D)\sim(1+b)\,c^{\frac1{1+b}}\Bigl(\frac{\sigma^2}{bD}\Bigr)^{\frac b{1+b}},
+\end{equation}
+and every minimizer $N_D$ satisfies $N_D\sim(bcD/\sigma^2)^{1/(1+b)}$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+Part (i) follows from \eqref{eq:scaling:exact}, since $(D-1)/(D-N-1)\to1$. For part (ii), the plan is to sandwich $\cE(N,D)$ between multiples of $h_D(N)=cN^{-b}+\sigma^2N/D$, whose minimum we compute first.
+
+\emph{The comparison function.} Let $M_D=(bcD/\sigma^2)^{1/(1+b)}$, the critical point of $h_D$, and $\epsilon_D=cM_D^{-b}$. Since $\sigma^2M_D/D=\sigma^2M_D^{1+b}/(DM_D^b)=b\,\epsilon_D$, substituting $N=sM_D$ gives $h_D(sM_D)=\epsilon_D\,g(s)$ with $g(s)=s^{-b}+bs$. The function $g$ is strictly convex on $(0,\infty)$, with $g'(s)=b(1-s^{-1-b})$, so its minimum is $g(1)=1+b$, and for every $\eta\in(0,1)$ the number $g_\eta=\min\{g(1-\eta),g(1+\eta)\}$ exceeds $1+b$ and bounds $g$ from below off $(1-\eta,1+\eta)$. The right side of \eqref{eq:scaling:datalaw} is $(1+b)\epsilon_D$, by the definition of $M_D$.
+
+\emph{Upper bound.} Take $N=\lceil M_D\rceil$. Since $M_D\to\infty$ and $M_D/D\to0$, we have $T(N)=cN^{-b}(1+o(1))=\epsilon_D(1+o(1))$ and $(\sigma^2+T(N))\frac N{D-N-1}=\sigma^2\frac{M_D}D(1+o(1))=b\epsilon_D(1+o(1))$. Hence $\cE^\star(D)\le\cE(N,D)=(1+b)\epsilon_D(1+o(1))$.
+
+\emph{Lower bound.} Since $\frac N{D-N-1}\ge\frac ND$ and $\sigma^2+T(N)\ge\sigma^2$, every $N\le D-2$ has $\cE(N,D)\ge T(N)+\sigma^2N/D$. Fix $\delta\in(0,1)$ and choose $N_0$ with $T(N)\ge(1-\delta)cN^{-b}>0$ for all $N\ge N_0$. For $N\ge N_0$, $\cE(N,D)\ge(1-\delta)h_D(N)=(1-\delta)\epsilon_Dg(N/M_D)\ge(1-\delta)(1+b)\epsilon_D$. For $N<N_0$, $\cE(N,D)\ge T(N_0)$, because $T$ is nonincreasing, and $T(N_0)>0$ exceeds $(1+b)\epsilon_D$ once $D$ is large, because $\epsilon_D\to0$. Hence $\liminf\cE^\star(D)/\epsilon_D\ge(1-\delta)(1+b)$ for every $\delta$, which with the upper bound proves \eqref{eq:scaling:datalaw}.
+
+\emph{The minimizer.} Fix $\eta\in(0,1)$, and choose $\delta>0$ so small that $(1-\delta)g_\eta>(1+\delta)(1+b)$. For large $D$, the upper bound gives $\cE^\star(D)<(1+\delta)(1+b)\epsilon_D$, while every $N\ge N_0$ with $\abs{N/M_D-1}\ge\eta$ has $\cE(N,D)\ge(1-\delta)g_\eta\epsilon_D$, and every $N<N_0$ has $\cE(N,D)\ge T(N_0)$; neither can be a minimizer. So $\abs{N_D/M_D-1}<\eta$ for large $D$.
+\end{proof}
+
+The proof shows where the data exponent comes from. At the optimum the approximation error $cN^{-b}$ and the variance $\sigma^2N/D$ are of the same order, so the model keeps exactly the features whose share of the loss, about $N^{-(1+b)}$ per feature, exceeds the estimation cost $\sigma^2/D$ per feature; this gives $N_D\asymp D^{1/(1+b)}$ and $\cE^\star\asymp N_D^{-b}=D^{-b/(1+b)}$. Without noise the variance has nothing to amplify except $T(N)$ itself, the best model has a size proportional to $D$, and the data exponent rises to $b$ (\cref{ex:scaling:noiseless}).\sidenote{This is the distinction of \textcite{BahriEtAl2024} between variance-limited and resolution-limited scaling, here in one formula: the factor $(D-1)/(D-N-1)$ is the variance, and $T(N)$ the resolution.}
+
+\section{The solution: the spectrum, ridge, and Zipf's law}\label{sec:scaling:spectrum}
+
+Least squares on the top $N$ features never sees the variances $\lambda_j$. A learner that uses all features and controls its complexity by a ridge parameter $\lambda$, or by its training time, does: then the spectrum decides how many features are fitted.
+
+\paragraph{The sequence model.}\index{sequence model} Strip the regression to its normal modes. For each $j$, observe $z_j=\theta_j+\frac\sigma{\sqrt D}g_j$, with $\theta_j=\sqrt{\lambda_j}\,w_{\star,j}$ the target in units of prediction and independent $g_j\sim\cN(0,1)$: the per-feature estimation noise of \cref{thm:scaling:exact} is $\sigma^2/D$ when $N\ll D$. Ridge regression multiplies the $j$th coordinate by $\lambda_j/(\lambda_j+\lambda)$, as in \cref{ch:doubledescent}; the estimator $\hat\theta_j=\frac{\lambda_j}{\lambda_j+\lambda}z_j$ has excess loss
+\begin{equation}\label{eq:scaling:seq}
+  \cE_{\mathrm{seq}}(\lambda)=\E\sum_j(\hat\theta_j-\theta_j)^2=\underbrace{\sum_j\lambda_jw_{\star,j}^2\Bigl(\frac\lambda{\lambda_j+\lambda}\Bigr)^2}_{\text{bias}}+\underbrace{\frac{\sigma^2}D\sum_j\Bigl(\frac{\lambda_j}{\lambda_j+\lambda}\Bigr)^2}_{\text{variance}} .
+\end{equation}
+
+\begin{proposition}[Ridge on a power-law spectrum]\label[proposition]{prop:scaling:ridge}
+In the power-law case \eqref{eq:scaling:powerlaw}, let $\frac12<a$ and $0<b<2a$, and let $J=\lambda^{-1/a}$. There are constants $0<c_1<c_2$, depending only on $a$ and $b$, such that for $0<\lambda\le1$
+\[
+  c_1J^{-b}\le\text{bias}\le c_2J^{-b},\qquad c_1J\le\sum_j\Bigl(\frac{\lambda_j}{\lambda_j+\lambda}\Bigr)^2\le c_2J .
+\]
+Consequently, if $\sigma^2\le D$, then $\min_{\lambda>0}\cE_{\mathrm{seq}}(\lambda)\asymp(\sigma^2/D)^{b/(1+b)}$, attained up to constants at $J=(D/\sigma^2)^{1/(1+b)}$.
+\end{proposition}
+
+\begin{proof}
+The plan is to split the sums at $j=J$, where $\lambda_j=\lambda$, and compare each part with a power.
+
+\emph{Two regimes of the filter.} Write $r_j=\lambda j^a=(j/J)^a$, so that $\frac\lambda{\lambda_j+\lambda}=\frac{r_j}{1+r_j}$ and $\frac{\lambda_j}{\lambda_j+\lambda}=\frac1{1+r_j}$. For $j\le J$ we have $r_j\le1$, so $\frac{r_j}{1+r_j}\in[\frac{r_j}2,r_j]$ and $\frac1{1+r_j}\in[\frac12,1]$; for $j>J$ we have $r_j>1$, so $\frac{r_j}{1+r_j}\in[\frac12,1]$ and $\frac1{1+r_j}\in[\frac1{2r_j},\frac1{r_j}]$. Since $\lambda\le1$, $J\ge1$.
+
+\emph{The bias.} By the first regime, the bias lies between $\frac14$ and $1$ times
+\[
+  \sum_{j\le J}j^{-(1+b)}\Bigl(\frac jJ\Bigr)^{2a}+\sum_{j>J}j^{-(1+b)}=J^{-2a}\sum_{j\le J}j^{2a-1-b}+\sum_{j>J}j^{-(1+b)} .
+\]
+The exponent $2a-1-b$ exceeds $-1$ because $b<2a$, so $\sum_{j\le J}j^{2a-1-b}$ lies between two constant multiples of $J^{2a-b}$ for $J\ge1$ (compare with $\int_0^{J+1}t^{2a-1-b}\dd t$ and with the single term $j=1$ when $J<2$); and $\sum_{j>J}j^{-(1+b)}$ lies between two constant multiples of $J^{-b}$ by \cref{lem:scaling:tail} applied at $\lfloor J\rfloor$. Both parts are of order $J^{-b}$.
+
+\emph{The variance sum.} By the two regimes it lies between $\frac14$ and $1$ times $\#\{j\le J\}+\sum_{j>J}(J/j)^{2a}$. The first term is $\lfloor J\rfloor\in[J/2,J]$, and the second is at most $J^{2a}\bigl(J^{-2a}+\int_J^\infty t^{-2a}\dd t\bigr)=1+\frac J{2a-1}$, finite because $2a>1$.
+
+\emph{The optimum.} With $\epsilon=\sigma^2/D\le1$, the bounds give $\cE_{\mathrm{seq}}\asymp J^{-b}+\epsilon J$ on $\lambda\le1$. At $J=\epsilon^{-1/(1+b)}\ge1$ both terms equal $\epsilon^{b/(1+b)}$. Conversely, for every $J\ge1$, either $J\le\epsilon^{-1/(1+b)}$ and $J^{-b}\ge\epsilon^{b/(1+b)}$, or $J>\epsilon^{-1/(1+b)}$ and $\epsilon J\ge\epsilon^{b/(1+b)}$. For $\lambda>1$ every factor $\frac\lambda{\lambda_j+\lambda}$ is at least $\frac12$, so the bias is at least $\frac14\zeta(1+b)$, which is at least a constant times $\epsilon^{b/(1+b)}$.
+\end{proof}
+
+So ridge on all features behaves like least squares on the top $J=\lambda^{-1/a}$ features: the spectrum exponent $a$ only converts the regularization into an effective model size, and the exponents are those of \cref{cor:scaling:laws}. The same holds for training time. Gradient flow on half the population loss from zero fits the $j$th coordinate up to the factor $1-e^{-\lambda_jt}$, so it has learned the features with $\lambda_jt\gtrsim1$, an effective size $J=t^{1/a}$, and its excess loss decays like $t^{-b/a}$ (\cref{ex:scaling:time}). Spectral bias, the order in which kernel gradient descent learns eigenfunctions (\cref{ch:lazy}), becomes a law in time with exponent $b/a$. If $b>2a$, the bias of ridge saturates at order $\lambda^2$ and the exponent drops to $2a/(1+2a)$ (\cref{ex:scaling:saturation}): the target is smoother than ridge can exploit.
+
+\paragraph{From the sequence model to Gaussian designs.} With a finite Gaussian sample the spectrum of $\frac1DX^\top X$ is distorted, as the Marchenko--Pastur law of \cref{ch:doubledescent} showed for $\lambda_j\equiv1$. The distortion is captured by a renormalized ridge parameter.
+
+\begin{heuristic}[The deterministic equivalent]\index{deterministic equivalent}
+Under \cref{ass:scaling:features} with $\sum_j\lambda_j<\infty$, let $\hat w_\lambda=(X^\top X+D\lambda I)^{-1}X^\top y$ use all features. Let $\kappa>\lambda$ solve $\kappa=\lambda+\frac\kappa D\sum_j\frac{\lambda_j}{\lambda_j+\kappa}$ (for $\lambda=0$ and $D<P$: $\sum_j\frac{\lambda_j}{\lambda_j+\kappa}=D$), and let $\gamma=\frac1D\sum_j\bigl(\frac{\lambda_j}{\lambda_j+\kappa}\bigr)^2<1$. The excess loss $R$ of $\hat w_\lambda$ is then close to the solution of
+\begin{equation}\label{eq:scaling:de}
+  R=\sum_j\lambda_jw_{\star,j}^2\Bigl(\frac\kappa{\lambda_j+\kappa}\Bigr)^2+\gamma\,(\sigma^2+R),\qquad\text{that is,}\qquad R=\frac{\text{bias}(\kappa)+\gamma\sigma^2}{1-\gamma}.
+\end{equation}
+In words: the Gaussian design behaves like the sequence model \eqref{eq:scaling:seq} with ridge $\kappa$ instead of $\lambda$ and with noise $\sigma^2+R$ instead of $\sigma^2$, the unlearned signal acting as noise exactly as $T(N)$ does in \eqref{eq:scaling:exact}. For $\lambda_j\equiv1$ on $P$ features, $\kappa/(1+\kappa)$ is the function $v$ of \cref{thm:doubledescent:ridge}, and \eqref{eq:scaling:de} reproduces that theorem (\cref{ex:scaling:isotropic}). \Textcite{ChengMontanari2024} prove nonasymptotic bounds of the form $(1\pm\Delta)$ for the bias and the variance under conditions on effective ranks that hold for power laws; \textcite{AtanasovEtAl2024} derive \eqref{eq:scaling:de} as a renormalization, and \textcite{BordelonEtAl2020} obtained it for kernel regression with methods of statistical physics.
+\end{heuristic}
+
+For the power law, the equation for $\kappa$ reads $\kappa-\lambda\asymp\kappa\,\kappa^{-1/a}/D$, so $\kappa\asymp\max(\lambda,D^{-a})$, and $\gamma$ stays bounded away from $1$; inserting \cref{prop:scaling:ridge} gives an excess loss of order $D^{-b/(1+b)}$ for optimally tuned ridge with noise, and of order $\kappa_0^{b/a}\asymp D^{-b}$ for the noiseless minimum-norm interpolator, the two exponents of \cref{cor:scaling:laws} and \cref{ex:scaling:noiseless}. \Textcite{CuiEtAl2021} describe the crossover between them as $D$ grows, and \textcite{CaponnettoDeVito2007} proved the noisy rate, with matching lower bounds, for kernel ridge regression under source and capacity conditions.
+
+\paragraph{Zipf's law.} The second model gives the same exponents with no regression at all.
+
+\begin{lemma}[Integral of a unimodal sequence]\label[lemma]{lem:scaling:unimodal}
+Let $g\colon\R\to[0,\infty)$ be integrable, nondecreasing on $(-\infty,m]$ and nonincreasing on $[m,\infty)$. Then $\bigl\lvert\sum_{k\in\Z}g(k)-\int g\bigr\rvert\le2\sup g$.
+\end{lemma}
+
+\begin{proof}
+Let $k_0=\lfloor m\rfloor$. For $k\le k_0-1$ the interval $[k,k+1]$ lies in $(-\infty,m]$, where $g$ increases, so $g(k)\le\int_k^{k+1}g$; for $k\ge k_0+2$ the interval $[k-1,k]$ lies in $[m,\infty)$, so $g(k)\le\int_{k-1}^kg$. These intervals do not overlap $(k_0,k_0+1)$, and the two remaining terms are at most $\sup g$ each, so $\sum_kg(k)\le\int g+2\sup g$. In the other direction, $g(k)\ge\int_{k-1}^kg$ for $k\le k_0$ and $g(k)\ge\int_k^{k+1}g$ for $k\ge k_0+1$; these intervals cover $\R$ except $(k_0,k_0+1)$, whose integral is at most $\sup g$.
+\end{proof}
+
+\begin{theorem}[Zipf learning curves]\label{thm:scaling:zipf}
+Under \cref{ass:scaling:quanta}, the memorizing learner trained on $D$ examples errs with probability
+\begin{equation}\label{eq:scaling:zipfexact}
+  M(D)=\sum_{k\ge1}p_k(1-p_k)^D\sim C_b\,D^{-\frac b{1+b}},\qquad C_b=\frac{\Gamma\bigl(\frac b{1+b}\bigr)}{(1+b)\,\zeta(1+b)^{\frac1{1+b}}},
+\end{equation}
+as $D\to\infty$. The learner of capacity $N$ that holds the items $1,\dots,N$ errs with probability $\sum_{k>N}p_k\sim N^{-b}/\bigl(b\,\zeta(1+b)\bigr)$.
+\end{theorem}
+
+\begin{proof}
+The plan is to replace $(1-p)^D$ by $e^{-Dp}$, up to a factor that is harmless where the sum lives, and to evaluate the resulting sum as an integral.
+
+\emph{The exact formula.} The test item is independent of the training items, and the learner errs exactly when the test item is $k$ and none of the $D$ training items is $k$; this has probability $p_k(1-p_k)^D$. Summing over $k$ gives $M(D)$.
+
+\emph{The exponential sum.} Let $s=1+b$, $Z=\zeta(s)$, and $S(c)=\sum_kp_ke^{-cp_k}$ for $c>0$. Then $S(c)=\sum_kg(k)$ with $g(x)=\frac{x^{-s}}Ze^{-cx^{-s}/Z}$ for $x>0$ and $g(x)=0$ for $x\le0$. In the variable $u=cx^{-s}/Z$, which decreases from $\infty$ to $0$ as $x$ increases, $g=\frac uce^{-u}$, which increases for $u>1$ and decreases for $u<1$; so $g$ is unimodal in $x$, with $\sup g=\frac1{ec}$. Changing variables, with $x=(c/(Zu))^{1/s}$ and $\dd x=-\frac1s(c/Z)^{1/s}u^{-1/s-1}\dd u$,
+\[
+  \int_0^\infty g(x)\dd x=\frac1s\Bigl(\frac cZ\Bigr)^{1/s}\frac1c\int_0^\infty u^{-1/s}e^{-u}\dd u=\frac{\Gamma(1-\frac1s)}{s\,Z^{1/s}}\,c^{\frac1s-1}=C_b\,c^{-\frac b{1+b}},
+\]
+since $1-\frac1s=\frac b{1+b}$. By \cref{lem:scaling:unimodal}, $\abs{S(c)-C_bc^{-b/(1+b)}}\le\frac2{ec}$, so $S(c)\sim C_bc^{-b/(1+b)}$ as $c\to\infty$.
+
+\emph{Comparing $(1-p)^D$ with $e^{-Dp}$.} For $0\le p<1$, $\log(1-p)\le-p$ and $-\log(1-p)=\sum_{i\ge1}p^i/i\le p/(1-p)$, so
+\[
+  e^{-Dp/(1-p)}\le(1-p)^D\le e^{-Dp} .
+\]
+The upper bound gives $M(D)\le S(D)$. For the lower bound fix $\delta\in(0,1)$ and let $K$ be the number of items with $p_k>\delta$. Every $k>K$ has $e^{-Dp_k/(1-p_k)}\ge e^{-Dp_k/(1-\delta)}$, and the items $k\le K$ contribute at most $e^{-Dp_K/(1-\delta)}\le e^{-D\delta}$ to $S(D/(1-\delta))$ (if $K\ge1$); hence $M(D)\ge S\bigl(\frac D{1-\delta}\bigr)-e^{-D\delta}$. With the asymptotics of $S$, $\liminf_DD^{b/(1+b)}M(D)\ge C_b(1-\delta)^{b/(1+b)}$, and letting $\delta\to0$ proves \eqref{eq:scaling:zipfexact}.
+
+\emph{Capacity.} The learner holding the items $1,\dots,N$ errs exactly on the items $k>N$, with probability $\sum_{k>N}p_k=Z^{-1}\sum_{k>N}k^{-(1+b)}$; apply \cref{lem:scaling:tail}.
+\end{proof}
+
+The constants are explicit: $C_{1/2}\approx0.942$, $C_1=\sqrt6/(2\sqrt\pi)\approx0.691$, and $C_2\approx0.425$. Once more the parameter exponent is $b$ and the data exponent is $b/(1+b)$, and for the same reason: item $k$ is learned once it has been seen, which happens when $Dp_k\gtrsim1$, so the effective capacity after $D$ examples is $N\asymp D^{1/(1+b)}$, and the error is the tail beyond it, $N^{-b}=D^{-b/(1+b)}$.\sidenote{\Textcite{CabannesEtAl2024} derive scaling laws of this kind for associative memories built from outer products of embeddings, where capacity and data limit the recall of Zipf-distributed associations together.}
+
+\section{The solution: spending compute}\label{sec:scaling:compute}
+
+If the loss has the additive form \eqref{eq:scaling:chinchilla} and compute costs $C=\kappa ND$ (with $\kappa=6$ for transformers), how should a budget $C$ be split?
+
+\begin{theorem}[Compute-optimal allocation]\label{thm:scaling:compute}\index{compute-optimal allocation}
+Let $A,B,\alpha_N,\alpha_D,\kappa>0$, and for $C>0$ minimize $\Loss(N,D)=\Loss_\infty+AN^{-\alpha_N}+BD^{-\alpha_D}$ over $N,D>0$ subject to $\kappa ND=C$. Let $\nu_N=\frac{\alpha_D}{\alpha_N+\alpha_D}$, $\nu_D=\frac{\alpha_N}{\alpha_N+\alpha_D}$, and $G=\bigl(\frac{\alpha_NA}{\alpha_DB}\bigr)^{1/(\alpha_N+\alpha_D)}$. The minimizer is unique and equals
+\begin{equation}\label{eq:scaling:alloc}
+  N^\star=G\Bigl(\frac C\kappa\Bigr)^{\nu_N},\qquad D^\star=G^{-1}\Bigl(\frac C\kappa\Bigr)^{\nu_D}.
+\end{equation}
+At the minimum the two reducible terms are in the ratio $AN^{\star-\alpha_N}:BD^{\star-\alpha_D}=\alpha_D:\alpha_N$, and
+\begin{equation}\label{eq:scaling:lossC}
+  \Loss(N^\star,D^\star)-\Loss_\infty=\frac{\alpha_N+\alpha_D}{\alpha_D}\,A\,G^{-\alpha_N}\Bigl(\frac C\kappa\Bigr)^{-\frac{\alpha_N\alpha_D}{\alpha_N+\alpha_D}} .
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+The plan is to eliminate $D$ and minimize a strictly convex function of $u=\log N$. On the constraint, $D=C/(\kappa N)$, and the reducible loss is
+\[
+  \varphi(u)=Ae^{-\alpha_Nu}+B\Bigl(\frac\kappa C\Bigr)^{\alpha_D}e^{\alpha_Du} .
+\]
+Each term is strictly convex in $u$, and $\varphi(u)\to\infty$ as $u\to\pm\infty$, so $\varphi$ has a unique minimizer, the unique zero of $\varphi'(u)=-\alpha_NAN^{-\alpha_N}+\alpha_DBD^{-\alpha_D}$ (with $N=e^u$ and $D=C/(\kappa N)$). The condition $\alpha_NAN^{-\alpha_N}=\alpha_DBD^{-\alpha_D}$ gives the ratio of the two terms. Substituting $D=C/(\kappa N)$ turns it into $N^{\alpha_N+\alpha_D}=\frac{\alpha_NA}{\alpha_DB}(C/\kappa)^{\alpha_D}$, which is the first formula of \eqref{eq:scaling:alloc}, and $D^\star=C/(\kappa N^\star)$ is the second, because $1-\nu_N=\nu_D$. Finally the loss is $AN^{\star-\alpha_N}(1+\frac{\alpha_N}{\alpha_D})$, and $N^{\star-\alpha_N}=G^{-\alpha_N}(C/\kappa)^{-\alpha_N\alpha_D/(\alpha_N+\alpha_D)}$.
+\end{proof}
+
+Four readings. The allocation exponents $\nu_N$ and $\nu_D$ depend only on the ratio of the exponents: the faster-decaying term gets the smaller share of the budget's growth. Parameters and data grow at the same rate exactly when $\alpha_N=\alpha_D$; otherwise the number of tokens per parameter, $D^\star/N^\star=G^{-2}(C/\kappa)^{(\alpha_N-\alpha_D)/(\alpha_N+\alpha_D)}$, drifts with the budget. The loss exponent in compute, $\frac{\alpha_N\alpha_D}{\alpha_N+\alpha_D}$, is half the harmonic mean of the two exponents, so it is smaller than both. And the constants $A$ and $B$ enter only $G$: the exponents of the allocation do not depend on them, but the number of tokens per parameter does, which is why it is so sensitive to the fit. With the rounded exponents $\alpha_N=0.34$ and $\alpha_D=0.28$ of \textcite{HoffmannEtAl2022}, $\nu_N=0.28/0.62\approx0.45$, $\nu_D\approx0.55$, the tokens per parameter grow like $C^{0.10}$, and the compute-optimal loss falls like $C^{-0.154}$. A data exponent equal to the parameter exponent, closer to the refit of \textcite{BesirogluEtAl2024}, gives $\nu_N=\nu_D=\frac12$.
+
+\section{Reading the solution}\label{sec:scaling:reading}
+
+\Cref{fig:scaling:curves}(a) compares \cref{thm:scaling:exact} with simulations. Each fixed-size model follows a curve that falls like $1/D$ and then flattens at its approximation error $T(N)$: it is parameter-limited. The lower envelope of the curves, the best size at each $D$, is the data-limited law \eqref{eq:scaling:datalaw}, with slope $-\frac b{1+b}=-\frac12$ here; at $D=2048$ the best size is $N=96$, against $M_D=101$ from \cref{cor:scaling:laws}. Below the envelope no model of the family can go, and above it each model wastes either parameters or data. The smooth law is thus the envelope of a family of curves that each saturate, which is the shape of the compute-efficient frontier in \textcite{KaplanEtAl2020}.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},hplot,
+  width=0.5\linewidth,height=0.4\linewidth,xmode=log,ymode=log,unbounded coords=jump,
+  log basis x=2]
+\nextgroupplot[xlabel={sample size $D$},ylabel={excess loss},xmin=6,xmax=2300,ymin=0.008,ymax=1.2,
+  title={(a) least squares on the top $N$ features}]
+\addplot[muted,line width=0.8pt] table[x=D,y=N4] {figures/data/16-scaling-ols-theory.dat};
+\addplot[sandline!55!black,line width=0.9pt,dashdotted] table[x=D,y=N16] {figures/data/16-scaling-ols-theory.dat};
+\addplot[theory2] table[x=D,y=N64] {figures/data/16-scaling-ols-theory.dat};
+\addplot[seadeep,line width=0.8pt,densely dotted] table[x=D,y=N256] {figures/data/16-scaling-ols-theory.dat};
+\addplot[theory,line width=1.6pt] table[x=D,y=best] {figures/data/16-scaling-ols-theory.dat};
+\addplot[guide] table[x=D,y=asym] {figures/data/16-scaling-ols-theory.dat};
+\addplot[simulation] table[x=D,y=N4] {figures/data/16-scaling-ols-sim.dat};
+\addplot[simulation] table[x=D,y=N16] {figures/data/16-scaling-ols-sim.dat};
+\addplot[simulation] table[x=D,y=N64] {figures/data/16-scaling-ols-sim.dat};
+\addplot[simulation] table[x=D,y=N256] {figures/data/16-scaling-ols-sim.dat};
+\node[font=\scriptsize,text=ink,anchor=south east] at (axis cs:2000,0.225) {$N=4$};
+\node[font=\scriptsize,text=ink,anchor=south east] at (axis cs:2000,0.064) {$16$};
+\node[font=\scriptsize,text=ink,anchor=north east] at (axis cs:1500,0.026) {$64$};
+\node[font=\scriptsize,text=ink,anchor=west] at (axis cs:400,0.5) {$256$};
+\node[font=\scriptsize,text=sea,anchor=north east] at (axis cs:300,0.03) {best $N$};
+\nextgroupplot[xlabel={sample size $D$},xmin=6,xmax=1200,ymin=0.0015,ymax=0.6,
+  title={(b) ridge on all features},legend pos=south west]
+\addplot[theory] table[x=D,y=optimal] {figures/data/16-scaling-ridge-theory.dat};
+\addlegendentry{optimal ridge, $\sigma^2=0.2$}
+\addplot[theory2] table[x=D,y=noiseless] {figures/data/16-scaling-ridge-theory.dat};
+\addlegendentry{minimum norm, $\sigma=0$}
+\addplot[simulation,forget plot] table[x=D,y=optimal] {figures/data/16-scaling-ridge-sim.dat};
+\addplot[simulation2,forget plot] table[x=D,y=noiseless] {figures/data/16-scaling-ridge-sim.dat};
+\addplot[guide,domain=8:1024,samples=2,forget plot] {0.9*x^(-0.5)};
+\addplot[guide,domain=8:1024,samples=2,forget plot] {1.6*x^(-1)};
+\node[font=\scriptsize,text=muted,anchor=south west] at (axis cs:128,0.085) {$D^{-1/2}$};
+\node[font=\scriptsize,text=muted,anchor=north east] at (axis cs:100,0.012) {$D^{-1}$};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Learning curves on power-law features with $a=\frac32$ and $b=1$. (a)~Least squares on the top $N\in\{4,16,64,256\}$ of $P=1024$ features, $\sigma^2=0.2$. Thin curves: \cref{thm:scaling:exact}; thick curve: its minimum over $N$; dashed: the asymptote \eqref{eq:scaling:datalaw} for $P=\infty$. Points: averages over $150$ training sets (seed $1617$), scored by their exact test loss; the largest deviation is $1.4$ standard errors. Points with $D<2N+4$, where the simulated average has a large variance, are omitted. (b)~Ridge on all $P=4000$ features: minimum-norm interpolation without noise (squares), and ridge with the $\lambda$ that minimizes the deterministic equivalent, $\sigma^2=0.2$ (circles); curves: the deterministic equivalent \eqref{eq:scaling:de}; $60$ training sets per point. The equivalent is asymptotic: at $D\le16$ the simulations lie up to $18\%$ above it, and from $D=64$ on within $4\%$.}
+\label{fig:scaling:curves}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:scaling:curves}(b) shows the two exponents for ridge on all features: $D^{-b/(1+b)}$, here $D^{-1/2}$, with noise and optimal ridge, and $D^{-b}$, here $D^{-1}$, for the noiseless interpolator, as predicted by \cref{prop:scaling:ridge} and the deterministic equivalent. With noise, the local slope is steeper than $\frac12$ at moderate $D$, because the unlearned signal adds to the noise in \eqref{eq:scaling:de} and shrinks as $D$ grows; for smaller $b$ this transient lasts longer (\cref{ex:scaling:simridge}).
+
+\paragraph{What sets the exponents.} In both models the exponents are $b$ for parameters and $b/(1+b)$ for data, and $b$ is a property of the data: how the importance of directions or items decays. Neither the model class nor the spectrum exponent $a$ appears, except through saturation when $b>2a$ and through the time exponent $b/a$. This is the solvable version of the observation of \textcite{HestnessEtAl2017} that better architectures shift learning curves without changing their exponents.\sidenote{A different route to the same conclusion: \textcite{SharmaKaplan2022} argue that a network regressing on a data manifold of intrinsic dimension $d$ has a parameter exponent of about $4/d$.} Three consequences can be checked. First, the data exponent is smaller than the parameter exponent, and determined by it: $\alpha_D=\alpha_N/(1+\alpha_N)$. Second, data that are less heavy-tailed (larger $b$) scale faster. Third, small exponents mean $b$ close to $0$, a nearly flat hierarchy: the frequencies of words, $p_k\propto k^{-s}$ with $s\approx1$, correspond to $b=s-1\approx0$, and a model limited by rare words would scale very slowly.
+
+\paragraph{Emergence on a smooth curve.}\index{emergence} \Cref{fig:scaling:zipf}(b) follows single quanta. Item $k$ is known after $D$ examples with probability $1-(1-p_k)^D\approx1-e^{-Dp_k}$, which rises from $0.1$ to $0.9$ as $Dp_k$ grows from $0.105$ to $2.30$, a factor of about $22$ in data, at $D\approx1/p_k$. Every skill turns on over the same window in $\log D$, at a position set by its frequency, while their sum, the loss, is a power law without a feature. A downstream task that needs a few specific rare quanta shows a jump; the loss does not. This is the quanta picture of emergence of \textcite{MichaudEtAl2023}.\sidenote{\Textcite{WeiEtAl2022} call an ability emergent if it is absent in smaller models and present in larger ones, so that it cannot be predicted by extrapolating the smaller models.}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=15mm},hplot,
+  width=0.49\linewidth,height=0.4\linewidth,xmode=log]
+\nextgroupplot[ymode=log,xlabel={training examples $D$},ylabel={error $M(D)$},xmin=1,xmax=1e6,ymin=1e-5,ymax=1,
+  title={(a) memorizing learner},legend pos=south west]
+\addplot[theory] table[x=D,y=exact0] {figures/data/16-scaling-zipf-theory.dat};
+\addlegendentry{$b=\frac12$}
+\addplot[theory2] table[x=D,y=exact1] {figures/data/16-scaling-zipf-theory.dat};
+\addlegendentry{$b=1$}
+\addplot[theory3] table[x=D,y=exact2] {figures/data/16-scaling-zipf-theory.dat};
+\addlegendentry{$b=2$}
+\addplot[guide,forget plot] table[x=D,y=asym0] {figures/data/16-scaling-zipf-theory.dat};
+\addplot[guide,forget plot] table[x=D,y=asym1] {figures/data/16-scaling-zipf-theory.dat};
+\addplot[guide,forget plot] table[x=D,y=asym2] {figures/data/16-scaling-zipf-theory.dat};
+\addplot[simulation,forget plot] table[x=D,y=sim0] {figures/data/16-scaling-zipf-sim.dat};
+\addplot[simulation,forget plot] table[x=D,y=sim1] {figures/data/16-scaling-zipf-sim.dat};
+\addplot[simulation,forget plot] table[x=D,y=sim2] {figures/data/16-scaling-zipf-sim.dat};
+\nextgroupplot[xlabel={training examples $D$},ylabel={probability},xmin=1,xmax=1e7,ymin=0,ymax=1.02,
+  title={(b) single quanta and the loss, $b=1$}]
+\addplot[theory3] table[x=D,y=k1] {figures/data/16-scaling-zipf-items.dat};
+\addplot[theory3] table[x=D,y=k10] {figures/data/16-scaling-zipf-items.dat};
+\addplot[theory3] table[x=D,y=k100] {figures/data/16-scaling-zipf-items.dat};
+\addplot[theory3] table[x=D,y=k1000] {figures/data/16-scaling-zipf-items.dat};
+\addplot[theory] table[x=D,y=loss] {figures/data/16-scaling-zipf-items.dat};
+\node[font=\scriptsize,text=ink,anchor=west] at (axis cs:2.5,0.75) {$k=1$};
+\node[font=\scriptsize,text=ink,anchor=east] at (axis cs:70,0.55) {$10$};
+\node[font=\scriptsize,text=ink,anchor=east] at (axis cs:7e3,0.55) {$100$};
+\node[font=\scriptsize,text=ink,anchor=east] at (axis cs:7e5,0.55) {$1000$};
+\node[font=\scriptsize,text=sea,anchor=west] at (axis cs:2.6,0.45) {error $M(D)$};
+\end{groupplot}
+\end{tikzpicture}
+\caption{The quanta model. (a)~Error of the memorizing learner for $b\in\{\frac12,1,2\}$, items truncated at $K=10^7$. Curves: the exact sum \eqref{eq:scaling:zipfexact}; dashed: the asymptote $C_bD^{-b/(1+b)}$ of \cref{thm:scaling:zipf} for the untruncated law; points: $20$ simulated training sets per point (seed $1618$), each scored by the exact mass of its unseen items, within $2.5$ standard errors of the curves. (b)~For $b=1$: the probability that item $k\in\{1,10,100,1000\}$ has been seen (sigmoids, each spanning a factor of about $22$ in $D$ from $0.1$ to $0.9$), and the error $M(D)$, which is smooth.}
+\label{fig:scaling:zipf}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{Allocation in the solvable models.} The form \eqref{eq:scaling:chinchilla} is additive; \cref{thm:scaling:exact} is not, because the variance $\sigma^2N/D$ couples $N$ and $D$. Minimizing $cN^{-b}+\sigma^2N/D$ under $6ND=C$ gives $N^\star\propto C^{1/(2+b)}$ and $D^\star\propto C^{(1+b)/(2+b)}$: with $b=0.34$, parameters grow like $C^{0.43}$ (\cref{ex:scaling:olscompute}). For a model trained by gradient flow on fresh data, whose cost is proportional to $N$ times the training time, \cref{ex:scaling:time} gives $N^\star\propto C^{1/(1+a)}$ instead, and the spectrum exponent enters the allocation.
+
+\section{What the model gets wrong}\label{sec:scaling:wrong}
+
+\paragraph{What was thrown away.} \emph{Feature learning.} The features, their spectrum, and the target's decay in their basis are fixed in advance, so the exponent $b$ is an input; a network chooses its representation, and with it the basis in which importance is measured. \emph{Optimization.} The estimators are closed-form; compute enters only through the accounting $C=6ND$, not through the dynamics of stochastic gradient descent, its noise, its step size, or its schedule. \emph{Architecture.} Only the number of parameters matters, and they are spent on the top features in order. \emph{The irreducible loss.} White noise of variance $\sigma^2$ stands for the entropy of the data, which in language is structured. \emph{Repetition.} Each example is fresh and used once. \emph{Composition.} Quanta are independent and are learned from one example; real skills share parts and need many examples (\cref{ex:scaling:sightings}).
+
+\paragraph{Where it breaks.} \emph{The exponents are not derived.} The models say how a decay of importance becomes a decay of loss, not what the decay is. For kernels it can be measured: \textcite{SpiglerEtAl2020} estimated learning-curve exponents from the kernel spectra of MNIST and CIFAR-10 that came close to the measured ones. For trained networks there is no such recipe, and feature learning changes the exponents: in the solvable model of \textcite{BordelonEtAl2025}, feature learning nearly doubles the exponent in time and compute for targets outside the reproducing-kernel space of the initial tangent kernel, and leaves it unchanged for easier targets.
+
+\emph{The ratio of the exponents.} Both models predict $\alpha_D=\alpha_N/(1+\alpha_N)<\alpha_N$. With $\alpha_N=0.076$, this gives $0.071$, against the $\alpha_D\approx0.095$ of \textcite{KaplanEtAl2020}; with $\alpha_N=0.34$ it gives $0.25$, against the $0.28$ of \textcite{HoffmannEtAl2022}, and the refit of \textcite{BesirogluEtAl2024} has a data exponent that is larger, not smaller. The comparison is not clean, since the exponents of \textcite{KaplanEtAl2020} were measured in different regimes (convergence in $N$, early stopping in $D$), but the prediction fails in the direction that matters: data are worth more, relative to parameters, than the hierarchy alone allows. A learner that improves on many items from each example, rather than on one, would do this; memorization cannot.
+
+\emph{The fits.} The exponents of \eqref{eq:scaling:chinchilla} are fitted, and the fits are fragile: the published estimates of \textcite{HoffmannEtAl2022} did not survive refitting \parencite{BesirogluEtAl2024}, and the allocations of \textcite{KaplanEtAl2020} and \textcite{HoffmannEtAl2022} disagree because of parameter counting, scale, warmup, and tuning \parencite{PearceSong2024,PorianEtAl2024}. \Cref{thm:scaling:compute} is exact for the additive form, but the solvable models are not additive, and the tokens per parameter depend on constants that the models do not predict.
+
+\emph{Emergence.} The quanta model makes each skill turn on over a factor of about $22$ in data. Abilities that appear abruptly \parencite{WeiEtAl2022} may be sharper than this, or may look sharp because of the metric \parencite{SchaefferEtAl2023}; the model cannot tell which, since it has no notion of a task built from several quanta.
+
+\emph{The data distribution.} The law in $D$ is a law of random sampling. If the training set contains each item once instead of sampling with repetition, the memorizing learner's error after $D$ examples is $\sum_{k>D}p_k\asymp D^{-b}$: curation raises the data exponent from $b/(1+b)$ to $b$ (\cref{ex:scaling:pruning}). \Textcite{SorscherEtAl2022} showed in theory and experiment that pruning data can beat power-law scaling, and \textcite{MuennighoffEtAl2023} that repeated tokens are worth less than fresh ones after a few epochs; neither effect exists in a model of fresh, independent samples. And real curves bend: a spectrum that is a power law only over a range gives a broken power law \parencite{CaballeroEtAl2023}, with plateaus where the range ends \parencite{MaloneyEtAl2022}.
+
+\paragraph{Fine structure.} \Textcite{MaloneyEtAl2022} solved random-feature regression on data with a power-law latent spectrum: nonlinear random features extend the power law, the test loss scales in both $N$ and $D$, and it plateaus when either exceeds the size of the latent spectrum. \Textcite{BahriEtAl2024} separate variance-limited scaling, with exponent $1$, from resolution-limited scaling with data-dependent exponents, in both $N$ and $D$. Dynamics: \textcite{BordelonEtAl2024} solved a random-feature model trained by gradient descent, in which time and model size have different exponents and the gap between training and test loss builds up through reuse of data; \textcite{PaquetteEtAl2024} found four phases and three subphases of compute-optimal scaling for one-pass stochastic gradient descent in the plane of data and target complexity, with boundaries set by model capacity, optimizer noise, and the embedding of the features; and \textcite{LinEtAl2024} proved that for sketched linear regression trained by one-pass stochastic gradient descent the reducible loss is $\Theta(N^{-(a-1)}+D^{-(a-1)/a})$ for a Gaussian prior with $\lambda_j\asymp j^{-a}$, our $b=a-1$, with no variance term growing with $N$: implicit regularization removes it. \Textcite{SharmaKaplan2022} derive exponents of about $4/d$ from the intrinsic dimension $d$ of the data manifold, and \textcite{CabannesEtAl2024} treat associative memories. Open: a model in which the exponent $b$ of the learned representation is an output, computed from the data and the architecture, and checked against language models.
+
+\section{Model card}\label{sec:scaling:card}
+
+\modelcard{Test loss falls as a power law in parameters, data, and compute, with small exponents; compute-optimal training scales parameters and data together.}
+{Least squares and ridge on independent Gaussian features with target energy $j^{-(1+b)}$; a memorizing learner on quanta with Zipf frequencies $p_k\propto k^{-(1+b)}$; an additive loss with $C=6ND$.}
+{Exact learning curve $(\sigma^2+T(N))\frac{D-1}{D-N-1}$ (\cref{thm:scaling:exact}); exponents $b$ and $b/(1+b)$ (\cref{cor:scaling:laws,prop:scaling:ridge}); Zipf curve with constant $C_b$ (\cref{thm:scaling:zipf}); allocation (\cref{thm:scaling:compute}).}
+{Optimal size $N\propto D^{1/(1+b)}$; data exponent $b/(1+b)$ with noise, $b$ without; time exponent $b/a$; allocation exponents $\frac{\alpha_D}{\alpha_N+\alpha_D}$ and $\frac{\alpha_N}{\alpha_N+\alpha_D}$; skills emerging over a factor $22$ in data.}
+{Exponents are inputs; the predicted $\alpha_D=\alpha_N/(1+\alpha_N)$ is below fitted language-model data exponents; no feature learning, optimizer, repetition, or curation.}
+{Random-feature models; dynamical models and the 4+3 phases; one-pass stochastic gradient descent; feature learning that changes exponents.}
+
+This chapter closes the thread of spectra that began with the Marchenko--Pastur law of \cref{ch:doubledescent}: \cref{thm:scaling:exact} is the weak-features corollary of that chapter with an anisotropic design, and the deterministic equivalent is its ridge theorem with a renormalized penalty. The spectral bias of kernel gradient descent from \cref{ch:lazy}, which learns eigenfunctions in order of their eigenvalues, becomes here a scaling law in time with exponent $b/a$, and the staged learning of \cref{ch:deeplinear}, one singular mode after another, is the mechanism that the model of size $N$ assumes.
+
+The quanta connect smooth loss curves with the sudden transitions of earlier chapters: the plateaus of the committee machine (\cref{ch:committee}), hidden progress on parities (\cref{ch:parity}), grokking (\cref{ch:grokking}), and the formation of induction heads (\cref{ch:induction}) are each one quantum, abrupt on its own scale, and a power law is what many such transitions look like when added up with Zipf weights. The capacity to hold more items than dimensions is the subject of \cref{ch:superposition}.
+
+\begin{exercises}
+\item \consolidation (Tails and constants.) (a) Show that $\sum_{k>N}p_k\sim N^{-b}/(b\zeta(1+b))$ and that $T(N)=N^{-b}/b+O(N^{-b-1})$ in the power-law case. (b) Show that $C_1=\sqrt6/(2\sqrt\pi)$, and compute $C_{1/2}$ and $C_2$ to three digits. (c) Show that $\sum_{k\ge1}p_ke^{-cp_k}$ is within $2/(ec)$ of $C_bc^{-b/(1+b)}$ for every $c>0$, and deduce that $D^{b/(1+b)}M(D)-C_b=O(D^{-1/(1+b)})$.\label{ex:scaling:tails}
+
+\item \consolidation (Noiseless learning curves.) Under \cref{ass:scaling:features} with $\sigma=0$ and $T(N)\sim cN^{-b}$, show that $\min_{N\le D-2}\E\Loss(\hat w_N)\sim c\,\frac{(1+b)^{1+b}}{b^b}D^{-b}$, attained at $N\sim\frac b{1+b}D$. Check numerically that for $b=1$ and $T(N)=\sum_{j>N}j^{-2}$ the product $D\cdot\min_N\E\Loss(\hat w_N)$ is $4.000$ at $D=1000$. Why does the optimal model grow linearly with $D$ here?\label{ex:scaling:noiseless}
+
+\item \consolidation (Chinchilla arithmetic.) (a) Derive \eqref{eq:scaling:alloc} with a Lagrange multiplier instead of the substitution $u=\log N$. (b) For $\alpha_N=0.34$ and $\alpha_D=0.28$, compute $\nu_N$, $\nu_D$, the compute exponent of the loss, and the exponent of $D^\star/N^\star$. (c) Show that at the optimum the parameter term carries the fraction $\nu_N$ of the reducible loss, and that a mistaken allocation $N=\rho N^\star$, $D=D^\star/\rho$ raises the reducible loss by the factor $\nu_N\rho^{-\alpha_N}+\nu_D\rho^{\alpha_D}$. Evaluate it for $\rho=4$.\label{ex:scaling:chinchilla}
+
+\item \consolidation (The isotropic case.) Take $\lambda_j=1$ for $j\le P$ and $P/D\to\gamma$. Show that the equation for $\kappa$ in the deterministic equivalent becomes $\kappa=\lambda+\gamma\kappa/(1+\kappa)$, and that with $v=\kappa/(1+\kappa)$ it is the equation $\gamma v^2+(1-\gamma+\lambda)v-\lambda=0$ of \cref{ch:doubledescent}. Check that \eqref{eq:scaling:de}, in which $\gamma$ becomes $\gamma(1-v)^2$, gives the bias $r^2(v-\lambda v')$ and the variance $\sigma^2\gamma v'$ of \cref{thm:doubledescent:ridge}, with $r^2=\sum_j\lambda_jw_{\star,j}^2$. \hint{differentiate the quadratic equation in $\lambda$, and show that $v'=(1-v)^2/(1-\gamma(1-v)^2)$.}\label{ex:scaling:isotropic}
+
+\item \consolidation (Exact constants for ridge.) In \cref{prop:scaling:ridge}, show that as $\lambda\to0$ the bias is asymptotic to $\lambda^{b/a}\frac1aB\bigl(\frac{2a-b}a,\frac ba\bigr)$ and the variance sum to $\lambda^{-1/a}\frac1aB\bigl(\frac1a,2-\frac1a\bigr)$, with $B$ the Beta function, and compute the optimal $\lambda$ and the constant in $\min_\lambda\cE_{\mathrm{seq}}\sim c'(\sigma^2/D)^{b/(1+b)}$. \hint{$\int_0^\infty\frac{u^{s-1}}{(1+u^a)^2}\dd u=\frac1aB\bigl(\frac sa,2-\frac sa\bigr)$; use \cref{lem:scaling:unimodal}-type comparisons on the two monotone parts of each summand.}\label{ex:scaling:beta}
+
+\item \variation (Training time.) Gradient flow on $\frac12\Loss$ for the model of size $N$, from $w=0$, gives $w_j(t)=(1-e^{-\lambda_jt})w_{\star,j}$, so the excess loss is $\sum_{j\le N}j^{-(1+b)}e^{-2\lambda_jt}+T(N)$ in the power-law case. (a) Show that for $t\ge1$ and $N\to\infty$ the first sum is of order $t^{-b/a}$, and that the excess loss is of order $t^{-b/a}+N^{-b}$ when $N\ge t^{1/a}$ and of order $N^{-b}$ when $N\le t^{1/a}$. (b) If one unit of compute buys one unit of time for one feature, $C=Nt$, show that the compute-optimal size is $N\asymp C^{1/(1+a)}$ and the loss is of order $C^{-b/(1+a)}$. Compare with \textcite{BordelonEtAl2024} and \textcite{PaquetteEtAl2024}, where the model is also trained with finite data.\label{ex:scaling:time}
+
+\item \variation (Saturation.) In \cref{prop:scaling:ridge}, let $b>2a$. Show that the bias is of order $\lambda^2$, that the best excess loss is of order $(\sigma^2/D)^{2a/(1+2a)}$, and that least squares on the top $N$ features, with $N$ chosen well, does better. What happens at $b=2a$?\label{ex:scaling:saturation}
+
+\item \variation (Several sightings.) Suppose an item is learned only after it has been seen $m$ times. Show that the error is $\sum_kp_k\Pr\bigl(\mathrm{Bin}(D,p_k)<m\bigr)\sim C_{b,m}D^{-b/(1+b)}$ with
+\[
+  C_{b,m}=\frac1{(1+b)\,\zeta(1+b)^{1/(1+b)}}\sum_{i=0}^{m-1}\frac{\Gamma\bigl(i+\frac b{1+b}\bigr)}{i!} .
+\]
+For $b=1$, check numerically that $C_{1,2}\approx1.036$ and $C_{1,3}\approx1.296$. The exponent does not change; what does?\label{ex:scaling:sightings}
+
+\item \variation (Capacity and data together.) A learner of capacity $N$ trained on $D$ examples holds the items it has seen among $1,\dots,N$. (a) Show that its error is $\sum_{k>N}p_k+\sum_{k\le N}p_k(1-p_k)^D$. (b) Show that this is of order $N^{-b}+D^{-b/(1+b)}$ uniformly in $N,D\ge1$, and that the crossover lies at $N\asymp D^{1/(1+b)}$. (c) With $C=6ND$, find the compute-optimal allocation and compare it with \cref{thm:scaling:compute} for $\alpha_N=b$ and $\alpha_D=b/(1+b)$.\label{ex:scaling:combined}
+
+\item \variation (Curated data.) (a) In \cref{ass:scaling:quanta}, a curator shows the learner the items $1,\dots,D$ once each. Show that the error is $\sum_{k>D}p_k\sim D^{-b}/(b\zeta(1+b))$. (b) Now the curator removes the repetitions from a random sample of size $D'$, keeping the $D$ distinct items it contains. Express the error in terms of $D'$, and show that the exponent in $D'$ is still $b/(1+b)$ while the exponent in the number $D$ of kept examples is $b$. Relate this to \textcite{SorscherEtAl2022}.\label{ex:scaling:pruning}
+
+\item \variation (Compute for least squares.) Minimize $cN^{-b}+\sigma^2N/D$ under $6ND=C$, and show that $N^\star\propto C^{1/(2+b)}$, $D^\star\propto C^{(1+b)/(2+b)}$, and that the loss falls like $C^{-b/(2+b)}$. Why does the variance term push the allocation toward data?\label{ex:scaling:olscompute}
+
+\item \simulation (Ridge exponents.) With $a=\frac32$, $\sigma^2=0.2$, and $P=10^6$ features, compute the deterministic equivalent of optimally tuned ridge at $D=10^3$ and $D=10^4$ for $b\in\{\frac12,1,4\}$, and the slope $-\log_{10}$ of their ratio. Observe slopes of about $0.39$, $0.52$, and $0.74$, against $\frac13$, $\frac12$, and the saturated $\frac34$. Explain why the slope for $b=\frac12$ is too steep, using the effective noise $\sigma^2+R$ in \eqref{eq:scaling:de}, and check that the sequence model \eqref{eq:scaling:seq}, whose noise does not grow with $R$, gives about $0.34$. Confirm one point by simulating ridge at $D=10^3$ with $4000$ features.\label{ex:scaling:simridge}
+
+\item \simulation (Fitting a law.) For $b=1$, compute the local slope $-\dd\log M/\dd\log D$ of the exact Zipf curve at $D=3$, $10$, $100$, and $10^4$; observe about $0.48$, $0.44$, $0.50$, and $0.50$. Then draw $D$ samples for $D=10,20,\dots,320$, record the error of the memorizing learner, and fit $\log M$ against $\log D$ by least squares on $20$ independent repetitions. How far is the fitted exponent from $\frac12$, and how wide is the spread? Relate the result to the replication of \textcite{BesirogluEtAl2024}.\label{ex:scaling:fit}
+
+\item \research (Predicting an exponent.) \Textcite{SpiglerEtAl2020} predicted kernel learning-curve exponents from kernel spectra of image data. Open: for a network that learns its features, define and measure the analogue of $b$ in its learned representation, and predict its parameter and data exponents; a solvable model in which feature learning changes $b$ during training, as in \textcite{BordelonEtAl2025}, and which yields $\alpha_D>\alpha_N$, would be a first step.\label{ex:scaling:research}
+\end{exercises}
+
+\notesandrefs
+Learning curves are older than scaling laws. In the statistical mechanics of learning, \textcite{AmariEtAl1992} classified the asymptotic learning curves of parametric learning machines into four types, among them $D^{-1}$ for a deterministic machine, a noiseless teacher, and a unique correct parameter, and $D^{-1/2}$ for a deterministic machine and a noisy teacher; these exponents do not depend on the data, because the model contains the target. The exponents of this chapter, which depend on the data, appear when the target is not representable by a finite model. In statistics, \textcite{CaponnettoDeVito2007} proved the minimax rates of kernel ridge regression under a source condition, the decay of the target in the eigenbasis, and a capacity condition, the decay of the eigenvalues; \cref{prop:scaling:ridge} is the sequence-model version of their rate. \Textcite{BordelonEtAl2020} and \textcite{SpiglerEtAl2020} brought these rates to wide networks and real data, and \textcite{CuiEtAl2021} mapped the crossover from the noiseless rate $D^{-b}$ to the noisy one.
+
+\Textcite{HestnessEtAl2017} established power laws in data across domains for deep networks, \textcite{KaplanEtAl2020} in parameters, data, and compute for language models, and \textcite{HoffmannEtAl2022} the compute-optimal allocation that is used today, after correcting the earlier one. \Cref{thm:scaling:compute} is their allocation formula for the parametric fit, which they write as $N_{\mathrm{opt}}\propto C^a$ and $D_{\mathrm{opt}}\propto C^b$ with $a=\beta/(\alpha+\beta)$ and $b=\alpha/(\alpha+\beta)$. \Textcite{BesirogluEtAl2024} is an unrefereed preprint, and our account of it rests on its abstract and its reported refit ($\alpha_N\approx0.35$, $\alpha_D\approx0.37$).
+
+Solvable models of the exponents came in several waves: memorization of Zipf-distributed data \parencite{Hutter2021} and quanta \parencite{MichaudEtAl2023}; random features \parencite{MaloneyEtAl2022,BahriEtAl2024}; dynamics \parencite{BordelonEtAl2024,PaquetteEtAl2024,LinEtAl2024}; and feature learning \parencite{BordelonEtAl2025}. The exact finite-sample curve of \cref{thm:scaling:exact} is an elementary consequence of the inverse Wishart mean; we did not find it stated in this form in the scaling literature.
+
+\paragraph{Translating the literature.} \Textcite{HoffmannEtAl2022} write $E$, $\alpha$, and $\beta$ for our $\Loss_\infty$, $\alpha_N$, and $\alpha_D$, and $a$, $b$ for our allocation exponents $\nu_N$, $\nu_D$, which are not our spectral exponents. \Textcite{KaplanEtAl2020} use our $\alpha_N$ and $\alpha_D$, but without an irreducible term, and count non-embedding parameters. \Textcite{LinEtAl2024} write $M$ for our $N$ and $N$ for our $D$; their spectral exponent is our $a$, and their Gaussian prior on the target makes our $b=a-1$, so their rate $M^{-(a-1)}+N^{-(a-1)/a}$ has our two exponents $b$ and $b/(1+b)$. \Textcite{Hutter2021} writes $\theta_i\propto i^{-(1+\alpha)}$ and $n$ for our $p_k\propto k^{-(1+b)}$ and $D$. In the kernel literature \parencite{CaponnettoDeVito2007,CuiEtAl2021} the capacity and source conditions are written with other exponents; with $\lambda_j\asymp j^{-a}$ and $\lambda_jw_{\star,j}^2\asymp j^{-(1+b)}$, the noisy rate is always $D^{-b/(1+b)}$ below saturation, and translating a paper's exponents into $a$ and $b$ is the quickest way to compare results.
+
+\printchapterbib
+\end{refsection}

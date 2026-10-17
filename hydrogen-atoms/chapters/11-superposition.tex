@@ -1,0 +1,414 @@
+% Chapter 11 of The Hydrogen Atoms of Deep Learning: superposition in the ReLU toy autoencoder.
+\newcommand{\supv}{v(S)}
+\newcommand{\supOmega}{\Omega}
+\newcommand{\supD}{\mathrm{D}}
+
+\casechapter{Superposition}{More features than dimensions}{ReLU toy autoencoder}{ch:superposition}
+\begin{refsection}[chapters/11-superposition.bib]
+
+\begin{chaptersummary}
+Neurons of trained networks often respond to several unrelated things, and the activations of language models decompose into sparse combinations of many more directions than there are dimensions. The toy model of this chapter stores $p$ sparse features in $m<p$ dimensions with a linear map and reads them out with a ReLU. We prove that without the ReLU the optimum is principal component analysis at every sparsity, so a linear network never stores more features than dimensions; that with it, two features share one dimension as an antipodal pair once they are sparse enough, with exact losses and a provable region of the phase diagram; that sparse features fit without first-order interference exactly when their directions have pairwise nonpositive inner products, which is possible for at most $2m$ of them; and that random directions and a thresholded readout store $e^{cm}$ features if few are active at a time. The model knows nothing of correlated or multidimensional features, of computation, or of how sparse autoencoders choose among decompositions.
+\end{chaptersummary}
+
+\section{The phenomenon: polysemantic neurons and sparse dictionaries}\label{sec:superposition:phenomenon}
+
+Look at what makes a single neuron of a trained vision network fire, and the answer is often a list of things with nothing in common. In their survey of the circuits of InceptionV1, \textcite{OlahEtAl2020} found many \term{polysemantic neurons}\index{polysemantic neuron}, neurons that respond to several unrelated inputs, and named them a main obstacle to reading networks neuron by neuron.\sidenote{Neuroscience met the same fact earlier under the name \emph{mixed selectivity}: \textcite{RigottiEtAl2013} found that neurons in monkey prefrontal cortex respond to combinations of task variables, and that every variable can be decoded from the population although single cells mix them.} Word embeddings tell the same story in a form one can compute with. \Textcite{AroraEtAl2018} showed that the embedding of a polysemous word such as \emph{tie} lies close to a linear combination of vectors for its senses, and that sparse coding of the embeddings against a dictionary of about $2000$ ``discourse atoms'' recovers those senses.
+
+\Textcite{ElhageEtAl2022} turned these observations into a hypothesis. A network may represent more \emph{features}, properties of the input that it uses, than it has dimensions, by assigning each feature a direction, with the directions almost but not exactly orthogonal. The cost is \emph{interference}: reading one feature picks up a little of every other. If features are \emph{sparse}, so that few are present in a given input, the interference is usually small, and a nonlinearity can remove what remains. They called this \term{superposition}\index{superposition}, studied it in the toy model of this chapter, and found that whether a feature is stored in superposition changes abruptly with its sparsity and importance, and that stored features arrange themselves in regular polytopes.
+
+If the hypothesis is right, then the right units for reading a network are directions, not neurons, and they can be found by sparse dictionary learning: write each activation vector $h\in\R^m$ as $h\approx\sum_{i}a_i(h)\,d_i$ with many more dictionary vectors $d_i$ than dimensions and few nonzero coefficients $a_i(h)\ge0$, as \textcite{OlshausenField1997} did for natural images. A \term{sparse autoencoder}\index{sparse autoencoder} computes the coefficients with one ReLU layer and learns the dictionary. \Textcite{CunninghamEtAl2024} trained such autoencoders on the residual stream of small language models of the Pythia family and found directions more interpretable than neurons. \Textcite{BrickenEtAl2023} decomposed the $512$ neurons of a one-layer transformer's MLP into more than $4000$ features, among them features for DNA sequences, legal language, HTTP requests, and Hebrew text, invisible in single neurons. \Textcite{TempletonEtAl2024} scaled the method to a production model, Claude 3 Sonnet, with dictionaries of up to $34$ million features, many of them multilingual, multimodal, and usable to steer the model, and \textcite{GaoEtAl2025} trained a $16$-million-latent autoencoder on GPT-4 activations and measured scaling laws in the dictionary size.
+
+\begin{observation}[\textcite{OlahEtAl2020}; \textcite{ElhageEtAl2022}; \textcite{BrickenEtAl2023}; \textcite{TempletonEtAl2024}]\label[observation]{obs:superposition:poly}
+Individual neurons of trained networks are often polysemantic. The activation vectors of a layer of width $m$ are approximated, with a reconstruction error that is small but not negligible, by sparse nonnegative combinations of $p\gg m$ learned directions, and many of these directions are interpretable.
+\end{observation}
+
+The status of the observation should be stated carefully. Polysemanticity is robust and old. That activations \emph{are} sparse combinations of a dictionary is a modeling claim, supported by the interpretability of the recovered directions, and challenged by three facts we return to in \cref{sec:superposition:wrong}: the reconstructions leave a structured error, the dictionaries depend on the random seed, and some features are not one-dimensional. The question for this chapter is the one that comes before all of this. \emph{When and why does a network store more features than it has dimensions, how many can it store, and at what cost?}
+
+\section{The model: a ReLU autoencoder for sparse features}\label{sec:superposition:model}
+
+\paragraph{The features.} The input is a vector $x\in[0,1]^p$ of $p$ features with independent coordinates, each equal to $0$ with probability $S$ and uniform on $[0,1]$ otherwise. The number $S\in[0,1)$ is the \term{sparsity}\index{sparsity}; it is local notation, as is the name $p$ for the number of features, which matches the global use of $p$ for the number of features of a linear model. A feature is \emph{active} when it is nonzero. One feature has mean, second moment, and variance
+\begin{equation}\label{eq:superposition:moments}
+  \E x_i=\frac{1-S}2,\qquad \E x_i^2=\frac{1-S}3,\qquad \supv\defeq\Var x_i=\frac{(1-S)(1+3S)}{12}.
+\end{equation}
+Each feature carries an \term{importance}\index{importance of a feature} $\omega_i>0$, and $\supOmega=\sum_i\omega_i$.
+
+\paragraph{The network.} A matrix $W\in\R^{m\times p}$ with $m<p$ compresses the features to $h=Wx\in\R^m$, and the transpose decodes them through a ReLU with bias $b\in\R^p$:
+\begin{equation}\label{eq:superposition:model}
+  x'=\relu\bigl(W^\top Wx+b\bigr),\qquad \Loss(W,b)=\sum_{i=1}^p\omega_i\,\E\bigl(x_i-x'_i\bigr)^2 .
+\end{equation}
+We write $w_i\in\R^m$ for the $i$-th column of $W$, the direction of feature $i$, and $G=W^\top W$ for the Gram matrix of the directions. Coordinate $i$ of the output reads
+\[
+  x'_i=\relu\Bigl(\norm{w_i}^2x_i+\sum_{j\ne i}\ip{w_i,w_j}\,x_j+b_i\Bigr):
+\]
+the signal, the \term{interference}\index{interference} from the other features, and a bias. The \emph{linear model} is the same network without the ReLU, $x'=W^\top Wx+b$.
+
+\begin{definition}[Representation and superposition]\label[definition]{def:superposition:sup}
+A configuration $(W,b)$ \emph{represents} feature $i$ if $w_i\ne0$, and it \emph{drops} feature $i$ if $w_i=0$. It is in \term{superposition} if it represents more than $m$ features.
+\end{definition}
+
+Represented directions in superposition cannot all be orthogonal, so superposition means interference. \Textcite{ElhageEtAl2022} also measure superposition by $\norm{W}_F^2/m$, the number of features per dimension, which equals $1$ when $W^\top W$ is an orthogonal projection of rank $m$; we use it in \cref{sec:superposition:reading}.
+
+\paragraph{What was thrown away.} The features are given rather than learned from data, independent, identically distributed except for their importances, and of one kind (a magnitude in $[0,1]$). The task is to reconstruct them, not to compute with them. The decoder is tied to the encoder, there is one layer, and the loss is the population loss. Each simplification removes something that would hide the trade-off we want to see: with independent features, interference is pure noise; with reconstruction, the target is the identity and every error is visible; tied weights make the geometry of $W$ the whole story.
+
+\begin{dictionary}
+features $x_i$, sparsity $S$, importance $\omega_i$ & properties of the input a network uses (a word sense, a language, a concept), present rarely, of unequal value to the loss\\
+directions $w_i\in\R^m$, $m<p$ & directions in a layer's activation space: the rows of a sparse autoencoder's decoder\\
+$h=Wx$ & the activation vector of the layer, of width $m$\\
+interference $\ip{w_i,w_j}x_j$ & polysemanticity: a neuron or direction picks up unrelated features\\
+ReLU with bias $b_i<0$ & a nonlinearity that thresholds out small interference; the encoder of a sparse autoencoder\\
+loss $\Loss(W,b)$ & what the layer must preserve for the rest of the network\\
+\end{dictionary}
+
+\paragraph{What one had to notice.} That a sparse feature is usually absent, so that interference with it costs only when it is present together with another one; that a ReLU with a slightly negative bias discards small positive interference for free and that negative interference costs nothing at all, because the ReLU clips it; and that in high dimension there are exponentially many almost orthogonal directions. The rest is computation.
+
+\section{The solution: what the ReLU buys}\label{sec:superposition:two}
+
+\paragraph{No superposition without a nonlinearity.} The linear model is principal component analysis, and so it never superposes. The theorem holds for every distribution with uncorrelated coordinates; we use only the mean $\mu\in\R^p$ and the diagonal covariance $\diag(v_1,\dots,v_p)$ of $x$.
+
+\begin{theorem}[The linear model keeps the top $m$ features]\label{thm:superposition:linear}
+Let $x$ have mean $\mu$ and covariance $\diag(v_1,\dots,v_p)$ with all $v_i>0$, let $m<p$, and let $c_{(1)}\ge\dots\ge c_{(p)}$ be the numbers $c_i=\omega_iv_i$ in decreasing order. For every $W\in\R^{m\times p}$ and $b\in\R^p$,
+\[
+  \Loss_{\mathrm{lin}}(W,b)\defeq\sum_{i=1}^p\omega_i\E\bigl(x_i-(W^\top Wx+b)_i\bigr)^2\ \ge\ \sum_{k=m+1}^pc_{(k)} .
+\]
+Equality holds when, for a set $K$ of $m$ indices carrying the $m$ largest values $c_i$, the columns $(w_i)_{i\in K}$ are orthonormal, $w_i=0$ for $i\notin K$, and $b=(I_p-W^\top W)\mu$. If $c_{(m)}>c_{(m+1)}$, then these are the only minimizers; in particular every minimizer drops exactly $p-m$ features, whatever the sparsity.
+\end{theorem}
+
+\begin{proof}
+The plan is to remove the bias, to rewrite the loss as the distance from a diagonal matrix to a matrix of rank at most $m$, and to bound that distance by a linear program on the diagonal of a projection. Put $P=W^\top W$, $D=\diag(\omega_i)$ and $\Sigma=\diag(v_i)$.
+
+\emph{The bias.} Split the error as $x-Px-b=(I_p-P)(x-\mu)+\bigl((I_p-P)\mu-b\bigr)$. The first part has mean zero, so the cross term vanishes in expectation, and
+\[
+  \Loss_{\mathrm{lin}}(W,b)=\sum_i\omega_i\bigl[(I_p-P)\Sigma(I_p-P)\bigr]_{ii}+\sum_i\omega_i\bigl((I_p-P)\mu-b\bigr)_i^2 .
+\]
+The second sum is nonnegative and vanishes exactly for $b=(I_p-P)\mu$. The first equals $\norm{A-B}_F^2$ with $A=D^{1/2}\Sigma^{1/2}=\diag(\sqrt{c_i})$ and $B=D^{1/2}P\Sigma^{1/2}$, a matrix of rank at most $m$.
+
+\emph{A projection.} Because $\rank B\le m<p$, there is an orthogonal projection $Q$ of rank $m$ whose range contains the range of $B$, so that $(I_p-Q)B=0$. The matrices $(I_p-Q)A$ and $Q(A-B)$ have columns in orthogonal subspaces and sum to $A-B$, so
+\begin{equation}\label{eq:superposition:proj}
+  \norm{A-B}_F^2=\norm{(I_p-Q)A}_F^2+\norm{Q(A-B)}_F^2\ \ge\ \sum_ic_i\norm{(I_p-Q)e_i}^2=\sum_ic_i(1-q_i),
+\end{equation}
+with $q_i=\norm{Qe_i}^2=Q_{ii}$. The numbers $q_i$ lie in $[0,1]$ and add up to $\tr Q=m$.
+
+\emph{The linear program.} For every real $t$, $\sum_ic_iq_i=tm+\sum_i(c_i-t)q_i$. Take $t=c_{(m)}$: the terms with $c_i<t$ are at most $0$, and those with $c_i\ge t$ are at most $c_i-t$, since $q_i\le1$; the indices with $c_i>t$ are among the top $m$. Hence $\sum_ic_iq_i\le tm+\sum_{k\le m}(c_{(k)}-t)=\sum_{k\le m}c_{(k)}$, and \eqref{eq:superposition:proj} gives the bound.
+
+\emph{Attainment.} For the configuration in the statement, $P$ is the diagonal projection $\Pi_K$ onto the coordinates in $K$, so $B=\diag(\sqrt{c_i}\,\ind\{i\in K\})$ and $\norm{A-B}_F^2=\sum_{i\notin K}c_i=\sum_{k>m}c_{(k)}$; the bias term vanishes by the choice of $b$.
+
+\emph{Uniqueness.} Let $c_{(m)}>c_{(m+1)}$, so that $K$ is unique, and take $t$ strictly between the two values. Every term $(c_i-t)q_i$ is then at most $c_i-t$ for $i\in K$ and at most $0$ for $i\notin K$, with equality only if $q_i=1$, respectively $q_i=0$. So equality forces $\norm{(I_p-Q)e_i}=0$ for $i\in K$, and since $\rank Q=m=\abs K$, $Q=\Pi_K$. Equality in \eqref{eq:superposition:proj} also forces $Q(A-B)=0$, that is $B=\Pi_KA$, and then $P=D^{-1/2}B\Sigma^{-1/2}=\Pi_K$. The identity $W^\top W=\Pi_K$ says $\ip{w_i,w_j}=\ind\{i=j\in K\}$, and the bias must be $(I_p-\Pi_K)\mu$.
+\end{proof}
+
+Sparsity enters the linear model only through the variances, so it cannot make superposition pay. The reason is visible in the proof: a linear decoder pays for interference in every input, whether the interfering feature is present or not, through the variance it adds. When importances tie the minimizer is not unique, and rotations of $W$ within a tied block may represent more than $m$ features; but $W^\top W$ is still an orthogonal projection, one feature per dimension, and the slightest difference in importances removes the rotation (\cref{ex:superposition:ties}).\sidenote{That a linear autoencoder trained by least squares recovers the principal subspace goes back to \textcite{BourlardKamp1988} and \textcite{BaldiHornik1989}, who also showed that its other critical points are saddles. The low-rank approximation behind it is that of \textcite{EckartYoung1936}.}
+
+\paragraph{Two facts about the ReLU.} Everything that follows uses two inequalities: for all real $z,z'$ and every $y\ge0$,
+\begin{equation}\label{eq:superposition:relu}
+  \abs{\relu(z)-\relu(z')}\le\abs{z-z'},\qquad\abs{y-\relu(z)}\le\abs{y-z}.
+\end{equation}
+The first says that the ReLU is $1$-Lipschitz. For the second, if $z\ge0$ both sides agree, and if $z<0$, then $\abs{y-0}=y\le y-z$. The ReLU is the projection onto $[0,\infty)$, and projecting onto a convex set that contains the target never increases the distance to it. This is the whole advantage of the nonlinearity: negative interference is free.
+
+\begin{lemma}[The cost of dropping a feature]\label[lemma]{lem:superposition:drop}
+If $w_i=0$, then the term $i$ of $\Loss(W,b)$ is at least $\omega_i\,\supv$, with equality if and only if $b_i=\frac{1-S}2$.
+\end{lemma}
+
+\begin{proof}
+If $w_i=0$, then $x'_i=\relu(b_i)$ is a constant $c\ge0$, and $\E(x_i-c)^2=\supv+(\E x_i-c)^2$ is smallest exactly at $c=\E x_i=\frac{1-S}2>0$, that is, at $b_i=\frac{1-S}2$.
+\end{proof}
+
+A dropped feature is replaced by its mean, and the bias makes this possible; without a bias the cost of dropping would be $\omega_i\E x_i^2$, which changes the comparisons below (\cref{ex:superposition:nobias}).
+
+\paragraph{Two features in one dimension.} Take $p=2$, $m=1$, so that $W=(w_1,w_2)$ is a row of two numbers, and importances $\omega=(1,r)$ with $0<r\le1$. The loss is a function of four numbers, and we compare three explicit configurations: the \term{dedicated} configuration $w=(1,0)$, $b=(0,\frac{1-S}2)$, which keeps feature $1$ exactly and replaces feature $2$ by its mean; the \term{antipodal pair} $w=(1,-1)$, $b=(0,0)$; and the antipodal tilt $w=(1,-c)$ of the dedicated configuration. The tilt needs one more function. For $\tau\in\R$ and a feature $x$, let
+\begin{equation}\label{eq:superposition:f}
+  f_S(\tau)=S\,\E\relu(\tau-x)^2+(1-S)\,\E(\tau-x)^2,\qquad \kappa(S)=\min_{\tau\in\R}f_S(\tau),
+\end{equation}
+and let $\tau_S$ be the minimizer (\cref{ex:superposition:kappa} shows that it exists, is unique, lies in $(0,1)$, and solves a quadratic equation). Numerically, $\kappa(S)/\supv$ equals $1$ at $S=0$, $0.60$ at $S=\frac12$, and $0.11$ at $S=0.9$, and $\kappa(S)\le f_S(0)=\frac{(1-S)^2}3$.
+
+\begin{theorem}[Two features in one dimension]\label{thm:superposition:two}
+Let $p=2$, $m=1$, $\omega=(1,r)$ with $0<r\le1$, and $0\le S<1$.
+\begin{enumerate}
+\item Every configuration that drops a feature has $\Loss\ge r\,\supv$. The dedicated configuration attains $r\,\supv$.
+\item The antipodal pair has $\Loss=\frac{1+r}6(1-S)^2$.
+\item For every $c>0$, the configuration $w=(1,-c)$, $b=\bigl(c\tau_S,\,(1+c-c^2)\frac{1-S}2\bigr)$ has
+\[
+  \Loss\le r\,\supv-c^2\bigl(r\,\supv-\kappa(S)\bigr)+c^4r\,\supv .
+\]
+\item Consequently, if $r\,\supv>\min\bigl\{\kappa(S),\frac{1+r}6(1-S)^2\bigr\}$, then the infimum of $\Loss$ is strictly smaller than the loss of every configuration that drops a feature: no optimal or nearly optimal configuration drops one. This holds in particular whenever $S>\frac{2+r}{2+5r}$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to evaluate the antipodal pair exactly and to bound the tilt with \eqref{eq:superposition:relu}; part (iv) then compares numbers.
+
+\emph{Part (i).} If $w_2=0$, then \cref{lem:superposition:drop} bounds the second term by $r\,\supv$, and the first is nonnegative. If $w_1=0$, then the first term alone is at least $\supv\ge r\,\supv$. For the dedicated configuration, $x'_1=\relu(x_1)=x_1$, and the second term equals $r\,\supv$ by \cref{lem:superposition:drop}.
+
+\emph{Part (ii).} Here $x'_1=\relu(x_1-x_2)$. If $x_2=0$, then $x'_1=x_1$. If $x_1=0$, then $x'_1=\relu(-x_2)=0=x_1$: the interference is negative and the ReLU clips it. If both are active, which happens with probability $(1-S)^2$, then $x_1-\relu(x_1-x_2)=\min(x_1,x_2)$, and for independent uniform $U,V$ the minimum has density $2(1-t)$ on $[0,1]$, so $\E\min(U,V)^2=\int_0^12t^2(1-t)\,\dd t=\frac16$. The first term is therefore $\frac{(1-S)^2}6$, and by symmetry the second is $r$ times the same.
+
+\emph{Part (iii), feature 1.} Now $x'_1=\relu(x_1+c(\tau_S-x_2))$. If $x_1>0$, then $x_1=\relu(x_1)$ and the Lipschitz bound in \eqref{eq:superposition:relu} gives $\abs{x_1-x'_1}\le c\abs{\tau_S-x_2}$. If $x_1=0$, then $(x_1-x'_1)^2=c^2\relu(\tau_S-x_2)^2$, because $c>0$. Since $x_1$ and $x_2$ are independent, the first term is at most $c^2f_S(\tau_S)=c^2\kappa(S)$.
+
+\emph{Part (iii), feature 2.} Now $x'_2=\relu(z)$ with $z=-cx_1+c^2x_2+b_2$. By the second inequality in \eqref{eq:superposition:relu}, $(x_2-x'_2)^2\le(x_2-z)^2=\bigl((1-c^2)x_2+cx_1-b_2\bigr)^2$. Our $b_2$ is the mean of $(1-c^2)x_2+cx_1$, so the expectation is its variance, $(1-c^2)^2\supv+c^2\supv=\supv(1-c^2+c^4)$. Adding $r$ times this to the bound for feature $1$ gives (iii).
+
+\emph{Part (iv).} If $r\,\supv>\kappa(S)$, take $c^2=(r\supv-\kappa(S))/(2r\supv)$ in (iii); the loss is then at most
+\[
+  r\,\supv-\frac{\bigl(r\,\supv-\kappa(S)\bigr)^2}{4r\,\supv}<r\,\supv .
+\]
+If $r\,\supv>\frac{1+r}6(1-S)^2$, then (ii) gives a loss below $r\,\supv$. In both cases (i) shows that every configuration dropping a feature is worse than one of these. Finally, by \eqref{eq:superposition:moments} and because $1-S>0$, the inequality
+\[
+  \frac{1+r}6(1-S)^2<r\,\frac{(1-S)(1+3S)}{12}
+\]
+is equivalent to $2(1+r)(1-S)<r(1+3S)$, that is, to $(2+5r)S>2+r$.
+\end{proof}
+
+Both constructions superpose by making the interference negative. The antipodal pair is the extreme case: each feature is read out exactly whenever it is alone, and the error $\min(x_1,x_2)$ appears only when both are present, an event of probability $(1-S)^2$, while dropping a feature costs order $1-S$. The tilt is the infinitesimal version. Feature $2$ gains $c^2r\supv$ because its readout now sees a little of $x_2$; feature $1$ pays $c^2\kappa(S)$, and since negative interference is clipped when $x_1=0$, $\kappa(S)$ is smaller than the variance $\supv$ that a linear decoder would pay, which is what makes the trade profitable. At $S=0$ the two coincide, $\kappa(0)=\frac1{12}=v(0)$, and at $r=1$ the tilt is then neutral to second order in $c$, the rotational degeneracy of \cref{thm:superposition:linear}; at higher order the ReLU, which clips the rare negative outputs of a rotated readout, breaks the tie in favor of superposition.
+
+Part (iii) also shows that for $r>\kappa(S)/\supv$ the dedicated configuration is not a local minimum: the loss decreases along the tilt. The converse is what a second-order computation gives.
+
+\begin{heuristic}[Heuristic derivation of the spinodal]
+Perturb the dedicated configuration to $w=(1+\delta,\pm c)$ and $b=(b_1,\frac{1-S}2+\beta)$ with all four perturbations small. For feature $2$, whose ReLU stays in its linear region, the best readout of $x_2$ from $\pm c(1+\delta)x_1+c^2x_2$ plus a constant gains at most $c^2r\supv+O(c^4)$. For feature $1$, the error is $-(2\delta x_1\pm cx_2+b_1)$ when $x_1>0$, up to a set of measure $O(c)$ near $x_1=0$, and $\relu(\pm cx_2+b_1)$ when $x_1=0$; the term in $\delta$ only adds a positive quadratic, the sign $+$ is worse than $-$ (it is not clipped), and with $b_1=c\tau$ the cost is $c^2f_S(\tau)\ge c^2\kappa(S)$. So the second variation is $c^2(\kappa(S)-r\supv)$ to leading order: the dedicated configuration is a strict local minimum for $r<\kappa(S)/\supv$ and a saddle for $r>\kappa(S)/\supv$.
+\end{heuristic}
+
+We checked the heuristic numerically: from small perturbations of the dedicated configuration with a negative tilt $w_2<0$, gradient descent on the exact loss returns to it at $(S,r)=(0.7,0.3)$, $(0.5,0.55)$ and $(0.3,0.75)$, just below the curve $r=\kappa(S)/\supv$, and leaves it at $(0.7,0.4)$, $(0.5,0.65)$ and $(0.3,0.85)$, just above. In the language of phase transitions, the curve $r=\kappa(S)/\supv$ is a \term{spinodal}\index{spinodal}, the edge of metastability of the dedicated phase. \Cref{sec:superposition:reading} shows that the true transition comes before it and is discontinuous.
+
+\section{The solution: geometry and capacity}\label{sec:superposition:geometry}
+
+\paragraph{The sparse limit.} With many features, the cleanest statements are about $S\to1$. Condition on the set $A\subseteq\{1,\dots,p\}$ of active features, which has probability $(1-S)^{\abs A}S^{p-\abs A}$, and let $\ell_A(W,b)$ be the conditional expected loss. For $A=\emptyset$ and $A=\{i\}$, with $U$ uniform on $[0,1]$,
+\begin{align*}
+  \ell_\emptyset&=\sum_j\omega_j\relu(b_j)^2,\\
+  \ell_{\{i\}}&=\omega_i\E\bigl(U-\relu(\norm{w_i}^2U+b_i)\bigr)^2+\sum_{j\ne i}\omega_j\E\relu\bigl(\ip{w_j,w_i}U+b_j\bigr)^2 .
+\end{align*}
+Since $x\in[0,1]^p$, every $\ell_A$ is bounded by a constant $C_{W,b}$ that depends on the configuration, and the probability that two or more features are active is at most $\binom p2(1-S)^2$. Hence
+\begin{equation}\label{eq:superposition:expansion}
+  \Loss(W,b)=S^p\ell_\emptyset+(1-S)S^{p-1}\sum_{i=1}^p\ell_{\{i\}}+R,\qquad 0\le R\le\tbinom p2C_{W,b}(1-S)^2 .
+\end{equation}
+To first order in the density $1-S$, the loss sees only inputs with one active feature: the problem becomes one of \emph{one-hot} inputs.
+
+\begin{definition}[Obtuse configurations]\label[definition]{def:superposition:obtuse}
+A configuration is \term{obtuse}\index{obtuse configuration} if its directions are unit vectors with pairwise nonpositive inner products, $\norm{w_i}=1$ and $\ip{w_i,w_j}\le0$ for $i\ne j$, and its bias is $b=0$.
+\end{definition}
+
+\begin{lemma}[No first-order interference]\label[lemma]{lem:superposition:firstorder}
+A configuration has $\ell_\emptyset=0$ and $\ell_{\{i\}}=0$ for every $i$ if and only if it is obtuse.
+\end{lemma}
+
+\begin{proof}
+The term $\omega_i\E(U-\relu(\norm{w_i}^2U+b_i))^2$ vanishes if and only if $\relu(\norm{w_i}^2u+b_i)=u$ for almost every $u\in[0,1]$; the left side is then a linear function equal to $u$ on an interval, so $\norm{w_i}^2=1$ and $b_i=0$. Given $b=0$, the term $\E\relu(\ip{w_j,w_i}U)^2$ vanishes if and only if $\ip{w_j,w_i}\le0$, and $\ell_\emptyset=0$ holds. Conversely, an obtuse configuration makes every one of these terms zero.
+\end{proof}
+
+How many directions can be pairwise obtuse? The answer is classical.
+
+\begin{lemma}[At most $2m$ obtuse directions]\label[lemma]{lem:superposition:2m}
+If $u_1,\dots,u_k\in\R^m$ are nonzero and $\ip{u_i,u_j}\le0$ for all $i\ne j$, then $k\le2m$. The $2m$ vectors $\pm e_1,\dots,\pm e_m$ attain the bound.
+\end{lemma}
+
+\begin{proof}
+We use induction on $m$. For $m=1$ the vectors are nonzero numbers, and two of the same sign have a positive product, so $k\le2$. Let $m\ge2$, and project $u_1,\dots,u_{k-1}$ onto the hyperplane orthogonal to $u_k$: $u'_i=u_i-\frac{\ip{u_i,u_k}}{\norm{u_k}^2}u_k$. For $i\ne j$,
+\[
+  \ip{u'_i,u'_j}=\ip{u_i,u_j}-\frac{\ip{u_i,u_k}\ip{u_j,u_k}}{\norm{u_k}^2}\le0,
+\]
+because the subtracted product of two nonpositive numbers is nonnegative. A projection $u'_i$ vanishes only if $u_i$ is a multiple of $u_k$, necessarily a negative one; two such $u_i$ would have a positive inner product, so at most one $u'_i$ vanishes. The remaining $k-2$ or more nonzero vectors lie in an $(m-1)$-dimensional space with pairwise nonpositive inner products, so $k-2\le2(m-1)$ by the induction hypothesis.
+\end{proof}
+
+\begin{theorem}[Sparse features are superposed]\label{thm:superposition:sparse}
+Let $m<p$ and $0\le S<1$, and let $\omega_{\min}$ be the smallest importance.
+\begin{enumerate}
+\item A configuration $(W,b)$ satisfies $\Loss(W,b)=O\bigl((1-S)^2\bigr)$ as $S\to1$ if and only if it is obtuse. If it is not, then $\Loss(W,b)\ge2^{1-p}(1-S)\bigl(\ell_\emptyset+\sum_i\ell_{\{i\}}\bigr)>0$ for $S\ge\frac12$.
+\item Obtuse configurations exist if and only if $p\le2m$. Every obtuse configuration has
+\[
+  \Loss(W,0)\le\frac{\supOmega}3(1-S)\bigl(1-S^{p-1}\bigr)\le\frac{(p-1)\supOmega}3(1-S)^2 .
+\]
+\item If $p\le2m$ and $4(1-S^{p-1})\supOmega<\omega_{\min}(1+3S)$, then the loss of every configuration that drops a feature exceeds the loss of every obtuse configuration. In particular, for $S$ close enough to $1$, no optimal or nearly optimal configuration drops a feature, and all are in superposition.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to read part (i) from the expansion \eqref{eq:superposition:expansion}, part (ii) from \cref{lem:superposition:2m} and the clipping of negative interference, and part (iii) from \cref{lem:superposition:drop}.
+
+\emph{Part (i).} By \eqref{eq:superposition:expansion}, $\Loss(W,b)=O((1-S)^2)$ if and only if $S^p\ell_\emptyset+(1-S)S^{p-1}\sum_i\ell_{\{i\}}=O((1-S)^2)$, which forces $\ell_\emptyset=0$ (the coefficient $S^p$ tends to $1$) and then $\sum_i\ell_{\{i\}}=0$; by \cref{lem:superposition:firstorder} this means obtuse. Conversely, for an obtuse configuration the first two terms vanish and $\Loss=R=O((1-S)^2)$. For the lower bound, drop $R\ge0$ and use $S^p\ge(1-S)S^{p-1}$ and $S^{p-1}\ge2^{1-p}$, both valid for $S\ge\frac12$.
+
+\emph{Part (ii), existence.} By \cref{lem:superposition:2m}, $p$ unit vectors with pairwise nonpositive inner products exist only if $p\le2m$. If $p\le2m$, then $\lceil p/2\rceil\le m$, and the directions $w_{2k-1}=e_k$, $w_{2k}=-e_k$ for $k\le\lfloor p/2\rfloor$, together with $w_p=e_{(p+1)/2}$ when $p$ is odd, are obtuse.
+
+\emph{Part (ii), the bound.} Fix $i$ and an obtuse configuration. If $x_i=0$, then $x'_i=\relu(\sum_{j\ne i}\ip{w_i,w_j}x_j)=0=x_i$, since every term of the sum is at most $0$. If $x_i>0$, then $x'_i=\relu(x_i+\sum_{j\ne i}\ip{w_i,w_j}x_j)$ lies in $[0,x_i]$, so $\abs{x_i-x'_i}\le x_i$, and $x'_i=x_i$ when no other feature is active. By independence, $\E(x_i-x'_i)^2\le\E x_i^2\cdot\Pr\{\text{some }x_j\ne0,\ j\ne i\}=\frac{1-S}3(1-S^{p-1})$. Summing with weights $\omega_i$ gives the first bound, and $1-S^{p-1}\le(p-1)(1-S)$ gives the second.
+
+\emph{Part (iii).} By \cref{lem:superposition:drop} and \eqref{eq:superposition:moments}, a configuration that drops a feature has loss at least $\omega_{\min}\frac{(1-S)(1+3S)}{12}$, and this exceeds the bound of part (ii) exactly under the stated inequality. As $S\to1$ its left side tends to $0$ and its right side to $4\omega_{\min}$. A configuration that drops no feature represents $p>m$ of them.
+\end{proof}
+
+For $p=2$ and $m=1$ the obtuse configuration is the antipodal pair, and part (ii) overestimates its exact loss of \cref{thm:superposition:two} by a factor of two. For $p\le2m$ in general, sparse features pair up into antipodal pairs in orthogonal planes, the cross-polytope, or form other obtuse sets such as a regular simplex of $m+1$ directions with pairwise inner products $-\frac1m$; at first order all of them are free. With $p>2m$ features first-order interference cannot be avoided. Then some inner products are positive, and a negative bias must cut off the interference, at the price of also cutting off the bottom of every true signal; part (i) says that the loss of every configuration is then of order $1-S$. Its constant is positive configuration by configuration; that it is bounded below uniformly is the content of the next remark.
+
+\begin{remark}[More than $2m$ features]\label[remark]{rem:superposition:uniform}
+For $p>2m$ the infimum of $\ell_\emptyset+\sum_i\ell_{\{i\}}$ over all configurations is positive, so the optimal loss is at least a constant times $1-S$ for $S\ge\frac12$.
+\end{remark}
+
+\begin{proofsketch}
+Along a sequence of configurations on which this sum tends to $0$, $\relu(b_j)\to0$, and the functions $u\mapsto\relu(\norm{w_i}^2u+b_i)$ tend to $u\mapsto u$ in $L^2[0,1]$; one checks that this forces $\norm{w_i}\to1$ and $b_i\to0$, so a subsequence of $W$ converges, and its limit is obtuse, which \cref{lem:superposition:2m} forbids. We omit the routine verification of the second step; the lower bound then follows from the inequality of part (i) of \cref{thm:superposition:sparse}.
+\end{proofsketch}
+
+\paragraph{The shape of the solutions.} In the configurations that training finds (\cref{fig:superposition:pentagon}), the represented directions form regular polygons and polytopes, and the share of a dimension that a feature receives takes simple fractional values. \Textcite{ElhageEtAl2022} define the \term{feature dimensionality}\index{feature dimensionality} of a represented feature,
+\[
+  \supD_i=\frac{\norm{w_i}^4}{\sum_{j}\ip{w_i,w_j}^2},
+\]
+which is $1$ for a feature with a dimension of its own and smaller under interference; the sum runs over all $j$, including $j=i$.
+
+\begin{proposition}[Tight frames share dimensions equally]\label[proposition]{prop:superposition:frame}
+Let $w_1,\dots,w_N$ have equal norms and span a subspace $V$ of dimension $k$, and suppose that they form a \term{tight frame} of $V$: $\sum_jw_jw_j^\top=\gamma\Pi_V$ for a number $\gamma$, with $\Pi_V$ the orthogonal projection onto $V$. Then $\supD_i=k/N$ for every $i$.
+\end{proposition}
+
+\begin{proof}
+Taking traces, $N\norm{w_1}^2=\gamma k$. For each $i$, $w_i\in V$ gives $\sum_j\ip{w_i,w_j}^2=w_i^\top\bigl(\sum_jw_jw_j^\top\bigr)w_i=\gamma\norm{w_i}^2=\frac Nk\norm{w_i}^4$, so $\supD_i=k/N$.
+\end{proof}
+
+An antipodal pair is a tight frame of a line, so each of its features has dimensionality $\frac12$; the vertices of a regular $N$-gon with $N\ge3$ are a tight frame of the plane (\cref{ex:superposition:frames}), with dimensionality $\frac2N$: $\frac23$ for a triangle, $\frac25$ for a pentagon; a regular tetrahedron in $\R^3$ gives $\frac34$. When the represented features split into tight frames of mutually orthogonal subspaces, each frame keeps its own value.
+
+\paragraph{Exponentially many almost orthogonal directions.} Obtuse configurations stop at $2m$ features. Beyond that, interference is unavoidable but can be made small, and in high dimension small costs little room.
+
+\begin{theorem}[Packing almost orthogonal directions]\label{thm:superposition:packing}
+For every $\eps\in(0,1)$ and every integer $m\ge1$, there are $N=\lfloor e^{\eps^2m/4}\rfloor$ unit vectors $u_1,\dots,u_N\in\R^m$ with $\abs{\ip{u_i,u_j}}\le\eps$ for all $i\ne j$.
+\end{theorem}
+
+\begin{proof}
+The plan is to choose the vectors at random and to show that the expected number of bad pairs is less than one. Let $u_i=s_i/\sqrt m$ with independent uniformly random sign vectors $s_i\in\{\pm1\}^m$; each $u_i$ is a unit vector. For $i\ne j$, $m\ip{u_i,u_j}=\sum_{k=1}^ms_{ik}s_{jk}$ is a sum of $m$ independent uniform signs, because the products $s_{ik}s_{jk}$ are independent and uniform on $\{\pm1\}$. Hoeffding's inequality (\cref{thm:toolkit:hoeffding}) for $m$ variables with values in $[-1,1]$ gives
+\[
+  \Pr\bigl\{\abs{\ip{u_i,u_j}}>\eps\bigr\}\le\Pr\Bigl\{\Bigl\lvert\sum_{k=1}^ms_{ik}s_{jk}\Bigr\rvert\ge\eps m\Bigr\}\le2\exp\Bigl(-\frac{2(\eps m)^2}{4m}\Bigr)=2e^{-\eps^2m/2}.
+\]
+Summing over the $\binom N2$ pairs, the expected number of bad pairs is at most $N(N-1)e^{-\eps^2m/2}<N^2e^{-\eps^2m/2}\le1$, where the last step uses $N\le e^{\eps^2m/4}$. A nonnegative integer random variable with mean less than $1$ is $0$ with positive probability, so some choice of signs has no bad pair.
+\end{proof}
+
+The theorem is a form of the lemma of \textcite{JohnsonLindenstrauss1984}, and its exponent is the right order up to a logarithm.\sidenote{The Welch bound, \cref{ex:superposition:welch}, shows that $N>m$ unit vectors always have some $\abs{\ip{u_i,u_j}}\ge\sqrt{(N-m)/(m(N-1))}$ \parencite{Welch1974}, so $\eps$ cannot go below about $(2m)^{-1/2}$ once $N\ge2m$. That $\log N$ can be at most of order $\eps^2m\log(1/\eps)$ is a theorem of \textcite{Alon2003}.} For $m=1000$ and $\eps=0.25$ it guarantees $6.1$ million directions with all cosines at most $0.25$ in absolute value; in two samples of $3000$ random sign vectors the largest cosines were $0.16$ and $0.18$.
+
+\paragraph{Reading sparse features through a ReLU.} Almost orthogonal directions are useful only if the features can be read back. For the toy model with unit directions this is one ReLU with a negative bias.
+
+\begin{theorem}[Thresholded readout]\label{thm:superposition:readout}
+Let the directions $w_1,\dots,w_p\in\R^m$ be unit vectors with \term{coherence}\index{coherence} $\mu=\max_{i\ne j}\abs{\ip{w_i,w_j}}$, let $s\ge1$ be an integer, let $\beta\ge s\mu$, and set $b=-\beta\mathbf 1_p$ in \eqref{eq:superposition:model}. If $x\in[0,1]^p$ has at most $s$ nonzero coordinates, then for every $i$:
+\begin{enumerate}
+\item if $x_i=0$, then $x'_i=0$;
+\item if $x_i>0$, then $x_i-\beta-(s-1)\mu\le x'_i\le x_i$; with $\beta=s\mu$, the error is at most $(2s-1)\mu$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+Write $x'_i=\relu(x_i+\iota_i-\beta)$ with the interference $\iota_i=\sum_{j\ne i}\ip{w_i,w_j}x_j$, which has at most as many nonzero terms as there are active features $j\ne i$, each of absolute value at most $\mu$. If $x_i=0$, there are at most $s$ such terms, so $\iota_i-\beta\le s\mu-\beta\le0$ and $x'_i=0$. If $x_i>0$, there are at most $s-1$, so $\abs{\iota_i}\le(s-1)\mu$. The ReLU is nondecreasing, hence $x'_i\le\relu(x_i+(s-1)\mu-\beta)\le\relu(x_i-\mu)\le x_i$, using $\beta\ge s\mu$ and $x_i\ge0$; and $x'_i\ge x_i+\iota_i-\beta\ge x_i-\beta-(s-1)\mu$.
+\end{proof}
+
+\begin{corollary}[Capacity of the toy model]\label[corollary]{cor:superposition:capacity}
+Let $p\ge2$, $s\ge1$ and $\delta\in(0,1)$. If $m\ge4(2s-1)^2\log p/\delta^2$, then there is a configuration of \eqref{eq:superposition:model} that outputs $x'_i=0$ for every inactive feature and $\abs{x'_i-x_i}\le\delta$ for every active one, for every $x\in[0,1]^p$ with at most $s$ active features.
+\end{corollary}
+
+\begin{proof}
+Let $\eps=\delta/(2s-1)\in(0,1)$. The hypothesis gives $\eps^2m/4\ge\log p$, so \cref{thm:superposition:packing} provides at least $p$ unit vectors with coherence at most $\eps$; take $p$ of them as columns of $W$. Apply \cref{thm:superposition:readout} with $\mu\le\eps$ and $\beta=s\eps\ge s\mu$: the error on active features is at most $\beta+(s-1)\mu\le(2s-1)\eps=\delta$.
+\end{proof}
+
+The number of features that fit in $m$ dimensions is therefore exponential in $m\delta^2/s^2$. This is compressed sensing done by a single layer.\sidenote{Compressed sensing recovers every $s$-sparse vector from $m$ of order $s\log(p/s)$ random linear measurements by $\ell_1$ minimization \parencite{CandesEtAl2006,Donoho2006}. A one-step thresholded readout pays a factor of about $s$ in the number of dimensions, and the Welch bound shows that no guarantee based on coherence alone can do better (\cref{ex:superposition:welch}).} The guarantee is worst case: it holds for every input with at most $s$ active features, while for random sparse features the interference is a sum of terms with random signs and is typically of order $\mu\sqrt s$ rather than $\mu s$.
+
+\section{Reading the solution}\label{sec:superposition:reading}
+
+The theorems make four kinds of prediction. (i) A linear network never superposes, at every sparsity. (ii) Two features share one dimension when they are sparse and nearly equally important; superposition provably wins for $S>\frac{2+r}{2+5r}$ and for $r>\kappa(S)/\supv$, and the dedicated configuration is a saddle in the second region. (iii) Features fit in $m$ dimensions without first-order interference exactly up to $p=2m$, in obtuse configurations with zero bias; beyond $2m$, positive interference appears and must be cut off by a negative bias, and the loss jumps from order $(1-S)^2$ to order $1-S$. (iv) With few active features, the number of storable features is exponential in the dimension.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},hplot,width=0.475\linewidth,height=0.37\linewidth]
+\nextgroupplot[ymode=log,xmin=0,xmax=1,ymin=1e-4,ymax=0.5,xlabel={sparsity $S$},ylabel={loss},
+  legend style={at={(0.02,0.02)},anchor=south west}]
+\addplot[theory] table[x=S,y=dedicated] {figures/data/11-superposition-loss.dat};
+\addplot[theory2] table[x=S,y=antipodal] {figures/data/11-superposition-loss.dat};
+\addplot[theory3] table[x=S,y=optimum] {figures/data/11-superposition-loss.dat};
+\addplot[simulation] table[x=S,y=seed0] {figures/data/11-superposition-loss.dat};
+\addplot[simulation,forget plot] table[x=S,y=seed1] {figures/data/11-superposition-loss.dat};
+\addplot[simulation,forget plot] table[x=S,y=seed2] {figures/data/11-superposition-loss.dat};
+\legend{dedicated $r\,v(S)$,antipodal $\frac{1+r}6(1-S)^2$,numerical optimum,trained (three seeds)}
+\nextgroupplot[xmin=0,xmax=1,ymin=0,ymax=1,xlabel={importance ratio $r$},ylabel={sparsity $S$},
+  legend style={at={(0.02,0.02)},anchor=south west}]
+\addplot[theory] table[x=r,y=kappa] {figures/data/11-superposition-phasecurves.dat};
+\addplot[theory2] table[x=r,y=antipodal] {figures/data/11-superposition-phasecurves.dat};
+\addplot[simulation2] table[x=r,y=numeric] {figures/data/11-superposition-phase.dat};
+\node[font=\footnotesize,text=ink] at (axis cs:0.72,0.86) {superposition};
+\node[font=\footnotesize,text=ink] at (axis cs:0.4,0.4) {feature 2 dropped};
+\legend{$r=\kappa(S)/v(S)$,$S=\frac{2+r}{2+5r}$,numerical boundary}
+\end{groupplot}
+\end{tikzpicture}
+\caption{Two features in one dimension. Left: importance ratio $r=\frac12$. The curves are the exact losses of the dedicated configuration and of the antipodal pair (\cref{thm:superposition:two}) and the minimum of the exact loss over $(w_1,w_2,b_1,b_2)$, computed by L-BFGS from three starting points. The points are the exact loss of parameters trained by Adam on fresh batches of $2048$ samples ($1500$ steps, learning rate $10^{-2}$, then $2\times10^{-3}$ after step $1000$; initialization $\cN(0,\frac14)$; seeds $0$, $1$, $2$). Right: in the region above the dots the numerical optimum represents both features, and below them it drops feature $2$; superposition is proved above each of the two curves.}\label{fig:superposition:two}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:superposition:two} tests prediction (ii). On the left, at $r=\frac12$, the optimal loss follows the dedicated curve $r\supv$ exactly up to $S\approx0.52$, then breaks away, and above $S\approx0.7$ it is within $4\%$ of the antipodal curve, which it approaches as $S\to1$. Training finds the optimum to within $0.1\%$ whenever it does not stall, and the stalls are informative. At $S=0.5$ one seed ends in a superposed configuration $3\%$ worse than the dedicated optimum: below the transition the superposed branch is metastable. At $S=0.55$ two of the three seeds end at the dedicated configuration, which there is a strict local minimum: $0.55$ lies between the true transition, $S_c=0.516$, and the spinodal, $S=0.586$, at which $\kappa(S)/\supv=\frac12$. For $S\ge0.75$ one seed still sits near the dedicated configuration, now a saddle, but a flat one: the negative curvature $2(r\supv-\kappa(S))$ is about $0.02$ at $S=0.9$, and the escape from a saddle with a small starting tilt takes a time of order $\log(1/c_0)$ divided by the curvature, the logistic escape met in \cref{ch:deeplinear,ch:singleindex}.
+
+On the right, the numerical boundary $S_c(r)$ lies below both proven curves for every $r$. The transition is first order: along the left panel, the optimal configuration jumps at $S_c=0.516$ from $w=(1,0)$ to $w\approx(1.04,-0.77)$, with $\norm{W}_F^2$ jumping from $1$ to $1.67$, and then moves toward the antipodal pair, reaching $w\approx(1.04,-0.91)$ at $S=0.6$; it does not grow continuously from the dedicated one. Near $r=1$ the boundary falls to $S=0$ and meets the spinodal, and at $r=1$ every $S\ge0$ superposes, by a small rotation when $S$ is small (at $S=0$ the optimal loss is $0.08326$, against $\frac1{12}\approx0.08333$ for the dedicated configuration). For $r\to0$ both proven curves and the numerical boundary tend to $S=1$; a feature much less important than the other is superposed only when it is very sparse. The proven curve $S=\frac{2+r}{2+5r}$ is close to the true boundary at small $r$, because the transition goes to a nearly antipodal configuration with nearly zero bias, and the spinodal is close to it at large $r$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=4 by 1,horizontal sep=4mm},hplot,width=0.29\linewidth,height=0.29\linewidth,
+  xmin=-1.45,xmax=1.45,ymin=-1.45,ymax=1.45,axis equal image,xtick=\empty,ytick=\empty,axis line style={muted!50}]
+\nextgroupplot[title={$S=0$}]
+\addplot[quiver={u=\thisrow{x},v=\thisrow{y}},-stealth,sea,line width=0.9pt,restrict expr to domain={\thisrow{panel}}{0:0}] table[x expr=0,y expr=0] {figures/data/11-superposition-pentagon.dat};
+\addplot[only marks,mark=none,nodes near coords,point meta=explicit symbolic,every node near coord/.style={font=\scriptsize,text=ink,anchor=center},restrict expr to domain={\thisrow{panel}}{0:0}] table[x expr=1.22*\thisrow{x},y expr=1.22*\thisrow{y},meta=feature] {figures/data/11-superposition-pentagon.dat};
+\nextgroupplot[title={$S=0.5$}]
+\addplot[quiver={u=\thisrow{x},v=\thisrow{y}},-stealth,sea,line width=0.9pt,restrict expr to domain={\thisrow{panel}}{1:1}] table[x expr=0,y expr=0] {figures/data/11-superposition-pentagon.dat};
+\addplot[only marks,mark=none,nodes near coords,point meta=explicit symbolic,every node near coord/.style={font=\scriptsize,text=ink,anchor=center},restrict expr to domain={\thisrow{panel}}{1:1}] table[x expr=1.22*\thisrow{x},y expr=1.22*\thisrow{y},meta=feature] {figures/data/11-superposition-pentagon.dat};
+\nextgroupplot[title={$S=0.8$}]
+\addplot[quiver={u=\thisrow{x},v=\thisrow{y}},-stealth,sea,line width=0.9pt,restrict expr to domain={\thisrow{panel}}{2:2}] table[x expr=0,y expr=0] {figures/data/11-superposition-pentagon.dat};
+\addplot[only marks,mark=none,nodes near coords,point meta=explicit symbolic,every node near coord/.style={font=\scriptsize,text=ink,anchor=center},restrict expr to domain={\thisrow{panel}}{2:2}] table[x expr=1.22*\thisrow{x},y expr=1.22*\thisrow{y},meta=feature] {figures/data/11-superposition-pentagon.dat};
+\nextgroupplot[title={$S=0.95$}]
+\addplot[quiver={u=\thisrow{x},v=\thisrow{y}},-stealth,sea,line width=0.9pt,restrict expr to domain={\thisrow{panel}}{3:3}] table[x expr=0,y expr=0] {figures/data/11-superposition-pentagon.dat};
+\addplot[only marks,mark=none,nodes near coords,point meta=explicit symbolic,every node near coord/.style={font=\scriptsize,text=ink,anchor=center},restrict expr to domain={\thisrow{panel}}{3:3}] table[x expr=1.15*\thisrow{x},y expr=1.15*\thisrow{y},meta=feature] {figures/data/11-superposition-pentagon.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Five features in two dimensions: the directions $w_i$ of norm above $0.1$ in trained models (importances $\omega_i=0.8^{i-1}$; Adam, $3000$ steps on fresh batches of $4096$ samples, learning rate $10^{-2}$, then $2\times10^{-3}$ after step $2000$; initialization $\cN(0,0.09)$; the better of seeds $0$ and $1$). Labels are feature indices. Dense: the two most important features, orthogonal. $S=0.5$: feature $1$ alone and features $2$, $3$ as an antipodal pair. $S=0.8$: two antipodal pairs, biases below $0.01$. $S=0.95$: all five, nearly a regular pentagon, with norms $1.09$ to $1.14$ and biases $-0.22$ to $-0.24$.}\label{fig:superposition:pentagon}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:superposition:pentagon} tests prediction (iii) with $p=5$ and $m=2$, so that $2m=4$. In the dense model the two most important features get orthogonal directions and the other three are dropped, with biases within $0.001$ of their means $\frac{1-S}2$, as \cref{thm:superposition:linear,lem:superposition:drop} predict. As $S$ grows, features enter in order of importance: three features at $S=0.5$, as a dedicated direction plus an antipodal pair orthogonal to it, and four at $S=0.8$, as two antipodal pairs, the obtuse configuration of \cref{thm:superposition:sparse} with zero bias. The fifth feature cannot join without positive interference, and at $S=0.95$ it has joined: the five directions form a nearly regular pentagon, with consecutive angles between $68.5^\circ$ and $75^\circ$, neighbors have inner products between $0.34$ and $0.45$, and every bias is about $-0.23$, the negative threshold that \cref{thm:superposition:readout} uses. The features per dimension, $\norm{W}_F^2/m$, are $1.0$, $1.4$, $2.0$ and $3.2$, and the dimensionalities are close to those of \cref{prop:superposition:frame}: $1$, $0.54$ and $0.46$ at $S=0.5$ (a dedicated feature and an unequal antipodal pair), $0.49$ to $0.51$ at $S=0.8$, and $0.38$ to $0.41$ at $S=0.95$, against $\frac25$ for a regular pentagon.
+
+\paragraph{Limits of the predictions.} The phase boundary of the two-feature model is numerical: we prove which side of each curve superposes, not where the true transition is, and we know no closed form for it. The capacity bound is worst case and loose for random inputs. And all predictions concern optimal configurations; the stalls in \cref{fig:superposition:two} show that training can miss them.
+
+\section{What the model gets wrong}\label{sec:superposition:wrong}
+
+\paragraph{What was thrown away.} \emph{The features are given.} In a network, features are not inputs but functions of the input, learned along with the weights that store them; the model says how a fixed set would be stored, not which set would be learned, and so it cannot say what a polysemantic neuron means. \emph{The features are independent} and identically distributed apart from importance. Correlations change everything the geometry depends on: features that never co-occur can be stored antipodally for free (\cref{ex:superposition:anticorrelated}), and features that always co-occur interfere in every input. \emph{The values are magnitudes} in $[0,1]$; with binary features the thresholds move (\cref{ex:superposition:binary}), and features with signs cannot use the clipping of negative interference. \emph{The task is reconstruction} through tied weights and one layer, so the model has nothing to say about computing with features stored in superposition. \emph{The loss is the population loss}, so there is no memorization and no finite-sample effect.
+
+\paragraph{Where it breaks.} \emph{Computation in superposition.} \Textcite{HanniEtAl2024} (unrefereed) construct one-layer networks that compute pairwise ANDs of many sparse Boolean features, with the inputs themselves in superposition, using far fewer neurons than there are features; there superposition is a resource for computation, not only a way through a bottleneck, and the reconstruction model cannot express this. \emph{Features that are not directions.} \Textcite{EngelsEtAl2025} found, with sparse autoencoders, multidimensional features in language models: days of the week and months of the year lie on circles in GPT-2 and Mistral~7B, and the circles are used to compute with modular arithmetic. A circular feature is a two-dimensional irreducible object, the Fourier feature of \cref{ch:grokking}, and the toy model, in which every feature is a single direction, cannot produce it. \emph{The geometry is not Euclidean.} \Textcite{ParkEtAl2024} formalize the hypothesis that concepts are linear directions, and argue that the inner product in which concept directions are orthogonal is a ``causal'' inner product determined by the model, not the Euclidean one; the toy model's choice of $\ip{\cdot,\cdot}$ is a convention. \emph{The decomposition is not unique.} Sparse autoencoders do not recover a unique dictionary: \textcite{PauloBelrose2025} find that autoencoders differing only in their random seed share only about $30\%$ of their latents in one large configuration, and \textcite{EngelsSmithTegmark2025} show that the reconstruction error, the ``dark matter'', is structured, with about half of the error vector linearly predictable from the input activation. In the toy model the true features are given and every optimal configuration stores them; in a network one can find many sparse dictionaries, and the model offers no criterion for choosing among them. \emph{Data, not features.} With a finite training set, \textcite{HenighanEtAl2023} found that the same toy model stores individual training examples in superposition when the data set is small and features when it is large, with double descent in between (\cref{ch:doubledescent}); the infinite-data model sees only the second regime.
+
+\paragraph{Fine structure.} The geometry of optimal configurations with $p>2m$ is richer than \cref{thm:superposition:sparse} suggests: \textcite{ElhageEtAl2022} report that the directions organize into polytopes whose dimensionalities cluster at fractions such as $\frac34$, $\frac23$ and $\frac12$, that several configurations match solutions of the Thomson problem of placing charges on a sphere, and that the transition of a feature into superposition is abrupt. \Textcite{ScherlisEtAl2022} (unrefereed) recast superposition in a related toy model as an allocation of capacity, the dimensionality $\supD_i$, among features: the most important features get dimensions of their own, less important ones share, the least important are dropped, and sharing is more common for sparser and heavier-tailed inputs. \Textcite{LiuLiuGore2025} vary the strength of superposition in the toy model with weight decay and find that in the strong-superposition regime the loss scales inversely with the dimension $m$ for a broad class of feature frequencies, a mechanism for the scaling laws of \cref{ch:scaling}. On the side of dictionaries, \textcite{GaoEtAl2025} find clean scaling laws for $k$-sparse autoencoders. What is open: the dynamics by which gradient descent reaches these polytopes, the theory of computation in superposition beyond constructions, and a criterion that selects one sparse dictionary among many.
+
+\section{Model card}\label{sec:superposition:card}
+
+\modelcard{Polysemantic neurons; activations that decompose into sparse combinations of many more directions than dimensions.}{$p$ independent sparse features in $[0,1]$, stored in $m<p$ dimensions by $W$ and read out by $\relu(W^\top Wx+b)$, importance-weighted squared loss.}{Linear readout: principal components at every sparsity. ReLU: exact losses for two features in one dimension, superposition provable for $S>\frac{2+r}{2+5r}$ or $r>\kappa(S)/v(S)$; zero first-order interference if and only if obtuse, possible if and only if $p\le2m$; $e^{\eps^2m/4}$ directions with coherence $\eps$ and thresholded readout.}{A first-order transition into superposition with a metastable region; antipodal pairs, cross-polytopes, then polygons with negative bias; loss $O((1-S)^2)$ up to $2m$ features and order $1-S$ beyond; capacity exponential in $m\delta^2/s^2$.}{Features are given, independent, one-dimensional; reconstruction instead of computation; Euclidean geometry; unique true dictionary.}{Computation in superposition; multidimensional and circular features; causal inner products; memorization in superposition; scaling laws from superposition.}
+
+The chapter stands at a junction of the book. Its linear half is \cref{ch:deeplinear}: a linear autoencoder learns principal components, and in stages, one per singular value, so that under gradient flow features enter one at a time, as they do here when the sparsity grows. Its nonlinear half is a phase transition with metastability, and the stalls of \cref{fig:superposition:two} are escapes from a saddle, as in \cref{ch:singleindex,ch:committee}. The almost orthogonal directions of \cref{thm:superposition:packing} are the random features of \cref{ch:lazy} seen from the other side: there random directions are fixed and only a readout is learned; here learned directions are as orthogonal as random ones would be.
+
+The circular features of \textcite{EngelsEtAl2025} are the Fourier features of \cref{ch:grokking}, now found in language models: a two-dimensional irreducible representation where this chapter has one direction. The many directions sharing few dimensions are the opposite of the simplex of \cref{ch:collapse}, in which $K$ class means sit in $K-1$ dimensions, as far apart as possible, because classes are never present together; sparse features are rarely present together, and that is why superposition works. Finally, the dependence of the loss on the dimension through the number of features stored links superposition to the scaling laws of \cref{ch:scaling}.
+
+\begin{exercises}
+\item \consolidation (Moments and the antipodal pair with a bias.) (a) Derive \eqref{eq:superposition:moments}. (b) For the antipodal pair with $b=(\beta,\beta)$ and $r=1$, write the loss of feature $1$ as $S^2\beta^2+S(1-S)(\beta^2+\frac{\beta^3}3)+(1-S)^2C(\beta)$ for $0\le\beta\le1$, with $C(\beta)=\E\bigl(U-\relu(U-V+\beta)\bigr)^2$. (c) Show that $C'(0)=-\frac13$, and conclude that a small positive bias improves the antipodal pair at every $S<1$. Why does a positive bias help, although it produces false positives? \label{ex:superposition:antibias}
+
+\item \consolidation (Ties in the linear model.) (a) With equal importances and equal variances, show that every $W$ with $W^\top W$ an orthogonal projection of rank $m$ minimizes $\Loss_{\mathrm{lin}}$, so that for $m=1$, $p=2$ every unit vector $w=(\cos\theta,\sin\theta)$ is optimal, and represents both features when $\sin2\theta\ne0$. (b) Show that $\norm W_F^2=m$ for all these minimizers. (c) Show that if $\omega_1>\omega_2$, then only $\theta\in\{0,\pi\}$ remains. \label{ex:superposition:ties}
+
+\item \consolidation (The function $\kappa$.) (a) Show that for $\tau\in[0,1]$, $f_S(\tau)=S^2\tau^2+\frac{S(1-S)}3\tau^3+(1-S)\bigl(\tau^2-(1-S)\tau+\frac{1-S}3\bigr)$, that $f_S$ is decreasing on $(-\infty,0]$ and increasing on $[1,\infty)$, and that $f_S$ is strictly convex on $[0,1]$. (b) Conclude that for $0<S<1$ the minimizer is the root in $(0,1)$ of $S(1-S)\tau^2+2(S^2+1-S)\tau-(1-S)^2=0$, and that $\tau_0=\frac12$, $\kappa(0)=\frac1{12}$. (c) Compute $\kappa(S)/\supv$ at $S=\frac12$ and find the $S$ at which it equals $\frac12$; compare with the spinodal in \cref{fig:superposition:two}. \label{ex:superposition:kappa}
+
+\item \consolidation\hard (The Welch bound.) Let $u_1,\dots,u_N\in\R^m$ be unit vectors with $N>m$, and let $\mu=\max_{i\ne j}\abs{\ip{u_i,u_j}}$. (a) Let $G$ be their Gram matrix. Show that $\norm G_F^2\ge(\tr G)^2/\rank G\ge N^2/m$, and deduce $\mu^2\ge\frac{N-m}{m(N-1)}$. (b) Conclude that if $N\ge2m$, then $(2s-1)\mu<1$ requires $m>(2s-1)^2/2$, so that \cref{thm:superposition:readout} needs $m$ of order $s^2$ to say anything. \hint{in (a), the nonzero eigenvalues of $G$ add up to $N$, and there are at most $m$ of them; use the Cauchy--Schwarz inequality.}\label{ex:superposition:welch}
+
+\item \consolidation (Tight frames.) (a) Show that the vertices $w_j=(\cos\frac{2\pi j}N,\sin\frac{2\pi j}N)$ of a regular $N$-gon, $N\ge3$, satisfy $\sum_jw_jw_j^\top=\frac N2I_2$, and that this fails for $N=2$. (b) Compute $\supD_i$ for the configurations of \cref{fig:superposition:pentagon} from the data file, and compare with \cref{prop:superposition:frame}. \label{ex:superposition:frames}
+
+\item \variation (No bias.) Force $b=0$ in the two-feature model. (a) Show that the best configuration that drops feature $2$ has loss $r\frac{1-S}3$, and that the antipodal pair still has loss $\frac{1+r}6(1-S)^2$. (b) Conclude that the antipodal pair beats every configuration dropping a feature when $S>\frac{1-r}{1+r}$, so for $r=1$ at every $S>0$, and that at $S=0$, $r=1$ the two tie. Explain why the bias, which lets a dropped feature be replaced by its mean, makes dropping more attractive. \label{ex:superposition:nobias}
+
+\item \variation (Binary features.) Let each feature equal $1$ with probability $1-S$ and $0$ otherwise. (a) Show that dropping feature $2$ costs at least $rS(1-S)$ and that the antipodal pair costs $(1+r)(1-S)^2$. (b) Conclude that superposition beats dropping when $S>\frac{1+r}{1+2r}$, for instance $S>\frac23$ at $r=1$, and compare with $\frac37$ for uniform values. Why do binary features superpose less readily? \label{ex:superposition:binary}
+
+\item \variation (Anticorrelated features.) Let $x_1$ and $x_2$ never be active together: $x=(U,0)$, $(0,U)$, or $(0,0)$ with probabilities $\frac{1-S}2$, $\frac{1-S}2$, $S$. (a) Show that the antipodal pair has loss $0$ for every $S$. (b) More generally, show that if at most one of $p$ features is active at a time, then every obtuse configuration has loss $0$, so $p\le2m$ features fit exactly at every sparsity. (c) Let instead $x_2=x_1$ always. Show that $w=(1,1)/\sqrt2$ with $b=0$ has loss $0$. Correlations decide the geometry. \label{ex:superposition:anticorrelated}
+
+\item \variation\hard (Random sparsity.) Use the configuration of \cref{cor:superposition:capacity} with $\eps=\delta/(2s-1)$ on the random features of \cref{sec:superposition:model}, and let $K$ be the number of active features, a binomial variable with parameters $p$ and $1-S$. (a) Show that, for every $x$, every coordinate has error at most $\max(K-s,0)\eps$ if it is inactive and at most $(s+K-1)\eps$ if it is active. (b) Deduce $\Loss\le\supOmega\bigl[(1-S)\delta^2+\E\bigl((s+K)^2\eps^2\ind\{K>s\}\bigr)\bigr]$, and choose $s$ for $p(1-S)=10$ and $p=10^6$. \label{ex:superposition:random}
+
+\item \simulation (The pentagon and its successors.) Run the script of \cref{fig:superposition:pentagon} for $S\in\{0,0.1,\dots,0.9,0.95,0.98\}$ and record $\norm W_F^2$ and the number of directions of norm above $0.1$. With the better of seeds $0$ and $1$, the reader should observe two features up to $S=0.3$, three at $S=0.4$ and $0.5$, four from $S=0.6$ to $S=0.8$, and five from $S=0.9$ on; the counts depend on the seed (seed $0$ gives four at $S=0.5$, seed $1$ only four at $S=0.9$: training ends in different local optima). The biases of represented features should be above $-0.05$ with up to four features, and near $-0.2$ with five. Repeat with equal importances and describe what changes. \label{ex:superposition:pentasim}
+
+\item \simulation (Escape from the dedicated saddle.) In the two-feature model with $r=\frac12$ and $S=0.9$, start gradient descent on the exact loss (the function \texttt{loss} of the script of \cref{fig:superposition:two}) from $w=(1,-c_0)$, $b=(0,\frac{1-S}2)$ with $c_0\in\{10^{-2},10^{-4},10^{-6}\}$ and step size $\eta=0.1$. Record the number of steps until $\abs{w_2}>\frac12$. The reader should observe about $1200$, $3100$ and $5000$ steps: increments of about $1900$ steps per factor $100$ in $c_0$, as predicted by the linearization, $\log(100)/(2\eta(r\supv-\kappa(S)))\approx1900$, the logistic escape of \cref{ch:singleindex}. Explain why the linearization predicts the increments but not the counts themselves. \label{ex:superposition:escape}
+
+\item \research (The phase boundary.) Prove that the dedicated configuration is a global minimizer of the two-feature loss for $S<S_c(r)$ for some explicit function $S_c$, and find the exact transition. The optimum on the superposed side has nonzero biases and unequal norms, and we know of no closed form for it; part (iii) of \cref{thm:superposition:two} and the heuristic spinodal give one side only. \label{ex:superposition:boundary}
+
+\item \research (Computation in superposition.) Replace reconstruction by a computation, for instance the outputs $\abs{x_i-x_j}$ or $x_i\wedge x_j$ for selected pairs, with a hidden ReLU layer of width $m$. How many pairs can a width-$m$ network compute when the inputs are $s$-sparse? \Textcite{HanniEtAl2024} give constructions; matching lower bounds, the role of training, and the geometry of learned solutions are open. \label{ex:superposition:computation}
+\end{exercises}
+
+\notesandrefs
+Overcomplete sparse representations are older than deep learning: \textcite{OlshausenField1997} learned dictionaries with more atoms than dimensions for natural images and argued that cortex uses such codes, and compressed sensing \parencite{CandesEtAl2006,Donoho2006} made precise when a sparse vector can be recovered from few linear measurements. The packing argument of \cref{thm:superposition:packing} is the probabilistic method in the form used for the lemma of \textcite{JohnsonLindenstrauss1984}, with Hoeffding's inequality \parencite{Hoeffding1963}, and \cref{lem:superposition:2m} is a classical fact about obtuse sets of vectors. \Cref{thm:superposition:linear} is the Eckart--Young theorem \parencite{EckartYoung1936} specialized to a diagonal matrix, with the bias handled first; its proof by a linear program on the diagonal of a projection is Ky Fan's maximum principle in disguise.
+
+The superposition hypothesis grew out of the circuits program \parencite{OlahEtAl2020} and was made concrete by \textcite{ElhageEtAl2022}, whose toy model this chapter solves in its simplest cases; they also studied the phase diagram of two features in one dimension and the polytope geometry in larger cases numerically, and compared the former with the losses of a few configurations. \Textcite{HenighanEtAl2023} extended the toy model to finite data, and \textcite{ScherlisEtAl2022} to an allocation of capacity. Word senses as sparse combinations of directions are due to \textcite{AroraEtAl2018}. The dictionary-learning program followed: \textcite{CunninghamEtAl2024} and \textcite{BrickenEtAl2023} at small scale, \textcite{TempletonEtAl2024} and \textcite{GaoEtAl2025} at large scale.\sidenote{The Transformer Circuits Thread is the web publication of Anthropic's interpretability team; its articles are not refereed. \Textcite{ElhageEtAl2022} is also on arXiv.}
+
+The two-feature analysis of \cref{thm:superposition:two}, the spinodal, and \cref{thm:superposition:sparse} were derived for this chapter. The comparison of explicit configurations is in the spirit of \textcite{ElhageEtAl2022}, but we have not compared our formulas with theirs line by line, and the bounds on the side of superposition are new as stated here as far as we know.
+
+\paragraph{Translating the literature.} \Textcite{ElhageEtAl2022} write $n$ for the number of features (our $p$), $m$ for the number of dimensions (our $m$), $W\in\R^{m\times n}$ with columns $W_i$ (our $w_i$), $S$ for the sparsity, as here, $I_i$ for the importance (our $\omega_i$; we keep $I$ for the identity), and $x'=\relu(W^\top Wx+b)$ for the reconstruction, as here; their feature dimensionality $D_i=\norm{W_i}^2/\sum_j(\hat W_i\cdot W_j)^2$, with $\hat W_i$ the unit vector, equals our $\supD_i$, and their dimensions per feature $m/\norm W_F^2$ is the inverse of our features per dimension. In \textcite{BrickenEtAl2023} and \textcite{TempletonEtAl2024} the activation vector of the layer being decomposed plays the role of our $h$, the number of dictionary features plays the role of our $p$, and the rows of the decoder play the role of our directions $w_i$; the encoder's ReLU with bias is our thresholded readout.
+
+\printchapterbib
+\end{refsection}

@@ -6,15 +6,15 @@ Markov chain: given r_t = r, draw independent v, z ~ N(0,1) and Q ~ chi^2_{d-2},
 with s = sqrt(1 - r^2) and F = h_k(u) sqrt(k) h_{k-1}(v); then exactly
     r_{t+1} = (r + eta F s z) / sqrt(1 + eta^2 F^2 (z^2 + Q)).
 (Here u = <w_star, x>, v = <w, x>, z^2 + Q = |P_w^perp x|^2.) We simulate this chain, which costs O(1)
-per step for every d; build/07-singleindex-scratch/chain_check.py compares it with full d-dimensional
-SGD at d = 16, 32.
+per step for every d. Run with --check to compare it with full d-dimensional SGD at d = 16, 32 for
+k = 3 (1000 runs each; prints both medians, about 30 seconds).
 
 Step sizes: eta = c/d for k = 1, 2 and eta = c d^{-3/2} for k = 3, with c = 0.02.
 Escape time: first t with r_t >= 1/2 (k odd) or |r_t| >= 1/2 (k even).
 Theory: the population flow dr/dt = (1 - r^2) k r^(k-1) needs time t_1/2 = int_{r_0}^{1/2} dr /
 ((1 - r^2) k r^(k-1)); the predicted number of steps is t_1/2 / eta.
 Runs that have not escaped after 3 times the predicted time of the largest d count as +infinity in the
-quartiles (none did in our run). Runtime: about one minute on a laptop.
+quartiles (one run of 100 at k = 3, d = 256 did not escape). Runtime: about one minute on a laptop.
 Output: figures/data/07-singleindex-escape-k{1,2,3}.dat (simulation: d, median, q25, q75, prediction)
 and figures/data/07-singleindex-escape-theory.dat (prediction on a fine grid of d).
 """
@@ -105,5 +105,45 @@ def main():
             f.write("%d %.6g %.6g %.6g\n" % (x, ode_steps(1, x), ode_steps(2, x), ode_steps(3, x)))
 
 
+def full_sgd_escape(k, d, runs, rng, tmax):
+    """First t with r_t >= 1/2 for spherical online SGD simulated in R^d (w_star = e_1)."""
+    eta = eta_of(k, d)
+    W = np.zeros((runs, d))
+    e = rng.standard_normal((runs, d - 1))
+    e /= np.linalg.norm(e, axis=1, keepdims=True)
+    W[:, 0] = d ** -0.5
+    W[:, 1:] = np.sqrt(1 - 1.0 / d) * e
+    hit = np.full(runs, -1, dtype=np.int64)
+    for t in range(int(tmax)):
+        x = rng.standard_normal((runs, d))
+        u, v = x[:, 0], np.einsum("ij,ij->i", W, x)
+        F = grad_weight(k, u, v)
+        W = W + eta * F[:, None] * (x - v[:, None] * W)
+        W /= np.linalg.norm(W, axis=1, keepdims=True)
+        done = (W[:, 0] >= 0.5) if k % 2 else (np.abs(W[:, 0]) >= 0.5)
+        hit[(hit < 0) & done] = t + 1
+        if (hit >= 0).all():
+            break
+    out = hit.astype(float)
+    out[out < 0] = np.inf
+    return out
+
+
+def check(k=3, ds=(16, 32), runs=1000):
+    rng = np.random.default_rng(SEED + 1)
+    for x in ds:
+        tmax = 4 * ode_steps(k, x)
+        _, ec = escape_times(k, [x], runs, rng, tmax)
+        ec = ec.astype(float)
+        ec[ec < 0] = np.inf
+        ef = full_sgd_escape(k, x, runs, rng, tmax)
+        print("k=%d d=%d median chain %.0f, median full SGD %.0f, ratio %.3f"
+              % (k, x, np.median(ec), np.median(ef), np.median(ec) / np.median(ef)), flush=True)
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--check" in sys.argv:
+        check()
+    else:
+        main()

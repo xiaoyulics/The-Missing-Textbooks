@@ -1,0 +1,455 @@
+% Chapter 3 of The Hydrogen Atoms of Deep Learning: diagonal linear networks and the bias of small initialization.
+\newcommand{\diagG}{G}
+\newcommand{\diagwl}[1]{w_{\ell_{#1}}}
+\newcommand{\diagwphi}{w^\Phi_\alpha}
+\newcommand{\diagbar}{\bar w}
+\newcommand{\diagH}{\mathrm{H}}
+
+\casechapter{The Bias of Small Initialization}{Diagonal linear networks, from kernels to sparsity}{Diagonal linear networks}{ch:diagonal}
+\begin{refsection}[chapters/03-diagonal.bib]
+
+\begin{chaptersummary}
+An overparameterized network can fit its training data in many ways, and which fit gradient descent finds depends on how large the weights are at the start: large initializations behave like a kernel method, small ones learn sparse or low-rank structure, one piece at a time. A linear predictor written as $w=u\odot u-v\odot v$ and trained by gradient flow from $u=v=\alpha\mathbf 1$ shows the whole story. We prove that the flow converges to the interpolator of smallest hyperbolic entropy $\Phi_\alpha$, a potential that is a squared Euclidean norm for large $\alpha$ and an $\ell_1$ norm for small $\alpha$; that for an orthogonal design the coordinates are learned one at a time, at times $\log(1/\alpha)/(2\abs{w_{\star,i}})$; and we sketch how, for a general design, the flow jumps from saddle to saddle. Step size, stochastic gradients, classification losses, and parametrizations that are not diagonal all change the answer.
+\end{chaptersummary}
+
+\section{The phenomenon: one network, many fits}\label{sec:diagonal:phenomenon}
+
+A network with more parameters than training examples has, as a rule, many parameter vectors that fit the training set exactly. \Textcite{ZhangEtAl2017} made the point vivid in 2016: standard convolutional networks reach zero training error on CIFAR-10 even when the labels are replaced by random ones, and then of course predict the test labels at chance. The architecture alone therefore cannot explain why the same networks generalize on real labels; among the many interpolators, the training algorithm must be choosing a good one. \Textcite{NeyshaburTomiokaSrebro2015} had argued this earlier: in their experiments the test error of two-layer networks did not deteriorate as the width grew past what was needed to fit the data, and they proposed that gradient descent regularizes implicitly, toward small norms of some kind; the selection is now called the \term{implicit bias}\index{implicit bias} of the algorithm.\sidenote{The phrase \emph{implicit regularization} is in their title. The analogy they drew was with matrix factorization, where a factorization of unbounded rank still generalizes when its norm is controlled.}
+
+Which interpolator, then? For matrix factorization, \textcite{GunasekarEtAl2017} observed that gradient descent from an initialization close to the origin, with small steps, finds a solution of nearly minimal nuclear norm, and they conjectured that it does so exactly in the limit.\sidenote{They proved the conjecture when the measurement matrices commute, a case that reduces to the diagonal networks of this chapter. In general it fails; see \cref{sec:diagonal:wrong}.} The size of the initialization turned out to be the decisive parameter. \Textcite{ChizatOyallonBach2019} showed that a model rescaled so that its output at initialization is large trains in a \term{lazy regime}\index{lazy training}: the parameters hardly move, the model stays close to its linearization at initialization, and training is kernel regression with the tangent kernel of \cref{ch:lazy}. They reported that deep convolutional networks trained this way perform worse. \Textcite{WoodworthEtAl2020} named the two ends of the scale the \term{kernel regime}\index{kernel regime} and the \term{rich regime}\index{rich regime}, and found the transition between them in matrix factorization and in multilayer networks as the initialization scale varies. \Textcite{GeigerEtAl2020} located the crossover for networks of width $h$ at an output scale of order $h^{-1/2}$, and found that the better regime depends on the architecture: fully connected networks generalized better in the lazy regime, convolutional networks in the feature-learning one.
+
+A second, dynamical signature accompanies small initializations. \Textcite{GissinShalevShwartzDaniely2020} observed \term{incremental learning}\index{incremental learning} in deep linear models, quadratic networks and convolutional linear networks: started near zero, the model acquires its components one after another, in order of decreasing strength, with long plateaus between them. They noted that in shallow models the effect needs an exponentially small initialization, and in deeper ones only a polynomially small one.
+
+\begin{observation}[\textcite{ChizatOyallonBach2019}; \textcite{WoodworthEtAl2020}; \textcite{GeigerEtAl2020}]\label[observation]{obs:diagonal:regimes}
+In overparameterized models trained by gradient methods to near-zero training loss, the interpolator reached depends on the scale of the initialization. Large scales give the predictor of the tangent-kernel model at initialization. Small scales give predictors with structure that the kernel does not favor (sparse vectors, low-rank matrices), acquired incrementally, with plateaus whose length grows as the scale shrinks. Which regime generalizes better depends on the task and the architecture: for convolutional networks on image data the small-scale regime has been better, for fully connected networks the comparison has gone the other way.
+\end{observation}
+
+The two regimes, and a crossover between them, have been seen in every family of models where they were looked for; but the crossover scale depends on width, depth, learning rate and loss, and in practice initialization is set by conventions (\cref{ch:signalprop}) rather than tuned. The question for this chapter is: \emph{what exactly does gradient descent select among the interpolators, as a function of the initialization scale, and how does it get there?} We want the answer in a model where it is a theorem.
+
+\section{The model: a linear predictor written as a difference of squares}\label{sec:diagonal:model}
+
+\paragraph{Data and loss.} We are given a design matrix $X\in\R^{n\times d}$ with rows $x_1,\dots,x_n$ and labels $y\in\R^n$, and we fit linear predictors $x\mapsto\ip{w,x}$ by the training loss
+\begin{equation}\label{eq:diagonal:loss}
+  \Lhat(w)=\frac1{2n}\norm{Xw-y}^2,\qquad \nabla\Lhat(w)=\frac1nX^\top(Xw-y).
+\end{equation}
+The case of interest is $n<d$ with $X$ of rank $n$, when the \term{interpolators}, the solutions of $Xw=y$, form an affine subspace of dimension $d-n$. Two of them will matter: the \emph{minimum-$\ell_2$-norm interpolator} $\diagwl2=X^+y$, and a \emph{minimum-$\ell_1$-norm interpolator} $\diagwl1\in\argmin\{\norm w_1:Xw=y\}$, the \term{basis pursuit}\index{basis pursuit} solution of \textcite{ChenDonohoSaunders1998}.
+
+\paragraph{The network.} We write the weight vector as
+\begin{equation}\label{eq:diagonal:param}
+  w=u\odot u-v\odot v,\qquad u,v\in\R^d,
+\end{equation}
+with $\odot$ the coordinatewise product, so that $w_i=u_i^2-v_i^2$, and we run gradient flow on $F(u,v)=\Lhat(u\odot u-v\odot v)$ from the balanced initialization $u(0)=v(0)=\alpha\mathbf 1_d$, with initialization scale $\alpha>0$. Then $w(0)=0$. With $g(t)=\nabla\Lhat(w(t))$, the chain rule gives $\partial F/\partial u_i=2u_ig_i$ and $\partial F/\partial v_i=-2v_ig_i$, so the flow is
+\begin{equation}\label{eq:diagonal:flow}
+  \dot u=-2\,u\odot g,\qquad \dot v=2\,v\odot g .
+\end{equation}
+The model is a \term{diagonal linear network}\index{diagonal linear network}: a two-layer linear network whose hidden layer has $2d$ units, unit $i$ seeing only coordinate $i$ of the input with weight $u_i$ (or $v_i$) and sending it to the output with the same weight, $+u_i$ (or $-v_i$). The second factor of $u_i$ is the output weight; tying it to the input weight is the balanced initialization of \cref{ch:deeplinear}, preserved here by the flow.
+
+\paragraph{What was thrown away, and why.} Nearly everything. The function class is the class of linear predictors, the same as for the plain linear model; only the \emph{parametrization} changes, and with it the geometry in which gradient flow moves. That is the point: in a linear model the set of interpolators is known exactly, so the question ``which interpolator?'' can be asked cleanly, and every answer must come from the parametrization and the initialization, since nothing else differs from ordinary least squares, whose gradient flow from $w(0)=0$ converges to $\diagwl2$. The parametrization is the simplest one that is not linear in the parameters and keeps the coordinates separate; the difference of squares lets $w$ take both signs, and the product $u\odot v$ would serve as well (\cref{ex:diagonal:product}). Infinitesimal steps, no noise, and the square loss are restrictions that the literature lifts, each changing the answer (\cref{sec:diagonal:wrong}).
+
+\begin{dictionary}
+weight vector $w=u\odot u-v\odot v$ & the function computed by a network; linear in the input, quadratic in the parameters\\
+pair $(u_i,v_i)$ of a coordinate & a neuron, with tied input and output weights\\
+initialization scale $\alpha$ & standard deviation of the initial weights, or the output multiplier of \textcite{ChizatOyallonBach2019}\\
+conserved products $u_iv_i=\alpha^2$ & the balancedness invariants of homogeneous networks (\cref{ch:deeplinear})\\
+potential $\Phi_\alpha$, limit $w^\Phi_\alpha$ & the implicit regularizer of training; the interpolator it selects\\
+large $\alpha$: minimum-$\ell_2$ interpolator & the lazy or kernel regime: regression with the tangent kernel at initialization\\
+small $\alpha$: minimum-$\ell_1$ interpolator & the rich regime: few active features, learned from the data\\
+accelerated time $t/\log(1/\alpha)$; saddles & plateaus and sudden drops of the loss; incremental learning\\
+\end{dictionary}
+
+\paragraph{The kernel at initialization.} The gradient of the predictor $\ip{u\odot u-v\odot v,x}$ with respect to $(u,v)$ at initialization is $(2\alpha x,-2\alpha x)$, so the tangent kernel of \cref{ch:lazy} is $K(x,x')=8\alpha^2\ip{x,x'}$, the linear kernel. Kernel regression with it, run to interpolation from zero, gives $\diagwl2$. A lazy diagonal network is therefore an ordinary least-squares solver, and anything else it does is feature learning.
+
+\paragraph{What one had to notice.} Three things. First, that a reparameterization which leaves the model class unchanged changes the implicit bias; this was clear for mirror descent, where the choice of potential decides the limit \parencite{GunasekarEtAl2018}, and the observation of \textcite{WoodworthEtAl2020} was that a reparameterization can \emph{be} a mirror descent in disguise. Second, that the coordinates of a diagonal network share nothing but the gradient, so each one can be integrated in closed form given the integrated gradient. Third, that this closed form makes the initialization scale appear inside the potential, which interpolates between the two norms of sparse regression.
+
+\section{The solution: gradient flow is a mirror flow}\label{sec:diagonal:mirror}
+
+\paragraph{Integrating one coordinate.} Write $\diagG(t)=\int_0^tg(s)\,\mathrm ds\in\R^d$ for the integrated gradient. Each equation in \eqref{eq:diagonal:flow} is linear in its own variable once $g$ is known.
+
+\begin{proposition}[Closed form of the parameters]\label[proposition]{prop:diagonal:closed}
+On every interval $[0,T)$ on which the flow \eqref{eq:diagonal:flow} exists,
+\begin{equation}\label{eq:diagonal:closed}
+  \begin{gathered}
+  u=\alpha e^{-2\diagG},\qquad v=\alpha e^{2\diagG},\qquad w=-2\alpha^2\sinh(4\diagG),\\
+  u_iv_i=\alpha^2,\qquad u_i^2+v_i^2=\sqrt{w_i^2+4\alpha^4},
+  \end{gathered}
+\end{equation}
+with the exponential and the hyperbolic sine taken coordinatewise.
+\end{proposition}
+
+\begin{proof}
+The scalar equation $\dot u_i=-2g_i(t)u_i$ with $u_i(0)=\alpha$ has the unique solution $u_i=\alpha e^{-2\diagG_i}$, and in the same way $v_i=\alpha e^{2\diagG_i}$. Then $u_iv_i=\alpha^2$, and $w_i=\alpha^2(e^{-4\diagG_i}-e^{4\diagG_i})=-2\alpha^2\sinh(4\diagG_i)$. Finally $(u_i^2+v_i^2)^2=(u_i^2-v_i^2)^2+4u_i^2v_i^2=w_i^2+4\alpha^4$, and $u_i^2+v_i^2>0$.
+\end{proof}
+
+Inverting the hyperbolic sine, $\frac14\arcsinh\bigl(w_i/(2\alpha^2)\bigr)=-\diagG_i$. Differentiating in $t$ gives the central identity of the chapter,
+\begin{equation}\label{eq:diagonal:mirrorflow}
+  \frac{\mathrm d}{\mathrm dt}\nabla\Phi_\alpha\bigl(w(t)\bigr)=-\nabla\Lhat\bigl(w(t)\bigr),\qquad \nabla\Phi_\alpha(w)_i=\frac14\arcsinh\frac{w_i}{2\alpha^2},
+\end{equation}
+for the potential
+\begin{equation}\label{eq:diagonal:potential}
+  \Phi_\alpha(w)=\frac{\alpha^2}4\sum_{i=1}^dq\Bigl(\frac{w_i}{\alpha^2}\Bigr),\qquad q(z)=2-\sqrt{4+z^2}+z\arcsinh\frac z2 .
+\end{equation}
+Indeed $q'(z)=-z/\sqrt{4+z^2}+\arcsinh(z/2)+z/\sqrt{4+z^2}=\arcsinh(z/2)$, so $\partial_i\Phi_\alpha(w)=\frac14q'(w_i/\alpha^2)=\frac14\arcsinh(w_i/2\alpha^2)$. Equation \eqref{eq:diagonal:mirrorflow} says that $w(t)$ follows \term{mirror descent}\index{mirror descent} in continuous time, with the mirror map $\nabla\Phi_\alpha$: the flow is a gradient flow in the dual coordinates $\nabla\Phi_\alpha(w)$, not in $w$.\sidenote{Mirror descent is due to Nemirovsky and Yudin; see \textcite{NemirovskyYudin1983}. With the entropy as potential it becomes the exponentiated gradient method of \textcite{KivinenWarmuth1997}.} In the parameters the flow is an ordinary gradient flow; in the predictor it is a mirror flow, and the reparameterization has chosen the mirror. The function $\Phi_\alpha$ is, up to a factor and a constant, the \term{hyperbolic entropy}\index{hyperbolic entropy} (``hypentropy'') of \textcite{GhaiHazanSinger2020}: with $\beta=2\alpha^2$, $\frac{\alpha^2}4q(w_i/\alpha^2)=\frac14\bigl(w_i\arcsinh(w_i/\beta)-\sqrt{w_i^2+\beta^2}+\beta\bigr)$.
+
+\begin{lemma}[The potential]\label[lemma]{lem:diagonal:q}
+The function $q$ is even, smooth and strictly convex, with $q(0)=q'(0)=0$, $q'(z)=\arcsinh(z/2)$ and $q''(z)=1/\sqrt{4+z^2}$. For every real $z$,
+\begin{equation}\label{eq:diagonal:qquad}
+  \frac{z^2}{2\sqrt{4+z^2}}\le q(z)\le\frac{z^2}4,
+\end{equation}
+and
+\begin{equation}\label{eq:diagonal:qlog}
+  0\le q(z)-\abs z\bigl(\log\abs z-1\bigr)<2,
+\end{equation}
+with the convention $0\log0=0$.
+\end{lemma}
+
+\begin{proof}
+The formulas for $q'$ and $q''$ were checked above, and $q''>0$; evenness and $q(0)=0$ are read off from \eqref{eq:diagonal:potential}. For \eqref{eq:diagonal:qquad}, Taylor's formula with integral remainder gives $q(z)=\int_0^z(z-s)q''(s)\,\mathrm ds$. For $z>0$ the weight $q''(s)$ decreases from $q''(0)=\frac12$ to $q''(z)$ on $[0,z]$, so $\frac12q''(z)z^2\le q(z)\le\frac14z^2$; evenness covers $z<0$.
+
+For \eqref{eq:diagonal:qlog}, let $r(z)=q(z)-\abs z(\log\abs z-1)$, an even function with $r(0)=0$, continuous at $0$ because $z\log z\to0$. For $z>0$,
+\[
+  r'(z)=\arcsinh\frac z2-\log z=\log\Bigl(\frac12+\sqrt{\frac14+\frac1{z^2}}\Bigr)>\log1=0,
+\]
+using $\arcsinh x=\log(x+\sqrt{1+x^2})$. So $r$ increases on $(0,\infty)$ and $r\ge0$. As $z\to\infty$, $\sqrt{4+z^2}-z\to0$ and, since $\sqrt{\frac14+\frac1{z^2}}\le\frac12+\frac1{z^2}$, $0<z\,r'(z)\le z\log(1+z^{-2})\le1/z\to0$; since
+\[
+  r(z)=2-\bigl(\sqrt{4+z^2}-z\bigr)+z\,r'(z),
+\]
+$r(z)\to2$, and an increasing function stays below its limit.
+\end{proof}
+
+The two bounds describe the two faces of $\Phi_\alpha$. By \eqref{eq:diagonal:qquad}, where $\abs{w_i}\ll\alpha^2$ the potential is $\Phi_\alpha(w)\approx\norm w^2/(16\alpha^2)$, a squared Euclidean norm. By \eqref{eq:diagonal:qlog}, writing $\eps_\alpha=\log(1/\alpha^2)$ and $\diagH(w)=\sum_i\abs{w_i}(\log\abs{w_i}-1)$,
+\begin{equation}\label{eq:diagonal:l1form}
+  \Phi_\alpha(w)=\frac{\eps_\alpha}4\norm w_1+\frac14\diagH(w)+R_\alpha(w),\qquad 0\le R_\alpha(w)<\frac{d\alpha^2}2,
+\end{equation}
+for every $w\in\R^d$: substitute $z=w_i/\alpha^2$ in \eqref{eq:diagonal:qlog}, multiply by $\alpha^2/4$, and note $\frac{\alpha^2}4\abs z(\log\abs z-1)=\frac14\abs{w_i}(\log\abs{w_i}+\eps_\alpha-1)$. When $\alpha$ is small, $\eps_\alpha$ is large and $\Phi_\alpha$ is an $\ell_1$ norm with an entropy-like correction.
+
+\paragraph{The main theorem.} We now prove that gradient flow converges, and to what.
+
+\begin{theorem}[Implicit bias of diagonal linear networks]\label{thm:diagonal:bias}
+Let $X\in\R^{n\times d}$ and $y\in\R^n$ be such that some $w^\circ\in\R^d$ satisfies $Xw^\circ=y$, and let $\alpha>0$. Then:
+\begin{enumerate}
+\item The flow \eqref{eq:diagonal:flow} from $u(0)=v(0)=\alpha\mathbf 1_d$ exists for all $t\ge0$, and $u(t)$ and $v(t)$ have positive coordinates and stay bounded.
+\item For every interpolator $w^\circ$ and every $t>0$, $\Lhat(w(t))\le\Phi_\alpha(w^\circ)/(2t)$.
+\item The problem of minimizing $\Phi_\alpha(w)$ subject to $Xw=y$ has a unique solution $\diagwphi$, and $w(t)\to\diagwphi$ as $t\to\infty$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to use the Bregman divergence of $\Phi_\alpha$ to an interpolator as a Lyapunov function, which gives boundedness, the rate, and existence for all time at once; then to identify the limit by the optimality conditions, using that $\nabla\Phi_\alpha(w(t))$ never leaves the row space of $X$.
+
+\emph{A Lyapunov function.} Let $[0,T)$ be the maximal interval of existence of the flow; the right side of \eqref{eq:diagonal:flow} is a polynomial in $(u,v)$, so a unique maximal solution exists, and if $T<\infty$, then $(u,v)$ is unbounded on $[0,T)$. Fix an interpolator $w^\circ$ and let
+\[
+  D(t)=\Phi_\alpha(w^\circ)-\Phi_\alpha(w(t))-\ip{\nabla\Phi_\alpha(w(t)),w^\circ-w(t)},
+\]
+the Bregman divergence\index{Bregman divergence} of $\Phi_\alpha$ from $w(t)$ to $w^\circ$. It is nonnegative because $\Phi_\alpha$ is convex (\cref{lem:diagonal:q}). Differentiating, the terms $\mp\ip{\nabla\Phi_\alpha(w),\dot w}$ cancel, and \eqref{eq:diagonal:mirrorflow} gives
+\[
+  \dot D=-\Bigl\langle\frac{\mathrm d}{\mathrm dt}\nabla\Phi_\alpha(w),\,w^\circ-w\Bigr\rangle=\ip{\nabla\Lhat(w),w^\circ-w}=-2\Lhat(w),
+\]
+where the last step is $\ip{\nabla\Lhat(w),w^\circ-w}=\frac1n\ip{Xw-y,\,Xw^\circ-Xw}$ with $Xw^\circ=y$. So $D$ is nonincreasing, and $D(0)=\Phi_\alpha(w^\circ)$ because $w(0)=0$, $\Phi_\alpha(0)=0$ and $\nabla\Phi_\alpha(0)=0$.
+
+\emph{Boundedness and existence.} We show that the sublevel sets of $D$, as a function of $w$, are bounded. Write $\varphi(x)=\frac{\alpha^2}4q(x/\alpha^2)$ for one coordinate of $\Phi_\alpha$, so that $D=\sum_iD_i$ with $D_i=\varphi(w_i^\circ)-\varphi(w_i)-\varphi'(w_i)(w_i^\circ-w_i)\ge0$. A computation from \eqref{eq:diagonal:potential} gives $x\varphi'(x)-\varphi(x)=\frac14\bigl(\sqrt{x^2+4\alpha^4}-2\alpha^2\bigr)\ge\frac14(\abs x-2\alpha^2)$, and $\abs{\varphi'(x)}=\frac14\arcsinh(\abs x/2\alpha^2)\le\frac14\log(1+\abs x/\alpha^2)$, because $\arcsinh s\le\log(1+2s)$ for $s\ge0$. Hence
+\[
+  4D_i\ge4\varphi(w_i^\circ)+\abs{w_i}-2\alpha^2-\abs{w^\circ_i}\log\bigl(1+\abs{w_i}/\alpha^2\bigr),
+\]
+which tends to infinity with $\abs{w_i}$. Since $D(t)\le\Phi_\alpha(w^\circ)$ and every $D_j\ge0$, each $w_i(t)$ stays in a bounded set, uniformly in $t<T$. By \cref{prop:diagonal:closed}, $u_i^2+v_i^2=\sqrt{w_i^2+4\alpha^4}$, so $(u,v)$ is bounded on $[0,T)$, and therefore $T=\infty$. Positivity is \eqref{eq:diagonal:closed}. This proves (i).
+
+\emph{The rate.} Along the flow $\frac{\mathrm d}{\mathrm dt}\Lhat(w(t))=\frac{\mathrm d}{\mathrm dt}F(u,v)=-\norm{\nabla F(u,v)}^2\le0$, so $\Lhat(w(t))$ is nonincreasing, and integrating $\dot D=-2\Lhat$,
+\[
+  2t\,\Lhat(w(t))\le2\int_0^t\Lhat(w(s))\,\mathrm ds=D(0)-D(t)\le\Phi_\alpha(w^\circ),
+\]
+which is (ii).
+
+\emph{The minimizer.} By \eqref{eq:diagonal:l1form}, $\Phi_\alpha(w)\ge\frac14\sum_i\abs{w_i}(\log(\abs{w_i}/\alpha^2)-1)$, which tends to infinity with $\norm w$; so $\Phi_\alpha$ attains its minimum on the closed nonempty set $\{Xw=y\}$, and the minimizer is unique because $\Phi_\alpha$ is strictly convex. A point $\bar w$ with $X\bar w=y$ is this minimizer if and only if $\nabla\Phi_\alpha(\bar w)$ lies in the row space $\operatorname{range}(X^\top)$. Indeed, if $\nabla\Phi_\alpha(\bar w)=X^\top\nu$, then for every interpolator $w'$ convexity gives $\Phi_\alpha(w')\ge\Phi_\alpha(\bar w)+\ip{X^\top\nu,w'-\bar w}=\Phi_\alpha(\bar w)$, since $X(w'-\bar w)=0$; and conversely the gradient at a minimizer is orthogonal to $\ker X$, whose orthogonal complement is $\operatorname{range}(X^\top)$.
+
+\emph{The limit.} By \eqref{eq:diagonal:mirrorflow} and $\nabla\Phi_\alpha(w(0))=0$,
+for every $t$,
+\[
+  \nabla\Phi_\alpha(w(t))=-\int_0^t\nabla\Lhat(w(s))\,\mathrm ds=-\frac1nX^\top\int_0^t\bigl(Xw(s)-y\bigr)\,\mathrm ds\in\operatorname{range}(X^\top).
+\]
+Let $\bar w$ be a limit point of $w(t)$ along a sequence $t_k\to\infty$; one exists because $w$ is bounded. By (ii), $\Lhat(\bar w)=\lim_k\Lhat(w(t_k))=0$, so $X\bar w=y$. The subspace $\operatorname{range}(X^\top)$ is closed and $\nabla\Phi_\alpha$ is continuous, so $\nabla\Phi_\alpha(\bar w)\in\operatorname{range}(X^\top)$, and $\bar w=\diagwphi$ by the optimality condition. A bounded trajectory whose only limit point is $\diagwphi$ converges to it, which proves (iii).
+\end{proof}
+
+Two remarks on the hypotheses. The theorem does not need $n<d$: if the interpolator is unique, then $\diagwphi$ is that interpolator. And it needs an interpolator; when $y\notin\operatorname{range}(X)$ the same argument, with $w^\circ$ a least-squares solution, shows that the flow converges to the least-squares solution of smallest $\Phi_\alpha$ (\cref{ex:diagonal:noisy}). The rate (ii) is slow for small $\alpha$, since $\Phi_\alpha(w^\circ)\approx\frac14\log(1/\alpha^2)\norm{w^\circ}_1$: the time to fit grows like $\log(1/\alpha)$, the length of the plateaus we meet in \cref{sec:diagonal:dynamics}.
+
+\section{The solution: from kernel to sparsity}\label{sec:diagonal:limits}
+
+Which interpolator is $\diagwphi$? The two faces of $\Phi_\alpha$ suggest the answer at the two ends of the scale.
+
+\begin{theorem}[The two limits]\label{thm:diagonal:limits}
+Let $X$ and $y$ be as in \cref{thm:diagonal:bias}, and let $\diagwl2=X^+y$ be the minimum-$\ell_2$-norm interpolator.
+\begin{enumerate}
+\item \emph{Kernel regime.} If $\alpha^4\ge\norm{\diagwl2}^2$, then $\displaystyle\norm{\diagwphi-\diagwl2}\le\frac{\norm{\diagwl2}^2}{2^{5/4}\alpha^2}$. In particular $\diagwphi\to\diagwl2$ as $\alpha\to\infty$.
+\item \emph{Rich regime.} Let $m_1=\min\{\norm w_1:Xw=y\}$ and let $\diagwl1$ attain it. For $0<\alpha<1$,
+\[
+  m_1\le\norm{\diagwphi}_1\le m_1+\frac{\diagH(\diagwl1)+d+2d\alpha^2}{\log(1/\alpha^2)} .
+\]
+Every limit point of $\diagwphi$ as $\alpha\to0$ is a minimum-$\ell_1$-norm interpolator, and if the minimum-$\ell_1$-norm interpolator is unique, then $\diagwphi\to\diagwl1$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+\emph{Part (i).} The plan is to sandwich $16\alpha^2\Phi_\alpha$ between the squared Euclidean norm and a slightly smaller multiple of it, and to use that the excess squared norm of an interpolator over $\diagwl2$ is its squared distance to $\diagwl2$. Let $\Psi(w)=16\alpha^2\Phi_\alpha(w)=4\alpha^4\sum_iq(w_i/\alpha^2)$, which has the same minimizer $\diagwphi$ on $\{Xw=y\}$. By \eqref{eq:diagonal:qquad}, with $z=w_i/\alpha^2$,
+\[
+  \frac{w_i^2}{\sqrt{1+w_i^2/(4\alpha^4)}}=\frac{4\alpha^4z^2}{2\sqrt{4+z^2}}\le4\alpha^4q(z)\le w_i^2,
+\]
+and summing, $\norm w^2/\sqrt{1+\norm w^2/(4\alpha^4)}\le\Psi(w)\le\norm w^2$, where we used $w_i^2\le\norm w^2$ in the denominators. Let $\rho=\norm{\diagwphi}$ and $m=\norm{\diagwl2}$. Minimality gives $\Psi(\diagwphi)\le\Psi(\diagwl2)\le m^2$, so
+\begin{equation}\label{eq:diagonal:sandwich}
+  \frac{\rho^2}{\sqrt{1+\rho^2/(4\alpha^4)}}\le m^2 .
+\end{equation}
+If $\rho^2>4\alpha^4$, then the left side of \eqref{eq:diagonal:sandwich} exceeds $\rho^2/\sqrt{2\rho^2/(4\alpha^4)}=\sqrt2\,\alpha^2\rho>2\sqrt2\,\alpha^4\ge2\sqrt2\,m^2$, using the hypothesis $\alpha^4\ge m^2$; this contradicts \eqref{eq:diagonal:sandwich}. So $\rho^2\le4\alpha^4$, the left side is at least $\rho^2/\sqrt2$, and $\rho^2\le\sqrt2\,m^2$. Feeding this back into \eqref{eq:diagonal:sandwich} and using $\sqrt{1+x}\le1+x/2$,
+\[
+  \rho^2\le m^2\sqrt{1+\frac{\sqrt2\,m^2}{4\alpha^4}}\le m^2+\frac{\sqrt2\,m^4}{8\alpha^4} .
+\]
+Finally $\diagwl2$ lies in $\operatorname{range}(X^\top)=(\ker X)^\perp$ and $\diagwphi-\diagwl2\in\ker X$, so $\rho^2=m^2+\norm{\diagwphi-\diagwl2}^2$ by Pythagoras, and $\norm{\diagwphi-\diagwl2}^2\le\sqrt2\,m^4/(8\alpha^4)$. Taking square roots, $\sqrt{\sqrt2/8}=2^{-5/4}$.
+
+\emph{Part (ii).} The plan is to compare $\Phi_\alpha$ at $\diagwphi$ and at $\diagwl1$ through the expansion \eqref{eq:diagonal:l1form}. The lower bound $m_1\le\norm{\diagwphi}_1$ holds because $\diagwphi$ interpolates. For $0<\alpha<1$ we have $\eps_\alpha=\log(1/\alpha^2)>0$. Minimality of $\diagwphi$ and \eqref{eq:diagonal:l1form} at both points give
+\[
+  \frac{\eps_\alpha}4\norm{\diagwphi}_1+\frac14\diagH(\diagwphi)\le\Phi_\alpha(\diagwphi)\le\Phi_\alpha(\diagwl1)<\frac{\eps_\alpha}4m_1+\frac14\diagH(\diagwl1)+\frac{d\alpha^2}2 .
+\]
+The function $x\mapsto x\log x-x$ is at least $-1$ on $[0,\infty)$, with its minimum at $x=1$, so $\diagH(\diagwphi)\ge-d$. Multiplying by $4/\eps_\alpha$ and rearranging gives the upper bound. For the limits, let $\alpha_k\to0$ be a sequence along which $w^\Phi_{\alpha_k}$ converges, to $\bar w$ say; such sequences exist because the bound keeps $\norm{\diagwphi}_1$ bounded for $\alpha\le\frac12$. Then $X\bar w=y$, and the bound gives $\norm{\bar w}_1\le m_1$, so $\bar w$ is a minimum-$\ell_1$-norm interpolator. If that interpolator is unique, then every convergent subsequence has the same limit, and the bounded family $\diagwphi$ converges to it.
+\end{proof}
+
+The kernel limit is no surprise once \eqref{eq:diagonal:qquad} is known: a large initialization makes every coordinate move little relative to $\alpha^2$, where the potential is quadratic. The rate in (i) is not sharp; since $q(z)=\frac{z^2}4-\frac{z^4}{192}+O(z^6)$, the potential differs from the quadratic by a relative amount of order $\alpha^{-4}$, and $\norm{\diagwphi-\diagwl2}$ is in fact of order $\alpha^{-4}$ (\cref{ex:diagonal:taylor}). The rich limit is the surprise: no $\ell_1$ penalty appears anywhere in the training procedure, yet small initialization produces basis pursuit. The bound in (ii) is slow, through $1/\log(1/\alpha)$, but it concerns norms; the vector itself converges much faster when the $\ell_1$ problem is well conditioned (\cref{sec:diagonal:reading}). Ties between $\ell_1$ minimizers are broken by the entropy term of \eqref{eq:diagonal:l1form} (\cref{ex:diagonal:tie}).
+
+\paragraph{Why this matters for generalization.} Suppose $y=Xw_\star$ for a $k$-sparse $w_\star$ and $X$ has independent standard Gaussian entries. The minimum-$\ell_2$ interpolator is the projection of $w_\star$ on the row space, a uniformly random $n$-dimensional subspace, so $\E\norm{\diagwl2-w_\star}^2=(1-n/d)\norm{w_\star}^2$, the overparameterized branch of \cref{ch:doubledescent} without noise: the kernel regime learns nothing until $n$ approaches $d$. Basis pursuit, in contrast, recovers $w_\star$ exactly with high probability as soon as $n$ exceeds the statistical dimension of the descent cone of the $\ell_1$ norm at $w_\star$, which is of order $k\log(d/k)$, and fails with high probability below it; the transition is sharp, with width of order $\sqrt d$ \parencite{AmelunxenEtAl2014}.\sidenote{For $d=100$ and $k=5$ the statistical dimension is $20.4$. Exact recovery by $\ell_1$ minimization is the subject of compressed sensing, where dual certificates are the standard tool.} Between the two, the initialization scale interpolates between a sample complexity of order $d$ and one of order $k\log(d/k)$.
+
+\section{The solution: incremental learning and saddles}\label{sec:diagonal:dynamics}
+
+\Cref{thm:diagonal:bias} says where the flow ends, not how it gets there. When the coordinates decouple, the path can be computed exactly.
+
+\begin{assumption}[Orthogonal design]\label[assumption]{ass:diagonal:orth}
+The design satisfies $X^\top X=nI_d$ (so $n\ge d$). We write $\diagbar=X^\top y/n$ for the least-squares solution.
+\end{assumption}
+
+Under \cref{ass:diagonal:orth}, $\nabla\Lhat(w)=w-\diagbar$ and $\Lhat(w)=\frac12\norm{w-\diagbar}^2+c_0$ with $c_0=\frac1{2n}\norm y^2-\frac12\norm{\diagbar}^2\ge0$; for noiseless labels $y=Xw_\star$, $\diagbar=w_\star$ and $c_0=0$. The design is not overparameterized, so there is no implicit bias to speak of; what remains is the dynamics. By \cref{prop:diagonal:closed}, each coordinate obeys an autonomous equation,
+\begin{equation}\label{eq:diagonal:coord}
+  \dot w_i=2u_i\dot u_i-2v_i\dot v_i=-4\sqrt{w_i^2+4\alpha^4}\,(w_i-\diagbar_i),
+\end{equation}
+a gradient flow on $\frac12(w_i-\diagbar_i)^2$ with the state-dependent rate $4\sqrt{w_i^2+4\alpha^4}$. Near $w_i=0$ the rate is $8\alpha^2$, tiny: this is why small initializations wait. Once $\abs{w_i}\gg\alpha^2$ the rate is $4\abs{w_i}$, and the coordinate grows exponentially, like the modes of \cref{ch:deeplinear}.
+
+\begin{theorem}[Incremental learning under an orthogonal design]\label{thm:diagonal:orth}
+Assume \cref{ass:diagonal:orth} and let $s=\diagbar_i$ for one coordinate $i$.
+\begin{enumerate}
+\item If $s=0$, then $w_i\equiv0$. If $s>0$, let $\rho=\sqrt{s^2+4\alpha^4}$, $p_\pm=(s\pm\rho)/2$, and $\kappa_0=(p_+-\alpha^2)/(\alpha^2-p_-)$; then
+\begin{equation}\label{eq:diagonal:riccati}
+  w_i(t)=P(t)-\frac{\alpha^4}{P(t)},\qquad P(t)=\frac{p_++\kappa_0e^{-4\rho t}p_-}{1+\kappa_0e^{-4\rho t}},
+\end{equation}
+and $w_i(t)$ increases from $0$ to $s$. If $s<0$, then $w_i(t)$ is minus the solution for $-s$.
+\item If $s\ne0$, then for every $\tau\ge0$ with $\tau\ne1/(2\abs s)$,
+\[
+  \lim_{\alpha\to0}w_i\bigl(\tau\log(1/\alpha)\bigr)=\begin{cases}0,&\tau<1/(2\abs s),\\ s,&\tau>1/(2\abs s).\end{cases}
+\]
+\item Consequently, for every $\tau\ge0$ different from all the times $1/(2\abs{\diagbar_j})$,
+\[
+  \lim_{\alpha\to0}\Lhat\bigl(w(\tau\log(1/\alpha))\bigr)=c_0+\frac12\sum_{j:\,2\abs{\diagbar_j}\tau<1}\diagbar_j^2 .
+\]
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to reduce \eqref{eq:diagonal:flow} for one coordinate to a Riccati equation for $P=u_i^2$ with constant coefficients and to solve it.
+
+\emph{Part (i).} By \eqref{eq:diagonal:flow} with $g_i=w_i-s$ and \cref{prop:diagonal:closed}, $w_i=P-\alpha^4/P$ and
+\[
+  \dot P=2u_i\dot u_i=-4P\Bigl(P-\frac{\alpha^4}P-s\Bigr)=-4\bigl(P^2-sP-\alpha^4\bigr)=-4(P-p_+)(P-p_-),
+\]
+because $p_\pm$ are the roots of $P^2-sP-\alpha^4$ (their sum is $s$ and their product $(s^2-\rho^2)/4=-\alpha^4$). If $s=0$, then $P\equiv\alpha^2$ solves this equation with the right initial value, so $w_i\equiv0$. Let $s>0$. Then $p_-<0<\alpha^2<p_+$, the middle inequality because $P^2-sP-\alpha^4$ equals $-s\alpha^2<0$ at $P=\alpha^2$. The constants $p_\pm$ are solutions, so by uniqueness $P(t)$ stays in $(p_-,p_+)$, where $\dot P>0$. On this interval
+\[
+  \frac{\mathrm d}{\mathrm dt}\log\frac{p_+-P}{P-p_-}=-\dot P\,\frac{p_+-p_-}{(p_+-P)(P-p_-)}=-4(p_+-p_-)=-4\rho,
+\]
+so $(p_+-P)/(P-p_-)=\kappa_0e^{-4\rho t}$, and solving for $P$ gives \eqref{eq:diagonal:riccati}. Since $P$ increases to $p_+$ and $x\mapsto x-\alpha^4/x$ increases on $(0,\infty)$, $w_i$ increases from $0$ to $p_+-\alpha^4/p_+=p_++p_-=s$. For $s<0$, the map $(u_i,v_i,s)\mapsto(v_i,u_i,-s)$ preserves \eqref{eq:diagonal:flow} for coordinate $i$ and the initial condition, and changes the sign of $w_i$.
+
+\emph{Part (ii).} By (i) we may take $s>0$. Put $t=\tau\log(1/\alpha)$ and $\kappa=\kappa_0e^{-4\rho t}$. As $\alpha\to0$, $p_+\to s$, $p_-=-\alpha^4/p_+\to0$ and $\alpha^2\kappa_0=\alpha^2(p_+-\alpha^2)/(\alpha^2-p_-)\to s$, while $\rho-s=O(\alpha^4)$, so $(\rho-s)\log(1/\alpha)\to0$. Hence
+\[
+  \log\kappa=\log(\alpha^2\kappa_0)+2\log(1/\alpha)-4\rho\tau\log(1/\alpha)=(2-4s\tau)\log(1/\alpha)+\log s+o(1),
+\]
+which tends to $-\infty$ if $\tau>1/(2s)$ and to $+\infty$ if $\tau<1/(2s)$. In the first case $P\to p_+\to s$ by \eqref{eq:diagonal:riccati}, so $w_i=P-\alpha^4/P\to s$. In the second case $P=p_+/(1+\kappa)+p_-\kappa/(1+\kappa)\to0$, and $P\ge\alpha^2$ because $P$ increases from $\alpha^2$; so $\alpha^4/P\le\alpha^2\to0$ and $w_i\to0$.
+
+\emph{Part (iii).} Apply (ii) to every coordinate in $\Lhat(w)=c_0+\frac12\sum_j(w_j-\diagbar_j)^2$.
+\end{proof}
+
+In the \term{accelerated time}\index{accelerated time} $\tau=t/\log(1/\alpha)$ the loss converges, as $\alpha\to0$, to a staircase: coordinate $j$ is learned at $\tau_j=1/(2\abs{\diagbar_j})$, the largest first, and the loss drops by $\frac12\diagbar_j^2$ at each step. In the original time the transitions are logistic. With $t_{1/2}$ the time at which $w_i=s/2$, \eqref{eq:diagonal:riccati} gives, for $\abs{w_i}\gg\alpha^2$, $w_i/s\approx1/(1+e^{-4\abs s(t-t_{1/2})})$: a transition of width of order $1/\abs s$ after a plateau of length
+\begin{equation}\label{eq:diagonal:thalf}
+  t_{1/2}=\frac{\log(\abs s/\alpha^2)}{4\abs s}-\frac{\alpha^2}{2s^2}+O(\alpha^4)
+\end{equation}
+(\cref{ex:diagonal:half}), which is the time at which the exponential growth $\alpha^2e^{4\abs st}$ of the linearized equation reaches $\abs s$. This is the logistic escape of \cref{ch:deeplinear},\sidenote{There the mode strength enters through a rate $2s$; here the rate is $4\abs s$ because the gradient enters each factor through $\dot u=-2u\odot g$, so that $u_i^2$ grows like $e^{4\abs st}$. The constants depend on how the loss is normalized, the logarithm of the initialization does not.} with the same dependence on the strength $\abs s$ of the mode and on the logarithm of the initialization; it is also the shape of the search phase of \cref{ch:singleindex} when the information exponent is $2$.
+
+\paragraph{General designs: saddle to saddle.} When $X^\top X$ is not diagonal, coordinates interact through the gradient, and a coordinate that has been learned can be unlearned. The closed form \eqref{eq:diagonal:closed} still holds, and it suggests how to take the limit $\alpha\to0$. Put $L_\alpha=\log(1/\alpha)$ and define the rescaled dual variable
+\[
+  \zeta(\tau)=-\frac{2\diagG(\tau L_\alpha)}{L_\alpha}=-2\int_0^\tau\nabla\Lhat\bigl(w(\tau'L_\alpha)\bigr)\,\mathrm d\tau' .
+\]
+By \eqref{eq:diagonal:closed}, $w_i=2\alpha^2\sinh(2L_\alpha\zeta_i)$, so $\abs{w_i}=\alpha^{2-2\abs{\zeta_i}}(1+o(1))$ as $\alpha\to0$ when $\zeta_i\ne0$ is fixed. A coordinate whose dual variable satisfies $\abs{\zeta_i}<1$ is exponentially small in $L_\alpha$, a coordinate of order one has $\abs{\zeta_i}=1+O(1/L_\alpha)$, and $\abs{\zeta_i}>1$ is impossible for a bounded trajectory. The dual variable moves at speed $2\nabla\Lhat(w)$ in accelerated time while the predictor sits still, and a new coordinate wakes up when its $\abs{\zeta_i}$ reaches $1$. This leads to the following algorithm.\index{saddle-to-saddle dynamics}
+
+\begin{definition}[The saddle-to-saddle path]\label[definition]{def:diagonal:path}
+Start from $\tau_0=0$, $w^{(0)}=0$ and $\zeta(0)=0$. Given the saddle $w^{(k)}$ and $\zeta(\tau_k)$, let $g^{(k)}=\nabla\Lhat(w^{(k)})$; if $g^{(k)}=0$, stop. Otherwise let $\zeta(\tau)=\zeta(\tau_k)-2(\tau-\tau_k)g^{(k)}$ for $\tau\ge\tau_k$, let $\tau_{k+1}$ be the first $\tau>\tau_k$ at which some coordinate with $\abs{\zeta_i(\tau_k)}<1$ reaches $\abs{\zeta_i(\tau)}=1$, write $\zeta^+=\zeta(\tau_{k+1})$, let $A$ be the set of coordinates with $\abs{\zeta^+_i}=1$, and let
+\[
+  w^{(k+1)}=\argmin\bigl\{\Lhat(w):\ w_i=0\text{ for }i\notin A,\ \ \zeta^+_iw_i\ge0\text{ for }i\in A\bigr\}.
+\]
+The limit path is $\tilde w(\tau)=w^{(k)}$ for $\tau_k\le\tau<\tau_{k+1}$.
+\end{definition}
+
+The constraint set is a cone of sign-constrained vectors on the active coordinates, and the saddles $w^{(k)}$ are critical points of the loss restricted to coordinate subspaces, hence saddle points of $F$ when they are not global minima. The procedure resembles the \textsc{lars} algorithm of \textcite{EfronEtAl2004},\sidenote{\textsc{lars} stands for least angle regression. With a small modification it computes the whole Lasso path, one breakpoint at a time.} which computes the regularization path of the Lasso: active sets grow, sometimes lose a coordinate, and each step solves a least-squares problem on the active set with sign constraints.
+
+\begin{theorem}[\textcite{PesmeFlammarion2023}, in our normalization]\label{thm:diagonal:saddles}
+Under nondegeneracy assumptions on $(X,y)$ that hold for data in general position (see their paper for the precise conditions), the procedure of \cref{def:diagonal:path} stops after finitely many steps, at the minimum-$\ell_1$-norm interpolator when $y\in\operatorname{range}(X)$, and $w(\tau\log(1/\alpha))\to\tilde w(\tau)$ as $\alpha\to0$, uniformly on compact sets of accelerated times that avoid the jump times $\tau_k$.
+\end{theorem}
+
+\begin{proofsketch}
+We describe the mechanism and omit the uniform control of the transitions, which is the technical heart of the paper of Pesme and Flammarion. \emph{Plateaus.} Between jumps, the active coordinates are of order one and the inactive ones are of size $\alpha^{2-2\abs{\zeta_i}}$, exponentially small in $L_\alpha$. On the active coordinates, the flow in the original time $t$ runs at rate of order one, so on the time scale $L_\alpha$ it has converged to a minimizer of $\Lhat$ over vectors supported on the active set with the signs of $\zeta$: the saddle $w^{(k)}$. The gradient there vanishes on the active coordinates with nonzero value and pushes $\abs{\zeta_i}$ inward on the active coordinates at zero, so $\zeta$ moves linearly as in \cref{def:diagonal:path}, and the inactive coordinates grow like $\alpha^{2-2\abs{\zeta_i(\tau)}}$. \emph{Jumps.} When an inactive $\abs{\zeta_i}$ reaches $1$, coordinate $i$ reaches order one; the flow then leaves the saddle along a heteroclinic orbit in time $O(1)$ in $t$, which is $O(1/L_\alpha)$ in $\tau$, and settles at the next constrained minimizer. \emph{End.} When the path reaches an interpolator $\tilde w$, $\zeta$ stops, with $\zeta\in\operatorname{range}(X^\top)$, $\norm\zeta_\infty\le1$, and $\zeta_i=\sgn(\tilde w_i)$ on the support of $\tilde w$: the optimality conditions of basis pursuit. Pesme and Flammarion make the transitions rigorous with an arc-length reparametrization of time, and prove that the number of jumps is finite.
+\end{proofsketch}
+
+Under \cref{ass:diagonal:orth}, $g^{(0)}=-\diagbar$, the coordinate $j$ reaches $\abs{\zeta_j}=1$ at $\tau=1/(2\abs{\diagbar_j})$, and \cref{def:diagonal:path} reproduces the staircase of \cref{thm:diagonal:orth}, a useful check of the normalization. For general designs the limit path visits saddles that are not on the way to $\diagwl1$ in a monotone sense: coordinates can enter with one sign and leave, and the loss decreases in steps whose heights depend on the correlations of the design.
+
+\section{Reading the solution}\label{sec:diagonal:reading}
+
+The theorems make three kinds of prediction: \emph{where} the flow ends, as a function of $\alpha$; \emph{when} each piece is learned; and \emph{in which order}.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,xmode=log,ymode=log,xmin=8e-5,xmax=12,ymin=1e-7,ymax=3,
+  xlabel={initialization scale $\alpha$},ylabel={$\norm{w-w_\star}^2$},
+  legend style={at={(0.97,0.03)},anchor=south east},unbounded coords=jump]
+\addplot[guide] table[x=alpha,y=errl2] {figures/data/03-diagonal-sparse-theory.dat};
+\addplot[theory2] table[x=alpha,y=guide] {figures/data/03-diagonal-sparse-theory.dat};
+\addplot[theory] table[x=alpha,y=err] {figures/data/03-diagonal-sparse-theory.dat};
+\addplot[simulation] table[x=alpha,y=err] {figures/data/03-diagonal-sparse-sim.dat};
+\legend{minimum-$\ell_2$ interpolator,slope $4\gamma^\star$,$w^\Phi_\alpha$ (theory),gradient flow}
+\end{axis}
+\end{tikzpicture}
+\caption{From kernel to sparse recovery. Gaussian design with $n=40$, $d=100$, a $5$-sparse target with entries $\pm1/\sqrt5$ on a random support, noiseless labels (seed $0$). Curve: the squared error of $w^\Phi_\alpha=\argmin\{\Phi_\alpha(w):Xw=y\}$, computed by Newton's method on the dual problem. Points: the gradient flow \eqref{eq:diagonal:flow}, integrated in the variables $(\log u,\log v)$ until $\Lhat<10^{-20}$; at all eleven values of $\alpha$ the flow ends within $5\times10^{-10}$ of $w^\Phi_\alpha$. Horizontal dashed line: the error $0.604$ of the minimum-$\ell_2$ interpolator. Sloped dashed line: the power law $\alpha^{4\gamma^\star}$ of \eqref{eq:diagonal:richrate}, with $\gamma^\star=0.516$ computed from the data.}\label{fig:diagonal:sparse}
+\end{figure}
+
+\paragraph{Where: the crossover in $\alpha$.} \Cref{fig:diagonal:sparse} shows the squared error of the limit against $\alpha$ on a sparse recovery problem with $n=40$ samples in dimension $d=100$, well above the $\ell_1$ threshold $20.4$ but far below $d$. For $\alpha\ge1$ the flow ends at the minimum-$\ell_2$ interpolator, with error $0.604$, close to the average $1-n/d=0.6$. Between $\alpha=1$ and $\alpha=0.03$ the error falls by more than an order of magnitude, and below that it falls as a power of $\alpha$. The flow and the static minimizer agree to within $5\times10^{-10}$ at every scale, which is \cref{thm:diagonal:bias} seen at work. The crossover happens where $\Phi_\alpha$ changes face, that is, where the quadratic cost $\norm{\diagwl2}^2/(16\alpha^2)$ of the dense interpolator becomes comparable with the $\ell_1$ cost $\frac14\log(1/\alpha^2)\norm{w_\star}_1$ of the sparse one. This gives the estimate $\alpha_c^2\log(1/\alpha_c^2)\approx\norm{\diagwl2}^2/(4\norm{w_\star}_1)$, used again in \cref{ch:grokking}; here it gives $\alpha_c\approx0.098$, while the error has halved at $\alpha\approx0.125$, so the estimate is right to within a factor of about $1.3$.
+
+\paragraph{Where: the rich-regime exponent.} Below the crossover the error is a power law. The exponent comes from the dual description of $\diagwphi$.
+
+\begin{heuristic}
+By the optimality condition in the proof of \cref{thm:diagonal:bias}, $\nabla\Phi_\alpha(\diagwphi)=X^\top\nu$ for some $\nu\in\R^n$, that is, $\diagwphi=2\alpha^2\sinh(4X^\top\nu)$. Write $4\nu=\eps_\alpha\xi$ with $\eps_\alpha=\log(1/\alpha^2)$. Then $\abs{(\diagwphi)_i}\approx\alpha^{2(1-\abs{(X^\top\xi)_i})}$ whenever $(X^\top\xi)_i\ne0$. On the support $S$ of $w_\star$ the coordinates are of order one, which forces $(X^\top\xi)_i=\sgn(w_{\star,i})+O(1/\eps_\alpha)$; off the support $\abs{(X^\top\xi)_i}<1$, and the coordinate is of size $\alpha^{2(1-\abs{(X^\top\xi)_i})}$. A vector $\xi$ with $X_S^\top\xi=\sgn(w_{\star,S})$ and $\norm{X_{S^c}^\top\xi}_\infty<1$ is a \term{dual certificate}\index{dual certificate} for basis pursuit; it exists when $\ell_1$ minimization recovers $w_\star$ with some room to spare. Which certificate does $\diagwphi$ pick? The dual objective of the problem defining $\diagwphi$ contains the terms $\frac{\alpha^2}2\sum_i(\cosh(4(X^\top\nu)_i)-1)\approx\frac14\sum_i\alpha^{2(1-\abs{(X^\top\xi)_i})}$, dominated off the support by the largest $\abs{(X^\top\xi)_i}$, so for small $\alpha$ the dual picks the certificate minimizing $\max_{i\notin S}\abs{(X^\top\xi)_i}=1-\gamma^\star$. The largest off-support coordinate is then of size $\alpha^{2\gamma^\star}$, the on-support coordinates are perturbed by the same order to keep $Xw=y$, and
+\begin{equation}\label{eq:diagonal:richrate}
+  \norm{\diagwphi-w_\star}^2\asymp\alpha^{4\gamma^\star},\qquad \gamma^\star=1-\min\bigl\{\norm{X_{S^c}^\top\xi}_\infty:X_S^\top\xi=\sgn(w_{\star,S})\bigr\}.\qedhere
+\end{equation}
+\end{heuristic}
+
+The margin $\gamma^\star$ of the best certificate is the value of a linear program,\sidenote{Minimize $m$ over $(\xi,m)$ subject to $X_S^\top\xi=\sgn(w_{\star,S})$ and $\abs{(X^\top\xi)_i}\le m$ for $i\notin S$; then $\gamma^\star=1-m$. The figure script solves it with the HiGHS solver of SciPy.} $0.516$ for the instance of \cref{fig:diagonal:sparse}; the measured slope between $\alpha=10^{-3}$ and $10^{-4}$ is $2.09$, against $4\gamma^\star=2.06$. The convergence of the \emph{vector} is thus polynomial in $\alpha$, much faster than the logarithmic convergence of the norms in \cref{thm:diagonal:limits}, and it degrades as the certificate's margin shrinks, that is, as $n$ approaches the $\ell_1$ threshold. \Textcite{MattStoger2025} (unrefereed) prove matching upper and lower bounds of this kind; for depth two the exponent is given by a null space constant of $X$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},hplot,width=0.475\linewidth,height=0.37\linewidth]
+\nextgroupplot[xmin=0,xmax=20,ymin=-0.05,ymax=1.55,ytick={0,0.5,1},xlabel={time $t$},ylabel={$w_i(t)/w_{\star,i}$},
+  legend columns=3,legend style={at={(0.5,0.98)},anchor=north,font=\scriptsize}]
+\addplot[theory] table[x=t,y=r1] {figures/data/03-diagonal-orthogonal-theory.dat};
+\addplot[theory2] table[x=t,y=r2] {figures/data/03-diagonal-orthogonal-theory.dat};
+\addplot[theory3] table[x=t,y=r3] {figures/data/03-diagonal-orthogonal-theory.dat};
+\addplot[muted,line width=0.9pt,dashdotted,no marks] table[x=t,y=r4] {figures/data/03-diagonal-orthogonal-theory.dat};
+\addplot[simulation] table[x=t,y=r1] {figures/data/03-diagonal-orthogonal-sim.dat};
+\addplot[simulation,forget plot] table[x=t,y=r2] {figures/data/03-diagonal-orthogonal-sim.dat};
+\addplot[simulation,forget plot] table[x=t,y=r3] {figures/data/03-diagonal-orthogonal-sim.dat};
+\addplot[simulation,forget plot] table[x=t,y=r4] {figures/data/03-diagonal-orthogonal-sim.dat};
+\legend{{$w_{\star,i}=1$},{$-0.6$},{$0.35$},{$0.2$},gradient descent}
+\nextgroupplot[xmin=0,xmax=3,ymin=-0.03,ymax=0.8,xlabel={accelerated time $\tau=t/\log(1/\alpha)$},ylabel={training loss},
+  legend style={at={(0.97,0.97)},anchor=north east}]
+\addplot[guide] table[x=tau,y=stair] {figures/data/03-diagonal-staircase.dat};
+\addplot[theory3] table[x=tau,y=a2] {figures/data/03-diagonal-staircase.dat};
+\addplot[theory2] table[x=tau,y=a4] {figures/data/03-diagonal-staircase.dat};
+\addplot[theory] table[x=tau,y=a8] {figures/data/03-diagonal-staircase.dat};
+\legend{$\alpha\rightarrow0$,$\alpha=10^{-2}$,$\alpha=10^{-4}$,$\alpha=10^{-8}$}
+\end{groupplot}
+\end{tikzpicture}
+\caption{Incremental learning under an orthogonal design ($d=4$, $n=8$, $X=\sqrt n\,Q$ with $Q$ a random $8\times4$ matrix with orthonormal columns, seed $1$; $w_\star=(1,-0.6,0.35,0.2)$, noiseless). Left: $\alpha=10^{-3}$; curves are the exact solution \eqref{eq:diagonal:riccati}, points are gradient descent on $(u,v)$ with step $10^{-3}$, recorded every $0.5$ time units, within $3\times10^{-3}$ of the curves. The half times are $3.45$, $5.54$, $9.12$ and $15.26$, equal to $\log(\abs{w_{\star,i}}/\alpha^2)/(4\abs{w_{\star,i}})$ to within $2\times10^{-5}$. Right: the training loss from \eqref{eq:diagonal:riccati} in accelerated time for three scales, and its limit, the staircase of \cref{thm:diagonal:orth} with steps at $\tau=0.5$, $0.83$, $1.43$ and $2.5$.}\label{fig:diagonal:orthogonal}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{When: plateaus of length $\log(1/\alpha)$.} \Cref{fig:diagonal:orthogonal} shows the orthogonal design. Each coordinate follows a logistic curve, the larger targets first; plain gradient descent with a small step tracks the exact solution. In accelerated time the loss curves for $\alpha=10^{-2}$, $10^{-4}$ and $10^{-8}$ approach the staircase, and the steps sharpen as $\alpha$ decreases because the transition width $1/\abs s$ is fixed in $t$ while the plateaus grow like $\log(1/\alpha)$. The time to learn a coordinate is inversely proportional to its size: a feature twice as weak takes twice as long, in units of $\log(1/\alpha)$. The first plateau, before anything is learned, lasts $\log(1/\alpha)/(2\max_i\abs{\diagbar_i})$; a small initialization buys sparsity with time.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},hplot,width=0.475\linewidth,height=0.37\linewidth]
+\nextgroupplot[xmin=0,xmax=3.6,ymin=-0.95,ymax=0.5,xlabel={accelerated time $\tau$},ylabel={coordinates of $w$},
+  legend style={at={(0.97,0.97)},anchor=north east}]
+\addplot[theory,const plot] table[x=tau,y=w1] {figures/data/03-diagonal-saddles-limit.dat};
+\addplot[theory,const plot,forget plot] table[x=tau,y=w2] {figures/data/03-diagonal-saddles-limit.dat};
+\addplot[theory,const plot,forget plot] table[x=tau,y=w3] {figures/data/03-diagonal-saddles-limit.dat};
+\addplot[theory,const plot,forget plot] table[x=tau,y=w4] {figures/data/03-diagonal-saddles-limit.dat};
+\addplot[simulation,mark repeat=6] table[x=tau,y=a24w1] {figures/data/03-diagonal-saddles-flow.dat};
+\addplot[simulation,mark repeat=6,forget plot] table[x=tau,y=a24w2] {figures/data/03-diagonal-saddles-flow.dat};
+\addplot[simulation,mark repeat=6,forget plot] table[x=tau,y=a24w3] {figures/data/03-diagonal-saddles-flow.dat};
+\addplot[simulation,mark repeat=6,forget plot] table[x=tau,y=a24w4] {figures/data/03-diagonal-saddles-flow.dat};
+\legend{limit path,flow $\alpha=10^{-24}$}
+\nextgroupplot[xmin=0,xmax=3.6,ymin=-0.03,ymax=0.9,xlabel={accelerated time $\tau$},ylabel={training loss},
+  legend style={at={(0.97,0.97)},anchor=north east}]
+\addplot[guide] table[x=tau,y=loss] {figures/data/03-diagonal-saddles-limit.dat};
+\addplot[theory3] table[x=tau,y=a4loss] {figures/data/03-diagonal-saddles-flow.dat};
+\addplot[theory2] table[x=tau,y=a12loss] {figures/data/03-diagonal-saddles-flow.dat};
+\addplot[theory] table[x=tau,y=a24loss] {figures/data/03-diagonal-saddles-flow.dat};
+\legend{limit path,$\alpha=10^{-4}$,$\alpha=10^{-12}$,$\alpha=10^{-24}$}
+\end{groupplot}
+\end{tikzpicture}
+\caption{Saddle to saddle for a general design: $n=3$, $d=6$, Gaussian design and labels (seed $281$); four coordinates become active, the other two stay at zero. Curves on the left and the dashed staircase on the right: the limit path of \cref{def:diagonal:path}, with jumps at $\tau=0.319$, $0.582$, $1.485$ and $2.907$. Points on the left and curves on the right: the gradient flow, integrated in $(\log u,\log v)$ with an adaptive Runge--Kutta method (relative tolerance $10^{-10}$). At the third jump one coordinate enters and another, active since the second jump, returns to zero. At distance more than $0.15$ from the jumps the flow is within $0.27$, $0.12$ and $0.024$ of the limit path for $\alpha=10^{-4}$, $10^{-12}$ and $10^{-24}$.}\label{fig:diagonal:saddles}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{In which order: saddles.} \Cref{fig:diagonal:saddles} shows a general design with three samples in dimension six. The flow visits four saddles before reaching the minimum-$\ell_1$ interpolator, and at the third jump a coordinate that had been learned is abandoned: learning is not monotone in the support. The limit predicts the plateau \emph{heights}, losses of least-squares fits on subsets of coordinates, and the jump \emph{times} in units of $\log(1/\alpha)$; the approach to it is slow, through $1/\log(1/\alpha)$, so that at $\alpha=10^{-4}$ the plateaus are visible but rounded, and the limit is crisp only at scales that no network uses.
+
+\paragraph{Limits of the predictions.} All of these are statements about $\alpha\to0$ or $\alpha\to\infty$ at fixed data, or about $t\to\infty$ at fixed $\alpha$, and the time to reach the limit grows quickly as $\alpha$ shrinks: in the run of \cref{fig:diagonal:sparse} the training loss falls below $10^{-20}$ at $t\approx10^4$ for $\alpha=10^{-2}$ but only at $t\approx3\times10^6$ for $\alpha=10^{-4}$, because the off-support coordinates, which carry the last $\alpha^{4\gamma^\star}$ of the error, move at rates proportional to their own tiny size.
+
+\section{What the model gets wrong}\label{sec:diagonal:wrong}
+
+\paragraph{What was thrown away.} \emph{Nonlinearity.} The predictor is linear in $x$; the network has no features to learn except the choice of coordinates, and ``sparse'' means sparse in a basis fixed in advance. In a real network the analogue of the coordinate basis is itself learned. \emph{Infinitesimal steps.} The mirror-flow identity \eqref{eq:diagonal:mirrorflow} holds for the flow; for gradient descent with step $\eta$ the products $u_iv_i$ are no longer conserved but multiplied at each step by $1-4\eta^2g_i^2$, and the potential drifts. \emph{Noise.} There is no label noise and no stochastic gradient; both change the implicit bias. \emph{The loss and the task.} The square loss on a regression problem attains its minimum, on the affine set of interpolators; logistic losses on classification problems do not. \emph{The parametrization.} Diagonal networks are among the few models whose gradient flow is a mirror flow; for others no potential need exist. \emph{The limit.} The theorems describe $t\to\infty$, and then $\alpha\to0$ or $\alpha\to\infty$; training stops at finite time, at finite $\alpha$.
+
+\paragraph{Where it breaks.} \emph{Step size and stochasticity change the bias.} \Textcite{PesmePillaudVivienFlammarion2021} model stochastic gradient descent by a stochastic gradient flow and prove that it converges to the minimizer of a potential of the same form with an effective initialization scale smaller than $\alpha$, so stochasticity pushes toward the rich regime; the slower the loss converges, the stronger the effect. \Textcite{NacsonEtAl2022} show that large step sizes on non-centered data move gradient descent from the kernel to the rich regime, through a dynamical-stability argument and a weighted $\ell_1$ bound. \Textcite{EvenEtAl2023} prove convergence with macroscopic step sizes and characterize the limits: large steps help stochastic gradient descent recover sparse vectors, but for full-batch gradient descent they can hurt, most strongly near the edge of stability (\cref{ch:stability}). On the instance of \cref{fig:diagonal:sparse} the effect is small but visible (\cref{ex:diagonal:stepsize}). \emph{Label noise} is stronger still: \textcite{HaoChenEtAl2021} show that stochastic gradient descent with label noise recovers a sparse target from every initialization, where Gaussian parameter noise does not, and \textcite{PillaudVivienReygnerFlammarion2022} prove that label-noise dynamics solve a Lasso problem, a bias independent of $\alpha$. \emph{Classification.} With the exponential loss on separable data, \textcite{MoroshkoEtAl2020} find that whether the limit is the maximum-$\ell_1$ or the maximum-$\ell_2$ margin classifier depends on the initialization scale \emph{and} on the training accuracy reached, and that some limits appear only at losses far below $10^{-100}$: the asymptotic theory of \cref{ch:margin} and the rich limit of this chapter do not commute. \emph{Beyond diagonal networks.} \Textcite{LiWangLeeArora2022} show that gradient flow under a commuting parametrization is a mirror flow, and that conversely every mirror flow arises this way; their necessary condition for such an equivalence is weaker than commutation, and outside this class no potential need exist. For matrix factorization, where the analogue of the $\ell_1$ norm would be the nuclear norm, the conjecture of \textcite{GunasekarEtAl2017} fails: \textcite{RazinCohen2020} construct matrix completion problems in which gradient flow from small initialization drives every norm and quasi-norm to infinity while lowering the rank, and \textcite{LiLuoLyu2021} show that from infinitesimal initialization the flow performs greedy low-rank learning, which differs from nuclear norm minimization. For a single ReLU neuron with the square loss, \textcite{VardiShamir2021} prove that no function of the parameters describes the implicit bias exactly. \emph{The real phenomenon.} The model cannot explain why fully connected networks do better in the lazy regime \parencite{GeigerEtAl2020}: it has no notion of a target that a kernel fits well.
+
+\paragraph{Fine structure.} \emph{Depth.} \Textcite{WoodworthEtAl2020} solve diagonal networks $w=u^{\odot L}-v^{\odot L}$ of every depth $L$; the potential changes, the rich limit is still $\ell_1$, and it is reached at polynomially rather than exponentially small scales (\cref{ex:diagonal:depth}), as \textcite{GissinShalevShwartzDaniely2020} observed; \textcite{ChouMalyRauhut2023} give quantitative $\ell_1$ bounds for deeper factorizations, and \textcite{MattStoger2025} matching rates in $\alpha$. \emph{Initialization shape.} \Textcite{AzulayEtAl2021} show that the relative scales of the layers at initialization enter the potential, and that the infinitesimal mirror-descent picture breaks down beyond diagonal models. \emph{Dynamics.} \Textcite{Berthier2023} proves incremental learning, one coordinate at a time, in an underparameterized setting with anticorrelated features; \textcite{PesmeFlammarion2023} handle general designs (\cref{thm:diagonal:saddles}); \textcite{Berthier2025} (unrefereed) relates the whole trajectory to the Lasso regularization path, with time playing the role of an inverse regularization parameter, exactly under a monotonicity assumption on the path. \Textcite{NishiyamaImaizumi2026} derive the high-dimensional dynamics on random designs by dynamical mean-field theory. \emph{Statistics.} With noisy labels, early-stopped gradient descent on the Hadamard parametrization attains the minimax rate of sparse regression \parencite{VaskeviciusKanadeRebeschini2019,ZhaoYangHe2022}, and the rich limit, which interpolates the noise, is the minimum-$\ell_1$ interpolator, whose prediction error is of order $\sigma^2/\log(d/n)$ \parencite{WangDonhauserYang2022}: consistent, but slowly. Open are a description of the implicit bias of gradient descent with large steps on general data, and a comparable theory for parametrizations without a potential, matrix factorization first.
+
+\section{Model card}\label{sec:diagonal:card}
+
+\modelcard{Among the interpolators of an overparameterized model, gradient descent picks one that depends on the initialization scale: kernel-like for large scales, sparse or low rank and learned incrementally for small ones.}{A linear predictor $w=u\odot u-v\odot v$, square loss, gradient flow from $u=v=\alpha\mathbf1$.}{Gradient flow is a mirror flow with the hyperbolic entropy $\Phi_\alpha$; it converges to $\argmin\{\Phi_\alpha:Xw=y\}$; this tends to the minimum-$\ell_2$ interpolator as $\alpha\to\infty$ and to the minimum-$\ell_1$ one as $\alpha\to0$; closed-form incremental learning for orthogonal designs; saddle-to-saddle limit for general ones.}{Error $\asymp\alpha^{4\gamma^\star}$ in the rich regime; crossover at $\alpha_c^2\log(1/\alpha_c^2)\approx\norm{\diagwl2}^2/(4\norm{w_\star}_1)$; feature $i$ learned at $t\approx\log(1/\alpha)/(2\abs{w_{\star,i}})$; $\Lhat(w(t))\le\Phi_\alpha(w_\star)/(2t)$.}{Step size, stochastic gradients and label noise change the bias; classification limits depend on the training accuracy; no potential exists for matrix factorization or ReLU networks; fully connected networks can be better in the lazy regime.}{Depth-$L$ diagonal networks; initialization shape; stochastic and large-step dynamics; label-noise SGD and the Lasso; greedy low-rank learning in matrix factorization; dynamical mean-field theory.}
+
+The chapter sits at the crossing of three threads of the book. \emph{Escape from small initialization}: the plateaus of length $\log(1/\alpha)/\text{strength}$ are those of deep linear networks in \cref{ch:deeplinear}, and reappear in the search phase of \cref{ch:singleindex}, the committee-machine plateaus of \cref{ch:committee} and the hidden progress of \cref{ch:parity}. \emph{Implicit bias}: the minimum-$\Phi_\alpha$ interpolator is the regression counterpart of the maximum-margin classifier of \cref{ch:margin}, and \cref{ch:grokking} shows that weight decay acts on a diagonal network as an initialization scale shrinking like $e^{-\lambda t}$, which turns the crossover of \cref{fig:diagonal:sparse} into grokking. \emph{Lazy versus rich}: the kernel limit is the lazy training of \cref{ch:lazy} with a linear kernel, whose risk is the overparameterized branch of \cref{ch:doubledescent}.
+
+\begin{exercises}
+\item \consolidation (Two expansions of $q$.) (a) Show that $q(z)=\frac{z^2}4-\frac{z^4}{192}+O(z^6)$ as $z\to0$, and $q(z)=\abs z\log\abs z-\abs z+2-1/\abs z+O(\abs z^{-3})$ as $\abs z\to\infty$. (b) Use (a) and the optimality condition of \cref{thm:diagonal:bias} to show that $\norm{\diagwphi-\diagwl2}=O(\alpha^{-4})$ as $\alpha\to\infty$, and compare with \cref{thm:diagonal:limits}(i). \label{ex:diagonal:taylor}
+
+\item \consolidation (The half time.) From \eqref{eq:diagonal:riccati}, show that $w_i(t_{1/2})=s/2$ for $t_{1/2}=\frac1{4\rho}\log\bigl(\kappa_0\frac{P_h-p_-}{p_+-P_h}\bigr)$ with $P_h=\frac14(s+\sqrt{s^2+16\alpha^4})$, and deduce \eqref{eq:diagonal:thalf}. Check it against the numbers in the caption of \cref{fig:diagonal:orthogonal}. \label{ex:diagonal:half}
+
+\item \consolidation\hard (Ties in the rich limit.) Suppose that the set $M$ of minimum-$\ell_1$-norm interpolators has more than one point. (a) Show that two points of $M$ have no coordinate of opposite signs, and deduce that $w\mapsto\sum_i\abs{w_i}\log\abs{w_i}$ is strictly convex on $M$. (b) Show that $\diagwphi$ converges, as $\alpha\to0$, to the unique minimizer of $\sum_i\abs{w_i}\log\abs{w_i}$ on $M$. \hint{for (a), if $w,w'\in M$ then $\frac12(w+w')\in M$, which forces $\abs{w_i+w'_i}=\abs{w_i}+\abs{w'_i}$. For (b), compare $\Phi_\alpha(\diagwphi)$ with $\Phi_\alpha(w')$ for $w'\in M$ through \eqref{eq:diagonal:l1form}, and use $\norm{\diagwphi}_1\ge\norm{w'}_1$ to show $\diagH(\diagwphi)\le\diagH(w')+2d\alpha^2$.}\label{ex:diagonal:tie}
+
+\item \consolidation (Noisy labels.) Drop the assumption that $y\in\operatorname{range}(X)$. Rerun the proof of \cref{thm:diagonal:bias} with $w^\circ$ a minimizer of $\Lhat$, and show that $\Lhat(w(t))-\min\Lhat\le\Phi_\alpha(w^\circ)/(2t)$ and that $w(t)$ converges to the minimizer of $\Phi_\alpha$ among the minimizers of $\Lhat$. \label{ex:diagonal:noisy}
+
+\item \consolidation (Lazy means small motion.) For $\alpha\ge\norm{\diagwl2}^{1/2}$, use \cref{prop:diagonal:closed} and \cref{thm:diagonal:limits} to show that $\max_i\abs{u_i(\infty)-\alpha}/\alpha=O(\norm{\diagwl2}/\alpha^2)$: each parameter moves by a vanishing fraction of its initial value, the defining property of lazy training in \cref{ch:lazy}. \label{ex:diagonal:lazy}
+
+\item \variation (Initialization shape.) Start from $u(0)=a$ and $v(0)=b$ with positive vectors $a,b$. Show that $u_iv_i=a_ib_i$ is conserved and that $w(t)$ converges to the minimizer, among interpolators, of
+\[
+  \sum_{i=1}^d\Bigl(\frac{a_ib_i}4\,q\Bigl(\frac{w_i}{a_ib_i}\Bigr)-\frac14\log\frac{a_i}{b_i}\,w_i\Bigr).
+\]
+Which signs does $a_i>b_i$ favor, and what happens to the rich limit when $a_ib_i\to0$ with $a_i/b_i$ fixed? Compare with \textcite{AzulayEtAl2021}. \label{ex:diagonal:shape}
+
+\item \variation (The product parametrization.) Let $w=u\odot v$, $u(0)=c\mathbf1$ and $v(0)=0$, with $c>0$. Show that $u_i^2-v_i^2=c^2$ is conserved, that $w=-\frac{c^2}2\sinh(2\diagG)$, and that the trajectory is that of \eqref{eq:diagonal:param} with $\alpha^2=c^2/4$ run at half speed: $w_{\mathrm{prod}}(2t)=w(t)$. \label{ex:diagonal:product}
+
+\item \variation\hard (Depth.) Let $w=u^{\odot L}-v^{\odot L}$ with $L\ge3$ and $u(0)=v(0)=\alpha\mathbf1$. (a) Show that $u_i^{2-L}=\alpha^{2-L}+L(L-2)\diagG_i$ and $v_i^{2-L}=\alpha^{2-L}-L(L-2)\diagG_i$ as long as both are positive, and that $w_i=-\alpha^L\psi_L\bigl(L(L-2)\alpha^{L-2}\diagG_i\bigr)$ with $\psi_L(z)=(1-z)^{-L/(L-2)}-(1+z)^{-L/(L-2)}$ on $(-1,1)$. (b) Deduce a mirror flow with $\nabla\Phi(w)_i=\psi_L^{-1}(w_i/\alpha^L)/(L(L-2)\alpha^{L-2})$. (c) Show that $L(L-2)\alpha^{L-2}\,\Phi(w)\to\norm w_1$ as $\alpha\to0$, with a relative error that is a positive power of $\alpha$ for $w$ in a compact set avoiding the coordinate hyperplanes, instead of the $1/\log(1/\alpha)$ of depth two. \label{ex:diagonal:depth}
+
+\item \variation (Unequal feature scales.) Replace \cref{ass:diagonal:orth} by $X^\top X/n=\diag(\lambda_1,\dots,\lambda_d)$ with $\lambda_i>0$. Solve the flow coordinate by coordinate and show that coordinate $i$ is learned at accelerated time $1/(2\lambda_i\abs{\diagbar_i})=n/(2\abs{\ip{X_{:i},y}})$: the order of learning is the order of the correlations of the features with the labels, not of the coefficients. \label{ex:diagonal:scales}
+
+\item \simulation (The phase transition.) With $d=100$ and $k=5$, Gaussian designs and $\pm1$ targets, compute the limit $w^\Phi_\alpha$ of the flow (by \cref{thm:diagonal:bias}, through Newton's method on the dual, as in the script of \cref{fig:diagonal:sparse}) for $\alpha\in\{10,10^{-3},10^{-8}\}$, $n=10,15,\dots,60$ and $20$ random instances each, and plot the fraction of instances with $\norm{w-w_\star}\le10^{-2}\norm{w_\star}$. The reader should observe that $\alpha=10$ never succeeds; that for $\alpha=10^{-3}$ the success rate rises from $0$ at $n=25$ to nearly $1$ at $n=50$; and that for $\alpha=10^{-8}$ the rise comes earlier and is steeper, crossing one half between $n=20$ and $n=25$, close to the statistical dimension $20.4$ of the $\ell_1$ descent cone \parencite{AmelunxenEtAl2014}. Explain the shift with \eqref{eq:diagonal:richrate}: near the threshold the certificate margin $\gamma^\star$ is small. \label{ex:diagonal:transition}
+
+\item \simulation (Step size.) On the instance of \cref{fig:diagonal:sparse} with $\alpha=0.1$, run gradient descent on $(u,v)$ with the steps $0.0004$, $0.0087$, $0.0216$ and $0.0346$ until $\Lhat<10^{-11}$. The reader should observe errors $\norm{w-w_\star}^2$ of $0.2284$, $0.2289$, $0.2297$ and $0.2306$: the limit moves away from $w^\Phi_\alpha$ as $\eta$ grows, toward denser solutions on this centered design, as \textcite{EvenEtAl2023} predict for full-batch gradient descent. Find the step at which gradient descent diverges, and explain the trend using the factor $1-4\eta^2g_i^2$ by which a step multiplies $u_iv_i$. \label{ex:diagonal:stepsize}
+
+\item \simulation (Saddles.) With the script of \cref{fig:diagonal:saddles}, change the seed, and plot the accelerated times at which the training loss of the flow crosses the midpoints of the predicted steps, for $\alpha$ from $10^{-4}$ down to $10^{-24}$. The reader should observe convergence to the jump times of \cref{def:diagonal:path}, with an error decreasing roughly like $1/\log(1/\alpha)$. Show from \cref{def:diagonal:path} that if a coordinate has opposite signs at two saddles, then it vanishes at some saddle in between. \label{ex:diagonal:saddlesim}
+
+\item \research (Stochastic gradients with large steps.) \Textcite{PesmePillaudVivienFlammarion2021} treat a stochastic gradient flow and \textcite{EvenEtAl2023} stochastic gradient descent with large steps, each with conditions on the data. A description of the limit of stochastic gradient descent on diagonal networks for general designs, as an explicit function of the step size, the batch size and $\alpha$, uniform in the dimension, is open; so is the high-dimensional test error of that limit on Gaussian designs. \label{ex:diagonal:sgd}
+
+\item \research (A potential for matrices.) For matrix sensing with a symmetric factorization $W=UU^\top$ from $U(0)=\alpha I$, the flow is a mirror flow when the measurement matrices commute \parencite{GunasekarEtAl2017}, and \textcite{LiLuoLyu2021} describe the limit $\alpha\to0$ as greedy low-rank learning under assumptions. Characterize the limit of the flow at fixed small $\alpha$ for general measurements, or prove that no function of the end-to-end matrix describes it. \label{ex:diagonal:matrix}
+\end{exercises}
+
+\notesandrefs
+The implicit-bias program grew out of the observations of \textcite{NeyshaburTomiokaSrebro2015} and \textcite{ZhangEtAl2017}. \Textcite{GunasekarEtAl2018} showed that mirror descent in underdetermined regression converges to the interpolator closest to the initialization in the Bregman divergence of its potential, which is the template of \cref{thm:diagonal:bias}. The diagonal network and the potential $\Phi_\alpha$ are from \textcite{WoodworthEtAl2020}, first posted in 2019, who also treated depth $L$ and the transition between the regimes; the equivalent product parametrization $w=u\odot v$ (\cref{ex:diagonal:product}) had been used in statistics by \textcite{Hoff2017}, who showed that the Lasso can be computed by alternating ridge regressions in the factors, and \textcite{VaskeviciusKanadeRebeschini2019} and \textcite{ZhaoYangHe2022} used Hadamard-product parametrizations with early stopping for sparse regression. The potential is the hyperbolic entropy of \textcite{GhaiHazanSinger2020}, introduced to interpolate between gradient descent and the exponentiated gradient method of \textcite{KivinenWarmuth1997}, which does well when few inputs are relevant.
+
+The quantitative forms of \cref{thm:diagonal:limits} are ours; Woodworth and coauthors give the limits and discuss how small $\alpha$ must be. \Cref{thm:diagonal:orth} is a direct integration in the spirit of \textcite{WoodworthEtAl2020} and \textcite{GissinShalevShwartzDaniely2020}; the algorithm of \textcite{PesmeFlammarion2023} is restated in our normalization and checked numerically in \cref{fig:diagonal:saddles}.
+
+\paragraph{Translating the literature.} \Textcite{WoodworthEtAl2020} write $\beta$ for our $w$ and $Q_\alpha(\beta)=\alpha^2\sum_iq(\beta_i/\alpha^2)$ with the same $q$, so their $Q_\alpha$ is our $4\Phi_\alpha$ and has the same minimizers; their depth is $D$, our $L$. \Textcite{PesmeFlammarion2023}, \textcite{PesmePillaudVivienFlammarion2021} and \textcite{EvenEtAl2023} write $\beta$ for our $w$; Pesme and Flammarion use $\beta=u\odot v$ from $u(0)=\sqrt2\,\alpha\mathbf1$, $v(0)=0$, which by \cref{ex:diagonal:product} is our network with $\alpha^2/2$ in place of $\alpha^2$, run at half speed. Their normalizations of the loss and of accelerated time may differ from ours by further constant factors, which the reader should take from the paper at hand rather than from us. We have restated their saddle-to-saddle algorithm with our dual variable $\zeta$, whose coordinates reach $\pm1$ at the jumps. \Textcite{GhaiHazanSinger2020} write $\phi_\beta(x)=x\arcsinh(x/\beta)-\sqrt{x^2+\beta^2}$ for the hypentropy; our $\Phi_\alpha(w)$ is $\frac14\sum_i(\phi_\beta(w_i)-\phi_\beta(0))$ with $\beta=2\alpha^2$. \Textcite{ChizatOyallonBach2019} write $\alpha$ for a multiplier of the model's output, which plays the role of our $\alpha^2$: the output of a diagonal network scales as $\alpha^2$ when its parameters scale as $\alpha$.
+
+\printchapterbib
+\end{refsection}

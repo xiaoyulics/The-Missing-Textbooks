@@ -1,0 +1,400 @@
+% Chapter 13 of The Hydrogen Atoms of Deep Learning: in-context learning by linear attention.
+\newcommand{\iclKQ}{W^{KQ}}
+\newcommand{\iclPV}{W^{PV}}
+\newcommand{\iclShat}{\hat\Sigma}
+\newcommand{\iclc}{\hat c}
+
+\casechapter{Learning in Context}{Linear attention as one step of gradient descent}{Linear self-attention on regression tasks}{ch:icl}
+\begin{refsection}[chapters/13-icl.bib]
+
+\begin{chaptersummary}
+Large language models learn a task from a few examples placed in the prompt, without changing a weight, and transformers trained on prompts of linear regression problems predict nearly as well as least squares. A single layer of linear self-attention, trained on such prompts, is the solvable model: its prediction is one step of preconditioned gradient descent on the prompt, and we prove that the best such layer, among all its parameters, takes the step $\Gamma^\star=N\bigl((N+1)\Sigma+(\tr\Sigma+\sigma^2)I_d\bigr)^{-1}$, that gradient flow finds it, and that for isotropic inputs and a small balanced initialization it does so after a plateau, along a logistic curve. The model gets the mechanism of one trained layer right and the rate wrong: one step loses a factor $(d+1+\sigma^2)/\sigma^2$ against least squares, deeper trained transformers do much better, softmax attention computes different estimators, and in language models in-context learning is in part the recognition of a task already learned.
+\end{chaptersummary}
+
+\section{The phenomenon: learning from the prompt}\label{sec:icl:phenomenon}
+
+A trained network is a fixed function. Yet \textcite{BrownEtAl2020} found that GPT-3, a transformer language model with 175 billion parameters, could be taught a new task by its input alone: shown a few demonstrations of a task, written as text (pairs of English and French words, or arithmetic problems with their answers), followed by a new instance, it often completed the instance correctly, and more demonstrations usually helped. They called this \term{in-context learning}\index{in-context learning}, distinguished zero-, one- and few-shot prompts, and stressed that no gradient update takes place: whatever learning happens is computed by the forward pass, from the prompt.\sidenote{The idea that a network can learn to learn inside its activations is older: \textcite{HochreiterEtAl2001} trained LSTM networks whose recurrent dynamics, with fixed weights, learned new functions from the examples presented to them.}
+
+Language is a poor laboratory: the tasks are vague, and one cannot tell whether a model learns from the demonstrations or recognizes a task it has seen in training. \textcite{GargEtAl2022} replaced language with a well-posed problem. Each training sequence is a prompt $(x_1,f(x_1),\dots,x_N,f(x_N),x_q)$ with a function $f$ drawn afresh from a class, and the model is trained to predict $f(x_q)$. For linear functions $f(x)=\ip{w_\star,x}$ with $x$ and $w_\star$ isotropic Gaussian in dimension $20$, a transformer trained from scratch reached an error comparable to that of least squares on the same prompt, and it did so on functions it had never seen. Sparse linear functions, decision trees and two-layer networks could be learned in context too.
+
+What does the trained transformer compute? \textcite{AkyurekEtAl2023} showed by construction that transformers can implement gradient descent and closed-form ridge regression, and found that trained models track the predictions of least squares and ridge. \textcite{VonOswaldEtAl2023} showed that one layer of linear self-attention can implement exactly one step of gradient descent on the squared loss of the prompt, and found that a trained single layer matches that step closely, in prediction and in its weights. \textcite{RaventosEtAl2023} varied the number of distinct tasks $w_\star$ seen in training and found a threshold: below it, the transformer behaves like the Bayes estimator for the finite set of training tasks and fails on new ones; above it, it behaves like ridge regression, the Bayes estimator for a Gaussian prior over all tasks.
+
+\begin{observation}[\textcite{GargEtAl2022}; \textcite{VonOswaldEtAl2023}; \textcite{AkyurekEtAl2023}]\label[observation]{obs:icl:icl}
+Transformers trained on prompts of noisy linear regression problems with random coefficients, to predict the label of a query input from the labeled examples before it, learn to predict nearly as well as least squares or ridge regression on the prompt, for coefficients never seen in training. A single trained layer of linear self-attention predicts like one step of gradient descent on the squared loss of the prompt.
+\end{observation}
+
+How robust is this? On synthetic regression the observation has been reproduced many times, but it describes models trained on nothing else, with many distinct tasks. In language models the evidence is mixed. \textcite{MinEtAl2022} found that replacing the labels of the demonstrations by random ones barely hurts many classification tasks, and \textcite{PanEtAl2023} separated \emph{task recognition}, which works without correct labels and does not improve much with scale, from \emph{task learning}, which emerges with scale; \textcite{WeiEtAl2023} (a preprint) found that large models, unlike small ones, can follow demonstrations whose labels are flipped. In-context learning also depends on the training data \parencite{ChanEtAl2022} and can be transient, appearing and then fading during training \parencite{SinghEtAl2023}.
+
+The question for this chapter: when a single attention layer is trained on regression prompts, which algorithm does it learn, how well does that algorithm predict, and how does training find it?
+
+\section{The model: one layer of linear attention}\label{sec:icl:model}
+
+\paragraph{Prompts.} A task is a coefficient vector $w_\star\in\R^d$; a prompt shows $N$ labeled examples of the task and one query.
+
+\begin{assumption}[Linear regression prompts]\label[assumption]{ass:icl:prompts}
+For each prompt, independently: the task is $w_\star\sim\cN(0,I_d)$; the inputs $x_1,\dots,x_N,x_q$ are independent with law $\cN(0,\Sigma)$, $\Sigma$ positive definite; the labels are $y_i=\ip{w_\star,x_i}+\eps_i$ and $y_q=\ip{w_\star,x_q}+\eps_q$ with noises $\eps_1,\dots,\eps_N,\eps_q\sim\cN(0,\sigma^2)$; all these variables are independent.
+\end{assumption}
+
+The prompt is stored as a matrix whose columns are tokens, one per example, with the query's label left blank:
+\begin{equation}\label{eq:icl:Z}
+  Z=\begin{pmatrix} x_1 & x_2 & \cdots & x_N & x_q\\ y_1 & y_2 & \cdots & y_N & 0\end{pmatrix}\in\R^{(d+1)\times(N+1)} .
+\end{equation}
+We write $z_i=(x_i,y_i)$ for the $i$th column and $z_q=(x_q,0)$ for the last. Three statistics of the prompt will appear everywhere: the sample covariance, the label-weighted input mean, and the mean square label,
+\[
+  \iclShat=\frac1N\sum_{i=1}^Nx_ix_i^\top,\qquad s=\frac1N\sum_{i=1}^Ny_ix_i,\qquad \iclc=\frac1N\sum_{i=1}^Ny_i^2 .
+\]
+Their relevance is no accident: the empirical loss of the prompt, $\Lhat(w)=\frac1{2N}\sum_i(y_i-\ip{w,x_i})^2$, has gradient $\nabla\Lhat(w)=\iclShat w-s$, so $\iclShat$ and $s$ are the sufficient statistics of least squares, and $\nabla\Lhat(0)=-s$.
+
+\paragraph{Linear self-attention.} A softmax attention head \parencite{VaswaniEtAl2017} maps $Z$ to $Z+W^PW^VZ\,\softmax\bigl((W^KZ)^\top W^QZ\bigr)$, the softmax acting on each column. Removing the softmax and merging the products of matrices that appear only together gives \term{linear self-attention}\index{linear self-attention} \parencite{SchlagEtAl2021,VonOswaldEtAl2023}, with parameters $\theta=(\iclKQ,\iclPV)$, two $(d+1)\times(d+1)$ matrices:
+\begin{equation}\label{eq:icl:lsa}
+  f(Z;\theta)=Z+\frac1N\,\iclPV Z\,M\,Z^\top\iclKQ Z,\qquad M=\begin{pmatrix}I_N&0\\0&0\end{pmatrix}\in\R^{(N+1)\times(N+1)} .
+\end{equation}
+The mask $M$ lets every token attend to the $N$ examples but not to the query, whose blank label carries no information. The prediction is read from the bottom entry of the query column, $\hat y_q=f(Z;\theta)_{d+1,N+1}$; since $Z_{d+1,N+1}=0$, the residual term does not contribute. The model is trained on the \term{pretraining loss}\index{pretraining loss}, the population risk over prompts,
+\[
+  \Loss(\theta)=\E\bigl(y_q-\hat y_q(\theta)\bigr)^2 ,
+\]
+with the expectation over \cref{ass:icl:prompts}. A good parameter is a learning algorithm: it must predict well for every task, using only the prompt.
+
+\paragraph{Blocks.} Only some blocks of $\theta$ matter. Write
+\[
+  \iclKQ=\begin{pmatrix}W_{11}&w_{12}\\ w_{21}^\top&w_{22}\end{pmatrix},\qquad
+  \iclPV=\begin{pmatrix}V_{11}&v_{12}\\ v_{21}^\top&v_{22}\end{pmatrix},
+\]
+with $W_{11},V_{11}\in\R^{d\times d}$, column vectors $w_{12},w_{21},v_{12},v_{21}\in\R^d$, and scalars $w_{22},v_{22}$. The prediction is the last row of $\iclPV$ applied to the last column of $\frac1NZMZ^\top\iclKQ Z$, and $\frac1NZMZ^\top=\frac1N\sum_{i\le N}z_iz_i^\top$ has blocks $\iclShat$, $s$, $s^\top$, $\iclc$. So $V_{11}$, $v_{12}$ (the rows that write into the inputs) and $w_{12}$, $w_{22}$ (which multiply the blank label) never affect $\hat y_q$; they matter only in deeper models.
+
+\begin{dictionary}
+prompt of $N$ pairs $(x_i,y_i)$ and a query & few-shot prompt: demonstrations followed by a new input\\
+task $w_\star$, drawn afresh for each prompt & the task the demonstrations specify\\
+law of $w_\star$ & the diversity of tasks implicit in the pretraining corpus\\
+one token $z_i=(x_i,y_i)$ per example & an input and its label in separate tokens, interleaved\\
+$\iclKQ$, $\iclPV$ & key--query and value--output products of one head\\
+linear attention, one layer & softmax attention, many heads and layers, MLPs, normalization\\
+preconditioner $\Gamma$ & the learning rule implemented by the forward pass\\
+pretraining loss $\Loss(\theta)$ & next-token loss on documents\\
+Bayes estimator (ridge) & the best a learner could do with the prompt\\
+\end{dictionary}
+
+\paragraph{What was thrown away, and why first.} The softmax goes, because without it attention is a cubic polynomial in the prompt and every expectation is a Gaussian moment. Depth, MLPs and normalization go, because one layer already learns a nontrivial algorithm. Language goes, replaced by a task family where the optimal learner is known, so that ``learning in context'' can be measured against ridge regression. Each example is one token, rather than two, which spares the model the job of pairing inputs with labels, the job of the induction heads of \cref{ch:induction}. \Cref{sec:icl:wrong} says what each choice costs.
+
+\paragraph{What one had to notice.} Attention computes $\sum_iz_iz_i^\top$, a sum of outer products over the prompt, and so does the gradient of the squared loss: $-\nabla\Lhat(0)=\frac1N\sum_iy_ix_i$ is a block of $\frac1N\sum_iz_iz_i^\top$. A layer whose update is a sum over the examples can therefore take a gradient step on them.\sidenote{\Textcite{SchlagEtAl2021} had shown that linear attention is a \emph{fast weight programmer}: it writes the outer products $v_ik_i^\top$ of values and keys into a weight matrix, which then multiplies the query.}
+
+\section{The solution: the optimal single layer}\label{sec:icl:solution}
+
+The first result reads off what one layer computes; the second finds the best learner of that form; the third shows that nothing in the full parameter space does better.
+
+\begin{proposition}[What one layer computes]\label[proposition]{prop:icl:express}
+For every $\theta$, with $\Gamma(\theta)=v_{22}W_{11}^\top+w_{21}v_{21}^\top$ and $b(\theta)=W_{11}^\top\iclShat\,v_{21}+\iclc\,v_{22}w_{21}$,
+\begin{equation}\label{eq:icl:predict}
+  \hat y_q=x_q^\top\Gamma(\theta)\,s+x_q^\top b(\theta) .
+\end{equation}
+In particular, if $v_{21}=0$ and $w_{21}=0$, then $\hat y_q=x_q^\top\Gamma s$ with $\Gamma=v_{22}W_{11}^\top$, which is the prediction $\ip{w_1,x_q}$ of one step of preconditioned gradient descent $w_1=w_0-\Gamma\nabla\Lhat(w_0)$ from $w_0=0$. Every $\Gamma\in\R^{d\times d}$ arises this way, for instance with $v_{22}=1$ and $W_{11}=\Gamma^\top$.
+\end{proposition}
+
+\begin{proof}
+The query column of $Z^\top\iclKQ Z$ is $Z^\top\iclKQ z_q$. The last entry of $z_q$ is $0$, so $\iclKQ z_q$ has blocks $W_{11}x_q$ and $w_{21}^\top x_q$. Applying $\frac1NZMZ^\top$ and then the last row $(v_{21}^\top,v_{22})$ of $\iclPV$ gives
+\begin{align*}
+  \hat y_q&=(v_{21}^\top,\ v_{22})\begin{pmatrix}\iclShat&s\\ s^\top&\iclc\end{pmatrix}\begin{pmatrix}W_{11}x_q\\ w_{21}^\top x_q\end{pmatrix}\\
+  &=v_{21}^\top\iclShat W_{11}x_q+(v_{21}^\top s)(w_{21}^\top x_q)+v_{22}\,s^\top W_{11}x_q+v_{22}\,\iclc\,w_{21}^\top x_q .
+\end{align*}
+Each term is a scalar; transposing the first and third and regrouping gives \eqref{eq:icl:predict}. If $v_{21}=w_{21}=0$, then $b=0$ and $\Gamma=v_{22}W_{11}^\top$, and $w_1=0-\Gamma(\iclShat\cdot0-s)=\Gamma s$.
+\end{proof}
+
+The odd and even parts of \eqref{eq:icl:predict} will be the key. Flipping the sign of the task and of all the noises maps $y_i\mapsto-y_i$, so $s\mapsto-s$ while $\iclShat$ and $\iclc$ are unchanged: the first term of $\hat y_q$ is odd in the labels and the second, $x_q^\top b$, is even. The target $y_q$ is odd. An even term can only add error, as the proof of \cref{thm:icl:global} will show.
+
+The risk of the one-step learner needs the fourth moments of a Gaussian vector.
+
+\begin{lemma}[Gaussian fourth moments]\label[lemma]{lem:icl:wick}
+Let $x\sim\cN(0,\Sigma)$ in $\R^d$. For every $A\in\R^{d\times d}$,
+\[
+  \E\bigl[xx^\top Axx^\top\bigr]=\Sigma A\Sigma+\Sigma A^\top\Sigma+\tr(A\Sigma)\,\Sigma .
+\]
+Consequently, if $x_1,\dots,x_N$ are independent $\cN(0,\Sigma)$ and $\iclShat=\frac1N\sum_ix_ix_i^\top$, then $\E[\iclShat^2]=\frac1N\bigl((N+1)\Sigma^2+\tr(\Sigma)\Sigma\bigr)$.
+\end{lemma}
+
+\begin{proof}
+\emph{The standard case.} Let $g\sim\cN(0,I_d)$. Its coordinates are independent with $\E g_i^2=1$, $\E g_i^4=3$, and vanishing odd moments, so $\E[g_ig_jg_kg_l]$ is $1$ if the indices form two equal pairs and differ across pairs, $3$ if all four are equal, and $0$ otherwise; in every case $\E[g_ig_jg_kg_l]=\delta_{ij}\delta_{kl}+\delta_{ik}\delta_{jl}+\delta_{il}\delta_{jk}$. For $B\in\R^{d\times d}$, the $(i,l)$ entry of $gg^\top Bgg^\top$ is $\sum_{j,k}g_ig_jB_{jk}g_kg_l$, so
+\[
+  \E\bigl[gg^\top Bgg^\top\bigr]_{il}=\sum_{j,k}B_{jk}\bigl(\delta_{ij}\delta_{kl}+\delta_{ik}\delta_{jl}+\delta_{il}\delta_{jk}\bigr)=B_{il}+B_{li}+\delta_{il}\tr B .
+\]
+\emph{General $\Sigma$.} Write $x=\Sigma^{1/2}g$ and $B=\Sigma^{1/2}A\Sigma^{1/2}$. Then $xx^\top Axx^\top=\Sigma^{1/2}gg^\top Bgg^\top\Sigma^{1/2}$, whose mean is $\Sigma^{1/2}(B+B^\top+\tr(B)I)\Sigma^{1/2}=\Sigma A\Sigma+\Sigma A^\top\Sigma+\tr(A\Sigma)\Sigma$.
+
+\emph{The sample covariance.} Expanding $\iclShat^2=\frac1{N^2}\sum_{i,j}x_ix_i^\top x_jx_j^\top$, the $N(N-1)$ terms with $i\ne j$ have mean $\Sigma^2$ by independence, and the $N$ terms with $i=j$ have mean $2\Sigma^2+\tr(\Sigma)\Sigma$ by the first part with $A=I_d$. Adding, $\E[\iclShat^2]=\frac1{N^2}\bigl(N(N+1)\Sigma^2+N\tr(\Sigma)\Sigma\bigr)$.
+\end{proof}
+
+\begin{theorem}[The optimal one-step learner]\label{thm:icl:onestep}
+Under \cref{ass:icl:prompts}, let $\cR(\Gamma)=\E\bigl(y_q-x_q^\top\Gamma s\bigr)^2$ for $\Gamma\in\R^{d\times d}$, and let
+\[
+  H=\frac1N\Bigl((N+1)\Sigma^2+(\tr\Sigma+\sigma^2)\Sigma\Bigr).
+\]
+Then
+\begin{equation}\label{eq:icl:risk}
+  \cR(\Gamma)=\sigma^2+\tr\Sigma-2\tr(\Sigma\Gamma\Sigma)+\tr(\Sigma\Gamma H\Gamma^\top),
+\end{equation}
+and $\cR$ has the unique minimizer
+\begin{equation}\label{eq:icl:gammastar}
+  \Gamma^\star=N\Bigl((N+1)\Sigma+(\tr\Sigma+\sigma^2)I_d\Bigr)^{-1},
+\end{equation}
+with $\cR(\Gamma)-\cR(\Gamma^\star)=\tr\bigl(\Sigma(\Gamma-\Gamma^\star)H(\Gamma-\Gamma^\star)^\top\bigr)$. If $\Sigma$ has eigenvalues $\lambda_1,\dots,\lambda_d$, the minimal risk is
+\begin{equation}\label{eq:icl:riskstar}
+  \cR^\star=\sigma^2+\sum_{k=1}^d\frac{\lambda_k(\lambda_k+\tr\Sigma+\sigma^2)}{(N+1)\lambda_k+\tr\Sigma+\sigma^2} .
+\end{equation}
+For $\Sigma=I_d$: $\Gamma^\star=\gamma^\star I_d$ with $\gamma^\star=\frac{N}{N+d+1+\sigma^2}$, and $\cR^\star=\sigma^2+\frac{d(d+1+\sigma^2)}{N+d+1+\sigma^2}$.
+\end{theorem}
+
+\begin{proof}
+The plan is to average over the query first, then over the prompt with \cref{lem:icl:wick}, and to complete the square.
+
+\emph{The query.} The pair $(x_q,\eps_q)$ is independent of $(w_\star,s)$, with $\E x_qx_q^\top=\Sigma$ and $\E\eps_q^2=\sigma^2$. Since $y_q-x_q^\top\Gamma s=\eps_q+x_q^\top(w_\star-\Gamma s)$ is a sum of two uncorrelated terms given $(w_\star,s)$,
+\[
+  \cR(\Gamma)=\sigma^2+\E\bigl[(w_\star-\Gamma s)^\top\Sigma(w_\star-\Gamma s)\bigr].
+\]
+\emph{Two moments of $s$.} Write $s=\iclShat w_\star+\bar\xi$ with $\bar\xi=\frac1N\sum_i\eps_ix_i$. The task is independent of the inputs and noises, with $\E w_\star w_\star^\top=I_d$, and $\E[\bar\xi\mid X]=0$, so $\E[sw_\star^\top]=\E[\iclShat]=\Sigma$. For the second moment, the cross terms vanish because the noises have mean zero given everything else; conditioning on the inputs gives $\E[\iclShat w_\star w_\star^\top\iclShat]=\E[\iclShat^2]$; and independence of the noises gives $\E[\bar\xi\bar\xi^\top]=\frac{\sigma^2}{N^2}\sum_i\E[x_ix_i^\top]=\frac{\sigma^2}N\Sigma$. With \cref{lem:icl:wick},
+\[
+  \E[ss^\top]=\frac1N\bigl((N+1)\Sigma^2+\tr(\Sigma)\Sigma\bigr)+\frac{\sigma^2}N\Sigma=H .
+\]
+\emph{The risk.} Expanding the quadratic form, $\E[w_\star^\top\Sigma w_\star]=\tr\Sigma$, $\E[w_\star^\top\Sigma\Gamma s]=\tr(\Sigma\Gamma\,\E[sw_\star^\top])=\tr(\Sigma\Gamma\Sigma)$, and $\E[s^\top\Gamma^\top\Sigma\Gamma s]=\tr(\Sigma\Gamma H\Gamma^\top)$, which is \eqref{eq:icl:risk}.
+
+\emph{Completing the square.} Let $K=\frac1N\bigl((N+1)\Sigma+(\tr\Sigma+\sigma^2)I_d\bigr)$, so that $H=\Sigma K=K\Sigma$ and $\Gamma^\star=K^{-1}$, a symmetric matrix with $H\Gamma^\star=\Sigma$. Expanding $\tr\bigl(\Sigma(\Gamma-\Gamma^\star)H(\Gamma-\Gamma^\star)^\top\bigr)$ and using $H\Gamma^{\star\top}=\Sigma$ turns its cross term into $-2\tr(\Sigma\Gamma\Sigma)$ and its last term into $\tr(\Sigma\Gamma^\star\Sigma)$; comparing with \eqref{eq:icl:risk},
+\[
+  \cR(\Gamma)=\sigma^2+\tr\Sigma-\tr(\Sigma\Gamma^\star\Sigma)+\tr\bigl(\Sigma(\Gamma-\Gamma^\star)H(\Gamma-\Gamma^\star)^\top\bigr).
+\]
+The matrices $\Sigma$ and $H$ are positive definite ($H$ is a product of two commuting positive definite matrices), so the last term equals $\norm{\Sigma^{1/2}(\Gamma-\Gamma^\star)H^{1/2}}_F^2$, which vanishes only at $\Gamma=\Gamma^\star$. Hence $\Gamma^\star$ is the unique minimizer and $\cR^\star=\sigma^2+\tr\Sigma-\tr(\Sigma^2\Gamma^\star)$. In an eigenbasis of $\Sigma$, the matrix $\Gamma^\star$ is diagonal with entries $N/\bigl((N+1)\lambda_k+\tr\Sigma+\sigma^2\bigr)$, and $\lambda_k-N\lambda_k^2/\bigl((N+1)\lambda_k+\tr\Sigma+\sigma^2\bigr)$ simplifies to the $k$th term of \eqref{eq:icl:riskstar}. For $\Sigma=I_d$, set $\lambda_k=1$ and $\tr\Sigma=d$.
+\end{proof}
+
+The proof used only $\E w_\star w_\star^\top=I_d$, independence, and Gaussian inputs: the law of the task enters only through its second moment.\sidenote{We checked \eqref{eq:icl:risk} and \eqref{eq:icl:riskstar} by Monte Carlo with $5\times10^5$ prompts for $d=5$, $N=12$, $\sigma^2=0.7$, and $\Sigma=\diag(2,1,0.5,0.3,0.2)$, at $\Gamma^\star$ and at a random $\Gamma$; the deviations were within $2.5$ standard errors.} The one-step learner is restricted, but the restriction is not ours: the full layer can do no better.
+
+\begin{theorem}[The global minimum of one layer]\label{thm:icl:global}
+Under \cref{ass:icl:prompts}, every $\theta=(\iclKQ,\iclPV)$ satisfies
+\[
+  \Loss(\theta)=\cR\bigl(\Gamma(\theta)\bigr)+\E\bigl(x_q^\top b(\theta)\bigr)^2\ \ge\ \cR^\star ,
+\]
+with $\Gamma(\theta)$ and $b(\theta)$ as in \cref{prop:icl:express}. Equality holds if and only if $\Gamma(\theta)=\Gamma^\star$ and $b(\theta)=0$ almost surely. In particular, $\min_\theta\Loss(\theta)=\cR^\star$, and every global minimizer predicts $\hat y_q=x_q^\top\Gamma^\star s$.
+\end{theorem}
+
+\begin{proof}
+The plan is to split the prediction \eqref{eq:icl:predict} into its odd and even parts and to show that they do not interact.
+
+\emph{The symmetry.} Let $\tau$ map $(w_\star,\eps_1,\dots,\eps_N,\eps_q)$ to its negative and leave the inputs unchanged. Under \cref{ass:icl:prompts} these variables are independent of the inputs and have centered Gaussian laws, so $\tau$ preserves the joint law of all the variables. It maps every label to its negative, hence $s\mapsto-s$ and $y_q\mapsto-y_q$, while $\iclShat$, $\iclc$, and $x_q$ are unchanged.
+
+\emph{No interaction.} Write $\hat y_q=x_q^\top\Gamma s+e$ with $e=x_q^\top b(\theta)$, and let $F=(y_q-x_q^\top\Gamma s)\,e$. All the variables are polynomials in Gaussian variables, so $F$ is integrable. By the symmetry, $F\circ\tau=-F$ and $F\circ\tau$ has the law of $F$, so $\E F=-\E F=0$. Expanding the square,
+\[
+  \Loss(\theta)=\E\bigl(y_q-x_q^\top\Gamma s\bigr)^2-2\E F+\E e^2=\cR(\Gamma)+\E e^2 .
+\]
+\emph{The bound.} \Cref{thm:icl:onestep} gives $\cR(\Gamma)\ge\cR^\star$, with equality only at $\Gamma=\Gamma^\star$, and $\E e^2\ge0$, with equality only if $e=0$ almost surely. Since $x_q$ is independent of $b(\theta)$ and has a positive definite covariance, $\E e^2=\E\bigl[b^\top\Sigma b\bigr]$ vanishes exactly when $b(\theta)=0$ almost surely. The parameter with $v_{22}=1$, $W_{11}=\Gamma^{\star\top}$, and all other blocks zero attains $\cR^\star$ by \cref{prop:icl:express}.
+\end{proof}
+
+The theorem says more than that the optimum is attained: \emph{whatever} global minimum training reaches, the trained layer runs one step of gradient descent with preconditioner $\Gamma^\star$. The minimizers themselves are not unique (rescaling $v_{22}$ by $c\neq0$ and $W_{11}$ by $1/c$ changes nothing), but their predictions are.
+
+How good is this learner? The best predictor of $y_q$ from the prompt and $x_q$ is the posterior mean, which, for Gaussian prior and noise, is ridge regression.
+
+\begin{corollary}[One step against the Bayes estimator]\label[corollary]{cor:icl:bayes}
+Let $\Sigma=I_d$ in \cref{ass:icl:prompts}, and let $X\in\R^{N\times d}$ have rows $x_i$. Then:
+\begin{enumerate}
+\item the Bayes-optimal prediction is $x_q^\top\hat w$ with $\hat w=(X^\top X+\sigma^2I_d)^{-1}X^\top y$, and its risk is $\sigma^2+\E\tr\bigl(\sigma^2(X^\top X+\sigma^2I_d)^{-1}\bigr)$;
+\item if $d,N\to\infty$ with $d/N\to\gamma\in(0,\infty)$ and $\sigma^2/d\to\varsigma>0$, then the excess risks per dimension converge:
+\begin{equation}\label{eq:icl:proportional}
+  \frac{\cR^\star-\sigma^2}d\to\frac{\gamma(1+\varsigma)}{1+\gamma(1+\varsigma)},\qquad
+  \frac{\cR_{\mathrm{B}}-\sigma^2}d\to\frac{\sqrt{b^2+4\varsigma}-b}2,
+\end{equation}
+where $\cR_{\mathrm{B}}$ is the Bayes risk and $b=\frac1\gamma-1+\varsigma$;
+\item as $\gamma\to0$ (many examples per dimension), the ratio of the two limits tends to $(1+\varsigma)/\varsigma$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+\emph{Part (i).} Given $(X,y)$, the density of $w_\star$ at $w$ is proportional to
+\[
+  \exp\Bigl(-\frac1{2\sigma^2}\norm{y-Xw}^2-\frac12\norm w^2\Bigr),
+\]
+a Gaussian whose precision matrix is $(X^\top X+\sigma^2I_d)/\sigma^2$ and whose mean $\hat w$ is the stationary point $X^\top(y-Xw)=\sigma^2w$. The squared loss is minimized by the conditional mean of $y_q$ given the prompt and $x_q$, which is $x_q^\top\hat w$, because $x_q$ and $\eps_q$ are independent of the rest. Its risk is $\sigma^2+\E\norm{w_\star-\hat w}^2$, and the conditional mean of $\norm{w_\star-\hat w}^2$ is the trace of the posterior covariance $\sigma^2(X^\top X+\sigma^2I_d)^{-1}$.
+
+\emph{Part (ii).} For the one-step learner, \cref{thm:icl:onestep} gives $(\cR^\star-\sigma^2)/d=(d+1+\sigma^2)/(N+d+1+\sigma^2)$; divide numerator and denominator by $N$. For the Bayes estimator, write $\hat\Sigma_X=X^\top X/N$ and $\lambda=\sigma^2/N$; then $\frac1d\tr\bigl(\sigma^2(X^\top X+\sigma^2I)^{-1}\bigr)=\frac1d\tr\bigl(\lambda(\hat\Sigma_X+\lambda I)^{-1}\bigr)$, which is the function $v_p(\lambda)$ of \cref{ch:doubledescent} with $p=d$ features and $n=N$ samples. Here $\lambda=\lambda_N=\varsigma_N\,d/N\to\varsigma\gamma$ with $\varsigma_N=\sigma^2/d$. The proof of \cref{thm:doubledescent:ridge} shows that $\E v_p(\lambda)\to v(\lambda)$ at each fixed $\lambda>0$; since $\abs{\partial_\lambda v_p(\lambda)}\le1/(4\lambda)$, the convergence also holds along $\lambda_N\to\varsigma\gamma>0$. The limit $v(\varsigma\gamma)$ is the positive root of $\gamma v^2+(1-\gamma+\varsigma\gamma)v-\varsigma\gamma=0$, that is, of $v^2+bv-\varsigma=0$, which is the stated limit.
+
+\emph{Part (iii).} As $\gamma\to0$, the first limit is $\gamma(1+\varsigma)+O(\gamma^2)$, and the second is $\frac{2\varsigma}{\sqrt{b^2+4\varsigma}+b}=\varsigma\gamma+O(\gamma^2)$, because $b=1/\gamma+O(1)$.
+\end{proof}
+
+\section{The solution: how training finds the step}\label{sec:icl:dynamics}
+
+\Cref{thm:icl:global} is about the landscape; does gradient descent reach its minimum? Two facts make the dynamics solvable. First, the set
+\[
+  \cM=\{\theta:\ v_{21}=0,\ w_{21}=0\}
+\]
+is invariant: on it the odd--even symmetry kills the gradient in the off-manifold directions. Second, on $\cM$ the model is a two-layer linear network, $\Gamma=v_{22}W_{11}^\top$, a scalar times a matrix, with the conservation law of \cref{ch:deeplinear}. Gradient flow is $\dot\theta=-\nabla\Loss(\theta)$.
+
+\begin{theorem}[Gradient flow finds the optimal step]\label{thm:icl:flow}
+Under \cref{ass:icl:prompts}, let $\theta(0)\in\cM$ with $v_{22}(0)>\norm{W_{11}(0)}_F$. Then the gradient flow exists for all $t\ge0$, stays in $\cM$, and conserves $c=v_{22}^2-\norm{W_{11}}_F^2>0$; and as $t\to\infty$, $\Gamma(\theta(t))\to\Gamma^\star$ and $\Loss(\theta(t))\to\cR^\star$.
+\end{theorem}
+
+\begin{proof}
+The plan is to show invariance by the odd--even symmetry, to obtain the conservation law and boundedness on $\cM$, and then to identify every limit point as a global minimum.
+
+\emph{Invariance.} The loss does not depend on $V_{11}$, $v_{12}$, $w_{12}$, $w_{22}$, so their gradients vanish everywhere. By \cref{prop:icl:express}, $\partial\hat y_q/\partial v_{21}=\iclShat W_{11}x_q+(w_{21}^\top x_q)s$ and $\partial\hat y_q/\partial w_{21}=(v_{21}^\top s+v_{22}\iclc)x_q$. At a point of $\cM$ these are $\iclShat W_{11}x_q$ and $v_{22}\iclc\,x_q$, which are even under the map $\tau$ of the proof of \cref{thm:icl:global}, while $y_q-\hat y_q=y_q-x_q^\top\Gamma s$ is odd. So $\partial\Loss/\partial v_{21}=-2\E[(y_q-\hat y_q)\,\partial\hat y_q/\partial v_{21}]=0$ on $\cM$, and likewise for $w_{21}$. The vector field is polynomial, hence locally Lipschitz: the solution of the flow restricted to $\cM$, in the variables $(W_{11},v_{22})$, solves the full equation, and by uniqueness it is the full solution, as long as it exists.
+
+\emph{The flow on $\cM$.} On $\cM$, $\Loss(\theta)=\cR(\Gamma)$ with $\Gamma=v_{22}A$ and $A=W_{11}^\top$. Let $G=\nabla\cR(\Gamma)=2(\Sigma\Gamma H-\Sigma^2)$, from \eqref{eq:icl:risk}. The chain rule gives
+\[
+  \dot A=-v_{22}\,G,\qquad \dot v_{22}=-\ip{G,A}_F ,
+\]
+so $\frac{\dd}{\dd t}v_{22}^2=-2v_{22}\ip{G,A}_F=\frac{\dd}{\dd t}\norm A_F^2$, and $c=v_{22}^2-\norm A_F^2$ is constant. In particular $v_{22}^2\ge c>0$, so $v_{22}$ never vanishes and stays positive.
+
+\emph{Boundedness.} The loss does not increase along the flow, and by \cref{thm:icl:onestep}, $\cR(\Gamma)\ge\cR^\star+\mu\norm{\Gamma-\Gamma^\star}_F^2$ with $\mu=\lmin(\Sigma)\lmin(H)>0$. So $\norm{\Gamma(t)}_F\le B$ for a constant $B$. Since $\norm\Gamma_F^2=v_{22}^2\norm A_F^2=(c+\norm A_F^2)\norm A_F^2\ge\norm A_F^4$, also $\norm A_F^2\le B$ and $v_{22}^2\le c+B$. A bounded solution of a locally Lipschitz equation exists for all time.
+
+\emph{Limit points.} Integrating $\frac{\dd}{\dd t}\Loss=-\norm{\nabla\Loss}^2$ gives $\int_0^\infty\norm{\nabla\Loss(\theta(t))}^2\dd t\le\Loss(\theta(0))-\cR^\star<\infty$, so $\nabla\Loss(\theta(t_k))\to0$ along some sequence $t_k\to\infty$. By boundedness, a subsequence of $\theta(t_k)$ converges to some $\bar\theta\in\cM$, where $\nabla\Loss(\bar\theta)=0$ by continuity and $\bar v_{22}^2\ge c>0$. The $A$-component of the gradient, $\bar v_{22}\,G(\bar\Gamma)$, vanishes, so $\nabla\cR(\bar\Gamma)=0$, and $\bar\Gamma=\Gamma^\star$, the only critical point of the strictly convex $\cR$. Hence $\Loss(\theta(t_k))\to\cR^\star$ along the subsequence; since $\Loss(\theta(t))$ is nonincreasing and bounded below by $\cR^\star$, $\Loss(\theta(t))\to\cR^\star$. Finally $\mu\norm{\Gamma(t)-\Gamma^\star}_F^2\le\cR(\Gamma(t))-\cR^\star\to0$.
+\end{proof}
+
+The hypothesis $v_{22}(0)>\norm{W_{11}(0)}_F$ keeps the flow away from the saddle at $\Gamma=0$. From a small, balanced initialization, $c=0$, and the flow must escape that saddle. For isotropic inputs this escape can be solved in closed form.
+
+\begin{proposition}[Escape from the saddle: a logistic curve]\label[proposition]{prop:icl:logistic}
+Let $\Sigma=I_d$, and start the gradient flow on $\cM$ at $W_{11}(0)=a_0I_d$ and $v_{22}(0)=\sqrt d\,a_0$ with $a_0>0$, so that $\Gamma(0)=\gamma_0I_d$ with $\gamma_0=\sqrt d\,a_0^2$. Then $\Gamma(t)=\gamma(t)I_d$ for all $t$, where
+\begin{equation}\label{eq:icl:logistic}
+  \dot\gamma=4\sqrt d\,\gamma\Bigl(1-\frac\gamma{\gamma^\star}\Bigr),\qquad
+  \gamma(t)=\frac{\gamma^\star}{1+(\gamma^\star/\gamma_0-1)e^{-4\sqrt d\,t}},
+\end{equation}
+with $\gamma^\star=N/(N+d+1+\sigma^2)$. The step reaches half its final value at $t_{1/2}=\log(\gamma^\star/\gamma_0-1)/(4\sqrt d)$.
+\end{proposition}
+
+\begin{proof}
+With $\Sigma=I_d$ we have $H=hI_d$ with $h=(N+d+1+\sigma^2)/N=1/\gamma^\star$, and $G=2(h\Gamma-I_d)$. Try $A=a(t)I_d$ and $v_{22}=\sqrt d\,a(t)$, so $\Gamma=\gamma I_d$ with $\gamma=\sqrt d\,a^2$ and $G=2(h\gamma-1)I_d$. The flow equations of the proof of \cref{thm:icl:flow} become
+\[
+  \dot a\,I_d=-2\sqrt d\,a(h\gamma-1)I_d,\qquad \dot v_{22}=-\ip{G,aI_d}_F=-2d\,a(h\gamma-1)=\sqrt d\,\dot a ,
+\]
+so the ansatz is consistent, with the single equation $\dot a=-2\sqrt d\,a(h\gamma-1)$; by uniqueness it gives the solution. Then $\dot\gamma=2\sqrt d\,a\dot a=-4d\,a^2(h\gamma-1)=4\sqrt d\,\gamma(1-h\gamma)$, a logistic equation with carrying capacity $1/h=\gamma^\star$, whose solution with $\gamma(0)=\gamma_0$ is \eqref{eq:icl:logistic}. Setting $\gamma=\gamma^\star/2$ gives $e^{4\sqrt d\,t}=\gamma^\star/\gamma_0-1$.
+\end{proof}
+
+For general $\Sigma$, \textcite{ZhangFreiBartlett2024} prove that gradient flow on the population loss, from a suitable random initialization, converges to a global minimum; by \cref{thm:icl:global}, the limit predicts with $\Gamma^\star$.
+
+\begin{proofsketch}
+What is omitted is the case $c=0$ for a nonisotropic $\Sigma$: one must show that a balanced initialization whose matrix part is positive semidefinite moves away from the saddle at $\Gamma=0$, where $\nabla\cR(0)=-2\Sigma^2$ pulls $\Gamma$ toward positive definite matrices, and that it is not attracted to the critical set $\{v_{22}=0,\ \tr(\Sigma^2W_{11}^\top)=0\}$. Once $\Gamma$ is bounded away from $0$, the argument of \cref{thm:icl:flow} applies. \Textcite{ZhangFreiBartlett2024} carry out this step for their initialization, whose exact form we do not reproduce; we have not checked their argument line by line.
+\end{proofsketch}
+
+\paragraph{Task diversity.} \Cref{ass:icl:prompts} draws a fresh task for every prompt. If instead the pretraining tasks are a finite set $\{w_1,\dots,w_M\}$, then the derivation of \cref{thm:icl:onestep} goes through with the identity replaced by the task second-moment matrix $\frac1M\sum_kw_kw_k^\top$ (\cref{ex:icl:diversity}): a single linear layer cannot memorize tasks, it can only adapt its preconditioner to their span. \Textcite{LuEtAl2025} solve a linear-attention model of this kind in a proportional limit in which $N$ and the number of tasks grow linearly with $d$ and the number of pretraining prompts quadratically; they find a double descent in the number of pretraining prompts and a transition from memorizing the pretraining tasks to generalizing beyond them as the diversity grows, and they report the same behavior in experiments with linear attention and with nonlinear transformers.
+
+\section{Reading the solution}\label{sec:icl:reading}
+
+\Cref{fig:icl:risk} compares the theory with trained layers. Each point is a layer with all $2(d+1)^2=162$ parameters trained from a random initialization; its risk lies within $1.8$ standard errors of $\cR^\star$ at every $N$, its learned step $\tr(\Gamma)/d$ within $0.004$ of $\gamma^\star$, the off-diagonal part of $\Gamma$ is below $0.011$ in normalized Frobenius norm, and the even part $b(\theta)$ has coefficients of order $10^{-2}$, the level of the optimizer's noise. Training did not get stuck in this experiment, although \cref{thm:icl:flow} covers only initializations on $\cM$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},hplot,
+  width=0.5\linewidth,height=0.37\linewidth,xmode=log,log basis x=2,xmin=0.8,xmax=320,
+  xtick={1,4,16,64,256},xticklabels={$1$,$4$,$16$,$64$,$256$},unbounded coords=jump]
+\nextgroupplot[xlabel={context length $N$},ylabel={excess risk per dimension},ymode=log,ymin=0.0015,ymax=1.5,
+  title={(a) risk},legend pos=south west,
+  ytick={0.001,0.01,0.1,1},yticklabels={$10^{-3}$,$10^{-2}$,$10^{-1}$,$1$}]
+\addplot[guide,forget plot] coordinates {(8,0.0015) (8,1.5)};
+\addplot[theory] table[x=N,y=onestep] {figures/data/13-icl-risk-theory.dat};
+\addlegendentry{optimal one step}
+\addplot[theory2] table[x=N,y=bayes] {figures/data/13-icl-risk-theory.dat};
+\addlegendentry{Bayes (ridge)}
+\addplot[theory3] table[x=N,y=ols] {figures/data/13-icl-risk-theory.dat};
+\addlegendentry{least squares}
+\addplot[simulation] table[x=N,y=risk] {figures/data/13-icl-risk-sim.dat};
+\addlegendentry{trained layer}
+\nextgroupplot[xlabel={context length $N$},ylabel={step $\tr(\Gamma)/d$},ymin=0,ymax=1.05,
+  title={(b) learned step},legend pos=south east]
+\addplot[theory] table[x=N,y=gamma] {figures/data/13-icl-risk-theory.dat};
+\addlegendentry{$\gamma^\star=N/(N+d+1+\sigma^2)$}
+\addplot[simulation] table[x=N,y=gammahat] {figures/data/13-icl-risk-sim.dat};
+\addlegendentry{trained layer}
+\end{groupplot}
+\end{tikzpicture}
+\caption{In-context regression with $d=8$, $\Sigma=I_d$, and $\sigma^2=0.5$; excess risk is $(\text{risk}-\sigma^2)/d$. (a)~Curves: the optimal one-step learner (\cref{thm:icl:onestep}), the Bayes estimator (\cref{cor:icl:bayes}(i), Monte Carlo over $4000$ designs per $N$), and minimum-norm least squares (\cref{thm:doubledescent:exact} with $\E\norm{w_\star}^2=d$; infinite for $\abs{N-d}\le1$; the dashed line marks $N=d$). Points: one layer of linear self-attention with all parameters trained by Adam ($1500$ steps, batches of $1024$ fresh prompts, cosine-decayed rate from $10^{-2}$, initialization $\cN(0,0.01)$), risk estimated on $10^5$ fresh prompts (seed $20261017$). (b)~The learned step $\tr\Gamma(\theta)/d$ of the same layers.}
+\label{fig:icl:risk}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{The learned step.} The optimal preconditioner \eqref{eq:icl:gammastar} is a step size that knows how much to trust the prompt. For $\Sigma=I_d$ it is $\gamma^\star=N/(N+d+1+\sigma^2)$: a short or noisy prompt gives a short step. The denominator adds $N$ (the signal in $s$, whose mean is $w_\star$) to $d+1+\sigma^2$, the fluctuation of $s$ around $w_\star$: $\E\norm{s-w_\star}^2=\frac{d(d+1+\sigma^2)}N$, of which $\sigma^2d/N$ comes from the noise and $d(d+1)/N$ from the fluctuation of $\iclShat$ around $I_d$. As $N\to\infty$, $\Gamma^\star\to\Sigma^{-1}$, so for long prompts the one step becomes a Newton step, and for short ones it is a ridge-like shrinkage, $\Gamma^\star\approx\frac N{\tr\Sigma+\sigma^2}I_d$, which does not depend on the shape of $\Sigma$ at all.
+
+\paragraph{The rate.} At fixed $d$ the excess risk of the optimal step is $d(d+1+\sigma^2)/N+O(N^{-2})$, and that of least squares is $\sigma^2d/(N-d-1)$ (\cref{thm:doubledescent:exact}); the one-step learner is consistent but pays a factor $(d+1+\sigma^2)/\sigma^2$ for not inverting $\iclShat$. Without noise least squares is exact as soon as $N\ge d$, while one step never is: its excess risk is $d(d+1)/(N+d+1)$. In \cref{fig:icl:risk}(a) the gap at $N=32$ is a factor of about $10.5$, against the asymptotic $1+(d+1)/\sigma^2=19$. Near $N=d$ the one-step learner beats the interpolating least-squares estimator, whose variance explodes, but not the Bayes estimator, which is ridge; in the proportional limit at $\gamma=d/N=1$ its excess risk per dimension is $(1+\varsigma)/(2+\varsigma)$, against $\frac12\bigl(\sqrt{\varsigma^2+4\varsigma}-\varsigma\bigr)$ for Bayes (\cref{cor:icl:bayes}): $0.52$ against $0.27$ at $\varsigma=0.1$.\sidenote{We checked both limits in \eqref{eq:icl:proportional} at $d=200$ for $(N,\varsigma)\in\{(200,0.1),(400,0.1),(100,0.5)\}$: the finite-size values differ from the limits by less than $0.002$.}
+
+\paragraph{Plateau, then a logistic jump.} \Cref{fig:icl:dynamics} shows the dynamics of \cref{prop:icl:logistic}. The origin $\Gamma=0$ is a saddle of the loss in the parameters, as in the deep linear networks of \cref{ch:deeplinear}: the product $v_{22}W_{11}^\top$ has a vanishing gradient when both factors are small, so a small initialization spends a time $\log(\gamma^\star/\gamma_0)/(4\sqrt d)$ on a plateau before the step jumps to $\gamma^\star$, the time growing like the logarithm of the inverse initialization. In-context learning appears abruptly in training, but in this model the abruptness is the generic escape from a saddle, not a new mechanism; the induction heads of \cref{ch:induction} give a second instance.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,height=0.5\linewidth,xlabel={training time $t=\eta\times\text{step}$},ylabel={step $\tr(\Gamma)/d$},
+  xmin=0,xmax=2,ymin=0,ymax=0.75,legend pos=south east]
+\addplot[guide,domain=0:2,samples=2,forget plot] {0.677966};
+\addplot[theory] table[x=t,y=theoryA] {figures/data/13-icl-dynamics.dat};
+\addlegendentry{$\gamma_0=10^{-2}$}
+\addplot[theory2] table[x=t,y=theoryB] {figures/data/13-icl-dynamics.dat};
+\addlegendentry{$\gamma_0=10^{-4}$}
+\addplot[simulation,forget plot] table[x=t,y=simA] {figures/data/13-icl-dynamics.dat};
+\addplot[simulation2,forget plot] table[x=t,y=simB] {figures/data/13-icl-dynamics.dat};
+\node[font=\scriptsize,text=muted,anchor=north east] at (axis cs:1.98,0.67) {$\gamma^\star$};
+\end{axis}
+\end{tikzpicture}
+\caption{Escape from the saddle. Curves: the logistic solution \eqref{eq:icl:logistic} for $d=8$, $N=20$, $\sigma^2=0.5$ ($\gamma^\star=0.678$, dashed line) and two initial steps $\gamma_0$. Points: gradient descent with step $\eta=0.005$ on all $162$ parameters, each step on a batch of $4096$ fresh prompts, from the balanced initialization of \cref{prop:icl:logistic} plus independent $\cN(0,10^{-8})$ perturbations of every parameter (seed $1017$). The largest deviation from the curves is $0.017$, on the steep part of the second curve.}
+\label{fig:icl:dynamics}
+\end{figure}
+
+\paragraph{What shifts it tolerates.} The prediction $x_q^\top\Gamma^\star s$ is linear in the labels, and its risk depends on the law of the task only through $\E w_\star w_\star^\top$; for a fixed task it depends on $w_\star$ only through $\norm{w_\star}$ when $\Sigma=I_d$ (\cref{ex:icl:taskshift}). So the learner transfers to new task distributions with the same second moment, including tasks never seen in training. It does not transfer across input distributions: $\Gamma^\star$ depends on $\Sigma$, and the prediction is cubic in the inputs. If the inputs of a test prompt are scaled by $a$, the noiseless part of the target scales by $a$ and that of the prediction by $a^3$. If the input covariance is multiplied by $c=2$, with the parameters of \cref{fig:icl:dynamics}, the excess risk rises from $2.6$ to $15.6$, nearly the null risk $16$, while least squares does not notice the scaling (\cref{ex:icl:covshift}). \Textcite{ZhangFreiBartlett2024} found the trained layer brittle under covariate shift in this sense, and reported that larger nonlinear transformers are more robust.
+
+\section{What the model gets wrong}\label{sec:icl:wrong}
+
+\paragraph{What was thrown away.} Without the softmax, attention cannot select examples: every example enters the prediction with a weight that is a quadratic form, so the layer cannot implement nearest neighbors, sparse regression, or a data-dependent step. With one layer, the forward pass can take one step, and the learner cannot be consistent at the rate of least squares. Putting $x_i$ and $y_i$ in one token removes the hardest part of in-context learning in language, finding which earlier token goes with which, the job of induction heads (\cref{ch:induction}). Linear tasks with a Gaussian prior make the Bayes estimator ridge regression, a linear function of the labels; for other priors the Bayes estimator is nonlinear in the labels, and no single linear layer can follow it. Drawing a fresh task for every prompt hides the memorization regime of \textcite{RaventosEtAl2023}, and training on the population loss hides the number of pretraining prompts needed \parencite{WuEtAl2024,LuEtAl2025}.
+
+\paragraph{Where it breaks.} \emph{Deeper models are not one step.} The transformers of \textcite{GargEtAl2022} reach the error of least squares, far below the one-step risk $d(d+1)/(N+d+1)$ of the noiseless model, so they cannot be computing one gradient step. \Textcite{AhnEtAl2023} proved that for $L$ layers of linear attention certain critical points of the loss implement $L$ steps of preconditioned gradient descent, but not that training finds them; \textcite{FuEtAl2024} found that the predictions of successive layers of trained transformers track the iterates of an iterative Newton method, which converges exponentially faster than gradient descent, and proved that $k$ Newton iterations can be implemented with $k+O(1)$ layers; \textcite{VonOswaldEtAl2023} themselves reported that deeper trained models improve on plain gradient descent with a learned curvature correction. ``One layer is one gradient step'' survives; ``in-context learning is gradient descent'' does not follow from it.
+
+\emph{Softmax attention computes something else.} \Textcite{CollinsEtAl2024} showed that a softmax attention layer trained on in-context regression learns a nearest-neighbor-like predictor whose window adapts to the Lipschitz constant and the noise of the pretraining functions, which linear attention cannot do. A softmax layer is not a gradient step on the squared loss, and its optimum depends on the function class in a way the linear model does not see.
+
+\emph{Language models are not trained on regression prompts.} \Textcite{ShenEtAl2024} compared in-context learning in pretrained language models (LLaMa-7B among them) with gradient descent fine-tuning on the same demonstrations and found that the two respond differently, for instance to the order of the demonstrations; they argued that the evidence for the equivalence came from models trained specifically for in-context regression, with hand-built or specially trained weights. Much of in-context learning in language models is task recognition rather than learning \parencite{PanEtAl2023,MinEtAl2022}, a retrieval of something learned in the weights, which no model with a fresh task per prompt can represent. And in-context learning in transformers can be transient, giving way to in-weights learning as training continues \parencite{SinghEtAl2023}, while in this model the global minimum is stable.
+
+\emph{The data decide whether there is in-context learning at all.} \Textcite{ChanEtAl2022} found that in-context learning emerges only for training data with particular properties, bursty sequences and many rare classes, and that it trades off against in-weights learning. In \cref{ass:icl:prompts} the task changes with every prompt, so in-context learning is the only option.
+
+\paragraph{Fine structure.} The Bayesian view of \textcite{XieEtAl2022} explains in-context learning in language as inference of a latent concept shared by a document, of which the Gaussian posterior of \cref{cor:icl:bayes} is the simplest case. Task diversity was quantified by \textcite{RaventosEtAl2023} empirically and by \textcite{WuEtAl2024} and \textcite{LuEtAl2025} in solvable linear-attention models: \textcite{WuEtAl2024} bound the number of independent pretraining tasks needed and show that the pretrained model is then nearly Bayes optimal at a fixed context length. Transformers can select among algorithms in context, for instance between ridge with different penalties, and reach near-Bayes risk on mixtures of noise levels \parencite{BaiEtAl2023}. Looped transformers, which apply one block repeatedly, learn in-context regression and other function classes about as well as standard transformers with under a tenth of the parameters \parencite{YangEtAl2024}. For softmax attention, \textcite{HuangChengLiang2024} proved convergence of gradient descent for a one-layer transformer on in-context linear regression with features drawn from a finite set, with stage-wise dynamics when the features are imbalanced. The solvable model of how a multi-layer softmax transformer comes to learn in context, and of which algorithm it then runs, is open; the induction-head models of \cref{ch:induction} solve one piece of it.
+
+\section{Model card}\label{sec:icl:card}
+
+\modelcard{Transformers learn a task from the examples in the prompt, without weight updates; trained on regression prompts, they predict nearly as well as least squares.}
+{One layer of linear self-attention on prompts $(x_1,y_1,\dots,x_N,y_N,x_q)$ with Gaussian inputs, a Gaussian task drawn per prompt, and Gaussian noise; population pretraining loss.}
+{The layer computes $x_q^\top\Gamma s+x_q^\top b$; the global optimum is $b=0$, $\Gamma^\star=N((N+1)\Sigma+(\tr\Sigma+\sigma^2)I)^{-1}$ (\cref{thm:icl:onestep,thm:icl:global}); gradient flow finds it (\cref{thm:icl:flow}), along a logistic curve from a small initialization (\cref{prop:icl:logistic}).}
+{One preconditioned gradient step, a Newton step for long prompts; excess risk $d(d+1+\sigma^2)/N$, a factor $(d+1+\sigma^2)/\sigma^2$ above least squares; a plateau of length $\log(1/\gamma_0)/(4\sqrt d)$; tolerance of task shift, brittleness under covariate shift.}
+{Deeper and softmax transformers run other algorithms (Newton-like iterations, adaptive nearest neighbors); language models also recognize tasks; data properties and transience; no memorization regime.}
+{Multi-layer linear attention; task diversity in proportional limits; algorithm selection; looped transformers; softmax dynamics; induction heads.}
+
+The Gaussian design returns from \cref{ch:doubledescent}: the Bayes estimator of \cref{cor:icl:bayes} is the optimally tuned ridge of \cref{prop:doubledescent:optimal}, and its proportional limit comes from the Marchenko--Pastur law. Rotational and sign symmetries of Gaussian data did the work here as in \cref{ch:singleindex,ch:committee}. The escape from the saddle at $\Gamma=0$ is that of the deep linear networks of \cref{ch:deeplinear}, with the same conservation law and the same logistic curve, and it recurs in the induction heads of \cref{ch:induction}, where a second layer must compose with a first before either can learn.
+
+\begin{exercises}
+\item \consolidation (Gaussian fourth moments.) (a) Prove $\E[g_ig_jg_kg_l]=\delta_{ij}\delta_{kl}+\delta_{ik}\delta_{jl}+\delta_{il}\delta_{jk}$ for $g\sim\cN(0,I_d)$ by counting cases. (b) Deduce from \cref{lem:icl:wick} that $\E[\iclShat A\iclShat]=\frac1N\bigl((N-1)\Sigma A\Sigma+\Sigma A\Sigma+\Sigma A^\top\Sigma+\tr(A\Sigma)\Sigma\bigr)$. (c) Show that $\E\norm{s-w_\star}^2=d(d+1+\sigma^2)/N$ when $\Sigma=I_d$.\label{ex:icl:wick}
+
+\item \consolidation (The best scalar step.) Under \cref{ass:icl:prompts}, restrict to $\Gamma=\eta I_d$. Show that the best $\eta$ is $\eta^\star=N\tr(\Sigma^2)/\bigl((N+1)\tr(\Sigma^3)+(\tr\Sigma+\sigma^2)\tr(\Sigma^2)\bigr)$, and that it coincides with $\Gamma^\star$ exactly when $\Sigma$ is a multiple of $I_d$. For $\Sigma=\diag(1,\epsilon)$ and $\sigma=0$, show that as $N\to\infty$ the risk of $\Gamma^\star$ tends to $0$, while that of $\eta^\star I_2$ tends to $\epsilon(1-\epsilon)^2/(1+\epsilon^3)$.\label{ex:icl:scalar}
+
+\item \consolidation (Logistic escape.) (a) For the setting of \cref{fig:icl:dynamics}, compute $t_{1/2}$ for $\gamma_0=10^{-2}$ and $\gamma_0=10^{-4}$ (answers: $0.37$ and $0.78$). (b) Show that halving $\gamma_0$ delays the escape by $\log2/(4\sqrt d)+O(\gamma_0/\gamma^\star)$ as $\gamma_0\to0$, and that the time to reach $(1-\delta)\gamma^\star$ is $\log\bigl((\gamma^\star/\gamma_0-1)(1-\delta)/\delta\bigr)/(4\sqrt d)$. (c) Show that along the flow of \cref{prop:icl:logistic} the loss is $\sigma^2+d-2d\gamma+d\gamma^2/\gamma^\star$, and sketch it against $t$.\label{ex:icl:logistic}
+
+\item \consolidation (Task shift.) Let $\Sigma=I_d$ and fix $w_\star$. Show that the risk of the predictor $x_q^\top\gamma s$, averaged over the inputs and noises only, is $\sigma^2+\norm{w_\star}^2\bigl(1-2\gamma+\gamma^2\frac{N+d+1}N\bigr)+\gamma^2\frac{\sigma^2d}N$. Deduce that the trained layer has the same risk on every task distribution with $\E\norm{w_\star}^2=d$, for instance tasks uniform on the sphere of radius $\sqrt d$, or a single fixed task of that norm.\label{ex:icl:taskshift}
+
+\item \consolidation (The proportional limit.) (a) Check part (iii) of \cref{cor:icl:bayes}, and show that at $\gamma=1$ the limits are $(1+\varsigma)/(2+\varsigma)$ and $\frac12(\sqrt{\varsigma^2+4\varsigma}-\varsigma)$. (b) Show that at $\varsigma\to0$ the Bayes limit is $(1-1/\gamma)_+$, the fraction of directions the prompt does not see, while the one-step limit is $\gamma/(1+\gamma)$.\label{ex:icl:proportional}
+
+\item \variation (Covariate shift.) Train at $\Sigma=I_d$, so that $\Gamma=\gamma^\star I_d$, and test on prompts whose inputs (context and query) have law $\cN(0,cI_d)$. (a) Show that the excess risk is $dc-2d\gamma^\star c^2+d\gamma^{\star2}c^2\bigl((N+1+d)c+\sigma^2\bigr)/N$, which grows like $c^3$. (b) With $d=8$, $N=20$, $\sigma^2=0.5$, evaluate it at $c\in\{\frac12,1,2\}$ and compare with the null risk $dc$. (c) Show that for $N\ge d+2$ the risk of least squares does not depend on $c$.\label{ex:icl:covshift}
+
+\item \variation (Two layers, two steps.) Stack $L$ layers \eqref{eq:icl:lsa}, each acting on all columns of the output of the previous one, with $\iclKQ=\begin{pmatrix}\eta I_d&0\\0&0\end{pmatrix}$ and $\iclPV=\begin{pmatrix}0&0\\0&-1\end{pmatrix}$ in every layer, and read the prediction as minus the bottom entry of the query column. Show by induction that after $\ell$ layers the label entry of column $i\le N$ is $y_i-\ip{w_\ell,x_i}$ and that of the query column is $-\ip{w_\ell,x_q}$, where $w_\ell$ are the gradient descent iterates $w_{\ell+1}=w_\ell-\eta\nabla\Lhat(w_\ell)$ from $w_0=0$ \parencite{VonOswaldEtAl2023}. Replace $\eta I_d$ by $\Gamma^\top$ to get preconditioned steps.\label{ex:icl:twolayers}
+
+\item \variation (Finite task diversity.) Let the task be $\pm w_k$, with $k$ uniform on $\{1,\dots,M\}$ and an independent uniform sign, let $\Sigma=I_d$, and let $W=\frac1M\sum_kw_kw_k^\top$. (a) Show that \cref{thm:icl:onestep,thm:icl:global} hold with
+\[
+  \Gamma^\star=NW\bigl((N+1)W+(\tr W+\sigma^2)I_d\bigr)^{-1}.
+\] (b) If $M<d$ and the $w_k$ are linearly independent, show that as $N\to\infty$ the trained layer tested on fresh tasks $w_\star\sim\cN(0,I_d)$ has excess risk tending to $d-M$: it has learned the span of the training tasks, not the tasks themselves. \hint{the sign flips keep the law symmetric, which is what \cref{thm:icl:global} needs.}\label{ex:icl:diversity}
+
+\item \variation (Other symmetric laws.) (a) Show that \cref{thm:icl:onestep} holds for every task law with $\E w_\star w_\star^\top=I_d$ independent of the inputs and noises. (b) Show that \cref{thm:icl:global} holds whenever, in addition, the laws of $w_\star$ and of the noises are symmetric and have finite fourth moments. (c) Let the query attend to itself, replacing $M$ by $I_{N+1}$ in \eqref{eq:icl:lsa}; show that the extra terms are even in the labels, so that the global minimum is unchanged.\label{ex:icl:symmetric}
+
+\item \simulation (Anisotropic inputs.) Take $d=4$, $\Sigma=\diag(4,2,1,\frac12)$, $N=10$, and $\sigma^2=\frac14$. Train all $50$ parameters of the layer with Adam on fresh prompts, as in \cref{fig:icl:risk}. Observe that the learned $\Gamma(\theta)$ is close to $\diag(0.193,0.336,0.533,0.755)$, that the coefficients of $b(\theta)$ are near zero, and that the risk approaches \eqref{eq:icl:riskstar}. Then test the trained layer with $\Sigma'=\diag(\frac12,1,2,4)$ and explain the result with \eqref{eq:icl:risk}.\label{ex:icl:aniso}
+
+\item \simulation (A softmax head.) Replace linear attention by one softmax head with the same embedding \eqref{eq:icl:Z}, train it on the prompts of \cref{fig:icl:risk} with $d=8$ and $N\in\{8,32\}$, and compare its risk with $\cR^\star$. Then train both models on prompts with labels $y_i=\sgn\ip{w_\star,x_i}$ and compare again. Report which model wins in each case; \cref{thm:icl:global} predicts only the linear model's risk, and the outcome for the softmax head is the point of the exercise.\label{ex:icl:softmax}
+
+\item \research\harder (Global minima of deeper linear transformers.) For $L\ge2$ layers of linear self-attention on the prompts of \cref{ass:icl:prompts}, \textcite{AhnEtAl2023} identify critical points that implement $L$ steps of preconditioned gradient descent. Open, as far as we know: whether these are global minima for general $L$ and $\Sigma$, what the minimal risk is as a function of $(N,d,\sigma^2,L)$, and whether gradient flow from small initialization reaches it, with plateaus as in \cref{prop:icl:logistic} between steps.\label{ex:icl:deep}
+
+\item \research (A solvable softmax model.) Find a task family and a softmax-attention model for which the global minimum of the pretraining loss and the gradient-flow dynamics can be computed as explicitly as in \cref{thm:icl:global,prop:icl:logistic}, and which reproduces the adaptive window of \textcite{CollinsEtAl2024}. Results exist for special data \parencite{HuangChengLiang2024}; a model as complete as the linear one is open.\label{ex:icl:researchsoftmax}
+\end{exercises}
+
+\notesandrefs
+\Textcite{BrownEtAl2020} described in-context learning in GPT-3 and measured it against the number of demonstrations; the idea of a network that learns in its activations goes back at least to the meta-learning experiments of \textcite{HochreiterEtAl2001}. \Textcite{GargEtAl2022} turned the phenomenon into a controlled experiment on function classes, and within a few months \textcite{AkyurekEtAl2023} and \textcite{VonOswaldEtAl2023}, first posted in November and December 2022, connected trained transformers with gradient descent and ridge regression. Linear attention had been introduced for efficiency \parencite{KatharopoulosEtAl2020} and connected with fast weights \parencite{SchlagEtAl2021}.
+
+The landscape of one layer was analyzed in 2023 by three groups. \Textcite{AhnEtAl2023} showed that the global minimum of a single layer of linear attention implements one step of preconditioned gradient descent, with a preconditioner that adapts to the input distribution and to the finite number of examples, and studied critical points of deeper models. \Textcite{MahankaliEtAl2024} proved that one step of gradient descent is the optimal one-layer learner for isotropic Gaussian inputs, preconditioned for nonisotropic ones, and that it remains one step of gradient descent on the least-squares loss even when the responses are nonlinear functions. \Textcite{ZhangFreiBartlett2024} proved convergence of gradient flow and computed the limit; they analyzed robustness to distribution shift. The odd--even argument of \cref{thm:icl:global} is a short route to the global minimum for the masked layer; we do not know whether it appears in this form in the literature.
+
+The connection with ridge regression and the Bayes estimator is due to \textcite{AkyurekEtAl2023} and \textcite{RaventosEtAl2023}; asymptotic analyses of task diversity are in \textcite{WuEtAl2024} and \textcite{LuEtAl2025}. Algorithm selection in context is analyzed by \textcite{BaiEtAl2023}. The mechanistic study of in-context learning in language models began with induction heads \parencite{OlssonEtAl2022}, the subject of \cref{ch:induction}.
+
+\paragraph{Translating the literature.} \Textcite{ZhangFreiBartlett2024} write $N$, as we do, for the number of examples in a training prompt, and $M$ for the length of a test prompt, which may differ from $N$; their trained layer predicts with our $\Gamma^\star$ for their label model and training length $N$, applied to test prompts of length $M$. \Textcite{AhnEtAl2023} write $n$ for our $N$ and $P$ and $Q$ for the two matrices of a layer, our $\iclPV$ and $\iclKQ$, and call the matrix that multiplies the gradient the preconditioner, our $\Gamma$. \Textcite{VonOswaldEtAl2023} write $e_j=(x_j,y_j)$ for our tokens $z_j$ and keep separate key, query, value, and projection matrices, whose products are our $\iclKQ$ and $\iclPV$; their construction of gradient steps is \cref{ex:icl:twolayers}. \Textcite{GargEtAl2022} write $k$ for the number of in-context examples, our $N$, and report squared errors divided by the dimension, as in \cref{fig:icl:risk}.
+
+\printchapterbib
+\end{refsection}

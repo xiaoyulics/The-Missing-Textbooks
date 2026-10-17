@@ -1,0 +1,453 @@
+% Chapter 2 of The Hydrogen Atoms of Deep Learning: exact dynamics of deep linear networks.
+\newcommand{\dlS}{\Sigma_{yx}}
+\newcommand{\dlE}{\mathcal{E}}
+\newcommand{\dlhalf}{t_{1/2}}
+\newcommand{\dlLzero}{\Loss_0}
+
+\casechapter{Learning in Stages}{Exact dynamics of deep linear networks}{Deep linear networks, whitened inputs}{ch:deeplinear}
+\begin{refsection}[chapters/02-deeplinear.bib]
+
+\begin{chaptersummary}
+Networks trained from small initial weights often learn in stages: the loss sits on a plateau, drops quickly, sits on a lower plateau, and drops again, and what is learned first is the coarsest structure of the task. A deep linear network trained by gradient flow on whitened inputs reproduces this. We prove that the differences $W_{\ell+1}^\top W_{\ell+1}-W_\ell W_\ell^\top$ are conserved, that balanced layers make the end-to-end map follow a closed equation, and that from an aligned initialization the network learns the singular modes of the input--output correlation matrix one at a time, each along a logistic curve whose midpoint is at $\log(s/a_0)/(2s)$ for a mode of strength $s$ and initial strength $a_0$; depth $L\ge3$ stretches the plateau to order $a_0^{-(1-2/L)}/((L-2)s)$. The model cannot learn what has no linear correlation with the input, it orders the stages of nonlinear networks by the wrong statistic, and its implicit bias toward low rank is not described by a norm.
+\end{chaptersummary}
+
+\section{The phenomenon: plateaus, drops, and coarse before fine}\label{sec:deeplinear:phenomenon}
+
+Training curves of neural networks are often not smooth. A network started from small weights may show a long stretch in which the loss barely moves, then a rapid drop, then another stretch of near-stagnation, and so on: a \term{loss staircase}\index{loss staircase}. Plateaus were a familiar obstacle in training small sigmoidal networks by backpropagation, and the committee machine of \cref{ch:committee} is the classical model of one of them. They return whenever the initialization is small.
+
+The steps are not arbitrary. A small network introduced by David Rumelhart learns to answer questions such as ``a canary can \dots'' about a handful of living things (birds, fish, trees, and flowers), and \textcite{RogersMcClelland2004} made it the centerpiece of a theory of semantic cognition. Its hidden representations \term{differentiate progressively}\index{progressive differentiation}: early in training all items look alike; then plants separate from animals; later birds separate from fish and trees from flowers; and the distinctions between individual items come last. Developmental psychologists report a similar coarse-to-fine order in children's concepts, and \textcite{SaxeEtAl2019} set out to explain why a network trained by gradient descent should follow it.\sidenote{They also treat illusory correlations during learning, typicality, category coherence, and inductive generalization, and they contrast the learning trajectories of deep networks with those of shallow ones.}
+
+The same pattern appears at a larger scale and in other guises.
+\begin{itemize}
+\item \Textcite{KalimerisEtAl2019} trained convolutional networks on image classification and measured, with a conditional mutual information, how much of a network's predictions a linear classifier explains. In the first epochs nearly all of the gain is explained by a linear classifier, and later epochs add functions of increasing complexity while retaining what the linear classifier predicted.
+\item \Textcite{AroraEtAl2019} and \textcite{GissinEtAl2020} trained deep factorizations $W=W_L\cdots W_1$ of a matrix from small initialization and found that the singular values of $W$ are learned one at a time, more sharply separated as the depth grows: \term{incremental learning}\index{incremental learning}.
+\item \Textcite{SimonEtAl2023} found, in a linearized model and in experiments, that self-supervised methods (Barlow Twins, SimCLR, VICReg) trained on ResNets learn their embeddings in a sequence of discrete, well-separated steps, one eigendirection of the embedding at a time.
+\end{itemize}
+
+\begin{observation}[\textcite{SaxeEtAl2014,SaxeEtAl2019}; \textcite{AroraEtAl2019}; \textcite{SimonEtAl2023}]\label[observation]{obs:deeplinear:stages}
+Networks trained by gradient descent from small initialization often learn in stages. The training loss alternates between plateaus and rapid drops; each drop adds one direction to the learned map (a singular direction of the input--output map, or an eigendirection of a learned embedding); and directions that carry more of the input--output correlation are learned first. The effect is sharper for deeper networks and smaller initializations and fades for large initializations.
+\end{observation}
+
+The status of this observation is mixed. Stagewise learning is robust in linear and nearly linear settings (matrix factorization, linearized self-supervised learning) and visible in some nonlinear ones, but large-scale training with standard initialization and adaptive optimizers shows smooth loss curves in most cases, and where stages do appear in nonlinear networks their order need not follow linear statistics (\cref{sec:deeplinear:wrong}). The order ``coarse before fine'' is itself a hypothesis about what ``coarse'' means. The model of this chapter makes it precise: coarse means a large singular value of the input--output correlation matrix.
+
+The question is therefore: \emph{why should gradient descent learn in stages, which stages come first, and how long does each plateau last?}
+
+\section{The model: a deep linear network on whitened inputs}\label{sec:deeplinear:model}
+
+\paragraph{Data and network.} Inputs $x\in\R^d$ and outputs $y\in\R^{d_y}$ have a joint law with finite second moments. Write
+\[
+  \Sigma_{xx}=\E[xx^\top]\in\R^{d\times d},\qquad \dlS=\E[yx^\top]\in\R^{d_y\times d}.
+\]
+A \term{deep linear network}\index{deep linear network} of depth $L\ge1$ is the map $f(x;\theta)=W_L\cdots W_1x$ with $W_\ell\in\R^{d_\ell\times d_{\ell-1}}$, $d_0=d$ and $d_L=d_y$; the hidden widths $d_1,\dots,d_{L-1}$ play the role of $m$. The parameters are $\theta=(W_1,\dots,W_L)$, and the \term{end-to-end matrix}\index{end-to-end matrix} is $W=W_L\cdots W_1$. The network computes only linear maps, so its expressive power is that of the matrix $W$ (of rank at most $\min_\ell d_\ell$). What depth changes is the geometry of the parameterization, and with it the dynamics of training.
+
+\begin{assumption}[Whitened inputs]\label[assumption]{ass:deeplinear:white}
+The inputs are whitened: $\Sigma_{xx}=I_d$.
+\end{assumption}
+
+\paragraph{The loss.} We train on the square loss, whose population version is $\Loss(\theta)=\frac12\E\norm{y-W_L\cdots W_1x}^2$. It depends on $\theta$ only through $W$, and only through two moments of the data.
+
+\begin{lemma}[Reduction to a matrix problem]\label[lemma]{lem:deeplinear:reduction}
+Under \cref{ass:deeplinear:white}, $\Loss(\theta)=\dlE(W)$ with
+\[
+  \dlE(W)=\frac12\norm{\dlS-W}_F^2+\dlLzero,\qquad \dlLzero=\frac12\bigl(\E\norm{y}^2-\norm{\dlS}_F^2\bigr)\ge0 .
+\]
+\end{lemma}
+
+\begin{proof}
+Expand the square and take expectations term by term, using $\E\ip{y,Wx}=\tr(W\E[xy^\top])=\ip{\dlS,W}_F$ and $\E\norm{Wx}^2=\tr(W\Sigma_{xx}W^\top)=\norm{W}_F^2$:
+\[
+  \Loss(\theta)=\frac12\E\norm{y}^2-\ip{\dlS,W}_F+\frac12\norm W_F^2=\frac12\norm{\dlS-W}_F^2+\dlLzero .
+\]
+The constant is the minimum of $\dlE$ over all matrices, which is the error of the best linear predictor, so it is nonnegative.
+\end{proof}
+
+The same computation applies to the training loss on $n$ samples, with $\Sigma_{xx}$ and $\dlS$ replaced by their empirical versions; whitening then means $\frac1n\sum_ix_ix_i^\top=I_d$, which requires $n\ge d$. Everything below holds verbatim for the training loss of whitened data.\sidenote{Whitening a dataset by $x\mapsto\Sigma_{xx}^{-1/2}x$ is always possible when $\Sigma_{xx}$ is invertible, but it changes the first layer to $W_1\Sigma_{xx}^{1/2}$, and gradient flow in the new variables is not gradient flow in the old ones; \cref{ex:deeplinear:nonwhite} treats the case in which the old flow still decouples.}
+
+\paragraph{Singular modes.} Let $q=\min(d,d_y)$ and write a singular value decomposition
+\begin{equation}\label{eq:deeplinear:svd}
+  \dlS=USV^\top=\sum_{i=1}^qs_iu_iv_i^\top,\qquad s_1\ge s_2\ge\dots\ge s_q\ge0,
+\end{equation}
+with $U=[u_1,\dots,u_q]\in\R^{d_y\times q}$ and $V=[v_1,\dots,v_q]\in\R^{d\times q}$ having orthonormal columns and $S=\diag(s_1,\dots,s_q)$. We call $(s_i,u_i,v_i)$ the \term{singular mode}\index{singular mode} $i$ of the task: the input direction $v_i$ predicts the output pattern $u_i$ with strength $s_i$. In this chapter the index $i$ labels modes (Saxe and coauthors use $\alpha$, which in this book is an initialization scale), and $q$ is the number of modes.
+
+\paragraph{Training.} We train by gradient flow, $\dot W_\ell=-\nabla_{W_\ell}\Loss(\theta)$ for $\ell=1,\dots,L$; gradient descent with step $\eta$ follows it with $t=\eta\times(\text{number of steps})$ when $\eta$ is small. To write the gradient, put
+\[
+  A_\ell=W_L\cdots W_{\ell+1},\qquad C_\ell=W_{\ell-1}\cdots W_1,
+\]
+with $A_L=I_{d_y}$ and $C_1=I_d$, so that $W=A_\ell W_\ell C_\ell$ for each $\ell$, and write $G=\nabla\dlE(W)$; under \cref{ass:deeplinear:white}, $G=W-\dlS$.
+
+\begin{lemma}[Layer gradients]\label[lemma]{lem:deeplinear:grad}
+For every differentiable $\dlE$ and $\Loss(\theta)=\dlE(W_L\cdots W_1)$, $\nabla_{W_\ell}\Loss=A_\ell^\top GC_\ell^\top$.
+\end{lemma}
+
+\begin{proof}
+Perturbing $W_\ell$ by $H$ perturbs $W$ by $A_\ell HC_\ell$, so the derivative of $\Loss$ in the direction $H$ is $\ip{G,A_\ell HC_\ell}_F=\tr(G^\top A_\ell HC_\ell)=\ip{A_\ell^\top GC_\ell^\top,H}_F$.
+\end{proof}
+
+\paragraph{What was thrown away, and why.} The \emph{nonlinearity}: without it the network can represent only linear maps, and the loss is a polynomial in the weights; yet the training dynamics remain nonlinear, because the gradient for one layer is multiplied by all the others. This is the point of the model: it separates the nonlinearity of \emph{learning} from the nonlinearity of the \emph{function}. \emph{Whitening} makes the loss see the data only through $\dlS$, so that the singular modes of one matrix organize everything. \emph{Population loss and gradient flow} remove sampling noise and step-size effects. Finally the solution in \cref{sec:deeplinear:modes} needs an \emph{aligned initialization}, which no practitioner uses; \cref{sec:deeplinear:random} explains why small random initializations end up nearly aligned.
+
+\begin{dictionary}
+end-to-end matrix $W=W_L\cdots W_1$ & the input--output map of a trained network, linearized\\
+singular mode $(s_i,u_i,v_i)$ of $\dlS$ & a distinction in the data, such as plant versus animal: the input direction $v_i$ that signals it and the output pattern $u_i$ it predicts\\
+singular value $s_i$ & the statistical strength of a distinction, which sets how fast it is learned\\
+mode strength $a_i(t)=u_i^\top W(t)v_i$ & how much of the distinction the network has learned at time $t$\\
+hidden directions $R_\ell$ & the internal representation of a distinction in layer $\ell$\\
+initial strength $a_i(0)$, or the per-layer scale $\alpha$ & the initialization scale; small values put the network in the regime of stages\\
+plateau, then logistic rise of $a_i$ & a plateau of the training loss, then a drop\\
+balancedness $W_{\ell+1}^\top W_{\ell+1}=W_\ell W_\ell^\top$ & layers of equal size, automatically maintained by gradient training\\
+\end{dictionary}
+
+\paragraph{What one had to notice.} That a network computing a linear map can have nonlinear training dynamics, so that the simplest model of a plateau is a product of matrices rather than a nonlinearity; that the square loss with whitened inputs sees only $\dlS$, whose singular value decomposition supplies natural coordinates in which the problem might decouple; and that the scalar version of the problem, $\dot b=c(s-bc)$ and $\dot c=b(s-bc)$ for a product $bc$, already has a saddle at the origin and a plateau before escape.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=0.86cm,y=0.95cm,
+  nd/.style={circle,draw=sea,fill=seafoam,line width=0.5pt,minimum size=3.2mm,inner sep=0pt},
+  lf/.style={font=\scriptsize,text=ink}]
+  \node[nd] (r) at (3.5,3) {};
+  \node[nd] (a) at (1.5,2) {}; \node[nd] (b) at (5.5,2) {};
+  \foreach \i/\x in {0/0.5,1/2.5,2/4.5,3/6.5}{\node[nd] (c\i) at (\x,1) {};}
+  \foreach \i in {0,...,7}{\node[nd] (l\i) at (\i,0) {};}
+  \draw[sea] (r)--(a) (r)--(b) (a)--(c0) (a)--(c1) (b)--(c2) (b)--(c3);
+  \foreach \i in {0,...,3}{\pgfmathtruncatemacro{\j}{2*\i}\pgfmathtruncatemacro{\k}{2*\i+1}\draw[sea] (c\i)--(l\j) (c\i)--(l\k);}
+  \foreach \i/\n in {0/canary,1/robin,2/salmon,3/sunfish,4/oak,5/pine,6/rose,7/daisy}{\node[lf,anchor=north,rotate=0] at (\i,-0.22) {\n};}
+  \node[lf,anchor=west] at (8.0,3) {level $0$: $s^2=15/8$, one mode};
+  \node[lf,anchor=west] at (8.0,2) {level $1$: $s^2=7/8$, one mode};
+  \node[lf,anchor=west] at (8.0,1) {level $2$: $s^2=3/8$, two modes};
+  \node[lf,anchor=west] at (8.0,0) {level $3$: $s^2=1/8$, four modes};
+\end{tikzpicture}
+\caption{A hierarchical dataset in the style of \textcite{RogersMcClelland2004} and \textcite{SaxeEtAl2019}. Each of the $P=8$ items is an input $x=\sqrt P\,e_p$, so that $\Sigma_{xx}=I_8$, and its output $y\in\{0,1\}^{15}$ has one coordinate per node of the tree (``is an animal'', ``is a bird'', \dots), equal to $1$ for the nodes on the path from the root to the item (the leaf included). The labels on the right group the modes into levels, each level learned in one stage. The input directions $v_i$ of the singular modes of $\dlS$ can be taken to be the Haar functions of the tree: the constant function, then one function per internal node that is $+1$ on its left subtree, $-1$ on its right, and $0$ elsewhere. A mode at a lower level is stronger (\cref{ex:deeplinear:tree}).}\label{fig:deeplinear:tree}
+\end{figure}
+
+\section{The solution: conservation and balance}\label{sec:deeplinear:balance}
+
+The first results hold for every loss of the form $\dlE(W_L\cdots W_1)$, whitened or not. They come from a symmetry: for an invertible $d_\ell\times d_\ell$ matrix $M$, replacing $(W_{\ell+1},W_\ell)$ by $(W_{\ell+1}M^{-1},MW_\ell)$ leaves $W$ unchanged. By Noether's principle a continuous symmetry of a gradient flow comes with a conserved quantity, and here it is a matrix.\sidenote{For a gradient flow the mechanism is simple: a loss that is constant along the orbits $M\mapsto(W_{\ell+1}M^{-1},MW_\ell)$ has its gradient orthogonal to the orbits, and orthogonality to the tangent directions $(-W_{\ell+1}X,XW_\ell)$, for all $d_\ell\times d_\ell$ matrices $X$, is exactly the equality of the two products in the proof below.}
+
+\begin{theorem}[Conservation law; \textcite{AroraCohenHazan2018}, \textcite{DuHuLee2018}]\label{thm:deeplinear:conservation}
+Let $\dlE\colon\R^{d_y\times d}\to\R$ be continuously differentiable and let $\theta(t)$ solve the gradient flow of $\Loss(\theta)=\dlE(W_L\cdots W_1)$ on an interval. Then for each $\ell\in\{1,\dots,L-1\}$ the $d_\ell\times d_\ell$ matrix
+\[
+  D_\ell(t)=W_{\ell+1}(t)^\top W_{\ell+1}(t)-W_\ell(t)W_\ell(t)^\top
+\]
+is constant in $t$. In particular $\norm{W_{\ell+1}}_F^2-\norm{W_\ell}_F^2=\tr D_\ell$ is constant.
+\end{theorem}
+
+\begin{proof}
+The plan is to compute the two halves of $\dot D_\ell$ and to see that they are equal. By \cref{lem:deeplinear:grad}, $\dot W_\ell=-A_\ell^\top GC_\ell^\top$. Two identities between the partial products follow from their definitions: $W_\ell C_\ell=C_{\ell+1}$ and $A_{\ell+1}W_{\ell+1}=A_\ell$. Using the first,
+\[
+  W_\ell\dot W_\ell^\top=-W_\ell C_\ell G^\top A_\ell=-C_{\ell+1}G^\top A_\ell ,
+\]
+and using the second,
+\[
+  \dot W_{\ell+1}^\top W_{\ell+1}=-C_{\ell+1}G^\top A_{\ell+1}W_{\ell+1}=-C_{\ell+1}G^\top A_\ell .
+\]
+The two products are equal; call them $N$. Then $\frac{\dd}{\dd t}(W_\ell W_\ell^\top)=N+N^\top=\frac{\dd}{\dd t}(W_{\ell+1}^\top W_{\ell+1})$, so $\dot D_\ell=0$. Taking the trace gives the last statement.
+\end{proof}
+
+The scalar case $L=2$, $d=d_1=d_y=1$ says that $b^2-c^2$ is conserved for the product $bc$: the flow moves along hyperbolas, the picture behind the catapult of \cref{ch:stability} and the diagonal networks of \cref{ch:diagonal}. The same argument applies neuron by neuron to ReLU networks (\cref{ex:deeplinear:relu}).
+
+We call $\theta$ \term{balanced}\index{balanced initialization} if $D_\ell=0$ for every $\ell$. By \cref{thm:deeplinear:conservation}, a flow that starts balanced stays balanced; a flow that starts from small weights stays nearly balanced, since $\norm{D_\ell}_F$ is at most of the order of the squared initialization scale while the weights themselves grow to order one. For balanced weights the layers have the same nonzero singular values, and the end-to-end matrix obeys an equation of its own.
+
+\begin{lemma}[Powers of balanced products]\label[lemma]{lem:deeplinear:powers}
+Let $\theta$ be balanced. Then for $1\le\ell\le L$,
+\[
+  A_\ell A_\ell^\top=(WW^\top)^{(L-\ell)/L},\qquad C_\ell^\top C_\ell=(W^\top W)^{(\ell-1)/L},
+\]
+where powers of positive semidefinite matrices are taken in their eigenbasis.
+\end{lemma}
+
+\begin{proof}
+The plan is an induction that carries a power of a Gram matrix through the product. Let $P_j=W_L\cdots W_j$ for $1\le j\le L$, so that $P_1=W$ and $P_{\ell+1}=A_\ell$ (with $P_{L+1}=I$). We show, by downward induction on $j$, that for every integer $k\ge1$
+\begin{equation}\label{eq:deeplinear:claim}
+  P_j\,(W_j^\top W_j)^{k-1}P_j^\top=(W_LW_L^\top)^{L-j+k}.
+\end{equation}
+For $j=L$ the left side is $W_L(W_L^\top W_L)^{k-1}W_L^\top=(W_LW_L^\top)^k$, by regrouping the factors. For $j<L$, write $P_j=P_{j+1}W_j$; regroup $W_j(W_j^\top W_j)^{k-1}W_j^\top=(W_jW_j^\top)^k$; replace $W_jW_j^\top$ by $W_{j+1}^\top W_{j+1}$, which is balancedness; and apply \eqref{eq:deeplinear:claim} for $j+1$ with $k+1$ in place of $k$:
+\[
+  P_j(W_j^\top W_j)^{k-1}P_j^\top=P_{j+1}(W_{j+1}^\top W_{j+1})^{k}P_{j+1}^\top=(W_LW_L^\top)^{L-j+k}.
+\]
+With $k=1$, \eqref{eq:deeplinear:claim} gives $P_jP_j^\top=(W_LW_L^\top)^{L-j+1}$. For $j=1$ this is $WW^\top=(W_LW_L^\top)^L$, and since $W_LW_L^\top$ is positive semidefinite it is the unique positive semidefinite $L$-th root, $W_LW_L^\top=(WW^\top)^{1/L}$. For $j=\ell+1$ it gives $A_\ell A_\ell^\top=(W_LW_L^\top)^{L-\ell}=(WW^\top)^{(L-\ell)/L}$. The statement for $C_\ell$ is the same argument applied to the transposed network $W^\top=W_1^\top\cdots W_L^\top$, which is balanced as well.
+\end{proof}
+
+\begin{theorem}[End-to-end dynamics; \textcite{AroraCohenHazan2018}]\label{thm:deeplinear:e2e}
+Let $\dlE$ be continuously differentiable, and let $\theta(t)$ solve the gradient flow of $\dlE(W_L\cdots W_1)$ from a balanced initialization. Then $W(t)=W_L(t)\cdots W_1(t)$ satisfies
+\begin{equation}\label{eq:deeplinear:e2e}
+  \dot W=-\sum_{j=1}^L(WW^\top)^{(L-j)/L}\,\nabla\dlE(W)\,(W^\top W)^{(j-1)/L} .
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+By the product rule, $\dot W=\sum_{j=1}^LA_j\dot W_jC_j$. By \cref{lem:deeplinear:grad}, $\dot W_j=-A_j^\top GC_j^\top$, so $\dot W=-\sum_jA_jA_j^\top G\,C_j^\top C_j$. By \cref{thm:deeplinear:conservation} the flow stays balanced, and \cref{lem:deeplinear:powers} turns the two Gram matrices into the stated powers.
+\end{proof}
+
+For $L=1$ this is plain gradient flow, $\dot W=-\nabla\dlE(W)$. For $L\ge2$ the gradient is multiplied on both sides by powers of $WW^\top$ and $W^\top W$, which vanish when $W$ is small and are of order one when $W$ is: depth acts as a preconditioner that slows the directions in which $W$ is small. Near $W=0$ the right side of \eqref{eq:deeplinear:e2e} is of order $\norm W^{2-2/L}$, so $W=0$ is a stationary point, and $\theta=0$ is a saddle of $\Loss$ for every $L\ge2$ whenever $\dlS\ne0$ (with a vanishing Hessian when $L\ge3$). \Textcite{AroraCohenHazan2018} prove further that, for $L\ge2$, the effect of this preconditioning cannot be obtained by adding a regularizer to $\dlE$ and following its gradient.
+
+\section{The solution: learning one mode at a time}\label{sec:deeplinear:modes}
+
+We now return to whitened inputs and solve the flow exactly from initializations that respect the singular modes of $\dlS$.
+
+\begin{definition}[Aligned, balanced initialization]\label[definition]{def:deeplinear:aligned}
+Assume $d_\ell\ge q$ for $1\le\ell\le L-1$. Fix matrices $R_\ell\in\R^{d_\ell\times q}$ with orthonormal columns, $R_\ell^\top R_\ell=I_q$, for $1\le\ell\le L-1$, and put $R_0=V$ and $R_L=U$ from \eqref{eq:deeplinear:svd}. For a diagonal matrix $B=\diag(\beta_1,\dots,\beta_q)$ with $\beta_i\ge0$, the \term{aligned}\index{aligned initialization} weights are
+\[
+  W_\ell=R_\ell B R_{\ell-1}^\top,\qquad \ell=1,\dots,L .
+\]
+\end{definition}
+
+Aligned weights are balanced: $W_{\ell+1}^\top W_{\ell+1}=R_\ell B^2R_\ell^\top=W_\ell W_\ell^\top$. Their partial products telescope, because $R_\ell^\top R_\ell=I_q$ (the first identity for $\ell\le L-1$, the second for $\ell\ge2$):
+\begin{equation}\label{eq:deeplinear:telescope}
+  W_L\cdots W_{\ell+1}=UB^{L-\ell}R_\ell^\top,\qquad W_{\ell-1}\cdots W_1=R_{\ell-1}B^{\ell-1}V^\top,\qquad W=UB^LV^\top .
+\end{equation}
+So the end-to-end matrix has the singular vectors of $\dlS$, and its strength on mode $i$ is $a_i=\beta_i^L$. Each layer passes mode $i$ from the direction $R_{\ell-1}e_i$ to the direction $R_\ell e_i$ with gain $\beta_i$.
+
+\begin{theorem}[Exact learning dynamics; \textcite{SaxeEtAl2014}]\label{thm:deeplinear:exact}
+Assume \cref{ass:deeplinear:white} and $d_\ell\ge q$ for $1\le\ell\le L-1$, with $L\ge2$. Let $\theta(0)$ be aligned with $B(0)=\diag(\beta_i(0))$, $\beta_i(0)\ge0$. For each $i$ let $\beta_i(t)$ be the solution of
+\begin{equation}\label{eq:deeplinear:beta}
+  \dot\beta_i=\beta_i^{L-1}\bigl(s_i-\beta_i^L\bigr).
+\end{equation}
+Then the gradient flow of $\Loss$ exists for all $t\ge0$, and $\theta(t)$ is aligned with $B(t)=\diag(\beta_i(t))$ and the same $R_\ell$, for every $t\ge0$. Consequently $W(t)=\sum_ia_i(t)u_iv_i^\top$ with $a_i=\beta_i^L$, the mode strengths evolve independently by
+\begin{equation}\label{eq:deeplinear:aode}
+  \dot a_i=L\,a_i^{2-2/L}\,(s_i-a_i),
+\end{equation}
+and the loss is $\Loss(\theta(t))=\dlLzero+\frac12\sum_{i=1}^q\bigl(s_i-a_i(t)\bigr)^2$.
+\end{theorem}
+
+\begin{proof}
+The plan is to show that the aligned matrices built from the scalar solutions solve the gradient flow, and then to invoke uniqueness of solutions.
+
+\emph{The scalar equations.} The right side of \eqref{eq:deeplinear:beta} is a polynomial, so a unique solution exists on some interval. If $\beta_i(0)=0$, then $\beta_i\equiv0$ is the solution. If $\beta_i(0)>0$, then the interval $J_i=(0,\max\{\beta_i(0),s_i^{1/L}\}]$ contains $\beta_i(0)$, and the solution cannot leave it: it cannot reach $0$, because $0$ is a stationary point and solutions are unique, and it cannot exceed the upper end $c$, because $\dot\beta_i\le0$ whenever $\beta_i^L\ge s_i$, and $c^L\ge s_i$. A solution confined to a bounded set exists for all $t\ge0$.
+
+\emph{The candidate solves the flow.} Let $\tilde\theta(t)$ be the aligned weights with $B(t)$. By \eqref{eq:deeplinear:telescope}, $\tilde W=UB^LV^\top$, so $G=\tilde W-\dlS=U(B^L-S)V^\top$. By \cref{lem:deeplinear:grad} and \eqref{eq:deeplinear:telescope}, using $U^\top U=V^\top V=I_q$ and that diagonal matrices commute (for $\ell=L$ the factor $A_L=I_{d_y}$ stands where \eqref{eq:deeplinear:telescope} would give $UU^\top$, and for $\ell=1$ the factor $C_1=I_d$ stands for $VV^\top$; nothing changes, since $U^\top UU^\top=U^\top$ and $VV^\top V=V$),
+\[
+  \nabla_{W_\ell}\Loss(\tilde\theta)=R_\ell B^{L-\ell}U^\top\,U(B^L-S)V^\top\,VB^{\ell-1}R_{\ell-1}^\top=R_\ell\,B^{L-1}(B^L-S)\,R_{\ell-1}^\top .
+\]
+On the other hand $\frac{\dd}{\dd t}\tilde W_\ell=R_\ell\dot B R_{\ell-1}^\top$, and \eqref{eq:deeplinear:beta} says $\dot B=B^{L-1}(S-B^L)$. Hence $\frac{\dd}{\dd t}\tilde W_\ell=-\nabla_{W_\ell}\Loss(\tilde\theta)$ for every $\ell$ and every $t\ge0$.
+
+\emph{Uniqueness.} The gradient of $\Loss$ is a polynomial in the entries of $\theta$, hence locally Lipschitz, so the gradient flow from $\theta(0)$ has at most one solution on each interval. Since $\tilde\theta$ is a solution on $[0,\infty)$ with $\tilde\theta(0)=\theta(0)$, the flow exists for all time and equals $\tilde\theta$.
+
+\emph{Consequences.} The formula for $W$ is \eqref{eq:deeplinear:telescope}. For $a_i=\beta_i^L$, the chain rule and \eqref{eq:deeplinear:beta} give $\dot a_i=L\beta_i^{L-1}\dot\beta_i=L\beta_i^{2L-2}(s_i-a_i)=La_i^{2-2/L}(s_i-a_i)$. The loss follows from \cref{lem:deeplinear:reduction}, since $\norm{\dlS-W}_F^2=\norm{S-B^L}_F^2$ by the orthonormality of the columns of $U$ and $V$.
+\end{proof}
+
+We worked with $\beta_i$ rather than $a_i$ because $a\mapsto a^{2-2/L}$ is not Lipschitz at $0$ when $L\ge3$: equation \eqref{eq:deeplinear:aode} alone would allow solutions that leave $0$ spontaneously, and the layer equation \eqref{eq:deeplinear:beta} rules them out. The mode equation also follows from \cref{thm:deeplinear:e2e}: inserting $W=UD V^\top$ with $D=\diag(a_i)$ into \eqref{eq:deeplinear:e2e} gives $\dot D=-\sum_jD^{2(L-j)/L}(D-S)D^{2(j-1)/L}=LD^{2-2/L}(S-D)$.
+
+\paragraph{Two layers: the logistic curve.} For $L=2$, \eqref{eq:deeplinear:aode} is the logistic equation $\dot a=2a(s-a)$, and everything is explicit.
+
+\begin{corollary}[Two layers]\label[corollary]{cor:deeplinear:logistic}
+Let $L=2$, and consider one mode with $a(0)=a_0>0$. If $s>0$, then
+\begin{equation}\label{eq:deeplinear:logistic}
+  a(t)=\frac{s}{1+(s/a_0-1)\,e^{-2st}},
+\end{equation}
+and the time that $a$ takes to pass from $a_1$ to $a_2$, for $a_0\le a_1<a_2<s$, is $\frac1{2s}\log\frac{a_2(s-a_1)}{a_1(s-a_2)}$. In particular, if $a_0<s/2$, then the mode is half learned at
+\begin{equation}\label{eq:deeplinear:thalf}
+  \dlhalf=\frac1{2s}\log\Bigl(\frac s{a_0}-1\Bigr),
+\end{equation}
+and $a$ rises from $s/10$ to $9s/10$ in time $\frac{\log 81}{2s}=\frac{2\log3}{s}$, independent of $a_0$ when $a_0\le s/10$. If $s=0$, then the mode decays: $a(t)=a_0/(1+2a_0t)$.
+\end{corollary}
+
+\begin{proof}
+Put $E(t)=(s/a_0-1)e^{-2st}$, so that the right side of \eqref{eq:deeplinear:logistic} is $s/(1+E)$, equal to $a_0$ at $t=0$. Since $\dot E=-2sE$, its derivative is $2s^2E/(1+E)^2$, which equals $2a(s-a)$ because $s-a=sE/(1+E)$; by uniqueness \eqref{eq:deeplinear:logistic} is the solution. Solving \eqref{eq:deeplinear:logistic} for $t$ gives $t(a)=\frac1{2s}\log\frac{a(s-a_0)}{a_0(s-a)}$, and the travel time is $t(a_2)-t(a_1)$. With $a_1=a_0$ and $a_2=s/2$ this is \eqref{eq:deeplinear:thalf}; with $a_1=s/10$ and $a_2=9s/10$ it is $\frac1{2s}\log81$. For $s=0$ the equation is $\dot a=-2a^2$, solved by $a_0/(1+2a_0t)$.
+\end{proof}
+
+The logistic curve is the signature of a saddle. Near $a=0$ the mode grows exponentially, $a\approx a_0e^{2st}$, with rate $2s$; the time to grow from $a_0$ to order $s$ is the logarithm of the ratio divided by the rate; and the final approach to $s$ is again exponential, with the same rate. The plateau has length $\frac1{2s}\log(s/a_0)$ and the drop has width of order $1/s$: small initialization lengthens the plateau only logarithmically, which is why stages separate cleanly only when $a_0$ is many orders of magnitude below $s$.
+
+\paragraph{Depth.} For $L\ge3$ the origin is a degenerate saddle: near $0$, $\dot a\approx Ls\,a^{2-2/L}$ with an exponent above $1$, so growth is polynomial and the plateau is polynomially long in $1/a_0$.
+
+\begin{proposition}[Plateau length in depth $L\ge3$]\label[proposition]{prop:deeplinear:depth}
+Let $L\ge3$, $s>0$ and $0<a_0<s/2$, and let $\dlhalf$ be the time at which the solution of \eqref{eq:deeplinear:aode} from $a_0$ reaches $s/2$. With $\kappa=1-2/L$,
+\[
+  \frac{a_0^{-\kappa}-(s/2)^{-\kappa}}{(L-2)\,s}\;\le\;\dlhalf\;\le\;\frac{a_0^{-\kappa}-(s/2)^{-\kappa}}{(L-2)\,s}+\frac{(s/2)^{2/L}}{s^2}.
+\]
+In particular $\dlhalf=a_0^{-(1-2/L)}/((L-2)s)+O(s^{-(2-2/L)})$ as $a_0\to0$. The time to rise from $s/10$ to $9s/10$ is $c_L\,s^{-(2-2/L)}$ with $c_L=\int_{1/10}^{9/10}\frac{\dd z}{Lz^{2-2/L}(1-z)}$, independent of $a_0$.
+\end{proposition}
+
+\begin{proof}
+The plan is to write $\dlhalf$ as an integral and to bound its integrand. On $(0,s)$ the right side of \eqref{eq:deeplinear:aode} is positive, so $a$ increases, and separating variables,
+\[
+  \dlhalf=\int_{a_0}^{s/2}\frac{\dd a}{L\,a^{2-2/L}(s-a)} .
+\]
+For $0\le a\le s/2$ we have $\frac1s\le\frac1{s-a}=\frac1s+\frac{a}{s(s-a)}\le\frac1s+\frac{2a}{s^2}$. The first term contributes
+\[
+  \frac1{Ls}\int_{a_0}^{s/2}a^{-1-\kappa}\,\dd a=\frac{a_0^{-\kappa}-(s/2)^{-\kappa}}{L\kappa s}=\frac{a_0^{-\kappa}-(s/2)^{-\kappa}}{(L-2)s},
+\]
+which is the lower bound. The second term contributes at most
+\[
+  \frac2{Ls^2}\int_0^{s/2}a^{-1+2/L}\,\dd a=\frac2{Ls^2}\cdot\frac L2\Bigl(\frac s2\Bigr)^{2/L}=\frac{(s/2)^{2/L}}{s^2},
+\]
+which gives the upper bound. Since $(s/2)^{-\kappa}/s$ and $(s/2)^{2/L}/s^2$ are both of order $s^{-(2-2/L)}$, the asymptotic statement follows. For the rise time, separate variables between $s/10$ and $9s/10$ and substitute $a=sz$.
+\end{proof}
+
+With a per-layer initialization scale $\alpha$, so that $a_0=\alpha^L$, the plateau lasts about $\alpha^{-(L-2)}/((L-2)s)$, against $\log(s/\alpha^2)/(2s)$ for two layers: \emph{depth lengthens the plateau and sharpens the transition}, in the sense that the drop takes a time independent of $\alpha$ while the plateau grows like a power of $1/\alpha$.\sidenote{\Textcite{GissinEtAl2020} make the same point about incremental learning: shallow models show it only from exponentially small initializations, deep ones already from polynomially small ones.} The layer equation \eqref{eq:deeplinear:beta} reads $\dot\beta\approx s\beta^{L-1}$ near $0$, the escape equation of an order-$L$ saddle; it is the equation of the search phase in \cref{ch:singleindex} with depth $L$ in the role of the information exponent, and the escape time $\beta_0^{-(L-2)}/((L-2)s)$ has the same form.
+
+In both cases \emph{the order of learning is the order of the singular values}: for equal initial strengths, a larger $s_i$ gives an earlier $\dlhalf$, by \eqref{eq:deeplinear:thalf} and \cref{prop:deeplinear:depth}. The loss therefore descends a staircase. Between the learning of mode $k$ and of mode $k+1$ it rests near
+\begin{equation}\label{eq:deeplinear:staircase}
+  \Loss_k=\dlLzero+\frac12\sum_{i>k}s_i^2 ,
+\end{equation}
+the loss of the end-to-end matrix $W_k=\sum_{i\le k}s_iu_iv_i^\top$, the best approximation of $\dlS$ of rank $k$.
+
+\paragraph{The landscape.} The points $W_k$ are not only resting places of one trajectory: they are the critical points of the loss. \Textcite{BaldiHornik1989} proved this for two layers with a bottleneck, in the language of principal component analysis.
+
+\begin{proposition}[Critical points of two-layer networks; after \textcite{BaldiHornik1989}]\label[proposition]{prop:deeplinear:critical}
+Let $L=2$, assume \cref{ass:deeplinear:white}, and let $s_1>s_2>\dots>s_q>0$. Let $(W_1,W_2)$ be a critical point of $\Loss$ with $W_2\in\R^{d_y\times m}$ of full column rank $m$. Then
+\begin{enumerate}
+\item $W=W_2W_1=\sum_{i\in I}s_iu_iv_i^\top$ for a set $I\subseteq\{1,\dots,q\}$ with $\abs I\le m$, and $\Loss=\dlLzero+\frac12\sum_{i\notin I}s_i^2$;
+\item if $m\le q$ and $I\ne\{1,\dots,m\}$, then the critical point is a saddle: every neighborhood contains points of lower loss and points of higher loss. Hence every local minimum with $W_2$ of full column rank has $W=\sum_{i\le m}s_iu_iv_i^\top$, and it is a global minimum over the networks of width $m$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan for part (i) is to solve the two critical-point equations in turn. By \cref{lem:deeplinear:grad} they read $W_2^\top(\dlS-W)=0$ and $(\dlS-W)W_1^\top=0$. Since $W_2^\top W_2$ is invertible, the first gives $W_1=(W_2^\top W_2)^{-1}W_2^\top\dlS$, so that $W=\Pi\dlS$ with $\Pi=W_2(W_2^\top W_2)^{-1}W_2^\top$, the orthogonal projection onto the range of $W_2$, of rank $m$. Inserting $W_1^\top=\dlS^\top W_2(W_2^\top W_2)^{-1}$ into the second equation and multiplying it on the right by $W_2^\top$ gives
+\[
+  (I-\Pi)\,\dlS\dlS^\top\,\Pi=0 ,
+\]
+that is, $\dlS\dlS^\top\Pi=\Pi\dlS\dlS^\top\Pi$. The right side is symmetric, so transposing gives $\Pi\dlS\dlS^\top=\dlS\dlS^\top\Pi$: the projection commutes with $\dlS\dlS^\top=\sum_is_i^2u_iu_i^\top$. Its range is therefore invariant under $\dlS\dlS^\top$, and because the eigenvalues $s_1^2>\dots>s_q^2>0$ are simple, $\Pi=\sum_{i\in I}u_iu_i^\top+\Pi_0$ for a set $I$ and a projection $\Pi_0$ onto a subspace of the kernel of $\dlS^\top$. Then $\Pi_0\dlS=0$ and $W=\Pi\dlS=\sum_{i\in I}s_iu_iv_i^\top$; the rank count gives $\abs I\le m$, and the loss follows from \cref{lem:deeplinear:reduction}.
+\end{proof}
+
+\begin{proof}[Proof of part (ii)]
+The plan is to rotate the range of $W_2$ slightly, from a weak direction toward a strong one, and to compare losses with the identity $\Loss=\dlLzero+\frac12\norm{\dlS}_F^2-\frac12\tr(P\dlS\dlS^\top)$, valid whenever $W=P\dlS$ for an orthogonal projection $P$ (expand $\frac12\norm{(I-P)\dlS}_F^2$ and use $P^2=P$). First we find two directions. If $\abs I=m$, then some $j\le m$ lies outside $I$ and some $i\in I$ exceeds $m$; put $s_i$ for its singular value. If $\abs I<m$, then $\Pi_0\ne0$; let $u_i$ be a unit vector in its range, which lies in the kernel of $\dlS^\top$, put $s_i=0$, and pick some $j\notin I$, which exists because $\abs I<m\le q$. In both cases $s_j>s_i$, $u_i$ lies in the range of $\Pi$, and $\Pi u_j=0$, because $u_j$ is orthogonal to the $u_k$ with $k\in I$ and to the kernel of $\dlS^\top$.
+
+Let $Q_\eps$ be the rotation by the angle $\eps$ in the plane of $u_i$ and $u_j$ that takes $u_i$ to $\cos\eps\,u_i+\sin\eps\,u_j$ and fixes the orthogonal complement of the plane. Put $W_2(\eps)=Q_\eps W_2$ and $W_1(\eps)=(W_2^\top W_2)^{-1}W_2^\top Q_\eps^\top\dlS$; both depend continuously on $\eps$ and equal $(W_2,W_1)$ at $\eps=0$. Their product is $Q_\eps\Pi Q_\eps^\top\dlS=\Pi_\eps\dlS$, with $\Pi_\eps=Q_\eps\Pi Q_\eps^\top$ an orthogonal projection. Write $\Pi=u_iu_i^\top+\Pi'$; the range of $\Pi'$ is orthogonal to $u_i$ and to $u_j$, so $Q_\eps$ fixes it and $\tr(\Pi'Q_\eps^\top\dlS\dlS^\top Q_\eps)=\tr(\Pi'\dlS\dlS^\top)$. The remaining term changes because $u_i$ and $u_j$ are eigenvectors of $\dlS\dlS^\top$ with eigenvalues $s_i^2$ and $s_j^2$:
+\[
+  (Q_\eps u_i)^\top\dlS\dlS^\top(Q_\eps u_i)=\cos^2\!\eps\,s_i^2+\sin^2\!\eps\,s_j^2 .
+\]
+Hence $\Loss$ at $(W_1(\eps),W_2(\eps))$ is lower than at $(W_1,W_2)$ by $\frac12(s_j^2-s_i^2)\sin^2\eps>0$ for every $\eps\in(0,\pi/2)$. For points of higher loss, move $W_1$ alone to $W_1+\eps X$ with $W_2X\ne0$: the first-order change of $\Loss$ vanishes by the first critical-point equation, and the loss rises by $\frac12\eps^2\norm{W_2X}_F^2$. For the last statement, a local minimum is not a saddle, so $I=\{1,\dots,m\}$, and by the Eckart--Young theorem $\sum_{i\le m}s_iu_iv_i^\top$ minimizes $\norm{\dlS-W}_F$ over all matrices of rank at most $m$, which contains every product $W_2W_1$ of width $m$.
+\end{proof}
+
+Critical points with $W_2$ of deficient rank require a separate argument. \Textcite{BaldiHornik1989} give the full classification, and \textcite{Kawaguchi2016} extends ``every local minimum is global'' to deep linear networks, and shows that for $L\ge3$ some saddles have no direction of negative curvature.
+
+The trajectory of \cref{thm:deeplinear:exact} from a small aligned initialization therefore passes from the saddle $W_0=0$ near the saddles $W_1,W_2,\dots$ in turn, lingering near each until the next mode escapes, and the plateaus of the staircase are visits to saddles.
+
+\section{The solution: small random initialization}\label{sec:deeplinear:random}
+
+No one initializes a network in alignment with the singular vectors of the task. What happens from a small \emph{random} initialization? The answer has two phases: first the weights align without the loss moving, and then the aligned solution takes over.
+
+\begin{heuristic}[Heuristic derivation, $L=2$]
+Let $W_1(0)$ and $W_2(0)$ be small, with entries of order $\alpha$. While $W=W_2W_1$ is negligible against $\dlS$, the flow is approximately linear: $\dot W_1\approx W_2^\top\dlS$ and $\dot W_2\approx\dlS W_1^\top$. Project onto the modes: with $x_i=W_1v_i\in\R^{m}$ and $z_i=W_2^\top u_i\in\R^m$, the linearized flow gives $\dot x_i=s_iz_i$ and $\dot z_i=s_ix_i$, because $\dlS v_i=s_iu_i$ and $\dlS^\top u_i=s_iv_i$. The modes decouple: $x_i+z_i$ grows like $e^{s_it}$ and $x_i-z_i$ decays like $e^{-s_it}$. After a time of a few multiples of $1/s_i$,
+\[
+  x_i(t)\approx z_i(t)\approx\xi_ie^{s_it},\qquad \xi_i=\tfrac12\bigl(W_1(0)v_i+W_2(0)^\top u_i\bigr),
+\]
+and the mode strength $a_i=u_i^\top Wv_i=\ip{z_i,x_i}$ is close to $\norm{\xi_i}^2e^{2s_it}$. That is the early part of the logistic curve \eqref{eq:deeplinear:logistic} with initial strength
+\begin{equation}\label{eq:deeplinear:aeff}
+  \hat a_i=\norm{\xi_i}^2=\tfrac14\norm{W_1(0)v_i+W_2(0)^\top u_i}^2 .
+\end{equation}
+At this point the weights are aligned and balanced up to errors that decay: $x_i\approx z_i$, and the hidden directions $\xi_i/\norm{\xi_i}$ of different modes are nearly orthogonal when $m$ is much larger than the number of modes, since independent random vectors in $\R^m$ are. The aligned solution with initial strengths $\hat a_i$ then describes the rest of the trajectory. For a mode with multiplicity, $\hat a_i$ is replaced by the eigenvalues of the Gram matrix of the $\xi_i$ in its eigenspace. With i.i.d.\ $\cN(0,\alpha^2)$ entries, $\hat a_i\approx\frac12m\alpha^2$.\qedhere
+\end{heuristic}
+
+A network whose second layer starts at zero still escapes: then $z_i(0)=0$, but $x_i+z_i$ starts at $x_i(0)$ and grows all the same, and $\hat a_i=\frac14\norm{W_1(0)v_i}^2$.\sidenote{This is why the common practice of initializing a last layer at zero does not stall training, while initializing \emph{every} layer at zero does: the origin is a stationary point of the flow.} The first phase is the \term{silent alignment}\index{silent alignment} of \textcite{AtanasovEtAl2022}: the directions of the weights change by order one while the loss, and the function, hardly move. It explains why the aligned solution describes random initializations at all; \cref{fig:deeplinear:tree-dyn} shows how accurately. For deeper networks the first phase is itself nonlinear ($\dot\beta\approx s\beta^{L-1}$), and we know no closed formula for the effective initial strength; the scaling $\dlhalf\propto\alpha^{-(L-2)}$ survives, with a prefactor (\cref{fig:deeplinear:depth}).
+
+\begin{remark}[Saddle to saddle]\label[remark]{rem:deeplinear:saddle}
+For losses other than $\frac12\norm{\dlS-W}_F^2$, such as matrix sensing or completion, the modes do not decouple, but the staircase survives in a weaker form. \Textcite{LiLuoLyu2021} show that for two layers, gradient flow from an infinitesimal initialization is equivalent, under assumptions, to \emph{greedy low-rank learning}: escape from the current saddle along its top eigendirection, which raises the rank by one, then minimize at that rank, and repeat. \Textcite{JacotEtAl2021} (an arXiv preprint) conjecture the same \term{saddle-to-saddle}\index{saddle-to-saddle dynamics} picture for deep linear networks, with saddles at maps of increasing rank, and prove a theorem for the dynamics between the first two saddles. \Textcite{GidelEtAl2019} show that for two layers and vanishing initialization the iterates of gradient descent pass through the solutions of reduced-rank regression of increasing rank.
+\end{remark}
+
+\section{Reading the solution}\label{sec:deeplinear:reading}
+
+\paragraph{Predictions.} The model predicts five things. (i) \emph{A staircase}: the loss rests near the values \eqref{eq:deeplinear:staircase}, one plateau per distinct singular value. (ii) \emph{Order and timing}: mode $i$ is half learned at $\dlhalf\approx\frac1{2s_i}\log(s_i/\hat a_i)$ for two layers, so strong modes come first, and the delay between modes $i$ and $i+1$ is about $\log(s/\hat a)$ times the difference of $\frac1{2s_{i+1}}$ and $\frac1{2s_i}$. (iii) \emph{Sharpness}: each drop takes time $2\log3/s_i$ for $L=2$, independent of the initialization. (iv) \emph{Depth}: with per-layer scale $\alpha$ the plateau scales like $\log(1/\alpha)$ for $L=2$ and like $\alpha^{-(L-2)}$ for $L\ge3$. (v) \emph{The endpoint}: when every hidden width is at least $q$, $W(t)\to\dlS$, the least-squares solution; with a bottleneck of width $m<q$, the aligned trajectory with $R_\ell$ of $m$ columns reaches the best rank-$m$ approximation, the solution of reduced-rank regression. A linear autoencoder ($y=x$) needs inputs that are not whitened, since otherwise $\dlS=I_d$; with $\Sigma_{xx}=V\Lambda V^\top$ the decoupled flow of \cref{ex:deeplinear:nonwhite} applies, and a bottleneck of width $m$ learns the projection onto the top $m$ principal components, in the order of the eigenvalues.\sidenote{This is the connection \textcite{BaldiHornik1989} made: a linear autoencoder with a bottleneck, trained on the squared error, has a unique minimum up to invertible transformations of the hidden layer, the projection onto the leading principal subspace.}
+
+\paragraph{Hierarchies.} For the tree of \cref{fig:deeplinear:tree} the modes are the levels of the tree, and their strengths decrease with depth in the tree: in a complete binary tree of depth $D$ the mode that splits a node at depth $j$ (the root has depth $0$) has $s^2=(2^{D-j}-1)/2^D$, and the constant mode has $s^2=(2^{D+1}-1)/2^D$ (\cref{ex:deeplinear:tree}). In \cref{fig:deeplinear:tree}, level $0$ is the constant mode and level $k\ge1$ consists of the $2^{k-1}$ modes that split the nodes at depth $k-1$, that is, the modes that tell apart the nodes of the $k$-th row. Broad distinctions are stronger because they are supported by more items and more output features, and the network learns ``animal versus plant'' first and ``canary versus robin'' last. This is the progressive differentiation of \cref{sec:deeplinear:phenomenon}, explained by one statistic: the singular value.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},hplot,width=0.475\linewidth,height=0.37\linewidth]
+\nextgroupplot[xmin=0,xmax=20,ymin=-0.03,ymax=1.05,xlabel={time $t$},ylabel={fraction learned $a/s$},
+  legend style={at={(0.97,0.05)},anchor=south east}]
+\addplot[theory] table[x=t,y=th1] {figures/data/02-deeplinear-tree.dat};
+\addplot[simulation,mark repeat=4] table[x=t,y=sim1] {figures/data/02-deeplinear-tree.dat};
+\addplot[theory] table[x=t,y=th2] {figures/data/02-deeplinear-tree.dat};
+\addplot[simulation,mark repeat=4] table[x=t,y=sim2] {figures/data/02-deeplinear-tree.dat};
+\addplot[theory] table[x=t,y=th3] {figures/data/02-deeplinear-tree.dat};
+\addplot[simulation,mark repeat=4] table[x=t,y=sim3] {figures/data/02-deeplinear-tree.dat};
+\addplot[theory] table[x=t,y=th4] {figures/data/02-deeplinear-tree.dat};
+\addplot[simulation,mark repeat=4] table[x=t,y=sim4] {figures/data/02-deeplinear-tree.dat};
+\node[font=\scriptsize,text=ink] at (axis cs:2.0,0.62) {$0$};
+\node[font=\scriptsize,text=ink] at (axis cs:4.7,0.38) {$1$};
+\node[font=\scriptsize,text=ink] at (axis cs:7.3,0.38) {$2$};
+\node[font=\scriptsize,text=ink] at (axis cs:11.5,0.38) {$3$};
+\legend{logistic prediction,gradient descent}
+\nextgroupplot[xmin=0,xmax=20,ymin=0,ymax=2.15,xlabel={time $t$},ylabel={loss $\Loss$},
+  legend style={at={(0.97,0.95)},anchor=north east}]
+\addplot[guide] coordinates {(0,1.0625) (20,1.0625)};
+\addplot[guide] coordinates {(0,0.625) (20,0.625)};
+\addplot[guide] coordinates {(0,0.25) (20,0.25)};
+\addplot[theory] table[x=t,y=lossth] {figures/data/02-deeplinear-tree.dat};
+\addplot[simulation,mark repeat=3] table[x=t,y=losssim] {figures/data/02-deeplinear-tree.dat};
+\legend{staircase \eqref{eq:deeplinear:staircase},,,prediction,gradient descent}
+\end{groupplot}
+\end{tikzpicture}
+\caption{Learning the tree of \cref{fig:deeplinear:tree} with a two-layer linear network of width $m=64$, by full-batch gradient descent with step $\eta=0.01$ (time $t=\eta\times$steps) from a random initialization with i.i.d.\ $\cN(0,\alpha^2)$ entries, $\alpha=0.003$, seed $0$. Left: the fraction learned, $\tr(U_k^\top WV_k)/(q_ks_k)$ for the $q_k$ modes $U_k,V_k$ of level $k$ (labels $0$ to $3$), against the logistic curves \eqref{eq:deeplinear:logistic} with the effective initial strengths \eqref{eq:deeplinear:aeff} read off from the initialization (between $1.8\times10^{-4}$ and $3.8\times10^{-4}$; for the levels with several modes, the curves are averaged). The largest deviation is $0.017$. Right: the loss, $\frac12\norm{\dlS-W}_F^2$, descends the staircase $2$, $1.0625$, $0.625$, $0.25$, $0$ of \eqref{eq:deeplinear:staircase}.}\label{fig:deeplinear:tree-dyn}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:deeplinear:tree-dyn} tests predictions (i) and (ii) from a random initialization. The four levels are half learned at $t=3.1$, $4.2$, $6.3$, and $10.0$, as predicted by \eqref{eq:deeplinear:thalf} with the effective initial strengths, and the agreement holds over the whole trajectory, not only at the midpoints, to within $0.02$. The loss sits on each step of the staircase for a time that grows as the singular value shrinks, because both the rate $2s$ and the log-ratio $\log(s/\hat a)$ favor strong modes. The residual deviation comes from the cross-talk between hidden directions that the heuristic neglects. With width $m=16$ instead of $64$, where random hidden directions are further from orthogonal, it grows to about $0.1$, for the weakest level.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,xmode=log,ymode=log,xmin=8e-4,xmax=0.7,ymin=0.25,ymax=800,xlabel={per-layer initialization scale $\alpha$},ylabel={half-learning time $\dlhalf$},
+  legend style={at={(0.5,1.03)},anchor=south},legend columns=3]
+\addplot[theory] table[x=alpha,y=L2] {figures/data/02-deeplinear-depth-theory.dat};
+\addplot[theory2] table[x=alpha,y=L3] {figures/data/02-deeplinear-depth-theory.dat};
+\addplot[theory3] table[x=alpha,y=L4] {figures/data/02-deeplinear-depth-theory.dat};
+\addplot[simulation2] table[x=alpha,y=aligned] {figures/data/02-deeplinear-depth-sim.dat};
+\addplot[simulation] table[x=alpha,y=random] {figures/data/02-deeplinear-depth-sim.dat};
+\legend{$L=2$ exact,$L=3$ exact,$L=4$ exact,aligned (GD),random (GD)}
+\end{axis}
+\end{tikzpicture}
+\caption{Depth lengthens the plateau. One mode of strength $s=1$ in $\R^{4\times4}$, hidden width $32$, full-batch gradient descent with step $0.02$; $\dlhalf$ is the first time $u_1^\top Wv_1\ge\frac12$. Curves: the exact half-learning time of \cref{thm:deeplinear:exact} with $a_0=\alpha^L$, from \eqref{eq:deeplinear:thalf} for $L=2$ and by quadrature for $L=3,4$. Squares: aligned, balanced initialization with per-layer gain $\alpha$ (seed $0$), within about $2\%$ of the curves. Dots: Gaussian initialization with entries $\cN(0,\alpha^2/d_{\ell-1})$, averaged over seeds $0$, $1$, $2$. For $L=2$ these are shifted down by about $0.4$, the shift $\frac12\log2.25$ predicted by \eqref{eq:deeplinear:aeff}, which gives $\hat a\approx2.25\alpha^2$ here; for $L=3$ and $L=4$ they follow the slopes $-(L-2)$ with a factor of about $0.7$.}\label{fig:deeplinear:depth}
+\end{figure}
+
+\Cref{fig:deeplinear:depth} tests prediction (iv). On logarithmic axes the two-layer curve is nearly flat, a logarithm, while the curves for $L=3$ and $L=4$ are straight lines of slopes $-1$ and $-2$, as \cref{prop:deeplinear:depth} predicts: with $\alpha=0.04$, two layers learn the mode at $t\approx3.2$ and four layers at $t\approx310$. Gradient descent from aligned initializations reproduces the exact curves, which checks \cref{thm:deeplinear:exact} together with the small error of a finite step. Random initializations learn somewhat faster, because their effective initial strength exceeds $\alpha^L$, but the exponent is the same.
+
+\paragraph{Limits and regimes.} The staircase needs two separations: of the singular values (distinct steps) and of scales ($\hat a_i\ll s_i$, long plateaus). When the initialization is large, $\hat a_i$ is comparable with $s_i$, the logistic curves start near their midpoints, and all modes are learned together at rate about $2s_i$, which is the lazy, kernel-like regime of \cref{ch:lazy}; for two layers and aligned weights, the flow is then close to the linear flow $\dot W=-2a_0(W-\dlS)$ with a fixed preconditioner. Small initialization is the rich regime, and the staircase is its signature: the order parameters are the mode strengths $a_i$, and the plateau times are their escape times from the saddle at zero.
+
+\section{What the model gets wrong}\label{sec:deeplinear:wrong}
+
+\paragraph{What was thrown away.} \emph{The nonlinearity.} A deep linear network represents only linear maps, so it learns no features that a linear regression could not, and its hidden layers are rotations and rescalings of the modes of $\dlS$; whatever nonlinear networks gain from depth in expressive power is absent. \emph{Whitening.} With $\Sigma_{xx}\ne I$ the gradient is $W\Sigma_{xx}-\dlS$, and the modes decouple only when $\Sigma_{xx}$ and $\dlS$ share right singular vectors (\cref{ex:deeplinear:nonwhite}); in general they do not, and the input correlations mix the modes. \emph{Aligned and balanced initialization.} The heuristic of \cref{sec:deeplinear:random} recovers it from small random weights, but only approximately, and only for two layers in closed form; large or unbalanced initializations change the dynamics qualitatively \parencite{KuninEtAl2024}. \emph{Population loss.} With $n$ samples, $\dlS$ is replaced by a noisy estimate whose weak modes are dominated by noise, and the late stages fit noise: \textcite{AdvaniEtAl2020} and \textcite{LampinenGanguli2019} compute the resulting generalization dynamics, in which early stopping helps. \emph{Gradient flow.} With large steps, gradient descent is not close to the flow; for the scalar product this is the catapult of \cref{ch:stability}.
+
+\paragraph{Where it breaks.} \emph{Tasks without linear correlation.} If $\dlS=0$, every mode has $s_i=0$, and by \cref{thm:deeplinear:exact} and \cref{cor:deeplinear:logistic} a linear network learns nothing: every aligned $a_i$ decays like $1/t$. XOR, sparse parities and single-index targets of information exponent at least $2$ have $\dlS=0$ (\cref{ch:singleindex,ch:parity}), yet nonlinear networks learn them, after plateaus whose length the linear model cannot predict. \emph{Stage order in nonlinear networks.} \Textcite{RefinettiEtAl2023} show that networks trained with SGD on images first use the mean and covariance of each class and only later higher-order statistics, a distributional simplicity bias that the linear model shares only in its first stage. \Textcite{AbbeEtAl2023} prove, under assumptions on the training procedure, a saddle-to-saddle dynamics for two-layer nonlinear networks learning functions of a few Gaussian coordinates, in which the order and the duration of the stages are set by the hierarchical structure of the target (its leap complexity; they conjecture times of order $d^{\max(\text{leap},2)}$ in dimension $d$, up to logarithmic factors), not by singular values. \Textcite{KalimerisEtAl2019} see the linear stage first in convolutional networks, as the model predicts, but what follows is not a linear map. \emph{Implicit bias.} From small initialization the staircase suggests a bias toward low rank. \Textcite{GunasekarEtAl2017} conjectured that for matrix factorization the bias is the minimum nuclear norm. \Textcite{AroraEtAl2019} found that depth strengthens the bias toward low rank and argued that it may not be captured by the nuclear norm or other norms, and \textcite{RazinCohen2020} constructed matrix factorization problems in which gradient flow drives every norm and quasi-norm to infinity while the rank is minimized. \Textcite{LiLuoLyu2021} give counterexamples to the nuclear norm conjecture. The model's stages are therefore a better description of the bias than a norm, but the model with whitened, fully observed data cannot exhibit this: its endpoint is always $\dlS$.
+
+\paragraph{Fine structure.} \emph{Unbalanced and large initializations.} \Textcite{TarmounEtAl2021} analyze two-layer flows with an arbitrary conserved $D_1$, without small, balanced or aligned initialization, and relate them to Riccati equations; \textcite{BraunEtAl2022} give exact solutions from initializations that are not aligned with the task, building on \textcite{Fukumizu1998}, and use them to study prior knowledge and continual learning; \textcite{DomineEtAl2025} solve the family of initializations they call $\lambda$-balanced, with $D_1$ a multiple of the identity, which interpolates between the rich regime of this chapter and the lazy regime; and \textcite{KuninEtAl2024} show that unbalanced initializations that make earlier layers learn faster can speed up feature learning in nonlinear networks. \emph{Gates.} \Textcite{SaxeSodhaniLewallen2022} add input-dependent gates to linear pathways, which yields solvable models of nonlinear networks in which pathways race and shared representations win. \emph{Saddle-to-saddle.} \Textcite{LiLuoLyu2021}, \textcite{JacotEtAl2021} and \textcite{GidelEtAl2019} extend the staircase to general losses, \textcite{PesmeFlammarion2023} make it exact for diagonal networks (\cref{ch:diagonal}), and \textcite{AbbeEtAl2023} for nonlinear networks on hierarchical targets. \emph{Convergence.} \Textcite{AroraEtAl2019conv} prove linear convergence of gradient descent for deep linear networks from approximately balanced initializations whose loss is below that of every rank-deficient solution. Open: a theory that predicts the order and timing of stages in nonlinear networks on natural data, and a description of the implicit bias of deep factorizations from small initialization for general measurement operators.
+
+\section{Model card}\label{sec:deeplinear:card}
+
+\modelcard{Plateaus and sudden drops in training loss; coarse distinctions learned before fine ones; incremental, low-rank learning from small initialization.}{Deep linear network $W_L\cdots W_1$, square loss, whitened inputs, gradient flow, aligned (or small random) initialization.}{Conserved $W_{\ell+1}^\top W_{\ell+1}-W_\ell W_\ell^\top$; closed end-to-end dynamics for balanced weights; exact decoupled mode dynamics $\dot a=La^{2-2/L}(s-a)$, logistic for two layers; critical points are partial singular value decompositions.}{A loss staircase $\dlLzero+\frac12\sum_{i>k}s_i^2$; mode $i$ learned at $\log(s_i/a_0)/(2s_i)$ ($L=2$) or $a_0^{-(1-2/L)}/((L-2)s_i)$ ($L\ge3$); drop width independent of initialization; order set by singular values of $\dlS$.}{Nothing is learned when $\dlS=0$ (XOR, parity); nonlinear stages follow higher-order structure; the implicit bias toward low rank is not a norm; no finite-sample or step-size effects.}{Unbalanced and $\lambda$-balanced exact solutions; gated linear networks; saddle-to-saddle dynamics for general losses, diagonal networks, and nonlinear networks.}
+
+This chapter opens the book's longest thread: \emph{escape from a saddle at small initialization}. The logistic escape here, with time $\log(1/\text{initialization})/\text{strength}$, reappears coordinate by coordinate in the diagonal networks of \cref{ch:diagonal}, as the search phase of \cref{ch:singleindex} (where depth is replaced by the information exponent), as the plateaus of the committee machine in \cref{ch:committee}, as hidden progress in sparse parities (\cref{ch:parity}), and in the formation of induction heads (\cref{ch:induction}); the quadratic of \hyperref[ch:prologue]{the prologue} is the degenerate case with no saddle. The scalar case of the conservation law is the invariant of the two-parameter model in \cref{ch:stability}.
+
+The second thread is \emph{lazy versus rich}. Large initializations turn the staircase into simultaneous exponential relaxation, the regime of \cref{ch:lazy}; small ones produce the rich dynamics of this chapter, and \cref{ch:diagonal} shows how the same choice selects an implicit bias.
+
+\begin{exercises}
+\item \consolidation (The logistic curve.) (a) Integrate $\dot a=2a(s-a)$ by partial fractions and recover \cref{cor:deeplinear:logistic}. (b) Show that the loss of one mode, $\frac12(s-a)^2$, decreases fastest in time when $a=s/3$, and compute the time at which it occurs. (c) For the tree of \cref{fig:deeplinear:tree-dyn}, with mean effective initial strengths $2.8\times10^{-4}$, $3.5\times10^{-4}$, $2.7\times10^{-4}$ and $2.9\times10^{-4}$ for the four levels, predict the four half-learning times and compare with the values $3.1$, $4.2$, $6.3$ and $10.0$ quoted in the text.\label{ex:deeplinear:logistic}
+
+\item \consolidation (The tree.) Let $P=2^D$ items sit at the leaves of a complete binary tree of depth $D$, with $x=\sqrt Pe_p$ and one output coordinate per node, as in \cref{fig:deeplinear:tree}. (a) Show that $(\dlS^\top\dlS)_{pp'}$ is $\frac1P$ times the number of common ancestors of $p$ and $p'$ (the item itself counts if $p=p'$). (b) Show that the constant vector is an eigenvector with eigenvalue $(2^{D+1}-1)/P$, and that the Haar function of a node at depth $j<D$ (the root has depth $0$) is an eigenvector with eigenvalue $(2^{D-j}-1)/P$. (c) Conclude that the $2^j$ modes that split the nodes at depth $j$ have $s^2=(2^{D-j}-1)/2^D$, and that the loss staircase for $D=3$ is $2$, $1.0625$, $0.625$, $0.25$, $0$.\label{ex:deeplinear:tree}
+
+\item \consolidation (Neurons of a ReLU network are balanced.) Let $f(x)=\sum_{r=1}^ma_r\phi(\ip{w_r,x})$ with $\phi(z)=\max(z,0)$, and let the parameters follow the gradient flow of $\E[\ell(f(x),y)]$ for a differentiable loss $\ell$, with the convention $\phi'(0)=0$. Using $\phi'(z)z=\phi(z)$, show that $\norm{w_r}^2-a_r^2$ is constant in time for every neuron $r$. What does this say about a neuron whose output weight is driven to zero?\label{ex:deeplinear:relu}
+
+\item \consolidation (End-to-end dynamics for two layers.) (a) For $L=2$ and balanced weights, show directly that $W_2W_2^\top=(WW^\top)^{1/2}$. (b) For a scalar output, $W=w^\top$ with $w\in\R^d$ and gradient $g=\nabla\dlE$ written as a vector, show that \eqref{eq:deeplinear:e2e} becomes $\dot w=-\norm w^{2-2/L}\bigl(g+(L-1)\ip{g,\hat w}\hat w\bigr)$ with $\hat w=w/\norm w$: depth speeds up motion along $w$ by the factor $L$. (c) Show that for $W=UDV^\top$ with $D$ diagonal, \eqref{eq:deeplinear:e2e} gives back \eqref{eq:deeplinear:aode}.\label{ex:deeplinear:e2e}
+
+\item \consolidation (Escape from a degenerate saddle.) (a) Solve $\dot\beta=s\beta^{L-1}$ exactly for $L\ge3$, and show that the solution blows up at time $\beta_0^{-(L-2)}/((L-2)s)$. (b) Explain why this time is the leading term of \cref{prop:deeplinear:depth} with $a_0=\beta_0^L$. (c) Compare with the escape time of the search phase in \cref{ch:singleindex}, and identify the depth with the information exponent.\label{ex:deeplinear:escape}
+
+\item \variation (Unbalanced scalar network.) Let $L=2$ and $d=d_1=d_y=1$, with weights $b=W_1$ and $c=W_2$ and $\Loss=\frac12(s-cb)^2$. (a) Show that $\delta=b^2-c^2$ is conserved and that $a=cb$ satisfies $\dot a=\sqrt{4a^2+\delta^2}\,(s-a)$. (b) Show that from $a(0)=0$ and $\delta\ne0$ the mode reaches $s/2$ by time $\log2/\abs\delta$, so a strongly unbalanced network has no plateau. (c) Show that as $\delta\to0$ with $a(0)=a_0>0$ fixed, the solution converges to the logistic curve. (d) Interpret $\abs\delta$ as an initialization scale that makes training lazy.\label{ex:deeplinear:unbalanced}
+
+\item \variation (Non-whitened inputs.) Let $\Sigma_{xx}=V\Lambda V^\top$ and $\dlS=USV^\top$ share the matrix $V$, with $\Lambda=\diag(\lambda_1,\dots,\lambda_q)$ positive (in this exercise $\lambda_i$ are eigenvalues). Show that the aligned ansatz still solves the flow for $L=2$, with $\dot a_i=2a_i(s_i-\lambda_ia_i)$. Which modes are learned first, and to what values do they converge? Show that the order of learning is set by $s_i$ while the final value is $s_i/\lambda_i$, and that in general the two orders differ.\label{ex:deeplinear:nonwhite}
+
+\item \variation (Weight decay.) Add $\frac\lambda2(\norm{W_1}_F^2+\norm{W_2}_F^2)$ to the loss of a two-layer network with whitened inputs. (a) Show that $D_1(t)=e^{-2\lambda t}D_1(0)$, so weight decay balances the layers. (b) Show that the aligned ansatz still solves the flow, with $\dot a_i=2a_i(s_i-\lambda-a_i)$. (c) Conclude that the network converges to the soft-thresholded matrix $\sum_i(s_i-\lambda)_+u_iv_i^\top$ when every $a_i(0)>0$, and that modes with $s_i\le\lambda$ are never learned.\label{ex:deeplinear:wd}
+
+\item \variation\hard (Depth-independent learning time.) For $L\ge3$ and fixed $0<a_0<s/2$, show that $L\,\dlhalf\to\int_{a_0}^{s/2}\frac{\dd a}{a^2(s-a)}=\frac1{sa_0}-\frac2{s^2}+\frac1{s^2}\log\frac{s-a_0}{a_0}$ as $L\to\infty$. Interpret: if the end-to-end initial strength is held fixed (each layer starts near the identity, with gain $a_0^{1/L}\to1$) and the step size is scaled like $1/L$, the learning time does not grow with depth. Compare with the per-layer scaling $\alpha$ of \cref{fig:deeplinear:depth}, and with the depth-independent learning times that \textcite{SaxeEtAl2014} report for special initializations. \hint{$a^{-2+2/L}\le\max(a^{-2},1)$ for $a>0$; use dominated convergence.}\label{ex:deeplinear:deep}
+
+\item \simulation (Depth on the tree.) Modify the script of \cref{fig:deeplinear:tree-dyn} to train a three-layer network ($d_1=d_2=64$) from i.i.d.\ $\cN(0,\alpha^2/d_{\ell-1})$ entries with $\alpha=0.1$, and plot the fraction learned for each level. With step $0.01$, the reader should observe four stages, half learned near $t\approx5$, $7$, $10$ to $12$, and $18$ (the exact values vary with the seed by about $10\%$), each drop narrow compared with the plateau before it; and with $\alpha=1$ all levels are learned together, $90\%$ learned by $t\approx0.2$. Explain both observations with \cref{prop:deeplinear:depth}.\label{ex:deeplinear:sim-depth}
+
+\item \simulation (XOR.) Let $x\in\{\pm1\}^2$ be uniform, augmented by a constant coordinate, and $y=x_1x_2$. (a) Compute $\Sigma_{xx}$ and $\dlS$, and show that $\dlS=0$. (b) Train a two-layer linear network and a two-layer ReLU network of width $16$ from small random initialization ($\cN(0,10^{-4})$ entries) by gradient descent with step $0.05$. The reader should observe that the linear network's loss stays at $\frac12$, while for most seeds the ReLU network reaches zero loss within about $500$ steps (some seeds stall at loss $\frac18$, with one input misfit): the ReLU network learns a function that the linear model says carries no signal.\label{ex:deeplinear:xor}
+
+\item \research (Stage order in nonlinear networks.) For a two-layer ReLU network trained from small initialization on the tree data of \cref{fig:deeplinear:tree}, with inputs given by random features of the items rather than one-hot vectors, determine whether the stages still follow the singular values of $\dlS$, and how the answer changes when the outputs depend nonlinearly on the features. \Textcite{SaxeSodhaniLewallen2022} solve gated networks with fixed gates, and \textcite{AbbeEtAl2023} treat functions of a few Gaussian coordinates; a theory of stage order for nonlinear networks on structured, non-Gaussian data is open.\label{ex:deeplinear:research-order}
+
+\item \research (Saddle to saddle in depth.) Prove that, for $L\ge3$ and small random initialization, gradient flow on $\frac12\norm{\dlS-W}_F^2$ with distinct singular values visits neighborhoods of the saddles $W_1,W_2,\dots$ in order, with explicit times. For two layers, \textcite{LiLuoLyu2021} and \textcite{GidelEtAl2019} establish versions of this; \textcite{JacotEtAl2021} conjecture it in depth and prove a theorem for the passage between the first two saddles. A complete proof for all saddles, with the prefactor of \cref{fig:deeplinear:depth}, is open.\label{ex:deeplinear:research-saddle}
+\end{exercises}
+
+\notesandrefs
+Deep linear networks entered the theory of learning with \textcite{BaldiHornik1989}, who showed that a two-layer linear autoencoder or regressor has no spurious local minima and that its critical points are projections onto sets of principal components. \Textcite{Fukumizu1998} analyzed batch gradient descent in linear networks with one hidden layer, through a matrix Riccati equation, and used it to explain overtraining when the network has more hidden units than the target needs. The exact solution of \cref{thm:deeplinear:exact}, the logistic mode curves, the depth-$L$ mode equation, and the observation that linear networks reproduce the plateaus and sudden drops of nonlinear ones are from \textcite{SaxeEtAl2014}, who also found that special initializations, and random orthogonal ones, give learning times that do not grow with depth.\sidenote{The 2014 paper also connected depth-independent learning to the faithful propagation of gradients through deep nonlinear networks at the edge of chaos, the subject of \cref{ch:signalprop}.} \Textcite{SaxeEtAl2019} applied the solution to semantic development, building on the networks of \textcite{RogersMcClelland2004}.
+
+The conservation law was found independently by \textcite{AroraCohenHazan2018}, for linear networks, and by \textcite{DuHuLee2018}, who proved that gradient flow preserves the differences of squared layer norms in homogeneous networks with linear, ReLU and leaky ReLU activations, the per-neuron statement of \cref{ex:deeplinear:relu}. \Cref{thm:deeplinear:e2e} is from \textcite{AroraCohenHazan2018}, who used it to argue that depth can accelerate optimization; \textcite{AroraEtAl2019conv} turned it into a convergence proof for gradient descent. \Textcite{Kawaguchi2016} extended the landscape results to deep linear networks.
+
+Incremental learning and implicit low-rank bias were studied by \textcite{GidelEtAl2019}, \textcite{GissinEtAl2020}, \textcite{AroraEtAl2019}, \textcite{RazinCohen2020} and \textcite{LiLuoLyu2021}, and saddle-to-saddle dynamics by \textcite{JacotEtAl2021}. \Textcite{AtanasovEtAl2022} named the silent alignment of \cref{sec:deeplinear:random} and used it to show that networks trained from small initialization behave like kernel machines with a learned kernel. Generalization dynamics with finite data are in \textcite{AdvaniEtAl2020} and \textcite{LampinenGanguli2019}. Exact solutions beyond the aligned case are in \textcite{TarmounEtAl2021}, \textcite{BraunEtAl2022}, \textcite{DomineEtAl2025} and \textcite{KuninEtAl2024}.
+
+\paragraph{Translating the literature.} \Textcite{SaxeEtAl2014} write a three-layer network as $W^{32}W^{21}$: their $W^{21}$ and $W^{32}$ are our $W_1$ and $W_2$, their $\Sigma^{31}$ and $\Sigma^{11}$ are our $\dlS$ and $\Sigma_{xx}$, their modes are indexed by $\alpha$ (our $i$), with $\Sigma^{31}=\sum_\alpha s_\alpha u^\alpha v^{\alpha\top}$, and their time constant $\tau=1/\lambda$ (with $\lambda$ their learning rate) is our unit of time, so their $t/\tau$ is our $t$. \Textcite{SaxeEtAl2019} write $\Sigma^{yx}=USV^\top$ for our $\dlS$ and collect the mode strengths in a diagonal matrix $A(t)$, our $\diag(a_i(t))$. \Textcite{AroraCohenHazan2018} write $N$ for our $L$, $W_e$ for our end-to-end $W$, and $L^1(W_e)$ for our $\dlE(W)$; they state the end-to-end equation with weight decay, and index its sum in the opposite order, with $[W_eW_e^\top]^{(j-1)/N}$ on the left, which is \eqref{eq:deeplinear:e2e} with $j$ replaced by $L+1-j$. \Textcite{BaldiHornik1989} write the network as $AB$, with $B$ the first layer and $A$ the second (our $W_1$ and $W_2$), and $\Sigma_{YX}\Sigma_{XX}^{-1}\Sigma_{XY}$ for the matrix whose eigenvectors define the critical points (our $\dlS\dlS^\top$ when $\Sigma_{xx}=I$).
+
+\printchapterbib
+\end{refsection}
