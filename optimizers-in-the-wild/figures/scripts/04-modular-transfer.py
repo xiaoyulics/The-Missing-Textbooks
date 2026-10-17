@@ -29,7 +29,7 @@ Outputs (whitespace-separated, header row):
       diverged or if the learning rate is outside that configuration's grid;
   figures/data/04-modular-transfer-optima.dat  one row per width: for each configuration the log2 of
       the optimal base learning rate (vertex of the parabola through the best grid point and its two
-      neighbours in (log2 eta, log loss); the grid point itself if a neighbour is missing), the log2 of
+      neighbors in (log2 eta, log loss); the grid point itself if a neighbor is missing), the log2 of
       the largest stable grid learning rate (columns <cfg>stable), the optimum relative to width 64
       (columns <cfg>rel), and the largest stable rate of sgd_sp relative to width 64.
 Runs in about a minute on two CPU threads (longer on a loaded machine).
@@ -146,7 +146,7 @@ def train(cfg, n, log2lrs, teacher, seed=0):
 
 
 def optimum(log2lrs, losses):
-    """Vertex of the parabola through the best grid point and its neighbours in (log2 eta, log loss)."""
+    """Vertex of the parabola through the best grid point and its neighbors in (log2 eta, log loss)."""
     finite = [(k, v) for k, v in zip(log2lrs, losses) if math.isfinite(v)]
     i = min(range(len(finite)), key=lambda j: finite[j][1])
     k = finite[i][0]
