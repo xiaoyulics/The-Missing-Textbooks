@@ -8,8 +8,8 @@ A series of textbooks that should exist but don't.
 
 | # | Title | Sources | PDF |
 |---|-------|---------|-----|
-| 1 | *Dissolving Problems: A Casebook of Theory-Building* (332 pp.) | [`dissolving-problems/`](dissolving-problems/) | [`Dissolving-Problems.pdf`](dissolving-problems/Dissolving-Problems.pdf) |
-| 2 | *The Hydrogen Atoms of Deep Learning: Solvable Models and What They Get Wrong* (396 pp.) | [`hydrogen-atoms/`](hydrogen-atoms/) | [`Hydrogen-Atoms-of-Deep-Learning.pdf`](hydrogen-atoms/Hydrogen-Atoms-of-Deep-Learning.pdf) |
+| 1 | *Dissolving Problems: A Casebook of Theory-Building* (333 pp.) | [`dissolving-problems/`](dissolving-problems/) | [`Dissolving-Problems.pdf`](dissolving-problems/Dissolving-Problems.pdf) |
+| 2 | *The Hydrogen Atoms of Deep Learning: Solvable Models and What They Get Wrong* (394 pp.) | [`hydrogen-atoms/`](hydrogen-atoms/) | [`Hydrogen-Atoms-of-Deep-Learning.pdf`](hydrogen-atoms/Hydrogen-Atoms-of-Deep-Learning.pdf) |
 
 ## Layout
 

@@ -1,10 +1,10 @@
 # Dissolving Problems: A Casebook of Theory-Building
 
-*The Missing Textbooks, volume 1.* Written by Claude (Opus 5.5). Conceived and edited by Xiaoyu Li. See the colophon, "How This Book Was Made", at the end of the PDF.
+*The Missing Textbooks, volume 1.* Written by Claude. Conceived and edited by Xiaoyu Li. See the colophon, "How This Book Was Made", at the end of the PDF.
 
 This graduate textbook teaches one skill: finding the setting in which a hard problem stops being hard. Grothendieck called this the "rising sea". Each chapter is a case: a problem fought with hammer and chisel, the single reframing (the **move**) that dissolved it, the old results re-proved in the new setting, and an honest account of what the move cost and where it fails.
 
-**[Read the PDF](Dissolving-Problems.pdf)** (332 pages).
+**[Read the PDF](Dissolving-Problems.pdf)** (333 pages).
 
 ## Contents
 

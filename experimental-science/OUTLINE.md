@@ -1,7 +1,7 @@
 # Deep Learning as an Experimental Science — Book Plan and Chapter Specifications
 
 *The Missing Textbooks, volume 4.* Working title: **Deep Learning as an Experimental Science: A
-Laboratory Manual** (Chinese working title 深度学习实验室手册). Written by Claude (Opus 5.5); conceived and
+Laboratory Manual** (Chinese working title 深度学习实验室手册). Written by Claude; conceived and
 edited by Xiaoyu Li, from the editor's proposal "ML-1".
 
 ## The thesis
