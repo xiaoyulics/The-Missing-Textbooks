@@ -1,10 +1,10 @@
 # Deep Learning as an Experimental Science: A Laboratory Manual
 
-*The Missing Textbooks, volume 4* (in progress). Written by Claude. Conceived and edited by Xiaoyu Li. See the colophon, "How This Book Was Made", at the end of the PDF.
+*The Missing Textbooks, volume 4* (complete draft, 352 pp.; the independent referee pass of the earlier volumes is still to come). Written by Claude. Conceived and edited by Xiaoyu Li. See the colophon, "How This Book Was Made", at the end of the PDF.
 
 Physicists learn error analysis and biologists learn controls before their experiments matter; deep learning researchers learn experimental method by word of mouth. This graduate textbook teaches it through the field's famous wrong conclusions. Each chapter opens with a conclusion that the field once believed, reconstructs the experiment behind it, reports what later work found, and names the methodological failure. It then teaches the method that would have caught it, reproduces the failure and its fix in a small experiment that runs on a laptop in minutes, and ends with a protocol for the next experiment of the same kind.
 
-**[Read the PDF](Deep-Learning-as-an-Experimental-Science.pdf)** (rebuilt as chapters are completed).
+**[Read the PDF](Deep-Learning-as-an-Experimental-Science.pdf)** (352 pages).
 
 ## Contents
 
@@ -12,9 +12,9 @@ Physicists learn error analysis and biologists learn controls before their exper
 |---|---|---|---|
 | | **Prologue.** Ten runs of the same algorithm | | |
 | | **Part I. Noise** | | |
-| 1 | Seeds — the spread of a single method | One run per method is enough to rank them | vanished |
+| 1 | Seeds — the spread of a single method | One run of each method is enough to rank them | vanished |
 | 2 | Instability — why a fixed seed does not fix a run | Fixing the seed makes a run reproducible | narrowed |
-| 3 | Many Tasks, Few Runs — aggregates, intervals and multiplicity | A new state of the art on Atari 100k | narrowed |
+| 3 | Many Tasks, Few Runs — aggregates, intervals and multiplicity | A higher median score over a few runs per game identifies the better algorithm | narrowed |
 | | **Part II. Fair Comparison** | | |
 | 4 | Tuning Budgets — how an unequal search decides a comparison | Adaptive methods generalize worse than SGD | reversed |
 | 5 | Controls — random search as the placebo arm | Architecture search beats random search | vanished |
@@ -30,7 +30,7 @@ Physicists learn error analysis and biologists learn controls before their exper
 | 13 | Extrapolation — predicting the large from the small | On these tasks, larger models do worse | narrowed |
 | | **Part V. Measurement** | | |
 | 14 | The Metric Makes the Phenomenon — emergent abilities | Abilities emerge abruptly and unpredictably | artifact |
-| 15 | The Instrument's Settings — prompts, formats and demonstrations | Demonstration labels barely matter | narrowed |
+| 15 | The Instrument's Settings — prompts, formats and demonstrations | Replacing demonstration labels with random ones barely hurts in-context learning | narrowed |
 | | **Epilogue.** The laboratory notebook | | |
 | A | A Statistical Toolkit | | |
 

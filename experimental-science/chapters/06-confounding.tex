@@ -1,0 +1,344 @@
+% Chapter 6 of Deep Learning as an Experimental Science: the architecture and the recipe.
+\labchapter{Confounding}{The architecture and the recipe}{Vision transformers are better image classifiers than convolutional networks.}{The received reading of Dosovitskiy et al.\ (2021) and Touvron et al.\ (2021)}{Confounded: trained with the same modern recipe, convolutional networks come within about a point of vision transformers of similar size, and which one leads depends on whose recipe it is.}{ch:confounding}
+\begin{refsection}[chapters/06-confounding.bib]
+
+\begin{chaptersummary}
+In 2020 the vision transformer matched the best convolutional networks after pretraining on 300 million images, and DeiT trained it on ImageNet alone and placed it above the ResNets in a table whose rows each carried the recipe of their own paper. Given the newer recipes, ResNet-50 rose from 76.1\% to 80.4\%, within about a point of a transformer of its size, ahead or behind according to whose recipe both used. The method is the factorial design: crossing architecture with recipe splits the naive gain into an architecture effect, a recipe effect and their interaction, and we prove that a sequence of changes credits each change independently of the order exactly when the interactions involving it vanish, while the Shapley attribution averages over the orders. In the laboratory a small convolutional network beats an MLP on the digits by 2.0 points when it also gets the newer recipe, half of it the recipe's; with noisy labels the same comparison credits it with 4.3 points although it is the worse network under the old recipe and no better under the new.
+\end{chaptersummary}
+
+\section{The claim: an image as sixteen-by-sixteen words}\label{sec:confounding:claim}
+
+In October 2020 twelve researchers at Google Brain posted a paper whose title stated its method: an image is worth sixteen by sixteen words \parencite{DosovitskiyEtAl2021}. Their \term{vision transformer}\index{vision transformer} (ViT) cuts an image into patches of $16\times16$ pixels, maps each patch linearly to a vector, adds a learned position embedding and feeds the sequence to a standard Transformer encoder; apart from the patches, nothing in it knows that its input is an image. A convolutional network builds in two assumptions, that nearby pixels belong together and that a pattern means the same wherever it appears, and convolutional networks held the state of the art in large-scale recognition, among them BiT, large ResNets pretrained on hundreds of millions of images \parencite{KolesnikovEtAl2020}.
+
+\begin{finding}[\textcite{DosovitskiyEtAl2021}, Table~2 and Section~4.4]\label{fd:confounding:vit}
+Pretrained on JFT-300M, an internal set of 300 million labeled images, and fine-tuned on ImageNet, ViT-H/14 reached 88.55\% top-1 accuracy and ViT-L/16 87.76\%, against 87.54\% for BiT-L, a ResNet pretrained on the same data, and 88.4--88.5\% for Noisy Student, an EfficientNet; pretraining took 2.5 and 0.68 thousand TPUv3-core-days for the two transformers against 9.9 and 12.3 thousand. In a scaling study that trained ResNets, transformers and hybrids with one procedure on JFT-300M, the transformers needed two to four times less compute than the ResNets for the same transfer accuracy.
+\end{finding}
+
+The paper qualified its result in both directions.\sidenote{JFT-300M is internal to Google. On the public ImageNet-21k, with 14 million images, ViT-L/16 reached 85.30\% after fine-tuning on ImageNet.} Trained on ImageNet alone, without strong regularization, its transformers were a few points less accurate than ResNets of comparable size, which the authors attributed to the inductive biases that transformers lack; with 14 to 300 million images, they concluded, \enquote{large scale training trumps inductive bias}. And they noted that pretraining efficiency may depend on the training schedule, the optimizer and the weight decay as well as on the architecture, and pointed to their controlled scaling study.\sidenote{The study trained every model with Adam and a weight decay of $0.1$, for 7 or 14 epochs of JFT-300M; the paper reports that Adam worked slightly better than SGD for its ResNets in this setting.}
+
+Two months later Hugo Touvron and colleagues at Facebook AI trained the same architecture on the 1.28 million images of ImageNet-1k alone, on one eight-GPU machine in two to three days \parencite{TouvronEtAl2021}. Their training procedure built on the timm library: 300 epochs of AdamW with a cosine schedule, the augmentations RandAugment, Mixup, CutMix, random erasing and repeated augmentation, and the regularizers stochastic depth and label smoothing. Trained this way, the ViT-B architecture reached 81.8\% at a resolution of 224 pixels and 83.1\% at 384, where the ViT paper had reported 77.9\% for the same architecture trained on ImageNet alone at 384 pixels.\sidenote{DeiT's distillation token is an extra input whose output is trained to match a teacher's predictions. With a RegNetY-16GF teacher at 82.9\%, DeiT-B reached 83.4\% at 224 pixels, more than its teacher.}
+
+\begin{finding}[\textcite{TouvronEtAl2021}, Table~5]\label{fd:confounding:deit}
+Trained on ImageNet-1k only, DeiT-S (22 million parameters) reached 79.8\% top-1 accuracy and DeiT-B (86 million) 81.8\%, against 76.2\% for ResNet-50 (25 million) and 78.3\% for ResNet-152 (60 million) in the same table. With an extra distillation token and a convolutional network as teacher, DeiT-B reached up to 85.2\%.
+\end{finding}
+
+The field read these results as a verdict on the architectures. Within a year Swin, a transformer with attention inside shifted local windows, reached 81.3\% at about the size of a ResNet-50 and received the best-paper prize of ICCV 2021 \parencite{LiuEtAl2021}. Looking back in 2022, the authors of ConvNeXt described vision transformers as having quickly superseded convolutional networks, and the success of the hierarchical transformers, which had brought back convolution-like locality, as still \enquote{largely credited to the intrinsic superiority of Transformers} \parencite{LiuEtAl2022}. A note of 2023 described the belief of many researchers that convolutional networks do well on moderate data but cannot compete with transformers at web scale \parencite{SmithEtAl2023}. The received claim was that attention makes a better image classifier than convolution, whose built-in assumptions help only when data are scarce.
+
+The original work deserves most of its credit. That a standard transformer, with almost nothing designed for images, is a strong image classifier had not been shown before, and an architecture shared by text and images has practical advantages of its own \parencite{SmithEtAl2023}. The ViT paper hedged its compute comparison and ran a controlled study, a design this chapter recommends. DeiT published its recipe and code, marked the convolutional networks it had trained with its own procedure, distilled its best models from a convolutional teacher, and claimed that its transformers were competitive, not that attention beat convolution. The stronger reading was reasonable in 2021: transformers had replaced recurrent networks in language, ViT's scaling curves showed no saturation, and tables of published systems were how architectures had always been compared.\sidenote{\Textcite{BelloEtAl2021} give an example of the practice: new architectures with modern training compared with a ResNet-50 at 76.5\%, the accuracy of its 2015 training.}
+
+\section{The experiment: one table, two kinds of difference}\label{sec:confounding:experiment}
+
+The comparisons behind the received claim had the form of the DeiT table: each row a system, that is, an architecture trained by the recipe of its own paper.
+
+\begin{experiment}[a table of systems, as in Touvron et al.\ 2021]
+\field{question}{Is a convolution-free transformer a better image classifier than a convolutional network of similar size?}
+\field{units}{Training runs on ImageNet-1k (1.28 million images, 1,000 classes)}
+\field{treatment}{The architecture: DeiT, a ViT, against ResNets, RegNetYs and EfficientNets}
+\field{co-treatments}{Each row's recipe: for DeiT, 300 epochs of AdamW with strong augmentation and regularization; for the ResNets, a standard training of the period (ResNet-50 at 76.2\%, close to the 76.1\% of the 90-epoch SGD recipe of torchvision); for the RegNetYs, a procedure like DeiT's; for the EfficientNets, their own, at larger resolutions}
+\field{held fixed}{The training data; top-1 accuracy on the validation set; throughput measured in one code base on one GPU}
+\field{response}{Top-1 accuracy and images per second}
+\field{replicates}{One run per row}
+\field{analysis}{Rows compared at similar size or throughput, for instance DeiT-S at 79.8\% against ResNet-50 at 76.2\%}
+\end{experiment}
+
+What could this design show? Each row measures a system, and as a measurement it is sound: DeiT-S trained as DeiT trains is more accurate than ResNet-50 trained with a recipe five years older. The design cannot say why. The two rows differ in the architecture and in everything the recipe sets, the optimizer, the number of epochs (300 against 90), the augmentation and the regularization; the ResNet-50 row is a historical control in the sense of \cref{ch:controls}. The table contains one concurrent control, and its authors marked it: the RegNetY rows were trained with a procedure like DeiT's, and with it RegNetY-4GF (21 million parameters) reached 80.0\%, ahead of DeiT-S, and RegNetY-16GF (84 million) 82.9\%, ahead of DeiT-B in accuracy and in throughput. The DeiT paper rested its case on distillation and on the trade-off between accuracy and throughput, and said so; the received reading took the comparison with the ResNet rows.
+
+The controlled study of the ViT paper is the better design for its own question: one procedure for every architecture, the same data, and compute on the horizontal axis. Its limit is that one procedure is one level of the recipe. If the best recipe for a ResNet differs from the best for a transformer, then a comparison at one fixed recipe measures the effect of the architecture at that recipe and at no other. Whether a difference between two rows belongs to the architecture or to the recipe, and whether it changes with the recipe at which it is measured, can be decided only by a design in which both factors vary independently. Neither paper ran one.
+
+\section{The post-mortem: the baseline gets the recipe}\label{sec:confounding:postmortem}
+
+\paragraph{The recipe moves the numbers.} From 2019 on, several groups retrained old architectures with new recipes. \Textcite{HeEtAl2019} raised ResNet-50 from 75.3\% to 79.29\% with training refinements (a cosine schedule, label smoothing, Mixup), a modified downsampling block and distillation from a larger ResNet. \Textcite{WightmanTouvronJegou2021}, in a workshop paper, found the accuracy reported for the plain ResNet-50 ranging from 75.2\% to 79.5\% across papers, and trained it with three procedures of their own, built on the LAMB optimizer, a binary cross-entropy loss, Mixup, CutMix and RandAugment: 80.4\% after 600 epochs, 79.8\% after 300 and 78.1\% after 100, against 76.1\% for the weights distributed with torchvision. Over 100 seeds the 300-epoch procedure had a standard deviation of 0.10 points. \Textcite{BelloEtAl2021} raised ResNet-200 from 79.0\% to 82.2\% by training and regularization alone and to 83.4\% with two small architectural changes, three quarters of the gain from training. The recipe moved the transformers as well: DeiT's moved ViT-B from 77.9\% to 83.1\% (\cref{fd:confounding:deit}); a note by three authors of ViT moved ViT-S/16 from 66.8\% with the original setup to 76.5\% in 90 epochs and 80.0\% in 300, with standard augmentation and minor changes \parencite{BeyerZhaiKolesnikov2022}; and augmentation and regularization, given more compute, did as well as an order of magnitude more pretraining data \parencite{SteinerEtAl2022}.
+
+\paragraph{The same recipe for both.} Trained with the 600-epoch procedure that Wightman et al.\ tuned for ResNet-50, ResNet-50 reached 80.4\%, a ViT of DeiT-S's size 80.6\% and one of DeiT-B's size 80.4\%, below the 81.8\% of DeiT's own recipe; the authors note that their procedure was not adapted to the larger models. They also ran the comparison that the tables had not.
+
+\begin{finding}[\textcite{WightmanTouvronJegou2021}, Section~4.4]\label{fd:confounding:crossover}
+ResNet-50 and DeiT-S were each trained with two 300-epoch procedures with the same batch size: A2, optimized for ResNet-50, and T2, optimized for DeiT-S. On the ImageNet validation set ResNet-50 reached 79.9\% with A2 and 79.2\% with T2, DeiT-S 79.6\% and 80.4\%: each architecture won under the procedure designed for it. On ImageNet-V2, a second test set, DeiT-S led under both, by 0.2 and 1.3 points.
+\end{finding}
+
+Each of these numbers is one run, and the seed study puts their standard deviation near 0.1 points on the validation set, 0.23 on ImageNet-V2. The authors drew the lesson that training two architectures with the same procedure is not enough to compare them, because a procedure tuned for one favors it.
+
+\paragraph{A ResNet modernized one step at a time.} \Textcite{LiuEtAl2022} trained ResNet-50 with a fixed recipe close to DeiT's and Swin's, which by itself raised it from 76.1\% to 78.8\%, and then moved the architecture one step at a time toward Swin's design at about Swin-T's compute, averaging each accuracy over three seeds: Swin's stage ratio (79.4\%), a patchify stem (79.5\%), wider depthwise convolutions (80.5\%), an inverted bottleneck (80.6\%), the depthwise convolution moved up in the block (79.9\%, a loss that prepared the next step), $7\times7$ kernels (80.6\%), GELU (no change), fewer activations (81.3\%) and normalizations (81.4\%), layer normalization (81.5\%) and separate downsampling layers (82.0\%), against 81.3\% for Swin-T. The authors set out to identify the confounding variables of the comparison, and concluded that much of the difference between the families may come from the training techniques.\sidenote{The step to separate downsampling layers diverged until normalization layers were added where the resolution changes: one step's value depended on another, an interaction of \cref{sec:confounding:paths}.}
+
+\paragraph{At scale.} \Textcite{SmithEtAl2023}, in an unrefereed note, pretrained NFNets, convolutional networks without normalization layers, on JFT-4B, about four billion labeled images, with budgets from 0.4 to 110 thousand TPU-v4 core hours. The held-out loss fell as a power of the compute, and after fine-tuning the largest model reached 90.3\% on ImageNet (90.4\% with repeated augmentation in fine-tuning), against 90.2\% reported for ViT-g/14 \parencite{ZhaiEtAl2022}, whose pretraining they estimated at 120 thousand TPU-v4 core hours. The comparison is with published numbers obtained on JFT-3B, a different dataset, at estimated compute: matched in spirit, not a controlled experiment.
+
+\paragraph{The same pattern in language.} \Textcite{NarangEtAl2021} reimplemented a wide range of proposed modifications of the Transformer in one code base and evaluated them on common tasks. Most did not improve performance meaningfully, and those that did had mostly been developed in the same code base or were minor changes; gains, they conjectured, may depend strongly on implementation details. The code base is a co-treatment.
+
+\paragraph{What survives.} The narrower original claims survive: a pure transformer is a competitive image classifier, it can be trained on ImageNet alone, and with large data it needs no convolutions. The later work does not overturn ViT's controlled study, since it changed the convolutional family and the data, and some differences survive a matched recipe. \Textcite{BaiEtAl2021} found that convolutional networks trained with transformer recipes matched transformers in adversarial robustness, a gap that earlier comparisons owed to training, while transformers kept an advantage in generalization outside the training distribution, which their ablations attributed to the architecture. And the confound ran in both directions: the belief that transformers need large datasets also rested partly on a recipe \parencite{BeyerZhaiKolesnikov2022}.
+
+\paragraph{The mechanism.} Four features combined. A new architecture arrived with a new recipe, and tables compared systems, so the architecture and the recipe changed together. Baselines were historical controls, copied from papers with older recipes. Recipes were developed on the new architectures, so that even one recipe for both arms favored one of them. And sequential studies credited each change with its gain at its position in the sequence, although, as \textcite{BelloEtAl2021} noted, longer training helped their ResNet only once regularization had been added, and dropout hurt until the weight decay was lowered: the credit of each change depended on what came before it.
+
+\begin{verdict}{confounded}
+The gaps that placed transformers above convolutional networks on ImageNet were real gaps between systems, but they belonged largely to the recipes that came with the new architectures. With a modern recipe ResNet-50 gained more than four points and came within about a point of a transformer of its size, ahead or behind according to whose recipe both used; a modernized convolutional network beat Swin at equal compute under a fixed recipe, and at web scale a convolutional family matched the best reported transformers at comparable compute. The narrower original claims hold.
+\end{verdict}
+
+\section{The method: two factors and four cells}\label{sec:confounding:twobytwo}
+
+A table of systems measures two cells of a design with four. Its language is that of factorial designs \parencite{Fisher1935,BoxHunterHunter2005}.
+
+\begin{definition}[Factors, cells and co-treatments]\label{def:confounding:factors}
+A \term{factor}\index{factor} is a choice that the experimenter can set independently of the others, such as the architecture or the training recipe, and its \term{levels} are the settings compared. A \term{cell} is a combination of levels, and its \term{cell mean}\index{cell mean} is the mean outcome of its run distribution (\cref{def:seeds:rundist}). A comparison of two cells is \term{confounded}\index{confounding} with respect to a factor when the cells differ in that factor and in at least one other; the other differences are its \term{co-treatments}\index{co-treatment}.
+\end{definition}
+
+In the language of causal inference, a cell mean is an average potential outcome: the mean outcome that a run would have under that combination of levels \parencite{ImbensRubin2015}. An observational study must adjust for confounders that it cannot assign \parencite{Pearl2009}; an experimenter who trains networks assigns every factor and can cross them, so in a training experiment confounding is avoidable by design. Take two factors with levels $0$ (old) and $1$ (new), the architecture $a$ and the recipe $r$, cell means $\mu_{ar}$, and outcomes for which larger is better; for an error, read every effect as a reduction. The \term{simple effects}\index{simple effect} are the effects of one factor with the other held at a level,
+\[
+\delta_A(r)=\mu_{1r}-\mu_{0r},\qquad\delta_R(a)=\mu_{a1}-\mu_{a0},
+\]
+and the \term{interaction contrast}\index{interaction} is $I=\mu_{11}-\mu_{10}-\mu_{01}+\mu_{00}$. A table of systems measures the \term{naive contrast}\index{naive contrast} $\Delta=\mu_{11}-\mu_{00}$.
+
+\begin{proposition}[Two factors]\label{prop:confounding:twobytwo}
+Let $\theta_A=\frac12\bigl(\delta_A(0)+\delta_A(1)\bigr)$ and $\theta_R=\frac12\bigl(\delta_R(0)+\delta_R(1)\bigr)$ be the main effects. Then:
+\begin{enumerate}
+\item $\Delta=\delta_A(0)+\delta_R(1)=\delta_R(0)+\delta_A(1)$;
+\item $\delta_A(1)-\delta_A(0)=\delta_R(1)-\delta_R(0)=I$, so that $\delta_A(0)=\theta_A-I/2$ and $\delta_A(1)=\theta_A+I/2$;
+\item $\Delta=\theta_A+\theta_R$;
+\item if each cell mean is estimated by the average of $n$ runs, all $4n$ runs independent with common variance $\sigma^2$, then the estimates of $\Delta$ and of the four simple effects have variance $2\sigma^2/n$, those of $\theta_A$ and $\theta_R$ variance $\sigma^2/n$, and that of $I$ variance $4\sigma^2/n$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+Adding and subtracting $\mu_{10}$ gives $\Delta=(\mu_{10}-\mu_{00})+(\mu_{11}-\mu_{10})=\delta_A(0)+\delta_R(1)$, and adding and subtracting $\mu_{01}$ gives $\Delta=\delta_R(0)+\delta_A(1)$, which is (i). Expanding the differences in (ii), both $\delta_A(1)-\delta_A(0)$ and $\delta_R(1)-\delta_R(0)$ equal $\mu_{11}-\mu_{01}-\mu_{10}+\mu_{00}=I$; with $\delta_A(0)+\delta_A(1)=2\theta_A$, solving for the two simple effects gives the rest of (ii). Averaging the two expressions of (i) gives (iii). For (iv), each estimate is a combination $\sum c_{ar}\bar Y_{ar}$ of four independent cell averages, each of variance $\sigma^2/n$, so its variance is $(\sigma^2/n)\sum c_{ar}^2$: coefficients $\pm1$ on two cells give $2\sigma^2/n$, coefficients $\pm\frac12$ on all four give $\sigma^2/n$, and coefficients $\pm1$ on all four give $4\sigma^2/n$.
+\end{proof}
+
+Part~(i) is the confound in one line: the naive contrast is the architecture effect at one recipe plus the recipe effect at the other architecture. It equals an architecture effect only if the recipe does nothing for the new architecture. Part~(ii) is the dependence on the path. A study that changes the architecture first and the recipe second credits the architecture with $\delta_A(0)$; one that changes the recipe first credits it with $\delta_A(1)$; the two credits differ by exactly the interaction. Part~(iii) splits $\Delta$ symmetrically, and $\theta_A$, $\theta_R$ are the main effects of \cref{thm:toolkit:factorial} (mean at the new level minus mean at the old), whose interaction effect is $I/2$. Part~(iv) prices the questions: a main effect, which uses all four cells, has half the variance of a simple effect, and the interaction needs four times as many runs as a main effect to be estimated as precisely.
+
+\begin{example}[Whose recipe]\label{exa:confounding:crossover}
+Read \cref{fd:confounding:crossover} as a $2\times2$ design with DeiT-S as the new architecture and T2 as the new recipe: $\mu_{00}=79.9$, $\mu_{01}=79.2$, $\mu_{10}=79.6$ and $\mu_{11}=80.4$. The architecture effect is $\delta_A(0)=-0.3$ points under A2 and $\delta_A(1)=1.2$ under T2, so $I=1.5$, more than three times the main effect $\theta_A=0.45$; the recipe effect is $-0.7$ for ResNet-50 and $0.8$ for DeiT-S, with main effect $\theta_R=0.05$. A study that first adopted T2 and then switched to DeiT-S would credit the architecture with 1.2 points; one that switched architectures under A2 would charge it 0.3. An interaction that reverses the sign of a simple effect is a \term{crossover}\index{interaction!crossover}. With one run per cell and a seed standard deviation near 0.1, $I$ has a standard error near $\sqrt4\times0.1=0.2$ by part~(iv), so the crossover is not seed noise; whether it would survive fresh test images is another matter, since on ImageNet-V2 the architecture effect is $0.2$ and $1.3$, an interaction of 1.1 without a crossover.
+\end{example}
+
+\begin{example}[Adding and removing the same change]\label{exa:confounding:loo}
+A \term{leave-one-out ablation}\index{ablation!leave-one-out} removes one change from the full recipe; an \term{add-one} study adds one change to the baseline. They measure simple effects at opposite corners. In \textcite{BeyerZhaiKolesnikov2022}, ViT-S/16 trained for 90 epochs reached 66.8\% with the original setup, 71.6\% with RandAugment and Mixup added, 73.6\% with all their other changes but without these two augmentations, and 76.5\% with everything. Added to the original setup, the augmentations are worth 4.8 points; removed from the improved one, 2.9. The difference, $-1.9$ points, is the interaction between the augmentations and the other changes, and the main effects split the 9.7 points into 3.85 for the augmentations and 5.85 for the rest.
+\end{example}
+
+\paragraph{Two legitimate questions.} The first is the effect of the architecture at a stated recipe, the simple effect $\delta_A(r)$, or its average over a stated set of recipes; when the interaction is not negligible, report the effect at each recipe. The second is the comparison that a practitioner who will tune either architecture needs, each architecture with its own best recipe from a set $\mathcal R$ searched with equal budgets (\cref{ch:budgets}),
+\[
+\Delta_{\mathrm{best}}=\max_{r\in\mathcal R}\mu_{1r}-\max_{r\in\mathcal R}\mu_{0r}.
+\]
+The naive contrast answers neither unless the old recipe was the old architecture's best. With two recipes, if the new architecture does better with the new recipe ($\mu_{11}\ge\mu_{10}$), then $\max_r\mu_{1r}=\mu_{11}$, and
+\[
+\Delta-\Delta_{\mathrm{best}}=\max(\mu_{00},\mu_{01})-\mu_{00}=\max\bigl(0,\delta_R(0)\bigr):
+\]
+the naive contrast overstates the tuned comparison by the gain that the old architecture would have had from the new recipe. For ResNet-50 and the 600-epoch procedure of Wightman et al.\ that gain was 4.3 points. This is the arithmetic of the home-field advantage, which \cref{ch:ablations} proves for hyperparameters tuned on one arm of an ablation.
+
+\paragraph{Matched on what?} A comparison also fixes the size at which the architectures meet, and size has several axes. DeiT-S and ResNet-50 have 22.0 and 25.6 million parameters and 4.6 and 4.1 billion floating-point operations per image, yet on one V100 GPU ResNet-50 processes 2,537 images per second against 1,762 \parencite{WightmanTouvronJegou2021};\sidenote{Measured with batch size 128 in half precision; the authors call such throughputs indicative, since they depend on hardware and software.} matched in parameters and operations, they are not matched in speed. Each matching answers a different question (memory, arithmetic, latency, training cost), and \cref{ch:heldfixed} treats the choice of what to hold fixed.
+
+\section{The method: attribution along a path}\label{sec:confounding:paths}
+
+The roadmap of ConvNeXt and the additive study of \textcite{BelloEtAl2021} change more than two things, one at a time, and credit each change with the gain observed when it is made. We now treat $k$ factors. Code the levels as $x_j=-1$ (old) and $x_j=+1$ (new), write $\mu(x)$ for the cell mean of the configuration $x\in\{-1,1\}^k$, and let $\mathbf 1=(1,\dots,1)$ and $-\mathbf 1$ be the new and the old configuration, so that the total gain is $\Delta=\mu(\mathbf 1)-\mu(-\mathbf 1)$. For a set $S$ of factors put $c_S(x)=\prod_{j\in S}x_j$, with $c_\emptyset=1$. As in \cref{thm:toolkit:factorial}, the \term{factorial effect}\index{factorial effect} of a nonempty set $S$ is the mean of $\mu$ over the cells with $c_S=+1$ minus its mean over the cells with $c_S=-1$; written as a sum over all $2^k$ cells,
+\[
+\theta_S=2^{1-k}\sum_{x}c_S(x)\,\mu(x).
+\]
+For one factor, $\theta_j=\theta_{\{j\}}$ is its main effect; for larger sets $\theta_S$ is an interaction. For a factor $j$ and a setting $z$ of the others, the simple effect of $j$ is $\delta_j(z)=\mu(x_j{=}1,z)-\mu(x_j{=}{-1},z)$.
+
+\begin{lemma}[Expansion]\label{lem:confounding:expansion}
+For every configuration $x$, with $\bar\mu$ the mean of the $2^k$ cell means,
+\[
+\mu(x)=\bar\mu+\frac12\sum_{S\ne\emptyset}\theta_S\,c_S(x),
+\qquad\text{and}\qquad
+\delta_j(z)=\sum_{S\ni j}\theta_S\,c_{S\setminus\{j\}}(z)
+\]
+for every factor $j$ and every setting $z$ of the other factors.
+\end{lemma}
+
+\begin{proof}
+Regard functions on $\{-1,1\}^k$ as vectors in $\R^{2^k}$ with the inner product $\ip{f,g}=\sum_xf(x)g(x)$. The proof of \cref{thm:toolkit:factorial} shows that $c_Sc_T=c_{S\triangle T}$ and that each sign $c_U$ with $U$ nonempty equals $+1$ on exactly half of the cells; hence $\ip{c_S,c_T}=0$ for $S\ne T$, while $\ip{c_S,c_S}=2^k$. The $2^k$ signs are therefore an orthogonal basis, and $\mu=\sum_S2^{-k}\ip{\mu,c_S}\,c_S$. The coefficient of $c_\emptyset$ is $\bar\mu$, and for nonempty $S$ it is $2^{-k}\ip{\mu,c_S}=\theta_S/2$ by the definition of $\theta_S$. This is the first identity. In the difference that defines $\delta_j(z)$, the signs $c_S$ with $j\notin S$ do not depend on $x_j$ and cancel, while for $j\in S$ we have $c_S(x)=x_j\,c_{S\setminus\{j\}}(z)$, whose difference between $x_j=1$ and $x_j=-1$ is $2c_{S\setminus\{j\}}(z)$; multiplying by $\theta_S/2$ gives the second identity.
+\end{proof}
+
+\begin{definition}[Path and Shapley attribution]\label{def:confounding:attribution}
+An order $\pi$ of the $k$ factors defines a \term{path}\index{attribution!path} from $-\mathbf 1$ to $\mathbf 1$ that switches the factors to their new levels one at a time. The \emph{attribution} of factor $j$ along $\pi$ is its simple effect at the configuration where it is switched, $\varphi^\pi_j=\delta_j(z^\pi_j)$, where $z^\pi_j$ puts the factors before $j$ in $\pi$ at $+1$ and the others at $-1$. The \term{Shapley attribution}\index{Shapley attribution}\index{attribution!Shapley} of $j$ is the average over all $k!$ orders, $\varphi_j=\frac1{k!}\sum_\pi\varphi^\pi_j$.
+\end{definition}
+
+\begin{theorem}[Attribution along a path]\label{thm:confounding:paths}
+Let $k\ge2$.
+\begin{enumerate}
+\item For every order $\pi$, the attributions sum to the total gain: $\sum_{j=1}^k\varphi^\pi_j=\Delta$.
+\item For each factor $j$ the following are equivalent: the attribution $\varphi^\pi_j$ is the same for every order $\pi$; the simple effect $\delta_j(z)$ is the same for every setting $z$ of the other factors; $\theta_S=0$ for every set $S$ that contains $j$ and at least one other factor. When they hold, $\varphi^\pi_j=\theta_j$ for every $\pi$. In particular, every attribution is independent of the order if and only if every interaction vanishes.
+\item The Shapley attributions sum to $\Delta$, and
+\begin{equation}\label{eq:confounding:shapley}
+\varphi_j=\sum_{S\ni j,\ \abs S\text{ odd}}\frac{\theta_S}{\abs S}.
+\end{equation}
+In particular $\varphi_j=\theta_j$ when every interaction of odd order that contains $j$ vanishes, and always when $k=2$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to read each attribution as a simple effect, to settle parts (ii) and (iii) with the expansion of \cref{lem:confounding:expansion}, and to compute the Shapley average from the symmetry of a random order.
+
+\emph{Part (i).} Along $\pi$ the attributions are the increments of $\mu$ between consecutive configurations of a path from $-\mathbf 1$ to $\mathbf 1$, so their sum telescopes to $\Delta$.
+
+\emph{Part (ii).} As $\pi$ runs over all orders, the set of factors before $j$ runs over all subsets of the other factors: put a given subset first, in some order, then $j$, then the rest. So the attributions of $j$ over all orders are exactly its simple effects over all settings of the other factors, and the first two conditions are equivalent. By \cref{lem:confounding:expansion}, $\delta_j=\theta_j+\sum_S\theta_S\,c_{S\setminus\{j\}}$, the sum running over the sets $S$ that contain $j$ and another factor; as a function of the other $k-1$ factors, this is a combination of their signs in which each nonempty set $U=S\setminus\{j\}$ appears exactly once. These signs are orthogonal, by the argument of the lemma with $k-1$ factors, hence linearly independent, so $\delta_j$ is constant if and only if all the coefficients $\theta_S$ of the nonempty $U$ vanish; the constant is then $\theta_j$. Applying this to every factor gives the last statement.
+
+\emph{Part (iii).} Averaging part~(i) over the $k!$ orders shows that the Shapley attributions sum to $\Delta$. For the formula, let $\Pi$ be an order drawn uniformly at random, so that $\varphi_j=\E\,\delta_j(z^\Pi_j)$, and insert the expansion of $\delta_j$:
+\[
+\varphi_j=\sum_{S\ni j}\theta_S\,\E\,c_{S\setminus\{j\}}(z^\Pi_j).
+\]
+Fix $S\ni j$ with $\abs S=s$. The sign $c_{S\setminus\{j\}}(z^\Pi_j)$ multiplies a $+1$ for each member of $S\setminus\{j\}$ that comes before $j$ in $\Pi$ and a $-1$ for each that comes after, so it equals $(-1)^{s-1-M}$, where $M$ counts the members before $j$. In a uniformly random order the relative order of the $s$ members of $S$ is uniform, so $j$ is equally likely to hold each of the $s$ positions among them and $M$ is uniform on $\{0,\dots,s-1\}$. Hence the expectation of the sign is $\frac1s\sum_{m=0}^{s-1}(-1)^{s-1-m}$, which is $1/s$ when $s$ is odd and $0$ when $s$ is even, and substituting gives \eqref{eq:confounding:shapley}. When $k=2$ the only odd set that contains $j$ is $\{j\}$.
+\end{proof}
+
+The theorem turns a worry into a test. A roadmap, an additive study and a leave-one-out table each report one simple effect per change, at the setting where the study happened to make it; whether another order would agree is decided by the interactions, which such a study does not measure. In a full factorial each $\theta_S$ is estimated from all the runs, with variance $4\sigma^2/(n2^k)$ for $n$ runs per cell (\cref{thm:toolkit:factorial}), more precisely than a single path attribution, a difference of two cells.
+
+The Shapley attribution is the only rule that sums to the total, treats interchangeable factors alike, gives nothing to a factor that never changes the outcome, and adds over sums of games \parencite{Shapley1953}; here the game gives each set $P$ of factors the gain $\mu(x^P)-\mu(-\mathbf 1)$, where $x^P$ switches exactly the factors in $P$. By \eqref{eq:confounding:shapley} it shares each interaction of odd order equally among its members and ignores those of even order, which add nothing to the total gain. It is a convention, not a discovery: when factors interact, \enquote{how much of the gain is due to the architecture} has no answer free of convention, as \textcite{Lewontin1974} argued for genes and environment. The convention depends on the endpoints and on how the changes are grouped into factors: splitting the recipe into two factors $R_1,R_2$ changes the architecture's Shapley attribution by $-\frac23\theta_{AR_1R_2}$ (\cref{ex:confounding:split}). A full factorial over $k$ changes costs $2^k$ cells, affordable for five or six changes in a laboratory; beyond that, fractional designs estimate the main effects at the price of aliasing some interactions (\cref{ch:ablations}), and random orders estimate the Shapley attributions at $k+1$ cells per order.
+
+\section{In the laboratory: convolution and its recipe}\label{sec:confounding:lab}
+
+The laboratory needs two architectures that differ in a built-in assumption, two recipes a few years apart, and a task small enough to cross them many times. On the digits of \cref{ch:seeds} the roles go to the MLP of that chapter (two hidden layers of 64 units, 8,970 parameters) and to a small convolutional network defined in the script (two $3\times3$ convolutional layers with 16 and 32 channels, a $2\times2$ max-pooling and a linear classifier, 9,930 parameters); matched in parameters, the CNN performs 35 times as many multiply-accumulates per image and takes 12 to 20 times as long per run. The old recipe is that of \cref{ch:seeds}: SGD with momentum 0.9 at a constant learning rate of 0.05, batch size 64, 20 epochs. The new recipe makes three changes at once: AdamW (learning rate $2\times10^{-3}$, weight decay 0.05) with 50 warm-up steps and a cosine schedule, label smoothing 0.1, and 60 epochs. Both were fixed before the labs, after a pilot on other splits had checked that neither learning rate sat at an edge of stability for either network; shift augmentation hurt both networks in a pilot and was left out (\cref{ex:confounding:augment}). The labs run in blocks: in block $b$ every cell uses split $b$ and seeds $b$, so that each contrast is computed within a block, on the same images, with a $t$-interval over blocks (\cref{thm:toolkit:tinterval}).
+
+\begin{lab}{The architecture and the recipe}{06-confounding-factorial}\label{lab:confounding:factorial}
+\labpart{Setup} The $2\times2$ design: MLP or convolutional network (CNN), old or new recipe, in 20 blocks (splits and seeds 0--19), 80 runs. About four minutes on a shared laptop.
+\labpart{Predict first} A paper introduces the CNN with the new recipe and compares it with the MLP's number under the old recipe. What gain does it report, and how much of it belongs to the convolution? A second paper introduces the MLP with the new recipe and compares it with the CNN's old number. What does it conclude?
+\labpart{Look for} The two path attributions and their difference; the interval of the interaction; how often the CNN wins within a block under each recipe.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},lplot,
+  width=0.5\linewidth,height=0.33\linewidth]
+\nextgroupplot[title={(a) the four cells},ylabel={test error (\%)},xmin=-0.45,xmax=1.45,ymin=0,ymax=4.2,
+  xtick={0,1},xticklabels={old recipe,new recipe},minor x tick num=0,ytick={0,1,2,3,4},
+  legend pos=north east]
+\addplot[run,forget plot,restrict expr to domain={\thisrow{arch}}{0:0}] table[x=x,y=err] {figures/data/06-confounding-factorial-runs.dat};
+\addplot[runB,forget plot,restrict expr to domain={\thisrow{arch}}{1:1}] table[x=x,y=err] {figures/data/06-confounding-factorial-runs.dat};
+\addplot[armA,ebars] table[x=x,y=mean,y error=hw] {figures/data/06-confounding-factorial-means-mlp.dat};
+\addlegendentry{MLP}
+\addplot[armB,ebarsB] table[x=x,y=mean,y error=hw] {figures/data/06-confounding-factorial-means-cnn.dat};
+\addlegendentry{CNN}
+\nextgroupplot[title={(b) the credit for the naive gain},ylabel={gain (points of test error)},xmin=0.5,xmax=3.5,
+  ymin=0,ymax=2.4,xtick={1,2,3},xticklabels={architecture first,recipe first,Shapley},minor x tick num=0,
+  ytick={0,0.5,1,1.5,2},legend pos=south east]
+\addplot[reference,forget plot] table[x=x,y=naive] {figures/data/06-confounding-factorial-credit.dat};
+\node[font=\scriptsize,text=black!60,anchor=south] at (axis cs:2,2.06) {naive gain};
+\addplot[mean,ebars] table[x=xa,y=arch,y error=archhw] {figures/data/06-confounding-factorial-credit.dat};
+\addlegendentry{architecture}
+\addplot[meanB,ebarsB] table[x=xr,y=recipe,y error=recipehw] {figures/data/06-confounding-factorial-credit.dat};
+\addlegendentry{recipe}
+\end{groupplot}
+\end{tikzpicture}
+\caption{\Cref{lab:confounding:factorial}: an MLP and a CNN of about 9,000 parameters on the digits, each trained with the old and the new recipe, in 20 blocks (splits and seeds 0--19). (a)~Test error of every run (hollow marks: circles MLP, vermilion CNN, spread sideways) and cell means with 95\% $t$-intervals; nearly parallel lines mean a small interaction. (b)~The naive gain of the CNN with the new recipe over the MLP with the old one (dashed, 2.04 points) split into the credit of the architecture and of the recipe, along the two paths and by the Shapley attribution, with 95\% $t$-intervals over blocks.}
+\label{fig:confounding:factorial}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} With the old recipe the MLP errs on \pmval{2.92}{0.21}\% of the test images (mean and 95\% $t$-interval over blocks) and the CNN on \pmval{1.73}{0.28}\%; with the new recipe on \pmval{1.85}{0.20}\% and \pmval{0.88}{0.20}\% (\cref{fig:confounding:factorial}a). The first paper of the lab sheet reports a gain of \pmval{2.04}{0.21} points for the CNN. The convolution is worth \pmval{1.19}{0.29} points under the old recipe and \pmval{0.96}{0.21} under the new one, and the recipe is worth \pmval{1.08}{0.23} points to the MLP and \pmval{0.85}{0.28} to the CNN. The interaction contrast, \pmval{-0.22}{0.35} points, cannot be told from zero, and the two paths credit the architecture with 58\% and 47\% of the naive gain, the Shapley attribution with \pmval{1.08}{0.19} points, or 53\% (\cref{fig:confounding:factorial}b). About half of the reported gain belongs to the recipe. The convolution's advantage itself is real and survives a matched recipe: the CNN is better within 19 of the 20 blocks under the old recipe and within all 20 under the new.
+
+The second paper finds the MLP with the new recipe \pmval{0.11}{0.31} points behind the CNN with the old recipe, better within 6 blocks, tied within 5 and worse within 9, and concludes that the MLP matches the convolutional network: an architecture that loses by about a point under either recipe appears its equal because it alone received the newer recipe. This is the structure of the comparison of DeiT-S with ResNet-50 in \cref{fd:confounding:deit}. Blocking paid for itself: the standard error of the interaction is 0.17 points within blocks, 0.22 without them. Both networks do better with the new recipe, so the tuned comparison of \cref{sec:confounding:twobytwo} is the comparison under the new recipe, 0.96 points; the naive gain exceeds it by 1.08 points, the MLP's gain from the new recipe, as it must.
+
+\begin{lab}{Opening the recipe}{06-confounding-paths}\label{lab:confounding:paths}
+\labpart{Setup} The new recipe of \cref{lab:confounding:factorial} split into its three changes, the optimizer (with its schedule and weight decay), label smoothing and the duration, crossed with the architecture: a $2^4$ design of 16 cells in 6 blocks (splits and seeds 20--25), 96 runs. For each factor, its simple effects at the 8 settings of the others, which are its attributions along the 24 orders of the four changes, its Shapley attribution, and all factorial effects, with $t$-intervals over blocks. About five minutes on a shared laptop.
+\labpart{Predict first} Which of the three changes does most of the recipe's work? How far apart are the largest and the smallest credit that some order gives the architecture?
+\labpart{Look for} Which interactions differ from zero; the spread of each factor's eight attributions; the Shapley attributions against the main effects.
+\end{lab}
+
+\paragraph{What happened.} On these blocks the gain from the MLP with the old recipe to the CNN with the new is \pmval{1.92}{0.60} points. Of the eleven interactions only one has an interval that excludes zero, optimizer by duration, \pmval{0.15}{0.13} points: AdamW on its cosine schedule profits more from longer training than SGD at a constant rate does. Accordingly the attributions barely depend on the order (\cref{fig:confounding:paths}a). Over the 24 orders the architecture receives between 0.93 and 1.18 points, label smoothing between 0.62 and 0.93, the duration between 0.06 and 0.49, and the optimizer between $-0.59$ and $0.06$. The Shapley attributions agree with the main effects to within 0.02 points: \pmval{1.04}{0.48} for the architecture, \pmval{0.83}{0.37} for label smoothing, \pmval{0.30}{0.27} for the duration and \pmval{-0.25}{0.23} for the optimizer. The recipe's gain belongs to label smoothing and the longer schedule; AdamW, after which one would name the new recipe, costs a quarter of a point. The CNN wins under all eight recipes, by 0.93 to 1.18 points (\cref{tab:confounding:recipes}), although the two networks prefer different optimizers: the MLP does best with all three changes, the CNN with label smoothing and long training under SGD. Given each network's own best recipe, chosen on three blocks and scored on the other three, the CNN is ahead by \pmval{1.08}{0.50} points. On clean digits the changes are nearly additive, and, as part~(ii) of \cref{thm:confounding:paths} says, every order then tells about the same story.
+
+\begin{lab}{Opening the recipe, with noisy labels}{06-confounding-noisy}\label{lab:confounding:noisy}
+\labpart{Setup} \Cref{lab:confounding:paths} with 20\% of the training labels of every split replaced by random labels, a regime in which training longer can fit the noise; 6 blocks (splits and seeds 40--45), 96 runs. About five minutes on a shared laptop.
+\labpart{Predict first} Which of the three changes of the recipe will now help and which hurt? Will the CNN still win under every recipe?
+\labpart{Look for} The sign of the architecture's credit across the orders; the interactions; the difference between the Shapley attribution and the main effect of the architecture.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},lplot,
+  width=0.5\linewidth,height=0.33\linewidth,xmin=0.5,xmax=4.5,xtick={1,2,3,4},
+  xticklabels={archi-\\tecture,optimizer,label\\smoothing,duration},xticklabel style={align=center},
+  minor x tick num=0]
+\nextgroupplot[title={(a) clean labels, \cref{lab:confounding:paths}},ylabel={credit (points of test error)},
+  ymin=-1.0,ymax=1.6,ytick={-1,-0.5,0,0.5,1,1.5}]
+\addplot[reference,domain=0.5:4.5,samples=2,forget plot] {0};
+\addplot[run] table[x=x,y=gain] {figures/data/06-confounding-paths-simple.dat};
+\addplot[meanB,ebarsB] table[x=x,y=shap,y error=shaphw] {figures/data/06-confounding-paths-shapley.dat};
+\nextgroupplot[title={(b) 20\% random labels, \cref{lab:confounding:noisy}},
+  ymin=-9.5,ymax=15,ytick={-5,0,5,10,15}]
+\addplot[reference,domain=0.5:4.5,samples=2,forget plot] {0};
+\addplot[run] table[x=x,y=gain] {figures/data/06-confounding-noisy-simple.dat};
+\addplot[meanB,ebarsB] table[x=x,y=shap,y error=shaphw] {figures/data/06-confounding-noisy-shapley.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Attribution along a path in the $2^4$ designs of \cref{lab:confounding:paths,lab:confounding:noisy} (6 blocks each). For each factor, hollow marks are its eight simple effects, its credit when it is switched after a given set of the other three, placed from left to right by the number already switched (first, second, third, last); each is the credit in some of the 24 orders. Vermilion squares are the Shapley attributions with 95\% $t$-intervals over blocks. Positive credit is a reduction of test error. Note the different vertical scales.}
+\label{fig:confounding:paths}
+\end{fullwidth}
+\end{figure}
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\small
+\caption{The architecture effect under each of the eight recipes of \cref{lab:confounding:paths,lab:confounding:noisy}: mean test error (\%) of the MLP and the CNN over 6 blocks, and the CNN's gain with its 95\% $t$-interval over blocks. Half-widths of the cell means: 0.2--0.9 points (clean) and 0.3--3.4 (noisy). The first and last rows are the old and new recipes of \cref{lab:confounding:factorial}.}\label{tab:confounding:recipes}
+\begin{tabular}{@{}lcc rrr rrr@{}}
+\toprule
+ & & & \multicolumn{3}{c}{clean labels} & \multicolumn{3}{c}{20\% random labels}\\
+\cmidrule(lr){4-6}\cmidrule(l){7-9}
+optimizer & smoothing & epochs & MLP & CNN & CNN gain & MLP & CNN & CNN gain\\
+\midrule
+SGD & 0 & 20 & 2.69 & 1.52 & \pmval{1.18}{0.73} & 12.96 & 17.44 & \pmval{-4.48}{2.77}\\
+SGD & 0 & 60 & 2.54 & 1.45 & \pmval{1.08}{1.11} & 16.30 & 14.69 & \pmval{1.61}{1.20}\\
+SGD & 0.1 & 20 & 1.89 & 0.90 & \pmval{0.99}{0.44} & 8.13 & 10.82 & \pmval{-2.69}{2.72}\\
+SGD & 0.1 & 60 & 1.76 & 0.62 & \pmval{1.14}{0.50} & 14.75 & 14.19 & \pmval{0.56}{1.43}\\
+AdamW & 0 & 20 & 3.09 & 2.10 & \pmval{0.99}{0.90} & 5.07 & 3.62 & \pmval{1.45}{0.51}\\
+AdamW & 0 & 60 & 2.60 & 1.64 & \pmval{0.96}{0.64} & 9.77 & 11.60 & \pmval{-1.82}{1.89}\\
+AdamW & 0.1 & 20 & 2.16 & 1.21 & \pmval{0.96}{0.63} & 4.64 & 2.97 & \pmval{1.67}{0.35}\\
+AdamW & 0.1 & 60 & 1.70 & 0.77 & \pmval{0.93}{0.33} & 7.45 & 8.63 & \pmval{-1.18}{2.10}\\
+\bottomrule
+\end{tabular}
+\end{fullwidth}
+\end{table}
+
+\paragraph{What happened with noisy labels.} The recipe now matters more than the architecture, and every change interacts with the others.\sidenote{The same 20\% of random labels made the differences between seeds real in \cref{lab:seeds:bestof}.} AdamW on its schedule is worth \pmval{6.94}{1.11} points as a main effect and label smoothing \pmval{2.48}{0.39}, while three times longer training costs \pmval{3.97}{1.19} points, which we read as the cost of fitting random labels; eight of the eleven interactions have intervals that exclude zero, the largest the three-factor interaction of architecture, optimizer and duration, \pmval{-1.93}{0.92}. The credit of each change depends on the order (\cref{fig:confounding:paths}b): the optimizer receives between 3.1 and 13.8 points, label smoothing between 0.4 and 6.6, the duration between $-8.0$ and $2.8$, helping in 2 of the 24 orders, and the architecture between $-4.48$ and $1.67$, helping in 8 of them. In the order that changes the recipe first, as the ConvNeXt roadmap did, the architecture is charged 1.18 points; in the order that changes it first, 4.48. Its Shapley attribution, \pmval{-1.35}{1.13} points, differs from its main effect, \pmval{-0.61}{0.94}, by a third of its three-factor interactions, as \eqref{eq:confounding:shapley} requires.
+
+The naive comparison of \cref{lab:confounding:factorial} now points the wrong way for the two recipes it involves. The CNN with the new recipe beats the MLP with the old by \pmval{4.33}{1.58} points, yet the CNN is behind under both of those recipes, by \pmval{4.48}{2.77} points under the old and by \pmval{1.18}{2.10}, within noise, under the new (\cref{tab:confounding:recipes}); the reverse comparison credits the MLP with \pmval{9.99}{2.99} points. Neither recipe of the $2\times2$ is good for this task: both networks do best with AdamW and label smoothing for 20 epochs, and there the CNN is better by \pmval{1.67}{0.35} points, the same number whether the best recipe is chosen on all six blocks or on three and scored on the other three. Asked how much of the naive gain of 4.33 points the convolution earned, the experiment can give a convention (the Shapley attribution, $-1.35$) or a table (\cref{tab:confounding:recipes}), not a single answer.
+
+\paragraph{What the miniature reproduces and what it does not.} It reproduces the confound, half of an apparent architecture gain belonging to the recipe, and the false parity of a worse architecture given a newer recipe, as in the DeiT table. With noisy labels it reproduces a crossover like that of \cref{fd:confounding:crossover}, exaggerated, and the order dependence that \textcite{BelloEtAl2021} flagged for longer training. It does not reproduce the near-tie of the ImageNet comparisons: on clean digits the convolutional network wins under every recipe, which says that its assumptions suit small centered digits, not that convolution beats attention. Questions of scale are out of its reach, and the crossover needed label noise.
+
+\section{Protocol}\label{sec:confounding:protocol}
+
+\begin{protocol}{Attributing an improvement}\label{prot:confounding:attribute}
+\item List every difference between the new system and the baseline (architecture, optimizer, schedule, epochs, augmentation, regularization, resolution, data, compute, code base), and treat each as a factor.
+\item Run the baseline architecture with the new recipe, and where possible the new architecture with the old one; never let a published number stand in for a cell.
+\item State the question: the effect at a named recipe, or each architecture with its own best recipe from searches of equal budget (\cref{ch:budgets}); take recipes from both sides when they were developed on one architecture.
+\item Choose the axis of matching from the claim (parameters, operations, throughput, training compute) and report the others.
+\item Run the cells in blocks that share splits, seeds and test items, and compute every contrast within blocks.
+\item Report the interaction contrast with its interval; unless it is small against the main effect, report the effect of the architecture at each recipe instead of one number.
+\item For a sequence of changes, run a full or fractional factorial and report main effects, interactions and Shapley attributions with intervals, with the range of each change's credit over the orders; never present one path as the contribution of each change.
+\end{protocol}
+
+The protocol separates an architecture from the recipes it was crossed with, not from all recipes: a recipe outside the set can still reverse a conclusion, and a recipe tuned on one architecture favors it (\cref{ch:ablations}). It costs at least twice the runs of the naive comparison, and a precise interaction four times as many as a precise main effect. At the scale of large pretraining runs, cross the factors at a smaller scale where runs are cheap and say so, run at least the cell that the naive comparison lacks, the baseline with the new recipe, and report an unresolved comparison as one of systems, not of architectures. When data and compute change with the architecture, as at web scale, the matched axis is part of the claim and must be named.
+
+\begin{exercises}
+\item \consolidation (Four cells by hand.) Using the ImageNet-V2 accuracies of \cref{fd:confounding:crossover}, compute the four simple effects, the interaction contrast, the main effects and the architecture's credit along both paths. Which conclusions of \cref{exa:confounding:crossover} survive on the second test set? Show that the interaction effect of \cref{thm:toolkit:factorial} equals $I/2$.\label{ex:confounding:v2}
+
+\item \consolidation (Three changes.) A study changes a baseline in three steps, $A$, $B$ and $C$, with mean accuracies (\%) $\mu({-}{-}{-})=70.0$, $\mu({+}{-}{-})=71.5$, $\mu({-}{+}{-})=71.0$, $\mu({-}{-}{+})=69.5$, $\mu({+}{+}{-})=72.0$, $\mu({+}{-}{+})=71.0$, $\mu({-}{+}{+})=72.5$ and $\mu({+}{+}{+})=74.0$ (invented numbers). Compute the attributions along the six orders, the factorial effects and the Shapley attributions, and check \eqref{eq:confounding:shapley}. Which change has an attribution that changes sign with the order, and which interaction is responsible?\label{ex:confounding:three}
+
+\item \consolidation (Splitting a factor.) In a $2\times2$ design with factors $A$ and $R$, split $R$ into two factors $R_1$ and $R_2$ whose old and new levels together make the old and new recipe, giving a $2^3$ design whose cells with $R_1=R_2$ are the cells of the $2\times2$. Show that the Shapley attribution of $A$ changes by $-\frac23\theta_{AR_1R_2}$, where $\theta_{AR_1R_2}$ is the three-factor effect of the $2^3$ design. When does splitting the recipe leave the architecture's share unchanged? \hint{write both attributions as weighted averages of the simple effects of $A$: weights $\frac12,\frac12$ for two factors, and $\frac13$, $\frac16$, $\frac16$, $\frac13$ for three, by the number of other factors already switched.}\label{ex:confounding:split}
+
+\item \consolidation\hard (Precision of a Shapley attribution.) In a full $2^k$ factorial with $n$ independent runs per cell of common variance $\sigma^2$, show that the estimated Shapley attribution has variance $\frac{4\sigma^2}{n2^k}\sum_{s\text{ odd}}\binom{k-1}{s-1}s^{-2}$, which is $\sigma^2/n$ for $k=2$ and $\sigma^2/(3n)$ for $k=4$, against $2\sigma^2/n$ for the attribution along one path. \hint{use \eqref{eq:confounding:shapley} and \cref{thm:toolkit:factorial}.}\label{ex:confounding:shapleyvar}
+
+\item \labwork (A third factor.) Add labkit's shift augmentation, which moves each training image by up to one pixel, as a third factor to the script of \cref{lab:confounding:factorial}. Before running, predict from the assumptions built into each network whether it will help the MLP or the CNN more; then run, report the three two-factor interactions with intervals, and explain what you find from how the digits were prepared.\label{ex:confounding:augment}
+
+\item \labwork (Matched compute.) In the script of \cref{lab:confounding:factorial}, replace the MLP by one whose multiply-accumulates per image match the CNN's (width about 520). Predict how $\delta_A(0)$, $\delta_A(1)$ and $I$ change, then run. Which matching does a claim about the value of convolution need?\label{ex:confounding:compute}
+
+\item \labwork (Whose recipe?) On 300 training images split off for validation, tune the learning rate and weight decay of the new recipe separately for each network, with eight random-search trials each. Rerun \cref{lab:confounding:factorial} with the MLP's tuned recipe as the new recipe, then with the CNN's. Does the architecture effect depend on whose recipe is used, as in \cref{fd:confounding:crossover}?\label{ex:confounding:whose}
+
+\item \design (A fair comparison on a budget.) A group has 400 GPU-hours to compare a new architecture with ResNet-50 on a dataset of 100,000 images; at 100 epochs a run costs 4 GPU-hours for ResNet-50 and 6 for the new architecture, and each has a recipe from its own paper. Design the study: which cells, how many seeds per cell, which matching, which questions it can answer, and what it reports when the interaction turns out to be as large as the main effect.\label{ex:confounding:budget}
+
+\item \design (Eight steps in 64 runs.) A roadmap modernizes a network in eight steps. With 64 runs, design an experiment that estimates the main effect of every step and the interactions you consider most likely, say which interactions are aliased with which, and how you would report a step whose value depends on another. \hint{a $2^{8-2}$ fractional design; \cref{ch:ablations}.}\label{ex:confounding:roadmap}
+
+\item \critique (A roadmap with one seed.) A paper modernizes a baseline in eight steps, one run per step, and keeps a step when it raises accuracy by at least 0.1 points; one step lowers accuracy by 0.5 points and is kept \enquote{because it enables the next}. The abstract states that the largest contribution comes from the fifth step, with 1.2 points. List what the table can and cannot show, and the fewest extra runs that would test the abstract's statement. (The description is invented.)\label{ex:confounding:critique1}
+
+\item \critique (Published numbers as baselines.) A paper trains a new architecture for 400 epochs with modern augmentation and lists baselines with the accuracies of their original papers (90 to 200 epochs, one run each). It claims that its architecture improves accuracy by 2.1 points at equal parameters. List the co-treatments, the cells that are missing, and how much of the gain the recipe could account for, using the numbers of \cref{sec:confounding:postmortem}; then rewrite the claim so that it is true. (The description is invented.)\label{ex:confounding:critique2}
+
+\item \research (Recipes tuned on one architecture.) When a recipe is tuned on architecture 1 with a budget of $k$ trials and then applied to both architectures, the comparison favors architecture 1 by an amount that depends on $k$ and on how the best hyperparameters differ between the architectures. Open: a model of this bias, for instance a quadratic response surface whose optimum depends on the architecture, with a design that removes most of it at a cost well below tuning both arms fully; or a test of whether a published comparison is consistent with no architecture effect, given only the cells it reports and bounds on the recipe effects.\label{ex:confounding:research}
+\end{exercises}
+
+\notesandrefs
+Crossing the factors of an experiment instead of varying them one at a time is the central recommendation of \textcite{Fisher1935}, who also made the interaction a quantity to be estimated rather than a nuisance; \textcite{BoxHunterHunter2005} teach effects and interactions in two-level designs in the convention of this chapter. That apportioning an outcome among interacting causes has no answer free of convention is the argument of \textcite{Lewontin1974} against reading an analysis of variance as an analysis of causes, made for genes and environment.
+
+The Shapley value comes from cooperative game theory \parencite{Shapley1953}. Economists met the order dependence of sequential decompositions when splitting a change in inequality or poverty among its causes one cause at a time, and \textcite{Shorrocks2013} proposed the Shapley average over the orders as a unified answer. In machine learning the same value attributes predictions to input features \parencite{LundbergLee2017}, and the functional analysis of variance of \textcite{HutterHoosLeytonBrown2014} splits the variation of performance over a hyperparameter space into main effects and interactions, the analogue for variances of the factorial effects used here.
+
+Confounding is the central problem of observational studies, and adjusting for it is the subject of \textcite{Pearl2009} and \textcite{ImbensRubin2015}. \Textcite{LiptonSteinhardt2018} listed the failure to identify the sources of empirical gains among four troubling trends in machine learning scholarship, with architectural changes credited for gains that came from tuning as their example, and \textcite{MelisDyerBlunsom2018} had found a carefully tuned standard LSTM ahead of newer recurrent architectures. In vision, recipes became objects of study in their own right on both sides \parencite{HeEtAl2019,WightmanTouvronJegou2021,BelloEtAl2021,SteinerEtAl2022,BeyerZhaiKolesnikov2022}; an all-MLP architecture was reported competitive given large training sets or modern regularization \parencite{TolstikhinEtAl2021}, the role our MLP plays in the laboratory; and \textcite{BaiEtAl2021} compare the robustness of the two families under matched training.
+
+\paragraph{Translating the literature.} \Textcite{WightmanTouvronJegou2021} write accuracy as $f(A,T,N)$ for an architecture $A$, a training procedure $T$ and measurement noise $N$: their $T$ is our recipe, their $f$ averaged over $N$ is our cell mean, and their $T^\star(A)$, the best procedure for $A$, defines our tuned comparison $\Delta_{\mathrm{best}}$. The roadmap of \textcite{LiuEtAl2022} and the additive study of \textcite{BelloEtAl2021} report attributions $\varphi^\pi_j$ along one order $\pi$; the ablation tables of \textcite{TouvronEtAl2021} and \textcite{BeyerZhaiKolesnikov2022} mostly report attributions of ingredients that come last. \Textcite{BoxHunterHunter2005} call our $\theta_S$ the effects, written $A$, $B$, $AB$ and so on; their interaction $AB$ of a $2\times2$ design is our $I/2$. In \textcite{Shapley1953} our factors are the players and the gain $\mu(x^P)-\mu(-\mathbf 1)$ of switching the factors in $P$ is the characteristic function $v(P)$. A cell mean is the average potential outcome of \textcite{ImbensRubin2015} for one combination of treatments.
+
+\printchapterbib
+\end{refsection}

@@ -217,19 +217,33 @@ def lr_factor(cfg, step, total):
     raise ValueError(f"unknown schedule {s}")
 
 
-def _augment(x, gen):
-    """Shift each 8x8 image by up to one pixel in each direction (zero padding)."""
+def _augment(x, gen, bg=None):
+    """Shift each 8x8 image by up to one pixel in each direction.
+
+    The inputs are standardized per pixel, so the pixels that a shift brings in from
+    outside the frame should take the standardized value of a blank (raw 0) pixel at their
+    new position, `bg` (a 64-vector; `run` passes the per-pixel minimum over the training
+    set, which is that value wherever a training image is blank). Without `bg` the incoming
+    pixels are 0, the per-pixel mean, as in the first version of this kit.
+    """
     n = x.shape[0]
     img = F.pad(x.view(n, 1, 8, 8), (1, 1, 1, 1))
+    inside = F.pad(torch.ones(1, 1, 8, 8), (1, 1, 1, 1))
     dx = torch.randint(0, 3, (n,), generator=gen)
     dy = torch.randint(0, 3, (n,), generator=gen)
     out = torch.empty(n, 1, 8, 8)
+    keep = torch.empty(n, 1, 8, 8)
     for i in range(3):
         for j in range(3):
             m = (dx == i) & (dy == j)
             if m.any():
                 out[m] = img[m, :, j:j + 8, i:i + 8]
-    return out.view(n, 64)
+                keep[m] = inside[:, :, j:j + 8, i:i + 8]
+    out = out.view(n, 64)
+    if bg is not None:
+        keep = keep.view(n, 64)
+        out = out * keep + bg.view(1, 64) * (1 - keep)
+    return out
 
 
 def load(cfg, split=0, noise=0):
@@ -277,6 +291,7 @@ def run(cfg: Config, init=0, order=0, split=0, noise=0, data=None, return_model=
     torch.manual_seed(80_000 + noise)     # dropout masks
     curve = []
     perm, pos = torch.randperm(n, generator=g_order), 0
+    bg = Xtr.min(0).values if (cfg.augment and not regression) else None
     for step in range(total):
         if pos + bs > n:
             perm, pos = torch.randperm(n, generator=g_order), 0
@@ -284,7 +299,7 @@ def run(cfg: Config, init=0, order=0, split=0, noise=0, data=None, return_model=
         pos += bs
         xb, yb = Xtr[idx], ytr[idx]
         if cfg.augment and not regression:
-            xb = _augment(xb, g_noise)
+            xb = _augment(xb, g_noise, bg)
         for group in opt.param_groups:
             group["lr"] = cfg.lr * lr_factor(cfg, step, total)
         out = model(xb)

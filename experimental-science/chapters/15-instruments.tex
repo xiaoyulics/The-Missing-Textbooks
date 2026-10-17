@@ -1,0 +1,403 @@
+% Chapter 15 of Deep Learning as an Experimental Science: the settings of an evaluation instrument.
+\labchapter{The Instrument's Settings}{Prompts, formats and demonstrations as nuisance factors}{Replacing the demonstrations' labels with random labels barely hurts in-context learning.}{Min et al.\ (2022), for twelve model variants of up to 175 billion parameters; received as a property of in-context learning}{Narrowed: the cost of wrong labels depends on the model, the task and settings of the evaluation that the original design held fixed, and larger models follow even flipped labels.}{ch:instruments}
+\begin{refsection}[chapters/15-instruments.bib]
+
+% plot styles of this chapter: a third and a fourth series, and lines through means or predictions
+\pgfplotsset{
+  instruments runC/.style={only marks,mark=diamond,mark size=1.5pt,color=muted,mark options={line width=0.35pt,fill=white}},
+  instruments meanC/.style={only marks,mark=diamond*,mark size=2.0pt,color=muted,mark options={fill=muted,draw=white,line width=0.2pt}},
+  instruments ebarsC/.style={error bars/y dir=both,error bars/y explicit,
+    error bars/error bar style={muted,line width=0.5pt},
+    error bars/error mark options={muted,rotate=90,mark size=1.7pt,line width=0.5pt}},
+  instruments runD/.style={only marks,mark=triangle,mark size=1.6pt,color=rubricdeep!70,mark options={line width=0.35pt,fill=white}},
+  instruments meanD/.style={only marks,mark=triangle*,mark size=2.1pt,color=rubricdeep,mark options={fill=rubricdeep,draw=white,line width=0.2pt}},
+  instruments ebarsD/.style={error bars/y dir=both,error bars/y explicit,
+    error bars/error bar style={rubricdeep,line width=0.5pt},
+    error bars/error mark options={rubricdeep,rotate=90,mark size=1.7pt,line width=0.5pt}},
+  instruments lineA/.style={inkblue,line width=0.8pt,no marks},
+  instruments lineB/.style={rubric,line width=0.8pt,no marks},
+  instruments lineC/.style={muted,line width=0.8pt,no marks},
+  instruments lineD/.style={rubricdeep,line width=0.8pt,no marks},
+  instruments series/.style={line width=0.8pt,mark size=1.5pt,
+    error bars/y dir=both,error bars/y explicit,error bars/error bar style={line width=0.45pt}},
+}
+
+\begin{chaptersummary}
+In 2022 Min and colleagues replaced the labels of the demonstrations in language-model prompts with random labels and found that twelve model variants, up to GPT-3, lost only a few points; the result was read as evidence that in-context learning recognizes a task rather than learning it. Later work found the cost of wrong labels to depend on the task, the scoring rule, the metric and the model, larger models following even flipped labels, and found that formats, orders of demonstrations and model judges move scores as much as the treatments under study. The method treats the settings of an evaluation as random nuisance factors: we prove how often one random setting reverses a comparison and what sharing and averaging settings buy, how to divide a budget between settings and test items, and how Cohen's $\kappa$ relates a judge's agreement to its accuracy. In the laboratory, a convolutional network that beats a perceptron on clean digits loses under 15\% of 1,620 meaning-preserving formats, and random labels cost a tiny transformer nothing or half its accuracy depending only on how it was trained.
+\end{chaptersummary}
+
+\section{The claim: demonstrations without correct labels}\label{sec:instruments:claim}
+
+In 2020 the paper that introduced GPT-3 showed that a language model of 175 billion parameters could carry out a task it had not been trained for when its prompt held a few solved examples before the new input \parencite{BrownEtAl2020}. To classify the sentiment of a review, the prompt lists a few reviews, each followed by its label, and then the new review; the model's continuation is its answer, and no weight changes. The solved examples are the \term{demonstrations}\index{demonstration}, and the procedure is \term{in-context learning}\index{in-context learning}. It became a standard way to use and to evaluate large language models, and it raised a question: what does the model take from the demonstrations? The obvious answer is the mapping from inputs to labels, what a supervised learner takes from labeled examples.
+
+Min and colleagues tested that answer in a preprint of February 2022, published at EMNLP that December \parencite{MinEtAl2022}. They used six language models, GPT-2 Large (774 million parameters), MetaICL (a GPT-2 Large further trained on tasks presented in context), GPT-J, two fairseq models of 6.7 and 13 billion parameters, and GPT-3 (the base davinci model, taken to have 175 billion), each scored in two ways, direct and channel, which made twelve models in the paper's count.\sidenote{Direct scoring picks the label $y$ to which the model gives the highest probability after the prompt and the input $x$. Channel scoring, introduced by \textcite{MinEtAl2022channel}, places the label before the input and picks the $y$ under which $x$ is most probable.} Each prompt held 16 demonstrations drawn from a dataset's training data, five draws per dataset, on 16 classification and 10 multiple-choice datasets; the two largest models were run on six of the datasets with three draws.
+
+\begin{finding}[\textcite{MinEtAl2022}, Section~4]\label{fd:instruments:min}
+Demonstrations with their correct (gold) labels improved on no demonstrations for nearly every model. Replacing each demonstration's label by one drawn uniformly from the task's label set cost between 0 and 5 points for nearly all models, on average 2.6 points of macro-F1 on classification and 1.7 points of accuracy on multiple choice, and 0.1 to 0.9 points for MetaICL. With 4 to 32 demonstrations the cost stayed between 0.8 and 1.6 points, except 4.4 points for classification with 4; hand-written templates gave the same picture. With every label wrong, GPT-J lost nearly 10 points on classification and still did better than with no demonstrations.
+\end{finding}
+
+What, then, do demonstrations supply? Inputs from an unrelated corpus cost 3 to 16 points for most variants, random English words as labels 5 to 16 points under direct scoring, and dropping the format of input--label pairs nearly all of the benefit. The authors concluded that demonstrations show the label space, the distribution of inputs and the format, and that models do not rely on the \enquote{ground truth input-label mapping} as much as had been thought.
+
+\paragraph{Reception.} If the labels barely matter, demonstrations do not teach a task; they help the model recognize one it learned in pretraining. The paper drew this conclusion for a strict definition of learning, and later work took it as the position to test \parencite{YooEtAl2022,WeiEtAl2023larger}, \textcite{PanEtAl2023} naming the two readings task recognition and task learning. The claim of this chapter is the general form: in-context learning barely depends on whether the demonstrations' labels are correct.
+
+\paragraph{What the work got right.} The study varied the number of demonstrations, the share of correct labels and the template, released its code, and reported its exceptions; its final version notes that some pairs of dataset and model showed costs up to 14 points and that negated labels had been found to hurt. Its finding that the label space and the format carry much of the benefit has held up. And for its models the claim agrees with later work: GPT-3 davinci, the largest, is among the models that \textcite{WeiEtAl2023larger} found unable to push their accuracy below chance by following flipped labels.
+
+\section{The experiment: one instrument, twelve models}\label{sec:instruments:experiment}
+
+\begin{experiment}[Min et al.\ 2022]
+\field{question}{Does in-context learning need the demonstrations' labels to be correct?}
+\field{units}{evaluations of one model on one dataset with one draw of demonstrations}
+\field{treatment}{the labels of the demonstrations}
+\field{levels}{gold labels; labels drawn uniformly from the label set; no demonstrations as a reference}
+\field{varied}{six language models (774M to 175B parameters), each with direct and channel scoring; 26 datasets (6 for the two largest models); five draws of demonstrations (three for the two largest)}
+\field{held fixed}{16 demonstrations per prompt; minimal templates; within each model, the scoring rule; macro-F1 for classification, accuracy for multiple choice}
+\field{response}{macro-F1 or accuracy on each dataset's evaluation data}
+\field{analysis}{average over draws, then over datasets; compare gold and random labels model by model}
+\end{experiment}
+
+The design treats one nuisance factor as random, the draw of demonstrations, and holds the others fixed: the number of demonstrations, the template, the scoring rule within each variant and the metric; the ablations varied the number and the template for two models on nine datasets. It could show, for each variant, the average cost of random labels over the datasets at these settings. Three gaps separate that from the received claim. A mean over datasets is a suite-level aggregate (\cref{ch:aggregates}) and can hide large costs on some tasks. The models were of one kind, pretrained without instruction tuning, the largest GPT-3. And the cost is a difference of two scores, each measured with a scoring rule, a metric, a template and a number of demonstrations: nothing in the design says that the difference would be the same at other settings. We call such an evaluation pipeline an \emph{instrument}, as a physicist calls a spectrometer one: a procedure that turns a system into a number, with settings that the experimenter chooses. The design measured an effect at one setting of an instrument, and could not say whether the effect belonged to the models or to the models at that setting.
+
+\section{The post-mortem: the labels matter, depending on the instrument}\label{sec:instruments:postmortem}
+
+\paragraph{Another setting of the same instrument.} \Textcite{YooEtAl2022} started from a counterexample: with GPT-J, accuracy on a hate-speech dataset with gold labels exceeded that with entirely wrong labels by as much as 80 points.\sidenote{The preprint of this paper circulated with Junyeob Kim as first author, and the final version of \textcite{MinEtAl2022} cites it as Kim et al.\ (2022).} With three settings changed, none less valid than the original (direct instead of channel scoring, accuracy instead of macro-F1, 17 classification datasets instead of the five of the ablations),\sidenote{What the choice of metric does to a measurement is the subject of \cref{ch:emergence}.} accuracy fell steadily as the share of correct labels fell: the slope was 0.31 for GPT-J over the 17 datasets ($R^2=0.86$), about 31 points between all-correct and all-wrong labels, and from slightly negative to 0.82 for single datasets. The slope was lower with channel scoring, with the calibration of \textcite{ZhaoEtAl2021} and with verbose templates, higher with more demonstrations, and it grew with model size up to GPT-J and levelled off through GPT-3: each an interaction between the treatment and a setting of the instrument.
+
+\paragraph{Larger models follow the labels.} \Textcite{WeiEtAl2023larger}, in a preprint, flipped the labels of binary tasks, so that following the demonstrations means answering wrongly, for GPT-3, InstructGPT, Codex, PaLM (8 to 540 billion parameters) and the instruction-tuned Flan-PaLM, on seven datasets with 16 demonstrations per class and 100 evaluation items per dataset.\sidenote{With 100 items, the accuracy on one dataset has a standard error of up to 5 points; the effects at issue are tens of points.} Small models stayed at or above chance even with all labels flipped; large ones followed the flipped labels to far below it, as InstructGPT's text-davinci-002 fell from 90.3\% to 22.5\%. The GPT-3 models, Min et al.'s largest among them, fell at most to chance. With labels replaced by unrelated words such as \enquote{foo} and \enquote{bar}, usable only through the mapping, small models lost much of their accuracy and large ones little. Instruction tuning strengthened both abilities, the use of the prior more: Flan-PaLM never fell below chance with flipped labels, while PaLM fell as low as 31\%. With other models, \textcite{PanEtAl2023} found that the part of in-context learning that survives wrong labels does not grow with scale while the part that uses the mapping does, and \textcite{KossenGalRainforth2024} that predictions almost always depend on the labels in context.
+
+\paragraph{The rest of the instrument.} The labels are one choice among many in a prompt, and the others move scores as much. Permuting four demonstrations moved GPT-3 2.7B between 54.3\% and 93.4\% on the sentiment task SST-2, the model favoring labels frequent among the demonstrations and near the end of the prompt \parencite{ZhaoEtAl2021}, and good orders did not transfer between models \parencite{LuEtAl2022}. \Textcite{SclarEtAl2024} sampled formats from a grammar of meaning-preserving choices, such as separators, casing and spacing, on 53 tasks: LLaMA-2-13B spanned up to 76 points across the formats of one task, and the median spread over ten sampled formats was 7.5 points, not reduced by larger models, more demonstrations or instruction tuning. When one model beat another by at least 2 points under one format, the other won by at least 2 points under another format 14\% of the time, for LLaMA-2-13B against LLaMA-2-70B as for LLaMA-2-7B against Falcon-7B; in 76\% and 47\% of these reversals, both differences were statistically significant at level 0.05 by a one-sided McNemar test on 1,000 items. Over paraphrases of the instructions of 39 tasks, about 6.5 million evaluations of 20 models, rankings agreed only weakly on all ten tasks of one benchmark, and one model ranked first under one paraphrase and ninth under another \parencite{MizrahiEtAl2024}.
+
+\paragraph{The judge.} Open-ended answers are often graded by a second model. On MT-bench, shown two similar answers and then the same two in the opposite order, GPT-4 gave the same verdict both times in 65\% of cases, GPT-3.5 in 46\% and Claude-v1 in 24\%, most judges favoring the first position, and an answer padded with a rephrased copy of its own list won the preference of GPT-3.5 and Claude-v1 in 91\% of cases and of GPT-4 in 9\% \parencite{ZhengEtAl2023}. GPT-4 still agreed with human experts on 85\% of the votes without ties, more than the experts agreed with each other (81\%). With ChatGPT as the judge, the order of the answers alone could make Vicuna-13B beat ChatGPT on 66 of 80 questions \parencite{WangEtAl2024}.
+
+\begin{verdict}{narrowed}
+The measurement stands: for the twelve model variants of \textcite{MinEtAl2022}, at their settings and averaged over datasets, random labels cost 0 to 5 points. The general claim does not. The cost depends on the model, rising with scale and falling with instruction tuning; on the task, where wrong labels cost GPT-J up to 80 points on one dataset; and on settings the design held fixed: the scoring rule, the metric, the template and the number of demonstrations. Formats, orders and judges move scores as much as the treatment does, and an effect measured at one setting of an instrument is an effect at that setting.
+\end{verdict}
+
+\section{The method: settings as random factors}\label{sec:instruments:settings}
+
+The labels were the treatment of Min et al.'s experiment; the template, the scoring rule and the number of demonstrations were settings of the instrument, nuisance factors with a distribution, to be treated as \cref{ch:seeds} treats seeds and \cref{ch:aggregates} tasks.
+
+\begin{definition}[Instrument, settings, estimand]\label{def:instruments:instrument}
+An \term{evaluation instrument}\index{evaluation instrument} turns a system and a test item into a score. Its \term{settings}\index{setting of an instrument} are the choices that fix how: the wording and format of the prompt; the number, choice, labels and order of the demonstrations; the decoding rule; the scoring rule; and, for open-ended answers, the judge. A \term{setting distribution}\index{setting of an instrument!distribution} $\cS$ is a probability distribution over the settings that the experimenter regards as equally legitimate for the claim. The \term{estimand} of an arm, a system or a system under a treatment, is its mean score $\mu_a$ over settings drawn from $\cS$ and test items drawn from the task's distribution of items.
+\end{definition}
+
+The setting distribution is part of the claim: a claim about in-context learning is a claim about a distribution of settings, to be measured on a sample from it. Choosing $\cS$ is a decision, like the choice of an aggregate: a grammar of formats \parencite{SclarEtAl2024}, the accepted paraphrases of an instruction \parencite{MizrahiEtAl2024}, all orders of a set of demonstrations. The best score over settings answers another question, what a tuned prompt can do, and, chosen on the test items, it carries the bias of a best of $k$ (\cref{prop:seeds:bestof}).\sidenote{Psycholinguistics met the same problem with words. \Textcite{Clark1973} called the habit of drawing conclusions about language from a sample of words analyzed as if the words were fixed the language-as-fixed-effect fallacy; \textcite{BallChenHerley2024}, in a preprint, carry the argument to claims about the capabilities of language models.}
+
+\paragraph{A random-effects model.} Let arms $a=1,2$ be scored under settings drawn independently from $\cS$, and write the score of arm $a$ under setting $f$ as
+\begin{equation}\label{eq:instruments:model}
+Y_{af}=\mu_a+u_f+v_{af}+\varepsilon_{af}.
+\end{equation}
+The setting's \term{main effect}\index{main effect of a setting} $u_f$ moves both arms alike, as a format that is hard for every model does; the \term{interaction}\index{interaction!of arm and setting} $v_{af}$ is the part of the setting's effect particular to the arm; and $\varepsilon_{af}$ is the noise of one evaluation, from a finite sample of items or from sampled decoding. The model is the two-way layout of \cref{thm:seeds:components}, with the arms, which are fixed, in place of one of the two seeds. The comparison of interest is the sign of $\Delta=\mu_1-\mu_2$, and a \term{reversal}\index{ranking reversal} occurs when the measured comparison has the opposite sign.
+
+\begin{theorem}[Ranking under random settings]\label{thm:instruments:ranking}
+In model \eqref{eq:instruments:model}, let all the effects $u_f$, $v_{af}$ and $\varepsilon_{af}$, for both arms and all settings, be independent and normal with mean zero and variances $\sigma_u^2$, $\sigma_v^2$ and $\sigma_\varepsilon^2$; let $\Delta\ne0$ and $s^2=2\sigma_v^2+2\sigma_\varepsilon^2>0$.
+\begin{enumerate}
+\item If both arms are scored under the same single setting, the comparison reverses with probability $\Phi(-\abs\Delta/s)$, whatever the value of $\sigma_u$.
+\item If both arms are scored under the same $F$ settings and compared by their average scores, the comparison reverses with probability $\Phi(-\sqrt F\abs\Delta/s)$.
+\item If each arm is scored under $F$ settings of its own, drawn independently of the other arm's, the comparison reverses with probability $\Phi\bigl(-\sqrt F\abs\Delta/\sqrt{s^2+2\sigma_u^2}\bigr)$.
+\item Without normality, if the effects are independent with mean zero and finite variances, the compared difference has mean $\Delta$ and variance $s^2/F$ in (ii) and $(s^2+2\sigma_u^2)/F$ in (iii), and the probability of a reversal is at most $s^2/(F\Delta^2)$ and $(s^2+2\sigma_u^2)/(F\Delta^2)$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to write each comparison as $\Delta$ plus an average of independent terms of mean zero, and to read the probability of a reversal off its distribution. We take $\Delta>0$; for $\Delta<0$ exchange the names of the arms.
+
+\emph{Shared settings.} Under setting $f$ the difference of the two scores is
+\[
+D_f=Y_{1f}-Y_{2f}=\Delta+(v_{1f}-v_{2f})+(\varepsilon_{1f}-\varepsilon_{2f}),
+\]
+in which the main effect $u_f$ has cancelled. The four effects on the right are independent with mean zero, so $D_f$ has mean $\Delta$ and variance $2\sigma_v^2+2\sigma_\varepsilon^2=s^2$, and the differences under distinct settings are independent because they involve disjoint sets of effects. Their average $\bar D$ over $F$ settings therefore has mean $\Delta$ and variance $s^2/F$. Under normality $\bar D$ is normal, and the comparison reverses when $\bar D<0$, an event of probability $\Phi(-\sqrt F\Delta/s)$; the event $\bar D=0$ has probability zero. This proves (ii), and (i) is its case $F=1$.
+
+\emph{Separate settings.} Let arm 2 be scored under settings $f'_1,\dots,f'_F$ drawn independently of arm 1's settings $f_1,\dots,f_F$. The difference of the two averages is
+\[
+\Delta+\frac1F\sum_{l=1}^F\bigl(u_{f_l}-u_{f'_l}+v_{1f_l}-v_{2f'_l}+\varepsilon_{1f_l}-\varepsilon_{2f'_l}\bigr),
+\]
+an average of $F$ independent terms, each a sum of six independent effects with mean zero and total variance $2\sigma_u^2+s^2$. The argument for shared settings, with $s^2+2\sigma_u^2$ in place of $s^2$, gives (iii).
+
+\emph{Without normality.} The means and variances above used only independence and finite variances. A reversal requires the compared difference to fall at least $\Delta$ below its mean, and Chebyshev's inequality bounds the probability of that by the variance divided by $\Delta^2$, which gives (iv).
+\end{proof}
+
+\emph{Sharing settings is blocking} (\cref{sec:toolkit:design}): it removes the main effect, whose variance is the covariance of the two arms' scores across settings (\cref{ex:instruments:unequal}), but not the interaction, and which of the two dominates is an empirical matter. In the laboratory of this chapter the scores of two networks across formats have correlation 0.92, and sharing removes most of the variance. In the data of \textcite{SclarEtAl2024}, two models put a pair of formats in the same order only 56 to 61\% of the time; for normal scores this probability is $(1+\tau)/2$ with Kendall's $\tau=\frac2\pi\arcsin\rho$ (\cref{lem:controls:kendall}), so the rates correspond to correlations $\rho$ of 0.18 to 0.34, and most of a format's effect is particular to the model. \emph{Averaging works like $\sqrt F$}: if $s=1.5\abs\Delta$, one shared setting reverses the comparison with probability $\Phi(-2/3)=0.25$, and $F\ge(z_{1-\alpha}s/\Delta)^2$ settings, here seven for $\alpha=0.05$, bring the probability below $\alpha$, as averaging seeds does for training (\cref{cor:seeds:nseeds}). \emph{Separate settings add the main effect twice}: two numbers copied from two papers, each measured with its authors' own prompt, are case (iii) with $F=1$, close to a coin flip when some formats are hard for every model.
+
+Under shared settings, the sample variance $S_D^2$ of the per-setting differences estimates $s^2$ without bias, and $\bar D\pm t_{F-1,0.975}S_D/\sqrt F$ is an exact 95\% interval for $\Delta$ under the model (\cref{thm:toolkit:tinterval}). A test over the items of one setting, such as McNemar's (\cref{thm:toolkit:mcnemar}), treats the setting as fixed and sees only $\varepsilon$: it can declare a difference that another setting reverses, as it did for most of the reversals of \textcite{SclarEtAl2024}, just as in \cref{ch:seeds} a test over test sentences could not see the seed.
+
+\paragraph{Leaderboards.} With more than two arms, the settings reorder a ranking.
+
+\begin{corollary}[Rankings under random settings]\label{cor:instruments:tau}
+Let arms $a=1,\dots,A$ with distinct means $\mu_a$ be scored under shared settings, and suppose that for each pair $a<b$ the per-setting differences $Y_{af}-Y_{bf}$ are independent across settings and normal with mean $\mu_a-\mu_b$ and standard deviation $s_{ab}>0$. Let $p_{ab}=\Phi\bigl(-\sqrt F\abs{\mu_a-\mu_b}/s_{ab}\bigr)$. The ranking by the average scores over $F$ settings has expected Kendall's $\tau$ with the ranking by the means
+\[
+\E\hat\tau=\binom A2^{-1}\sum_{a<b}(1-2p_{ab}),
+\]
+and two rankings by averages over two independent sets of $F$ settings have expected Kendall's $\tau$ equal to $\binom A2^{-1}\sum_{a<b}(1-2p_{ab})^2$.
+\end{corollary}
+
+\begin{proof}
+Kendall's $\hat\tau$ (\cref{thm:toolkit:kendall}) is the average, over the $\binom A2$ pairs of arms, of the product of the signs with which the two rankings order the pair. For the pair $a<b$, the average difference $\bar D_{ab}$ over the shared settings has the sign of $\mu_a-\mu_b$ with probability $1-p_{ab}$ and the opposite sign with probability $p_{ab}$, by part (ii) of \cref{thm:instruments:ranking}, whose proof used only the normality of the per-setting differences and their independence across settings; ties have probability zero. The expected product of the signs is therefore $(1-p_{ab})-p_{ab}$, and linearity of expectation gives the first formula, with no assumption on the dependence between pairs. Two independent sets of settings give independent averages $\bar D_{ab}$ and $\bar D'_{ab}$, each of expected sign $(1-2p_{ab})\sgn(\mu_a-\mu_b)$, so the expected product of their signs is $(1-2p_{ab})^2$.
+\end{proof}
+
+For three arms with means 0, 1 and 2 points and $s_{ab}=2$ points, one setting gives $\E\hat\tau=0.48$ and eight settings 0.89. A leaderboard built on one prompt template is a ranking under one setting, and the second formula is the expected agreement of two leaderboards built on different templates. \Textcite{Hardt2026} argues that rankings are what benchmarks reliably deliver; the corollary says how many settings that takes.
+
+\paragraph{Two facets: settings and items.} The noise $\varepsilon_{af}$ is mostly that of a finite test set, a second random factor. Let $c_a(f,z)\in\{0,1\}$ record whether arm $a$ answers item $z$ correctly under setting $f$, and let $d(f,z)=c_1(f,z)-c_2(f,z)$, whose mean over settings and items is $\Delta$. For a setting $f_1$ drawn from $\cS$ and an independent item $Z_1$, decompose $d$ as in \cref{thm:seeds:components} (\cref{thm:toolkit:anova} is the one-way case), with settings and items as the two seeds: the setting effect $d_{\mathrm s}(f)=\E\,d(f,Z_1)-\Delta$, the item effect $d_{\mathrm i}(z)=\E\,d(f_1,z)-\Delta$ and the interaction $d_{\mathrm{si}}(f,z)=d(f,z)-\Delta-d_{\mathrm s}(f)-d_{\mathrm i}(z)$, with \term{variance components}\index{variance components!of an evaluation} $\sigma_{\mathrm s}^2$, $\sigma_{\mathrm i}^2$ and $\sigma_{\mathrm{si}}^2$. An evaluation may cross the factors, scoring the same $m$ items under each of $F$ settings, or nest the items in the settings, scoring fresh items under each setting.\index{crossed design}\index{nested design}
+
+\begin{proposition}[Settings and items]\label{prop:instruments:facets}
+Let $f_1,\dots,f_F$ be settings drawn independently from $\cS$ and let the items be drawn independently of them and of each other from the task's distribution, with $\E\,d(f_1,Z_1)^2<\infty$. Let $\bar d$ be the average of $d$ over all evaluated pairs of setting and item.
+\begin{enumerate}
+\item In the crossed design, with items $Z_1,\dots,Z_m$ scored under every setting, $\Var\bar d=\sigma_{\mathrm s}^2/F+\sigma_{\mathrm i}^2/m+\sigma_{\mathrm{si}}^2/(Fm)$.
+\item In the nested design, with items $Z_{l1},\dots,Z_{lm}$ scored under setting $f_l$ only, $\Var\bar d=\sigma_{\mathrm s}^2/F+(\sigma_{\mathrm i}^2+\sigma_{\mathrm{si}}^2)/(Fm)$.
+\item For a budget of $N=Fm$ evaluations per arm, the nested variance $\sigma_{\mathrm s}^2/F+(\sigma_{\mathrm i}^2+\sigma_{\mathrm{si}}^2)/N$ decreases in $F$ and is smallest with a fresh setting for every item. If $\sigma_{\mathrm i}>0$, the crossed variance, as a function of a real $F>0$, is smallest at $F^\star=\sqrt N\,\sigma_{\mathrm s}/\sigma_{\mathrm i}$, where it equals $2\sigma_{\mathrm s}\sigma_{\mathrm i}/\sqrt N+\sigma_{\mathrm{si}}^2/N$.
+\end{enumerate}
+In the crossed design with $F,m\ge2$, the mean squares of the $F\times m$ table of differences estimate the three components without bias, by \cref{thm:seeds:components}.
+\end{proposition}
+
+\begin{proof}
+The plan is to split $\bar d-\Delta$ into averages of the three kinds of effects, which are pairwise uncorrelated, and to add their variances. The proof of \cref{thm:seeds:components} shows that $d_{\mathrm s}(f_l)$, $d_{\mathrm i}(Z)$ and $d_{\mathrm{si}}(f_l,Z)$ have mean zero, that each of $d_{\mathrm i}$ and $d_{\mathrm{si}}$ averages to zero over the item for every fixed setting, that $d_{\mathrm{si}}$ also averages to zero over the setting for every fixed item, and that two such effects are uncorrelated unless they are the same effect at the same arguments.
+
+\emph{Crossed design.} Averaging the decomposition over the table gives $\bar d-\Delta=\bar d_{\mathrm s}+\bar d_{\mathrm i}+\bar d_{\mathrm{si}}$, averages of $F$, $m$ and $Fm$ pairwise uncorrelated effects with variances $\sigma_{\mathrm s}^2$, $\sigma_{\mathrm i}^2$ and $\sigma_{\mathrm{si}}^2$, and the three averages are uncorrelated with each other. Their variances are $\sigma_{\mathrm s}^2/F$, $\sigma_{\mathrm i}^2/m$ and $\sigma_{\mathrm{si}}^2/(Fm)$, and they add.
+
+\emph{Nested design.} Here $\bar d-\Delta=\bar d_{\mathrm s}+\frac1{Fm}\sum_{l,j}w_{lj}$ with $w_{lj}=d_{\mathrm i}(Z_{lj})+d_{\mathrm{si}}(f_l,Z_{lj})$. Given $f_l$, the term $w_{lj}$ has conditional mean zero, because both of its effects average to zero over the item for a fixed setting. Two terms $w_{lj}$ and $w_{lj'}$ with $j\ne j'$ are independent given $f_l$, so the conditional mean of their product, and hence its mean, is zero; terms with different settings involve disjoint independent variables and are independent; and $\E[d_{\mathrm s}(f_l)w_{lj}]=\E\bigl[d_{\mathrm s}(f_l)\,\E[w_{lj}\mid f_l]\bigr]=0$. Each $w_{lj}$ has variance $\sigma_{\mathrm i}^2+\sigma_{\mathrm{si}}^2$, since its two effects share an item and one of them is the interaction, so they are uncorrelated. Adding $\sigma_{\mathrm s}^2/F$ for $\bar d_{\mathrm s}$ and $(\sigma_{\mathrm i}^2+\sigma_{\mathrm{si}}^2)/(Fm)$ for the average of the $Fm$ terms gives (ii).
+
+\emph{A budget.} With $m=N/F$, the nested variance is $\sigma_{\mathrm s}^2/F$ plus a constant, which decreases in $F$. The crossed variance is $g(F)=\sigma_{\mathrm s}^2/F+\sigma_{\mathrm i}^2F/N+\sigma_{\mathrm{si}}^2/N$, a convex function of $F>0$ with derivative $-\sigma_{\mathrm s}^2/F^2+\sigma_{\mathrm i}^2/N$, which vanishes at $F^\star$; substituting $F^\star$ gives two equal terms $\sigma_{\mathrm s}\sigma_{\mathrm i}/\sqrt N$ and the constant. The last statement is \cref{thm:seeds:components} applied to the table $d(f_l,Z_j)$, a function of independent settings and independent items.
+\end{proof}
+
+Crossing settings with one fixed test set reduces only the parts of the variance that involve the setting; the item effect leaves a floor of $\sigma_{\mathrm i}^2/m$, the noise of the test set of \cref{ch:seeds}. A setting drawn at random for each item averages over settings at no cost in evaluations, with variance $(\sigma_{\mathrm s}^2+\sigma_{\mathrm i}^2+\sigma_{\mathrm{si}}^2)/m$ against $\sigma_{\mathrm s}^2+(\sigma_{\mathrm i}^2+\sigma_{\mathrm{si}}^2)/m$ for one setting. Its price is information: it estimates the mean but not the spread over settings, which a user who must pick one prompt needs, and a few crossed settings beside many nested ones buy both.\sidenote{In generalizability theory \parencite{CronbachEtAl1972} the random factors of a measurement are its \emph{facets}; estimating their components is a G study, and choosing the numbers of levels for a future measurement, as part (iii) does, a D study.} The analysis must match the design: items scored under several settings are not independent observations, a point \textcite{Miller2024} makes, in a preprint, for evaluation questions that come in clusters.
+
+\section{The method: judges and agreement}\label{sec:instruments:judges}
+
+A model that grades the answers of others is an instrument with settings of its own, among them its prompt, the order in which it sees the answers and its sampling temperature, and its quality is measured against a reference, usually human labels. Let the judge's verdict $J$ and the reference's verdict $R$ on a random item be binary, with $\pi_J=\Prob(J=1)$ and $\pi_R=\Prob(R=1)$ in $(0,1)$. Their \term{observed agreement}\index{agreement} is $p_o=\Prob(J=R)$, the agreement expected by chance from independent verdicts with the same rates is $p_e=\pi_J\pi_R+(1-\pi_J)(1-\pi_R)$, and \term{Cohen's $\kappa$}\index{Cohen's kappa} \parencite{Cohen1960} is the share of the agreement possible beyond chance that is achieved,
+\[
+\kappa=\frac{p_o-p_e}{1-p_e}.
+\]
+When the reference is the truth, $p_o$ is the judge's accuracy, with sensitivity $\mathrm{se}=\Prob(J=1\mid R=1)$ and specificity $\mathrm{sp}=\Prob(J=0\mid R=0)$.
+
+\begin{proposition}[Agreement, accuracy and $\kappa$]\label{prop:instruments:kappa}
+\begin{enumerate}
+\item The coefficient is
+\[
+\kappa=\frac{2\Cov(J,R)}{\pi_J(1-\pi_R)+\pi_R(1-\pi_J)}.
+\]
+Hence $\kappa=0$ exactly when $J$ and $R$ are independent, $\kappa=1$ exactly when $J=R$ almost surely, and $\abs\kappa\le\abs{\Corr(J,R)}$, with equality when $\pi_J=\pi_R$.
+\item The accuracy of the judge is $p_o=\pi_R\,\mathrm{se}+(1-\pi_R)\mathrm{sp}$, and $\Cov(J,R)=\pi_R(1-\pi_R)(\mathrm{se}+\mathrm{sp}-1)$. If the judge errs with the same probability $q$ on both kinds of items, then its accuracy is $1-q$ and
+\[
+\kappa=\frac{2\pi_R(1-\pi_R)(1-2q)}{2\pi_R(1-\pi_R)+q(1-2\pi_R)^2},
+\]
+which equals $1-2q=2p_o-1$ when $\pi_R=\frac12$ and tends to zero as $\pi_R$ tends to $0$ or $1$ with $q>0$ fixed.
+\item If $J$ and $R$ are conditionally independent given a binary truth $T$, then $\Corr(J,R)=\Corr(J,T)\Corr(R,T)$. In particular, if $T$ is equally likely to be $0$ or $1$ and the judge and the reference err with probabilities $q_J$ and $q_R$ whatever the value of $T$, then $\kappa_{JR}=(1-2q_J)(1-2q_R)=\kappa_{JT}\,\kappa_{RT}$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to express both agreements through the joint probability $c=\Prob(J=1,R=1)$, which turns $\kappa$ into a covariance, and then to compute that covariance in the two models of (ii) and (iii).
+
+\emph{Part (i).} Since $\Prob(J=0,R=0)=1-\pi_J-\pi_R+c$, the observed agreement is $p_o=1-\pi_J-\pi_R+2c$, while expanding $p_e$ gives $1-\pi_J-\pi_R+2\pi_J\pi_R$. Hence $p_o-p_e=2(c-\pi_J\pi_R)=2\Cov(J,R)$ and $1-p_e=\pi_J(1-\pi_R)+\pi_R(1-\pi_J)>0$, which is the formula. Binary variables are independent exactly when their covariance vanishes, which gives the case $\kappa=0$; and $\kappa=1$ exactly when $p_o=1$. The correlation is $\Cov(J,R)$ divided by $\sqrt{\pi_J(1-\pi_J)\pi_R(1-\pi_R)}$, the geometric mean of $\pi_J(1-\pi_R)$ and $\pi_R(1-\pi_J)$. The arithmetic mean of two positive numbers is at least their geometric mean, with equality when they are equal, which here means $\pi_J=\pi_R$; so the denominator of $\kappa$ is at least twice that of the correlation, which gives the inequality.
+
+\emph{Part (ii).} The first formula is the law of total probability. With $c=\pi_R\,\mathrm{se}$ and $\pi_J=\pi_R\,\mathrm{se}+(1-\pi_R)(1-\mathrm{sp})$,
+\[
+\Cov(J,R)=\pi_R\,\mathrm{se}-\pi_R\pi_J=\pi_R(1-\pi_R)\,\mathrm{se}-\pi_R(1-\pi_R)(1-\mathrm{sp}),
+\]
+which is $\pi_R(1-\pi_R)(\mathrm{se}+\mathrm{sp}-1)$. For $\mathrm{se}=\mathrm{sp}=1-q$ the accuracy is $1-q$, $\pi_J=\pi_R+q(1-2\pi_R)$, and the denominator of part (i) is $\pi_J+\pi_R-2\pi_J\pi_R=2\pi_R(1-\pi_R)+q(1-2\pi_R)^2$, which gives the displayed formula. At $\pi_R=\frac12$ it reduces to $1-2q$. As $\pi_R$ tends to $0$ or $1$ the numerator tends to zero and the denominator to $q>0$.
+
+\emph{Part (iii).} A function of a binary $T$ is affine in $T$, so $\E[J\mid T]=\alpha_J+\beta_JT$ and $\E[R\mid T]=\alpha_R+\beta_RT$ for constants $\alpha_J,\beta_J,\alpha_R,\beta_R$. Conditional independence makes the conditional covariance of $J$ and $R$ vanish, so the law of total covariance gives $\Cov(J,R)=\Cov(\E[J\mid T],\E[R\mid T])=\beta_J\beta_R\Var T$, while $\Cov(J,T)=\beta_J\Var T$ and $\Cov(R,T)=\beta_R\Var T$. Hence $\Cov(J,R)\Var T=\Cov(J,T)\Cov(R,T)$; dividing by the product of the standard deviations of $J$, $R$ and $T$ gives the identity of correlations. Under the symmetric model with $\Prob(T=1)=\frac12$, each verdict equals $1$ with probability $\frac12$, so every $\kappa$ among $J$, $R$ and $T$ equals the corresponding correlation by part (i), and $\kappa_{JT}=1-2q_J$, $\kappa_{RT}=1-2q_R$ by part (ii).
+\end{proof}
+
+Part (ii) is the reason to report $\kappa$ with the base rate. A judge right 90\% of the time on both kinds of items has $\kappa=0.80$ when half the items are positive, 0.59 when a tenth are and 0.24 when a fiftieth are, the first paradox of \textcite{FeinsteinCicchetti1990}; and by part (i), $\kappa$ penalizes verdicts with the wrong base rate, which accuracy does not.\sidenote{\Textcite{LandisKoch1977} proposed verbal labels for ranges of $\kappa$, such as \enquote{substantial} for 0.61 to 0.80, which are widely quoted. By part (ii) the same label can fit judges of quite different accuracy.}
+
+Part (iii) is Spearman's correction for attenuation \parencite{Spearman1904} for verdicts. If two human annotators err independently with the same probability $q_R$, their agreement estimates $\kappa_{RR'}=(1-2q_R)^2$, and the judge's $\kappa$ with the truth is $\kappa_{JR}/\sqrt{\kappa_{RR'}}$. On MT-bench, orienting each pair of answers at random makes chance agreement $\frac12$ and $\kappa=2p_o-1$, so the agreements of 85\% between GPT-4 and the experts and of 81\% between experts are $\kappa=0.70$ and 0.62 \parencite{ZhengEtAl2023}; under the model an expert errs with probability $(1-\sqrt{0.62})/2=0.11$ and GPT-4 with $(1-0.70/\sqrt{0.62})/2=0.06$. The assumptions are strong, since hard items correlate errors and the votes without ties are a selection, but the model explains the comparison Zheng et al.\ drew: a judge that agrees with experts as often as they agree with each other is as accurate as one expert.
+
+\paragraph{The judge's settings.} The order in which a judge sees two answers is a setting, and a preference for the first position favors whichever system is shown first. Judging every pair in both orders, \term{counterbalancing}\index{counterbalancing} in the language of psychology, shows each system first equally often, and the preference cancels (\cref{ex:instruments:position}). The share of verdicts that change with the order, 35\% for GPT-4 on similar answers, belongs in the report, as does a test--retest $\kappa$ from two sampled runs.
+
+\section{In the laboratory: formats and labels}\label{sec:instruments:lab}
+
+The first lab scores six digit classifiers under test-time \emph{formats}, meaning-preserving changes of the test images in the role of the formats of a prompt; the second trains a tiny transformer to classify digits in context.
+
+\begin{lab}{Classifiers under random formats}{15-instruments-formats}\label{lab:instruments:formats}
+\labpart{Setup} Six classifiers trained once on split 0 (seed 0), with inputs standardized by one mean and one standard deviation for all pixels: softmax regression, the MLP of \cref{ch:seeds}, a one-layer MLP of width 128, the MLP with tanh units, an MLP of width 256 trained with Adam, and the CNN of \cref{ch:confounding}. A grammar of seven atomic changes of the 539 test images (a partial one-pixel shift, contrast, a grey background, blur, pixel noise, thicker strokes, a gamma curve) gives 1,620 formats; every network is scored on every image under every format, and formats and images are resampled from this table 4,000 to 20,000 times per design. About a minute.
+\labpart{Predict first} The CNN beats the MLP by 2.2 points on the clean images. Under what share of the formats will the MLP win? How many formats must be averaged before a comparison reverses less than once in twenty, with shared formats and with separate ones?
+\labpart{Look for} The spread of the formats along the diagonal and across it; the reversal rate against $F$, against the theorem; where a budget of 1,000 evaluations is best spent; how many formats a six-network leaderboard needs.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},lplot,
+  width=0.5\linewidth,height=0.29\linewidth]
+\nextgroupplot[title={(a) MLP and CNN under 1,620 formats},xlabel={MLP accuracy (\%)},ylabel={CNN accuracy (\%)},
+  xmin=45,xmax=100,ymin=45,ymax=100,xtick={50,60,70,80,90,100},ytick={50,60,70,80,90,100}]
+\addplot[reference] coordinates {(45,45) (100,100)};
+\addplot[run] table[x=mlp,y=cnn] {figures/data/15-instruments-formats-scatter.dat};
+\addplot[meanB] coordinates {(96.66,98.89)};
+\nextgroupplot[title={(b) reversals},xmode=log,log basis x=2,xlabel={number of formats $F$},
+  ylabel={probability of a reversal},xmin=0.8,xmax=80,ymin=-0.01,ymax=0.45,
+  xtick={1,2,4,8,16,32,64},xticklabels={1,2,4,8,16,32,64},minor x tick num=0,
+  ytick={0,0.1,0.2,0.3,0.4},yticklabels={0,0.1,0.2,0.3,0.4},
+  legend style={at={(0.98,0.98)},anchor=north east,font=\scriptsize}]
+\addplot[instruments lineB,forget plot] table[x=F,y=seppred] {figures/data/15-instruments-formats-reversal.dat};
+\addplot[meanB] table[x=F,y=sep] {figures/data/15-instruments-formats-reversal.dat};
+\addlegendentry{separate}
+\addplot[instruments lineC,forget plot] table[x=F,y=smallpred] {figures/data/15-instruments-formats-reversal.dat};
+\addplot[instruments meanC] table[x=F,y=small] {figures/data/15-instruments-formats-reversal.dat};
+\addlegendentry{shared, 100 images}
+\addplot[instruments lineA,forget plot] table[x=F,y=sharedpred] {figures/data/15-instruments-formats-reversal.dat};
+\addplot[mean] table[x=F,y=shared] {figures/data/15-instruments-formats-reversal.dat};
+\addlegendentry{shared, 539 images}
+\end{groupplot}
+\end{tikzpicture}
+\caption{\Cref{lab:instruments:formats}: the MLP of \cref{ch:seeds} and the CNN of \cref{ch:confounding}, each trained once (split 0, seed 0), scored on the 539 test images under each of 1,620 formats. (a)~Each hollow mark is one format; the dashed line is equal accuracy, the vermilion square the clean format. (b)~The probability that the MLP comes out ahead when the networks are compared by their average over $F$ random formats, the same for both (shared) or drawn separately, on all images or on 100 fresh images per format: observed in 20,000 resamples (marks; binomial 95\% intervals are smaller than the marks) and predicted by \cref{thm:instruments:ranking} and \cref{prop:instruments:facets} from the variance components of the table (lines).}
+\label{fig:instruments:formats}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} Numbers for the full table are exact for these images and formats, and resampled rates carry 95\% intervals of at most $\pm0.01$. Under the clean format the CNN is ahead by 2.23 points (98.89\% against 96.66\%). Over the 1,620 formats the six networks average between 90.0\% (softmax regression) and 92.1\% (the CNN), against 96.5\% to 98.9\% on clean images, and each spans more than 30 points; the CNN is the most accurate on average, by 1.79 points over the MLP, and the least accurate in the worst case, 46.9\%. The MLP wins under 15.0\% of the formats and ties under 1.0\% (\cref{fig:instruments:formats}a). The formats move both networks together: their scores have correlation 0.92 across formats, the setting's main effect has standard deviation $\hat\sigma_u=6.0$ points, and the per-format difference only $s=2.75$. The interaction has a structure, like the atomic perturbations of \textcite{SclarEtAl2024}: high contrast, a grey background, thicker strokes and a gamma below one, which all brighten the image, cost the CNN more than the MLP, and under the three formats most favorable to the MLP, which combine all four, it wins by 12.6 to 13.7 points. By the criterion of \textcite{SclarEtAl2024}, a lead of the CNN by 2 points under one format becomes a lead of the MLP by 2 points under an independently drawn format with probability 0.08.
+
+With shared formats (\cref{fig:instruments:formats}b), the reversal rate falls from 0.15 for one format to 0.05 for eight and 0.011 for sixteen; the normal model predicts 0.26, 0.03 and 0.005. For one format the model overstates the reversals, because the per-format differences are skewed (skewness $-1.5$): the CNN wins most formats by one to three points and loses a few by much more. From four shared formats on, the predictions are within 0.015 of the observed rates, though far in the tail the observed rate stays the larger, the skewness of an average decaying only like $1/\sqrt F$. Separate formats, which add the main effect twice, reverse the comparison 36\% of the time with one format (0.42 predicted) and still 13\% with 32: four shared formats (0.10) do better than 32 separate ones. Scoring each format on 100 fresh images, as several studies of prompts did, adds the noise of the items: one format then reverses 25\% of the comparisons.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},lplot,
+  width=0.5\linewidth,height=0.29\linewidth]
+\nextgroupplot[title={(a) a budget of 1,000 evaluations},xmode=log,log basis x=10,ymode=log,
+  xlabel={number of formats $F$},ylabel={standard deviation (points)},
+  xmin=0.7,xmax=1500,ymin=0.7,ymax=13,xtick={1,10,100,1000},xticklabels={1,10,100,1000},
+  ytick={1,2,5,10},yticklabels={1,2,5,10},minor x tick num=0,
+  legend style={at={(0.02,0.98)},anchor=north west,font=\scriptsize}]
+\addplot[instruments lineA,forget plot] table[x=F,y=crossedpred] {figures/data/15-instruments-formats-budget.dat};
+\addplot[mean] table[x=F,y=crossed] {figures/data/15-instruments-formats-budget.dat};
+\addlegendentry{crossed}
+\addplot[instruments lineB,forget plot] table[x=F,y=nestedpred] {figures/data/15-instruments-formats-budget.dat};
+\addplot[meanB] table[x=F,y=nested] {figures/data/15-instruments-formats-budget.dat};
+\addlegendentry{nested}
+\nextgroupplot[title={(b) a leaderboard of six networks},xmode=log,log basis x=2,xlabel={number of formats $F$},
+  ylabel={Kendall's $\tau$},xmin=0.8,xmax=80,ymin=0.1,ymax=1,
+  xtick={1,2,4,8,16,32,64},xticklabels={1,2,4,8,16,32,64},minor x tick num=0,
+  legend style={at={(0.98,0.03)},anchor=south east,font=\scriptsize}]
+\addplot[instruments lineA,forget plot] table[x=F,y=pred] {figures/data/15-instruments-formats-tau.dat};
+\addplot[mean] table[x=F,y=tau] {figures/data/15-instruments-formats-tau.dat};
+\addlegendentry{with the ranking by the mean}
+\addplot[instruments lineB,forget plot] table[x=F,y=twopred] {figures/data/15-instruments-formats-tau.dat};
+\addplot[meanB] table[x=F,y=two] {figures/data/15-instruments-formats-tau.dat};
+\addlegendentry{between two sets of $F$ formats}
+\end{groupplot}
+\end{tikzpicture}
+\caption{\Cref{lab:instruments:formats}, continued. (a)~Standard deviation of the estimated difference between the CNN and the MLP when 1,000 evaluations per network are spent on $F$ formats and $1000/F$ images, the same images for every format (crossed) or fresh images for each (nested): 4,000 resamples (marks) and \cref{prop:instruments:facets} (lines). (b)~Kendall's $\tau$ between the ranking of the six networks by their average over $F$ random formats and the ranking by the mean over all formats, and between the rankings by two independent sets of $F$ formats: means of 5,000 resamples (marks; 95\% intervals smaller than the marks) and \cref{cor:instruments:tau} (lines).}
+\label{fig:instruments:budget}
+\end{fullwidth}
+\end{figure}
+
+The per-image differences have components $\hat\sigma_{\mathrm s}=2.75$, $\hat\sigma_{\mathrm i}=9.66$ and $\hat\sigma_{\mathrm{si}}=24.9$ points: the networks disagree on 7.3\% of the pairs of format and image, and most of the variance of one comparison is the image. With 1,000 evaluations per network (\cref{fig:instruments:budget}a), one format gives a standard deviation of 2.83 points, the crossed design is best near $F^\star=9$ formats of 111 images, at 1.52, and the nested design reaches 0.84 with a fresh format for every image; resampled and predicted values agree to within 3\%, since resampling from the table makes the assumptions exact. On the 539 test images, one format for all of them gives a standard deviation of 2.98 points and a reversal probability of 0.27, a fresh random format for each image 1.16 points and 0.06, at the same cost.
+
+The leaderboard (\cref{fig:instruments:budget}b), whose closest pairs are 0.04 and 0.26 points apart, needs more formats. On one format its ranking agrees with the ranking by the mean with $\tau=0.53$, two such leaderboards agree with $\tau=0.34$, and the CNN tops 65\% of them; with 64 formats, 0.90 and 88\%. The corollary predicts 0.39 for one format, as the theorem overstates the pair's reversals, and is within 0.01 from eight formats on.
+
+\begin{lab}{What random labels cost}{15-instruments-icl}\label{lab:instruments:icl}
+\labpart{Setup} A transformer of two layers, width 64 and no positional encodings (72,458 parameters) reads eight demonstrations, each a digit image of split 0 with its label, and a query image, and predicts the query's label. Each training sequence holds four images of each of two digit classes, the query from one of them; in a fraction $\omega$ of the sequences the ten labels are shuffled for the whole sequence. Five values of $\omega$, three seeds each, 1,500 steps of AdamW. Evaluation on 2,000 sequences of test images per condition, with 1, 2, 4 and 8 demonstrations per class. About five minutes on a shared laptop.
+\labpart{Predict first} For the network trained with fixed labels ($\omega=0$), how much do random labels cost? For one trained with 1\% shuffled sequences? Does the cost grow or shrink with more demonstrations?
+\labpart{Look for} The value of $\omega$ at which the labels begin to matter; flipped labels; accuracy without demonstrations; the cost of random labels against the number of demonstrations.
+\end{lab}
+
+The design follows \textcite{ChanEtAl2022}, who found in transformers trained on sequences of Omniglot characters that in-context learning emerges when the data are bursty and hold many rare classes, and is stronger when the meaning of items varies from sequence to sequence, here when labels are shuffled. All conditions are scored against the query's true class: no demonstrations; gold labels; random labels, each demonstration labeled with one of the two classes present by a fair coin, which keeps the label space and destroys the mapping, as in \textcite{MinEtAl2022}; and flipped labels, as in \textcite{WeiEtAl2023larger}.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},lplot,
+  width=0.5\linewidth,height=0.29\linewidth]
+\nextgroupplot[title={(a) four demonstrations per class},xlabel={share $\omega$ of training sequences with shuffled labels},
+  ylabel={accuracy (\%)},xmin=0.5,xmax=5.5,ymin=-4,ymax=104,xtick={1,2,3,4,5},
+  xticklabels={0,0.01,0.05,0.2,1},minor x tick num=0,ytick={0,25,50,75,100},
+  legend to name=instrumentsicllegend,legend columns=4,
+  legend style={/tikz/every even column/.append style={column sep=4mm}}]
+\addplot[instruments lineA,forget plot] table[x=x,y=gold] {figures/data/15-instruments-icl-means.dat};
+\addplot[run,forget plot] table[x=x,y=gold] {figures/data/15-instruments-icl-runs.dat};
+\addplot[mean,ebars] table[x=x,y=gold,y error=goldhw] {figures/data/15-instruments-icl-means.dat};
+\addlegendentry{gold labels}
+\addplot[instruments lineB,forget plot] table[x=x,y=random] {figures/data/15-instruments-icl-means.dat};
+\addplot[runB,forget plot] table[x=x,y=random] {figures/data/15-instruments-icl-runs.dat};
+\addplot[meanB,ebarsB] table[x=x,y=random,y error=randomhw] {figures/data/15-instruments-icl-means.dat};
+\addlegendentry{random labels}
+\addplot[instruments lineC,forget plot] table[x=x,y=flipped] {figures/data/15-instruments-icl-means.dat};
+\addplot[instruments runC,forget plot] table[x=x,y=flipped] {figures/data/15-instruments-icl-runs.dat};
+\addplot[instruments meanC,instruments ebarsC] table[x=x,y=flipped,y error=flippedhw] {figures/data/15-instruments-icl-means.dat};
+\addlegendentry{flipped labels}
+\addplot[instruments lineD,forget plot] table[x=x,y=none] {figures/data/15-instruments-icl-means.dat};
+\addplot[instruments runD,forget plot] table[x=x,y=none] {figures/data/15-instruments-icl-runs.dat};
+\addplot[instruments meanD,instruments ebarsD] table[x=x,y=none,y error=nonehw] {figures/data/15-instruments-icl-means.dat};
+\addlegendentry{no demonstrations}
+\nextgroupplot[title={(b) the cost of random labels},xmode=log,log basis x=2,
+  xlabel={demonstrations per class},ylabel={gold minus random (points)},
+  xmin=0.8,xmax=10,ymin=-3,ymax=70,xtick={1,2,4,8},xticklabels={1,2,4,8},minor x tick num=0,
+  ytick={0,20,40,60},
+  legend style={at={(0.5,0.98)},anchor=north,font=\scriptsize},legend columns=5]
+\addplot[instruments series,color=rubricdeep,mark=triangle*] table[x=shots,y=cost4,y error=hw4] {figures/data/15-instruments-icl-shots.dat};
+\addlegendentry{$\omega=1$}
+\addplot[instruments series,color=rubric,mark=square*] table[x=shots,y=cost3,y error=hw3] {figures/data/15-instruments-icl-shots.dat};
+\addlegendentry{$0.2$}
+\addplot[instruments series,color=inkblue,mark=*] table[x=shots,y=cost2,y error=hw2] {figures/data/15-instruments-icl-shots.dat};
+\addlegendentry{$0.05$}
+\addplot[instruments series,color=inkblue!50,mark=*] table[x=shots,y=cost1,y error=hw1] {figures/data/15-instruments-icl-shots.dat};
+\addlegendentry{$0.01$}
+\addplot[instruments series,color=muted,mark=diamond*] table[x=shots,y=cost0,y error=hw0] {figures/data/15-instruments-icl-shots.dat};
+\addlegendentry{$0$}
+\end{groupplot}
+\end{tikzpicture}
+
+\smallskip
+\pgfplotslegendfromname{instrumentsicllegend}
+\caption{\Cref{lab:instruments:icl}: a two-layer transformer trained for in-context classification of digits with a share $\omega$ of training sequences whose labels are shuffled, three seeds per value of $\omega$, evaluated on sequences of test images with the query's true class as the answer. (a)~Accuracy with four demonstrations per class: hollow marks are networks, filled marks means with 95\% $t$-intervals over the three seeds. (b)~Accuracy with gold labels minus accuracy with random labels, against the number of demonstrations per class: means with 95\% $t$-intervals over seeds.}
+\label{fig:instruments:icl}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} The network trained with fixed labels is Min et al.'s finding in miniature (\cref{fig:instruments:icl}a): with four demonstrations per class it scores \pmval{99.4}{0.1}\% with gold labels (mean and 95\% $t$-interval over three seeds), \pmval{99.1}{0.2}\% with random labels and \pmval{98.9}{0.2}\% with flipped ones. It has learned the digits in its weights and ignores the labels in context, yet the demonstrations help (without them it scores \pmval{95.1}{2.7}\%), because they show which two classes are in play, the label space, which random labels keep. One shuffled sequence in a hundred changes the picture: random labels then cost \pmval{17.9}{2.4} points and flipped labels lower the accuracy to \pmval{33.2}{6.9}\%, the network following the demonstrations two times in three. With $\omega=0.05$ it follows flipped labels nine times in ten, and with $\omega=1$ random labels cost \pmval{49.1}{1.4} points, leaving \pmval{50.1}{1.3}\%, chance between the two classes; without demonstrations these networks score 9\% to 28\% on average.
+
+The cost also depends on a setting of the instrument (\cref{fig:instruments:icl}b). For $\omega$ between 0.01 and 0.2 it falls as demonstrations are added, for $\omega=0.01$ from \pmval{33.2}{2.6} points with one demonstration per class to \pmval{12.1}{2.4} with eight, while for $\omega=1$ it rises slightly, from 42.9 to 48.9; a reading we have not tested is that random labels contradict one another more as they accumulate, so that a network that also knows the digits in its weights falls back on them. Averaged over the fifteen networks, random labels cost 26.9 points, an average of 0.2 to 49.6 that describes none of them. The miniature reproduces both sides of the post-mortem, the insensitive models of \textcite{MinEtAl2022} and the label-following ones of \textcite{WeiEtAl2023larger}, with the training distribution in the role of scale and instruction tuning; it does not show that scale acts the same way.
+
+\section{Protocol}\label{sec:instruments:protocol}
+
+\begin{protocol}{Evaluating under random settings}\label{prot:instruments:evaluate}
+\item Write down the instrument: prompt, format, demonstrations and their order, decoding, scoring rule, judge. Decide, before scoring, the setting distribution the claim must cover.
+\item Sample settings from that distribution; never choose them on the test items. Report a tuned setting only as a best of $k$, with $k$.
+\item Score every arm under the same settings and on the same items, and compute comparisons within settings.
+\item Size the design from a pilot's variance components: enough settings for the reversal probability you can accept, and fresh items for each setting when the budget is fixed.
+\item Report the mean with an interval over settings and items, the spread over settings, the worst setting, and the share of settings on which the ranking reverses.
+\item Report a treatment effect setting by setting and model by model; an average over heterogeneous models is a choice of aggregate, not a property of each.
+\item For a judge, report $\kappa$ against a reference with an interval and the base rate, the reference's own agreement, consistency under swapped order and test--retest agreement; counterbalance positions.
+\item Publish an \term{instrument card}\index{instrument card}: the instrument with every setting, prompt and demonstration; the setting distribution and the sampling; the design; the results with their variance components; the judge's reliability; and the code.
+\end{protocol}
+
+The protocol makes a measurement honest about its instrument; it does not choose the setting distribution, which is part of the question: a grammar of separators and casing says nothing about paraphrases of the instruction or the prompts users write. It treats settings as nuisance, while for a user who will choose one prompt the best setting is the quantity of interest, and for a deployment the worst. And twenty settings multiply the cost of an evaluation by twenty. When that is too much, draw a fresh setting for each item, which costs nothing; cross a handful of settings with a subset of the items to estimate the spread; and say which settings were held fixed.
+
+\begin{exercises}
+\item \consolidation (Unequal arms.) Without model \eqref{eq:instruments:model}, let the pairs $(Y_{1f},Y_{2f})$ be independent and identically distributed with finite variances. Show that the average difference over $F$ settings has variance $\Var(Y_{11}-Y_{21})/F$ when they are shared and $(\Var Y_{11}+\Var Y_{21})/F$ when they are separate. For the networks of \cref{lab:instruments:formats} (standard deviations 5.84 and 6.81 points, correlation 0.92), how many separate formats match one shared format?\label{ex:instruments:unequal}
+
+\item \consolidation (The tuned prompt.) Arm 1 is reported at the best of $F$ settings, chosen on the test items, and arm 2 under one setting. Under the model of \cref{thm:instruments:ranking}, show with \cref{prop:seeds:bestof} that the expected reported difference is $\Delta+\sqrt{\sigma_u^2+\sigma_v^2+\sigma_\varepsilon^2}\,e_F$, and evaluate it for $F=10$ and a standard deviation of 5.8 points across settings. What does the expected difference become when both arms are reported at their best of the same $F$ settings, and why is that still not the comparison of the means?\label{ex:instruments:tuned}
+
+\item \consolidation (A small leaderboard.) Three arms have means 0, 1 and 2 points, and $s_{ab}=2$ points for every pair. Check that one setting gives $\E\hat\tau=0.48$ and eight give 0.89. How many settings make the expected agreement between two leaderboards built on different settings at least 0.9?\label{ex:instruments:three}
+
+\item \consolidation\hard (A judge with a position bias.) Pairs of answers are oriented at random, and $R=1$ when the first answer shown is the better, so that $\Prob(R=1)=\frac12$. The judge says \enquote{first} with probability $1-q+b$ when $R=1$ and $q+b$ when $R=0$, with $0\le b\le q<\frac12$. (a) Show that its accuracy is $1-q$ and its $\kappa$ is $1-2q$, whatever $b$. (b) If system A is always shown first and is the better with probability $w$, show that the judge reports A's win rate as $q+b+w(1-2q)$. (c) Show that counterbalancing removes $b$, and that the remaining shrinkage toward $\frac12$ is corrected by $(\hat w-q)/(1-2q)$. Which measurement in the report would have revealed $b$? \hint{with $\pi_R=\frac12$, the denominator in part (i) of \cref{prop:instruments:kappa} is $\frac12$ whatever $\pi_J$.}\label{ex:instruments:position}
+
+\item \labwork (Full shifts.) In \script{15-instruments-formats.py}, apply the one-pixel shift at full strength instead of blending 30\% of it. Predict how $\hat\sigma_u$, $s$ and the correlation between the MLP and the CNN change, and which network gains in the ranking; then compare the reversal rates for shared formats with the theorem.\label{ex:instruments:shifts}
+
+\item \labwork (A pilot study.) Estimate the three components from 20 formats and 100 images of \cref{lab:instruments:formats} with \cref{thm:seeds:components}, and choose a design for 2,000 evaluations by \cref{prop:instruments:facets}. Repeat the pilot 200 times: how often is the chosen design wrong, and what does the error cost?\label{ex:instruments:pilot}
+
+\item \labwork (Training length.) In \script{15-instruments-icl.py}, train the networks with $\omega=0.01$ for 3,000 steps. Do they move toward following the demonstrations or toward their weights, under flipped and under random labels? Relate the answer to the finding of \textcite{SinghEtAl2023} that in-context learning can fade with longer training.\label{ex:instruments:length}
+
+\item \design (Ten models, a thousand calls each.) Ten language models are to be ranked on a multiple-choice benchmark of 5,000 questions with 1,000 calls per model, and each model's spread over prompts reported. A pilot of two models gives $\sigma_{\mathrm s}=1.5$, $\sigma_{\mathrm i}=12$ and $\sigma_{\mathrm{si}}=30$ points. Design the evaluation: setting distribution, numbers of prompts and questions, crossed or nested, pairing, analysis and report.\label{ex:instruments:design}
+
+\item \design (Validating a judge.) A model judge is to replace human raters for pairwise comparisons of chatbot answers, and you can afford 600 pairs labeled by three humans each. Design the study: what is measured, how pairs are sampled and oriented, how many judge calls are needed, and what result would make you keep the human raters.\label{ex:instruments:judge}
+
+\item \critique (One template.) A leaderboard ranks 40 models on 1,000 reasoning questions, each scored with the template its developers recommend, and bolds differences of half a point. Which comparisons does it support, by \cref{thm:instruments:ranking}? Describe the leaderboard a reader needs.\label{ex:instruments:critique1}
+
+\item \critique (A new prompting method.) A paper reports that its prompting method gains 4 points over the standard prompt on six tasks. Its method's template was chosen among 30 candidates on the test set; the baseline used the template of an earlier paper. Separate the parts of the gain due to the method, to the choice among templates and to the difference of templates, estimate the second (\cref{ex:instruments:tuned}), and design an experiment for the first.\label{ex:instruments:critique2}
+
+\item \research (Choosing the setting distribution.) The estimand of \cref{def:instruments:instrument} depends on $\cS$, and different grammars of formats, sets of paraphrases and policies for choosing demonstrations give different rankings. Open: a principled choice of $\cS$, such as weighting settings by how often users write them or a worst case over a family of distributions, with guarantees on how conclusions transfer between distributions.\label{ex:instruments:research}
+\end{exercises}
+
+\notesandrefs
+In-context learning was named and demonstrated at scale by \textcite{BrownEtAl2020}. \Textcite{PoloEtAl2024} estimate a model's distribution of scores over many prompts from a small budget, and \textcite{ChanEtAl2022} and \textcite{SinghEtAl2023} show in small transformers how the training data and the length of training decide between learning in context and in the weights.
+
+The statistics are older than the field. \Textcite{Clark1973} argued that psycholinguistic experiments must treat their words as a random sample, as they treat their participants; the answer became an analysis with crossed random effects for subjects and items \parencite{BaayenDavidsonBates2008}, and \textcite{Yarkoni2022} argued that stimuli, tasks and research sites deserve the same treatment wherever a claim is to generalize over them. Generalizability theory \parencite{CronbachEtAl1972} decomposes a measurement's variance into facets, such as raters, items and occasions, and designs measurements from the components; \cref{prop:instruments:facets} is a small part of it. \Textcite{Cohen1960} introduced $\kappa$ for two raters on a nominal scale, \textcite{LandisKoch1977} extended agreement measures to several categories and raters, and \textcite{FeinsteinCicchetti1990} described its paradoxes; \textcite{Spearman1904} corrected correlations for the unreliability of their measurements. For evaluations of language models analyzed as experiments see \textcite{Miller2024}, and for the science of benchmarks and their rankings \textcite{Hardt2026}.
+
+\paragraph{Translating the literature.} \Textcite{MinEtAl2022} write $k$ for the number of demonstrations, a letter this book reserves for a tuning budget; their twelve models are six models crossed with two scoring rules, a setting of the instrument here; their \enquote{Kim et al.\ (2022)} is the preprint of \textcite{YooEtAl2022}, whose label-correctness sensitivity is the slope of the score on the share of correct labels and whose ground-truth label effect ratio is the cost of random labels as a fraction of the gain from gold-labeled demonstrations. In \textcite{WeiEtAl2023larger}, 50\% flipped labels are random labels for a binary task. A \enquote{format} of \textcite{SclarEtAl2024} is a setting $f$, and their \enquote{performance spread}, which their FormatSpread procedure estimates within a budget, is $\max_fY_{af}-\min_fY_{af}$ over the sampled formats; the \enquote{average performance} and \enquote{maximum performance} of \textcite{MizrahiEtAl2024} are $\mu_a$ under a uniform distribution over paraphrases and the best setting. The \enquote{agreement} of \textcite{ZhengEtAl2023} is our $p_o$, and their \enquote{consistency} the share of verdicts unchanged by a swap of order. In generalizability theory a facet is a random factor, and $\sigma^2(s)$, $\sigma^2(i)$ and $\sigma^2(si)$ are our $\sigma_{\mathrm s}^2$, $\sigma_{\mathrm i}^2$ and $\sigma_{\mathrm{si}}^2$.
+
+\printchapterbib
+\end{refsection}

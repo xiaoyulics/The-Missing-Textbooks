@@ -1,0 +1,374 @@
+% Chapter 7 of Deep Learning as an Experimental Science: what was held fixed.
+\newcommand{\heldfixedBnoise}{B_{\mathrm{noise}}}
+\newcommand{\heldfixedBcrit}{B_{\mathrm{crit}}}
+\newcommand{\heldfixedBsimple}{B_{\mathrm{simple}}}
+\newcommand{\heldfixedTmin}{T_{\min}}
+\newcommand{\heldfixedDmin}{D_{\min}}
+\labchapter{What Was Held Fixed}{Batch size, steps and the generalization gap}{Large-batch training generalizes worse because it converges to sharp minima.}{Keskar et al.\ (2017), the main observation of the paper}{Confounded: at a fixed number of epochs a larger batch also takes fewer steps; matched in steps, with the learning rate tuned, most of the gap disappears.}{ch:heldfixed}
+\begin{refsection}[chapters/07-heldfixed.bib]
+
+% styles for the third series of the lab figures and for hollow-marked lines (palette colours only)
+\pgfplotsset{
+  heldfixed runC/.style={only marks,mark=diamond,mark size=1.5pt,color=ink!55,mark options={line width=0.35pt,fill=white}},
+  heldfixed meanC/.style={only marks,mark=diamond*,mark size=2.0pt,color=ink!70,mark options={fill=ink!70,draw=white,line width=0.2pt}},
+  heldfixed ebarsC/.style={error bars/y dir=both,error bars/y explicit,
+    error bars/error bar style={ink!70,line width=0.5pt},
+    error bars/error mark options={ink!70,rotate=90,mark size=1.7pt,line width=0.5pt}},
+  heldfixed hollowB/.style={rubric,line width=0.8pt,densely dashed,mark=square,mark size=1.6pt,mark options={solid,fill=white,line width=0.6pt}},
+}
+
+\begin{chaptersummary}
+In 2016 Keskar and colleagues trained six networks with batches of 256 examples and with batches of a tenth of the training set, found the large batches up to about five points worse on test data at similar training accuracy, and attributed the gap to sharp minima. A tenth of the training set per batch means ten steps per epoch, and later work traced most of the gap to what changed with the batch: with the learning rate adapted and the steps matched, it closed, up to a critical batch size beyond which no learning rate buys back the missing steps. The method is an audit of what an experiment holds fixed: the budget that defines the question, curves of the steps needed to reach a target, and a noisy quadratic model, solved exactly, in which large batches lose at a fixed number of epochs although the model has a single minimum of fixed curvature. In the laboratory a small network on the digits loses 64 points of test error at full batch under the original kind of protocol, 12 points with the learning rate tuned, and nothing measurable once the steps are matched.
+\end{chaptersummary}
+
+\section{The claim: a tenth of the data in every batch}\label{sec:heldfixed:claim}
+
+Stochastic gradient descent estimates the gradient of the training loss from a batch of $B$ examples and takes one step per batch. The per-example gradients of a batch can be computed in parallel, so a larger batch uses more hardware at once and needs fewer steps per pass over the data. In 2016 networks were usually trained with batches of 32 to 512 examples, and the hope of training with much larger ones met an old observation. \Textcite{LeCunEtAl1998} had written that stochastic learning often finds better solutions than batch learning, because its noise can carry the weights into the basin of a deeper minimum, and \textcite{Krizhevsky2014} had noted that very big batches slow convergence and degrade the final solution.\sidenote{Krizhevsky also found that a learning rate proportional to the batch size worked better than the square-root rule that theory suggested, a discrepancy he could not explain.}
+
+Nitish Shirish Keskar, Dheevatsa Mudigere, Jorge Nocedal, Mikhail Smelyanskiy, and Ping Tak Peter Tang, at Northwestern University and Intel, set out to explain the drop \parencite{KeskarEtAl2017}.\sidenote{The paper was posted in September 2016 and published at ICLR 2017.} They trained six classification networks with batch normalization: fully connected networks on MNIST and on the TIMIT speech corpus, and shallow and deep convolutional networks, in the styles of AlexNet and VGG, on CIFAR-10 and CIFAR-100. Each was trained with a small batch of 256 examples and with a large batch of a tenth of its training set, by Adam in both regimes, five times from random initializations, without a budget, until the loss stopped improving; SGD, AdaGrad, and adaQN gave similar results for the large batch.
+
+\begin{finding}[\textcite{KeskarEtAl2017}, Table~2]\label{fd:heldfixed:keskar}
+With batches of a tenth of the training set, every network reached a lower test accuracy than with batches of 256 (means and standard deviations over five runs): $97.81\%$ against $98.03\%$ on MNIST, $59.45\%$ against $64.02\%$ on TIMIT, $77.26\%$ and $87.26\%$ against $80.04\%$ and $89.24\%$ for the shallow and deep networks on CIFAR-10, and $46.45\%$ and $57.81\%$ against $49.58\%$ and $63.08\%$ on CIFAR-100. Training accuracies lay between $98.35\%$ and $99.99\%$ in both regimes, and the test accuracy did not peak and then decline during training, so over-fitting in the usual sense was ruled out.
+\end{finding}
+
+The paper calls this drop the generalization gap.\sidenote{The term more often means the difference between a network's training and test error; here it is the difference between the test accuracies of the two regimes.} 
+The explanation is in the title: large-batch methods converge to sharp minimizers of the training loss, at which the Hessian has many large positive eigenvalues and which generalize less well, while the noise of small-batch gradients carries small-batch methods to flat ones. A measure of sharpness, the largest relative increase of the training loss within a small box around the solution, was one to two orders of magnitude larger for the large-batch solutions; the loss along the line between the two solutions rose more steeply at the large-batch end; in a sweep over batch sizes at 100 epochs, the test accuracy dropped sharply beyond a threshold, about 15,000 examples on TIMIT and 500 on CIFAR-10; and the small-batch solutions lay three to ten times farther from their initial weights.
+
+The authors presented this as numerical evidence that supports the view, and listed as open whether large-batch methods can be proved to converge to sharp minimizers. They tried remedies: data augmentation brought the large-batch test accuracy close to the small-batch one while its solutions stayed sharp, and adversarial training did not help. The reading that traveled was shorter: large batches generalize worse, because of sharp minima. The paper became a standard reference for a large-batch generalization gap and for the link between flat minima and generalization, the subject of \cref{ch:sharpness}. Much of it was right. The gap was real under the protocol, measured with five runs per arm; checking that the test accuracy did not peak and decline was the right test for over-fitting; the threshold in the sweep was an early sighting of what was later named the critical batch size; and the closeness of large-batch solutions to their initialization pointed toward the mechanism.
+
+\section{The experiment: one factor changed, everything else equal}\label{sec:heldfixed:experiment}
+
+\begin{experiment}[Keskar et al.\ 2017]
+\field{question}{Do large batches find solutions that generalize worse than small batches?}
+\field{units}{Training runs of six networks with batch normalization: two fully connected (MNIST, TIMIT) and four convolutional (CIFAR-10, CIFAR-100).}
+\field{treatment}{The batch size: 256 examples, or a tenth of the training set (6,000 on MNIST, 5,000 on CIFAR).}
+\field{tuned}{Nothing for each batch size: Adam in both regimes, with settings the paper does not report.}
+\field{held fixed}{Optimizer and its settings, network, data, and the stopping rule (train until the loss stops improving; 100 epochs in the batch-size sweep).}
+\field{response}{Training and test accuracy; a sharpness measure; the loss along the line between two solutions.}
+\field{replicates}{Five runs per network and batch size, from random initializations.}
+\field{analysis}{Means and standard deviations over the five runs.}
+\end{experiment}
+
+The record shows one factor at two levels with everything else equal. But holding a recipe equal does not hold a run equal, because several properties of a run are functions of its batch size.\sidenote{The authors' public script for the parametric plots trains both batch sizes with Keras's default Adam for the same 20 epochs; it reproduces figures, not the experiments of the tables.} A batch of a tenth of the training set gives ten steps per epoch on every data set, against 195 for a batch of 256 on CIFAR-10 and 2,817 on TIMIT: epoch for epoch, the large batch takes a twentieth of the steps on CIFAR-10 and less than a 280th on TIMIT. At one learning rate each large-batch step averages away most of the gradient noise. And batch normalization computed its statistics over 5,000 examples instead of 256, which changes the function being trained. The stopping rule looks like a way around the step count, but it is a rule about the training loss, and the training loss can flatten while the weights keep moving and the test error keeps falling.
+
+The design could show that this recipe, with only its batch size changed, generalizes worse at the larger batch on these networks. It could not show that the batch size causes the gap, because the steps, the gradient noise, and the normalization statistics changed with it; the sharpness of the end points is a correlate that the same changes could produce; and two batch sizes give two points, not a curve.
+
+\section{The post-mortem: fewer steps and less noise}\label{sec:heldfixed:postmortem}
+
+\paragraph{Train longer.} Elad Hoffer, Itay Hubara, and Daniel Soudry found that the distance of the weights from their initialization grows like the logarithm of the number of updates, along similar curves for all batch sizes \parencite{HofferEtAl2017}. A run with a fixed number of epochs and a larger batch makes fewer updates, so it ends closer to its initialization, as Keskar et al.\ had observed. Hoffer et al.\ adapted the large-batch run in three steps: the learning rate multiplied by the square root of the ratio of batch sizes; normalization statistics computed over \enquote{ghost} batches of 128 examples within the large batch; and regime adaptation, multiplying the epochs by the ratio of batch sizes so that both runs take the same number of steps. For a ResNet-44 on CIFAR-10, batches of 4,096 instead of 128 lowered the validation accuracy from $92.83\%$ to $86.10\%$, and the three steps raised it to $89.30\%$, $90.50\%$, and finally $93.07\%$; on five other networks, Keskar et al.'s among them, the adapted large batch exceeded the small one or came within 0.13 points of it. The test error also kept improving at the initial learning rate long after the training and validation errors had stopped changing visibly.\sidenote{Hoffer et al.\ report one number per cell, without spreads over runs; their effects are several points, against seed spreads of tenths of a point for such networks (\cref{ch:seeds}).}
+
+\paragraph{Scale the learning rate.} Priya Goyal and eight colleagues at Facebook trained ResNet-50 on ImageNet with batches of up to 65,536 images, all for 90 epochs, with the learning rate multiplied by the factor by which the batch grew, the \term{linear scaling rule}\index{linear scaling rule}, and raised gradually over the first five epochs \parencite{GoyalEtAl2017}. A batch of 8,192 reached a top-1 validation error of $23.74\%$ (standard deviation $0.09$ over five runs), against $23.60\%$ ($0.12$) for batches of 256, and $24.84\%$ without the warm-up. Beyond 8,192 the error rose, to $24.79\%$ at 16,384, $27.55\%$ at 32,768, and $33.96\%$ at 65,536, with the epoch budget fixed throughout.\sidenote{Goyal et al.\ report means and standard deviations over five runs and warn that results from a single trial, or from the best of many, can mislead, the lesson of \cref{ch:seeds}.}
+
+\paragraph{The noise scale.} Samuel Smith and Quoc Le read SGD as the discretization of a stochastic differential equation whose noise scale is about $\eta n_{\mathrm{tr}}/B$, where $n_{\mathrm{tr}}$ is the number of training examples \parencite{SmithLe2018}. At a fixed learning rate the test accuracy peaked at an intermediate batch size, which grew in proportion to the learning rate and to $n_{\mathrm{tr}}$; Keskar et al.'s two regimes, at one learning rate with batches twenty times apart, sat on this reading at very different noise scales. Smith, Kindermans, Ying, and Le then showed that growing the batch during training can replace decaying the learning rate, reaching the same test accuracy in the same number of epochs with fewer updates \parencite{SmithEtAl2018}.
+
+\paragraph{Steps to a result.} Christopher Shallue, Jaehoon Lee, Joseph Antognini, Jascha Sohl-Dickstein, Roy Frostig, and George Dahl measured the steps needed to reach a goal validation error as a function of the batch size, for six families of networks, three optimizers, and seven data sets, tuning the learning rate, momentum, and schedule anew at every batch size \parencite{ShallueEtAl2019}. Every workload showed three regimes: \term{perfect scaling}\index{perfect scaling}, in which doubling the batch halves the steps; diminishing returns; and a maximal useful batch size. Where perfect scaling ended varied by orders of magnitude between workloads, momentum extended it beyond plain SGD, and no simple rule related the best learning rate to the batch size across problems. Sorting earlier studies by their budgets, they found that a budget of steps favors large batches, which see more examples, a budget of epochs favors small ones, which take more steps, and tuning at one batch size and transferring the learning rate by a rule favors the batch size where the tuning was done. They concluded that such differences explain much of the disagreement, wrote that \enquote{we find no evidence that larger batch sizes degrade out-of-sample performance}, and added that regularization may matter more at large batches: for ResNet-50 on ImageNet, label smoothing lowered the error by up to a point at large batches and had no apparent effect at small ones.
+
+\paragraph{The critical batch size.} In a preprint, Sam McCandlish, Jared Kaplan, Dario Amodei, and the OpenAI Dota team defined the \term{critical batch size}\index{critical batch size} as the ratio of the fewest examples to the fewest steps that reach a given performance, and found that the \term{gradient noise scale}\index{gradient noise scale}, essentially the variance of the per-example gradients divided by the squared norm of their mean (\cref{sec:heldfixed:many}), predicts it within an order of magnitude on tasks from MNIST to the game Dota~2, over which it ranged from about 20 to millions \parencite{McCandlishEtAl2018}. The noise scale grew as the loss fell, so the critical batch size depends on the target: for their MNIST network it was about 20 early in training and about 200 averaged over a run. Guodong Zhang and seven colleagues reproduced the three regimes in a noisy quadratic model, the model this chapter solves, and confirmed its predictions with Adam and K-FAC: preconditioning, like momentum, extends perfect scaling to larger batches \parencite{ZhangEtAl2019}.
+
+\paragraph{What remains.} Not all of the gap is about steps. Samuel Smith, Erich Elsen, and Soham De trained a 16-4 Wide-ResNet on CIFAR-10 for a fixed 9,765 updates at every batch size, with the learning rate tuned at each \parencite{SmithElsenDe2020}. The test accuracy rose from $93.5\%$ at a batch of 256 to $94.9\%$ at 2,048, stayed within 0.3 points of that up to 8,192, and fell to $92.5\%$ at 16,384 and $89.9\%$ at 32,768, a third and two thirds of the training set, while the training losses at these batches stayed below the one at 2,048: a benefit of gradient noise that survives matched steps, at batches far larger than Keskar et al.'s. \Textcite{GeipingEtAl2022} supplied such a benefit explicitly: full-batch gradient descent for a ResNet-18 on CIFAR-10, with 3,000 steps, gradient clipping, and a penalty on the gradient norm, reached $95.68\%$, against $95.70\%$ for SGD with batches of 128. And the advocacy of small batches by Dominic Masters and Carlo Luschi, who found the best test performance at batches of 2 to 32 in a preprint, used a fixed number of epochs \parencite{MastersLuschi2018}, the budget that favors small batches.
+
+\paragraph{The mechanism.} Under a fixed number of epochs, or a stopping rule on the training loss, Keskar et al.'s large batch took far fewer steps; at one learning rate it trained with far less gradient noise per epoch; and its normalization statistics came from larger batches. Each moves the test error, and each can be undone: by a learning rate that grows with the batch, by matched steps, by ghost batches. Sharpness moved with them and need not be a separate cause, because the sharpness at which gradient descent can stay is set by its step. On a quadratic, a step $\eta$ diverges along every direction of curvature above $2/\eta$ (\cref{prop:instability:expansion}); full-batch training of networks typically runs with the largest Hessian eigenvalue near $2/\eta$ \parencite{CohenEtAl2021}; and in a preprint, a larger ratio of learning rate to batch size was found to favor wider minima \parencite{JastrzebskiEtAl2017}. Whether sharpness explains the residual gap of Smith et al.\ is a separate question, about a measure that a reparametrization can change without changing the function \parencite{DinhEtAl2017}; \cref{ch:sharpness} takes it up.
+
+\begin{verdict}{confounded}
+Keskar et al.'s comparison changed the batch size at one learning rate and under a stopping rule that, like a fixed number of epochs, gave the large batch far fewer steps; it compared two numbers of steps and two noise levels as much as two batch sizes. With the learning rate adapted and the steps matched, the gap closes at batch sizes like theirs, and the largest systematic study found no evidence that large batches degrade out-of-sample performance. Two narrower statements survive: beyond a critical batch size the steps cannot be bought back, so at a fixed number of epochs large batches lose; and at a third of the training set or more a residual gap can remain under matched steps, which explicit regularization can replace and whose explanation is the question of \cref{ch:sharpness}.
+\end{verdict}
+
+\section{The method: what the budget holds fixed}\label{sec:heldfixed:budget}
+
+An experiment that changes one factor of a recipe holds the others fixed, and which others is part of the question. The batch size makes the point sharply, because the common budgets are tied to it by identities.
+
+\begin{definition}[Budget and derived quantities]\label{def:heldfixed:budget}
+The \term{budget}\index{budget!axis} of a comparison is the quantity held equal across its arms: the number of optimizer steps $T$; the number of examples processed $D=BT$, or equivalently the number of epochs, $D$ divided by the size of the training set; the floating-point operations; the wall-clock time on given hardware; or the number of tuning trials. A \term{derived quantity}\index{derived quantity} of a run is one that the budget and the treatment determine together.
+\end{definition}
+
+At a fixed number of epochs the steps fall as $T=D/B$; at a fixed number of steps the examples grow as $D=BT$; at a fixed learning rate the variance of one step's noise falls as $\eta^2/B$. For a given network the operations follow the examples, and with perfect data parallelism the wall-clock time follows the steps. Each budget therefore asks its own question: a budget of steps or of time asks whether a larger batch trains faster on parallel hardware, and a budget of examples or operations whether it is as economical. Keskar et al.'s question, whether a larger batch finds a worse solution, has no budget at all; it asks about runs trained until nothing changes, a state that \textcite{ShallueEtAl2019} needed millions of steps to approach even on MNIST, and could not certify.\sidenote{For MNIST and Fashion MNIST they trained 100 configurations per batch size for up to 25 hours each, and were still not certain that performance had saturated at the smallest and largest batches.}
+
+\paragraph{Steps to a target.} The informative object is therefore a curve. Fix a target, a test error or a loss, and let $T(B)$, the \term{steps to the target}\index{steps to a target}, be the fewest steps that reach it with batch $B$, minimized over the hyperparameters that interact with $B$, and $D(B)=BT(B)$ the examples. In the perfect-scaling regime $T(B)$ falls like $1/B$ and $D(B)$ is flat; at large batches $T(B)$ approaches a floor $\heldfixedTmin$ and $D(B)$ grows like $B$. With $\heldfixedDmin$ the small-batch limit of $D(B)$, the critical batch size $\heldfixedBcrit=\heldfixedDmin/\heldfixedTmin$ is where the two asymptotes, $\heldfixedDmin/B$ and $\heldfixedTmin$, cross \parencite{McCandlishEtAl2018}. McCandlish et al.\ fit the curve $T(B)=\heldfixedTmin(1+\heldfixedBcrit/B)$, which takes twice the fewest steps and twice the fewest examples at $B=\heldfixedBcrit$ (\cref{ex:heldfixed:hyperbola}). Below $\heldfixedBcrit$ a larger batch saves time at almost no extra computation; above it, it buys little time at a cost that grows with the batch.
+
+\paragraph{Scaling rules.} A \term{scaling rule}\index{scaling rule} says how to change the other hyperparameters with the batch so that runs stay comparable in some derived quantity. For SGD in the perfect-scaling regime the linear rule, a learning rate proportional to $B$, keeps the path of the run as a function of the examples processed \parencite{Krizhevsky2014,GoyalEtAl2017}. For RMSprop and Adam, \textcite{MalladiEtAl2022} derived a square-root rule from stochastic differential equations: when the batch is multiplied by $s$, multiply the learning rate by $\sqrt s$, multiply $1-\beta_1$ and $1-\beta_2$ by $s$, and divide $\epsilon$ by $\sqrt s$. A rule fails where the quantity it holds cannot be held: beyond the critical batch size the learning rate cannot keep growing with the batch, and only more steps make up the difference.
+
+\paragraph{Schedules matched to the budget.} A schedule has a horizon, and a run evaluated before its schedule has decayed is not finished. \Textcite{KaddourEtAl2023} compared efficient-training methods for BERT and T5, among them layer stacking, batch selection, and the optimizers Lion and Sophia, under fixed budgets of reference-system time, with a baseline whose learning rate decayed fully within the same budget, and the reported gains vanished. Their rule is general: train every arm to a fixed budget, decay every schedule in the unit of that budget, and measure at its end. \Cref{ch:budgets} met the same issue in optimizer comparisons read at intermediate checkpoints, \cref{ch:protocol} meets it in scaling laws, and different measures of cost can rank the same models differently \parencite{DehghaniEtAl2022}.
+
+\paragraph{Crossing the budget with the treatment.} When the question does not fix the budget, make the budget a factor. Write $\bar Y(B,T)$ for the mean outcome with batch $B$ and $T$ steps, other hyperparameters held at their values for the smaller batch $B_1$. A comparison with $B_2$ at a fixed number $D$ of examples splits as
+\[
+\begin{aligned}
+\bar Y(B_2,D/B_2)-\bar Y(B_1,D/B_1)&=\bigl[\bar Y(B_2,D/B_1)-\bar Y(B_1,D/B_1)\bigr]\\
+&\quad+\bigl[\bar Y(B_2,D/B_2)-\bar Y(B_2,D/B_1)\bigr],
+\end{aligned}
+\]
+the effect of the batch at matched steps plus the effect of the steps that the larger batch did not take. A $2\times2$ design over the budget (epochs or steps) and the hyperparameters (held or retuned) measures each part and their interaction; when the interaction is large, as \cref{lab:heldfixed:gap} finds, the attribution depends on the order in which the parts are removed (\cref{ch:confounding}).
+
+\section{The method: a model with a single minimum}\label{sec:heldfixed:nqm}
+
+Is a gap at a fixed number of epochs evidence about the minima that the runs find? A model can answer by example. The \term{noisy quadratic model}\index{noisy quadratic model}, in the form used by \textcite{ZhangEtAl2019}, is a quadratic loss with noisy gradients. It has a single minimum, of fixed curvature, so no run can find a sharper or a flatter one; if large batches lose in it, then losing is not evidence of sharp minima. We solve it exactly in one dimension.
+
+\begin{assumption}[One noisy curvature]\label{ass:heldfixed:nqm}
+The loss is $f(\theta)=\tfrac12\kappa\theta^2$ with curvature $\kappa>0$. Starting from a fixed $\theta_0\neq0$, with $\ell_0=f(\theta_0)$, stochastic gradient descent with batch size $B>0$ and learning rate $\eta>0$ sets $\theta_{t+1}=\theta_t-\eta(\kappa\theta_t+\xi_{t+1})$ for $t=0,1,2,\dots$, where $\xi_1,\xi_2,\dots$ are independent, with mean $0$ and variance $c/B$ for a constant $c>0$.
+\end{assumption}
+
+The noise $\xi_t$ models the average of $B$ independent per-example deviations of variance $c$. A batch drawn without replacement from $n$ examples has variance $(c/B)(n-B)/(n-1)$ instead, so every statement below holds for such batches with $B$ replaced by the effective batch $B_{\mathrm{eff}}=B(n-1)/(n-B)$.
+
+\begin{theorem}[Steps to a target in the noisy quadratic model]\label{thm:heldfixed:nqm}
+Under \cref{ass:heldfixed:nqm} the following hold.
+\begin{enumerate}
+\item For every $t\ge0$, $\E\theta_{t+1}^2=(1-\eta\kappa)^2\,\E\theta_t^2+\eta^2c/B$. If $0<\eta\kappa<2$, then for every $t\ge0$
+\begin{equation}\label{eq:heldfixed:risk}
+\E f(\theta_t)=f_\infty+(1-\eta\kappa)^{2t}\bigl(\ell_0-f_\infty\bigr),\qquad f_\infty=\frac{\eta c}{2B(2-\eta\kappa)},
+\end{equation}
+so that $\E\theta_t^2$ tends to the stationary value $\eta c/(B\kappa(2-\eta\kappa))$. If $\eta\kappa\ge2$, then $\E\theta_t^2\to\infty$.
+\item Fix a target $\ell$ with $0<\ell<\ell_0$ and a largest learning rate $\eta_{\max}$ with $0<\eta_{\max}\kappa<1$, and write $R=\ell_0/\ell$, $\heldfixedBnoise=c/(2\kappa\ell)$, and $\heldfixedTmin=\ln R/\bigl(-2\ln(1-\eta_{\max}\kappa)\bigr)$. For $0<\eta\le\eta_{\max}$ let $\tau(\eta,B)$ be the time at which the right side of \eqref{eq:heldfixed:risk}, as a function of a real $t\ge0$, equals $\ell$, or $\infty$ when it never does, so that $\E f(\theta_t)\le\ell$ at a step $t$ exactly when $t\ge\tau(\eta,B)$; and let $T^\star(B)=\inf_{0<\eta\le\eta_{\max}}\tau(\eta,B)$. Then $T^\star$ is nonincreasing in $B$, and $T^\star(B)\ge\heldfixedTmin$ for every $B$. Write $u_B=(\heldfixedBnoise/B)\,\eta_{\max}\kappa/(2-\eta_{\max}\kappa)$. If $u_B<1$, then
+\[
+T^\star(B)\le\heldfixedTmin\Bigl(1+\frac{\ln\bigl(1/(1-u_B)\bigr)}{\ln R}\Bigr);
+\]
+in particular $T^\star(B)\to\heldfixedTmin$ as $B\to\infty$.
+\item Let $\psi(R)=\min_{0<u<1}u^{-1}\ln\bigl((R-u)/(1-u)\bigr)$ and $\heldfixedDmin=\heldfixedBnoise\,\psi(R)/4$. If $2B/(B+\heldfixedBnoise)\le\eta_{\max}\kappa$, then
+\[
+\Bigl(1-\frac B\heldfixedBnoise\Bigr)\heldfixedDmin\le B\,T^\star(B)\le\Bigl(1+\frac B\heldfixedBnoise\Bigr)\heldfixedDmin ;
+\]
+in particular $B\,T^\star(B)\to\heldfixedDmin$ as $B\to0$.
+\end{enumerate}
+\end{theorem}
+
+Part (i) is the formula of Zhang et al.\ for one coordinate; parts (ii) and (iii) solve it for the steps. Part (iii) is perfect scaling: for small batches the examples needed are nearly constant, so the steps halve when the batch doubles. Part (ii) is the floor: no batch reaches the target in fewer than $\heldfixedTmin$ steps, and large ones come arbitrarily close. The model's critical batch size is $\heldfixedBcrit=\heldfixedDmin/\heldfixedTmin$.
+
+\begin{proof}
+The plan is to obtain part~(i) by squaring the recursion, then to write $\tau$ in terms of the dimensionless step $x=\eta\kappa$ and the ratio $u$ of the stationary loss to the target; part~(ii) follows by monotonicity, part~(iii) by a change of variables from $x$ to $u$.
+
+\emph{Part (i).} The recursion is $\theta_{t+1}=(1-\eta\kappa)\theta_t-\eta\xi_{t+1}$. By induction $\theta_t$ is a linear combination of $\theta_0,\xi_1,\dots,\xi_t$, so it has a finite second moment and is independent of $\xi_{t+1}$; hence $\E[\theta_t\xi_{t+1}]=\E\theta_t\,\E\xi_{t+1}=0$. Squaring the recursion and taking expectations, the cross term vanishes and $\E\theta_{t+1}^2=q\,\E\theta_t^2+\eta^2c/B$ with $q=(1-\eta\kappa)^2$. If $0<\eta\kappa<2$, then $1-q=\eta\kappa(2-\eta\kappa)>0$, and $v=\eta^2c/(B(1-q))=\eta c/(B\kappa(2-\eta\kappa))$ satisfies $v=qv+\eta^2c/B$. Subtracting, $\E\theta_{t+1}^2-v=q(\E\theta_t^2-v)$, so $\E\theta_t^2=v+q^t(\theta_0^2-v)$, which tends to $v$; multiplying by $\kappa/2$ gives \eqref{eq:heldfixed:risk} with $f_\infty=\kappa v/2$. If $\eta\kappa\ge2$, then $q\ge1$, so $\E\theta_{t+1}^2\ge\E\theta_t^2+\eta^2c/B$ and $\E\theta_t^2\ge\theta_0^2+t\eta^2c/B\to\infty$.
+
+\emph{The time to the target.} Let $0<\eta\le\eta_{\max}$, so that $x=\eta\kappa$ lies in $(0,x_{\max}]$ with $x_{\max}=\eta_{\max}\kappa<1$, and $0<1-x<1$. Dividing $f_\infty$ by $\ell$,
+\[
+u=\frac{f_\infty}{\ell}=\frac{c}{2\kappa\ell B}\cdot\frac{x}{2-x}=\frac{\heldfixedBnoise}{B}\cdot\frac{x}{2-x}.
+\]
+By \eqref{eq:heldfixed:risk}, $\E f(\theta_t)=\ell\bigl(u+(1-x)^{2t}(R-u)\bigr)$. If $u\ge1$, then this exceeds $\ell$ for every $t$, because $R>1$, and $\tau=\infty$. If $u<1$, then it decreases strictly in $t$ from $\ell_0$ toward $\ell u<\ell$ and is at most $\ell$ exactly when $(1-x)^{2t}\le(1-u)/(R-u)$; taking logarithms, with $\ln(1-x)<0$,
+\begin{equation}\label{eq:heldfixed:tau}
+\tau(\eta,B)=\frac{L(u)}{-2\ln(1-x)},\qquad L(u)=\ln\frac{R-u}{1-u}.
+\end{equation}
+Two facts are used below. First, $L$ is increasing on $[0,1)$ with $L(0)=\ln R>0$, because $(R-u)/(1-u)=1+(R-1)/(1-u)$ and $R>1$. Second, $x\le-\ln(1-x)\le x/(1-x)$ for $0\le x<1$, from the series $-\ln(1-x)=\sum_{k\ge1}x^k/k$ and from $-\ln(1-x)=\ln\bigl(1+x/(1-x)\bigr)$.
+
+\emph{Part (ii).} For fixed $\eta$, the ratio $u$ decreases as $B$ grows and $L$ is increasing, so $\tau(\eta,B)$ is nonincreasing in $B$, and so is the infimum $T^\star(B)$. Since $L(u)\ge\ln R$ and $-\ln(1-x)\le-\ln(1-x_{\max})$ for $x\le x_{\max}$, every finite $\tau(\eta,B)$ is at least $\ln R/(-2\ln(1-x_{\max}))=\heldfixedTmin$. For the upper bound take $\eta=\eta_{\max}$, for which $u=u_B$. If $u_B<1$, then $L(u_B)\le\ln R+\ln(1/(1-u_B))$ because $R-u_B<R$, and dividing by $-2\ln(1-x_{\max})=\ln R/\heldfixedTmin$ bounds $\tau(\eta_{\max},B)$, hence $T^\star(B)$, as stated. As $B\to\infty$, $u_B\to0$ and the bound tends to $\heldfixedTmin$.
+
+\emph{Part (iii).} Write $x_B=2B/(B+\heldfixedBnoise)$. The condition $u<1$ means $x/(2-x)<B/\heldfixedBnoise$, that is $x<x_B$; by hypothesis $x_B\le x_{\max}$, so every step with a finite time is admissible. The map $x\mapsto u$ is an increasing bijection from $(0,x_B)$ onto $(0,1)$ with inverse $x(u)=2uB/(\heldfixedBnoise+uB)$, and therefore $T^\star(B)=\inf_{0<u<1}\tau(u)$, where $\tau(u)$ denotes \eqref{eq:heldfixed:tau} at $x=x(u)$. We bound $\tau(u)$ above and below. By the second fact,
+\[
+\frac{1-x(u)}{2x(u)}\le\frac{1}{-2\ln(1-x(u))}\le\frac{1}{2x(u)} ,
+\]
+and the two outer expressions are $(\heldfixedBnoise-uB)/(4uB)$ and $(\heldfixedBnoise+uB)/(4uB)$, because $1/(2x(u))=(\heldfixedBnoise+uB)/(4uB)$ and $(1-x(u))(\heldfixedBnoise+uB)=\heldfixedBnoise-uB$. Multiplying by $B\,L(u)$, and using $0<u<1$ together with $B<\heldfixedBnoise$, which holds because $x_B\le x_{\max}<1$, gives
+\[
+(\heldfixedBnoise-B)\,\frac{L(u)}{4u}\le B\,\tau(u)\le(\heldfixedBnoise+B)\,\frac{L(u)}{4u}.
+\]
+The function $L(u)/u$ is continuous on $(0,1)$ and tends to $+\infty$ at both ends, since $L(0)=\ln R>0$ and $L(u)\to\infty$ as $u\to1$, so it attains its minimum $\psi(R)$. Taking the infimum over $u$ in the last display gives $(\heldfixedBnoise-B)\psi(R)/4\le B\,T^\star(B)\le(\heldfixedBnoise+B)\psi(R)/4$, which is part~(iii). As $B\to0$, eventually $x_B\le x_{\max}$, and both bounds tend to $\heldfixedDmin$.
+\end{proof}
+
+\begin{corollary}[A fixed number of epochs]\label{cor:heldfixed:epochs}
+In the setting of \cref{thm:heldfixed:nqm}, let every run process the same number $D$ of examples, so that a run with batch $B$ takes $T=D/B$ steps, assumed to be an integer.
+\begin{enumerate}
+\item For every $\eta\le\eta_{\max}$, $\E f(\theta_T)\ge(1-\eta_{\max}\kappa)^{2D/B}\ell_0$, a bound that increases to $\ell_0$ as $B\to\infty$. If $B>D/\heldfixedTmin$, then $\E f(\theta_T)>\ell$ for every $\eta\le\eta_{\max}$: no learning rate reaches the target.
+\item If $2B/(B+\heldfixedBnoise)\le\eta_{\max}\kappa$ and $D>(1+B/\heldfixedBnoise)\heldfixedDmin$, then some $\eta\le\eta_{\max}$ gives $\E f(\theta_T)<\ell$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+For part~(i), \eqref{eq:heldfixed:risk} can be written $\E f(\theta_T)=(1-x)^{2T}\ell_0+\bigl(1-(1-x)^{2T}\bigr)f_\infty$ with $x=\eta\kappa\in(0,x_{\max}]$; the second term is nonnegative and $(1-x)^{2T}\ge(1-x_{\max})^{2T}$, which gives the bound, and the bound increases to $\ell_0$ because $T=D/B$ decreases to $0$. It exceeds $\ell$ exactly when $2T\ln(1-x_{\max})>-\ln R$, that is when $T<\heldfixedTmin$, which is the condition $B>D/\heldfixedTmin$. For part~(ii), part~(iii) of the theorem gives $T^\star(B)\le(1+B/\heldfixedBnoise)\heldfixedDmin/B<D/B=T$, so some $\eta$ has $\tau(\eta,B)<T$; since $\E f$ is strictly decreasing in $t$ for that $\eta$ and equals $\ell$ at $\tau$, it is below $\ell$ at the step $T$.
+\end{proof}
+
+Give every run $D=\lambda\heldfixedDmin$ examples, $\lambda>1$ times the fewest that suffice. Small batches reach the target, and every batch above $\lambda\heldfixedDmin/\heldfixedTmin=\lambda\heldfixedBcrit$ misses it at every learning rate, with a final loss that approaches the initial one as the batch grows. The model has one minimum and one curvature, so a large-batch gap at a fixed number of epochs needs no sharp minima: it is what too few steps look like.
+
+\paragraph{What limits each regime.} The small-batch limit $\heldfixedDmin=c\,\psi(R)/(8\kappa\ell)$ does not involve $\eta_{\max}$: small batches are limited by noise. The floor $\heldfixedTmin$ does not involve $c$ or $B$: large batches are limited by the largest step that the curvature allows. Hence
+\[
+\heldfixedBcrit=\frac{\heldfixedDmin}{\heldfixedTmin}=\heldfixedBnoise\,\frac{\psi(R)}{\ln R}\cdot\frac{-\ln(1-\eta_{\max}\kappa)}{2}\approx\frac{\psi(R)}{\ln R}\cdot\frac{\eta_{\max}c}{4\ell}
+\]
+for small $\eta_{\max}\kappa$. The last factor is the batch size at which the stationary loss of SGD at its largest step, about $\eta_{\max}c/(4B)$, equals the target, and $\psi(R)/\ln R$ lies between $1.4$ and $2.1$ for $10\le R\le10^4$ (\script{07-heldfixed-nqm.py}). The critical batch size thus belongs to a target, not to a network, and grows as the target falls. Anything that allows larger steps along slowly converging directions lowers $\heldfixedTmin$ and raises $\heldfixedBcrit$ without helping small batches, which is what \textcite{ZhangEtAl2019} found for momentum and preconditioning and \textcite{ShallueEtAl2019} for momentum. The best step at small batches, $x(u)=2uB/(\heldfixedBnoise+uB)$ in the proof, grows in proportion to $B$: the linear scaling rule, and its saturation at $\eta_{\max}$ above the critical batch size (\cref{ex:heldfixed:linear}).
+
+\subsection{Many curvatures}\label{sec:heldfixed:many}
+
+Take $f(\theta)=\frac12\sum_i\kappa_i\theta_i^2$ with independent noise of variance $c_i/B$ in coordinate $i$. Part~(i) of the theorem applies to each coordinate, so $\E f(\theta_t)$ is a sum of terms \eqref{eq:heldfixed:risk}; one learning rate serves all of them, and the stiffest coordinate caps it below $2/\max_i\kappa_i$. Each coordinate has its own corner, at its own batch size, and their sum bends smoothly. \Cref{fig:heldfixed:nqm} shows both cases, computed exactly: a single curvature turns from $\heldfixedDmin/B$ to $\heldfixedTmin$ within a factor of about two in $B$, and a thousand curvatures $\kappa_i=1/i$ with $c_i=\kappa_i$, the choice of \textcite{ZhangEtAl2019} with fewer coordinates, follow the hyperbola $\heldfixedTmin(1+\heldfixedBcrit/B)$ to within $14\%$. McCandlish et al.\ derived the hyperbola from one step.
+
+\begin{heuristic}[The noise scale]
+Near $\theta$, approximate the loss by its second-order expansion with gradient $G$ and Hessian $H$, and let the minibatch gradient $\hat G$ have mean $G$ and covariance $\Sigma/B$, where $\Sigma$ is the covariance of one example's gradient. A step $-\eta\hat G$ changes the loss in expectation by about
+\[
+-\eta\abs{G}^2+\tfrac12\eta^2\Bigl(G^\top HG+\frac{\tr(H\Sigma)}B\Bigr),
+\]
+which is smallest at $\eta_{\mathrm{opt}}(B)=\eta_{\mathrm{gr}}/(1+\heldfixedBnoise/B)$, with $\eta_{\mathrm{gr}}=\abs G^2/G^\top HG$ and the noise scale $\heldfixedBnoise=\tr(H\Sigma)/G^\top HG$, where the decrease is $\Delta_{\max}/(1+\heldfixedBnoise/B)$ with $\Delta_{\max}=\abs G^4/(2G^\top HG)$. The best learning rate and the progress per step both grow in proportion to $B$ while $B\ll\heldfixedBnoise$ and saturate when $B\gg\heldfixedBnoise$. If $\heldfixedBnoise$ changes little along the way to the target, then the steps scale as $T(B)\approx\heldfixedTmin(1+\heldfixedBnoise/B)$, the hyperbola with $\heldfixedBcrit\approx\heldfixedBnoise$. When $H$ is a multiple of the identity, $\heldfixedBnoise$ equals the \term{simple noise scale}\index{gradient noise scale!simple} $\heldfixedBsimple=\tr\Sigma/\abs G^2$, which needs only per-example gradients.
+\end{heuristic}
+
+In one dimension $\heldfixedBnoise=c/(2\kappa f(\theta))$, which at the target is the $\heldfixedBnoise$ of the theorem, and the exact result shows how far the one-step argument goes: the critical batch size is the noise scale times $\psi(R)/\ln R$, a correction for the whole path, and times $-\ln(1-\eta_{\max}\kappa)/2$, a correction for the cap that other directions put on the step, which one step cannot see. In ill-conditioned problems the second factor is small: for the thousand curvatures of \cref{fig:heldfixed:nqm} the noise scales at the target, $\heldfixedBnoise\approx7{,}100$ and $\heldfixedBsimple\approx16{,}000$, exceed the critical batch size of 117 by factors of 60 and 140. The noise scale is cheap to measure and moves in the right direction, but it guides the order of magnitude at best; when the decision matters, measure $\heldfixedBcrit$ from steps-to-target curves.\sidenote{McCandlish et al.\ also describe a way to measure $\heldfixedBsimple$ with negligible overhead during data-parallel training.}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=15mm},lplot,lloglog,
+  width=0.49\linewidth,height=0.32\linewidth,xmode=log,ymode=log,xmin=0.01,xmax=100,
+  xlabel={batch size $B/\heldfixedBcrit$},xtick={0.01,0.1,1,10,100},xticklabels={$0.01$,$0.1$,$1$,$10$,$100$}]
+\nextgroupplot[title={(a) steps to the target},ylabel={$T^\star(B)/\heldfixedTmin$},ymin=0.8,ymax=130,
+  ytick={1,2,10,100},yticklabels={$1$,$2$,$10$,$100$},legend pos=north east,legend cell align=left]
+\addplot[reference,forget plot] table[x=x,y=ideal] {figures/data/07-heldfixed-nqm-one.dat};
+\addplot[fit] table[x=x,y=hyp] {figures/data/07-heldfixed-nqm-one.dat};
+\addlegendentry{$1+\heldfixedBcrit/B$}
+\addplot[inkblue,line width=1.0pt] table[x=x,y=T] {figures/data/07-heldfixed-nqm-one.dat};
+\addlegendentry{one curvature}
+\addplot[ink!60,line width=1.0pt,densely dotted] table[x=x,y=T] {figures/data/07-heldfixed-nqm-many.dat};
+\addlegendentry{1000 curvatures}
+\nextgroupplot[title={(b) the best learning rate},ylabel={$\eta^\star(B)/\eta^\star(\infty)$},ymin=0.008,ymax=1.5,
+  ytick={0.01,0.1,1},yticklabels={$0.01$,$0.1$,$1$}]
+\addplot[reference,domain=0.01:1] {x};
+\addplot[inkblue,line width=1.0pt] table[x=x,y=eta] {figures/data/07-heldfixed-nqm-one.dat};
+\addplot[ink!60,line width=1.0pt,densely dotted] table[x=x,y=eta] {figures/data/07-heldfixed-nqm-many.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{The noisy quadratic model, computed exactly (\script{07-heldfixed-nqm.py}; no training runs, hence no intervals). One curvature: \cref{thm:heldfixed:nqm} with target $R=\ell_0/\ell=100$ and $\eta_{\max}\kappa=0.05$. A thousand curvatures: $\kappa_i=1/i$, noise variances $c_i=\kappa_i$, $\theta_i(0)=1$, target $2\%$ of the initial loss, learning rates up to $2/\kappa_1$. Batch sizes are in units of each model's $\heldfixedBcrit=\heldfixedDmin/\heldfixedTmin$. (a)~The fewest steps to the target, over learning rates, against the asymptotes $\max(1,\heldfixedBcrit/B)$ (dashed) and the hyperbola of McCandlish et al. (b)~The learning rate that achieves them, relative to its large-batch value; the dashed line has slope one, the linear scaling rule.}
+\label{fig:heldfixed:nqm}
+\end{fullwidth}
+\end{figure}
+
+\section{In the laboratory: batch size on the digits}\label{sec:heldfixed:lab}
+
+Both labs train the two-layer perceptron of width 64 of \cref{ch:seeds} with plain SGD, the optimizer of the theorem, on split~0 of the digits: 1,258 training images, so that $B=1{,}258$ is full-batch gradient descent, and 539 test images. Selection is honest by two-fold \term{cross-fitting}\index{cross-fitting}: the test images are divided at random into halves of 270 and 269, the learning rate is chosen on one half and scored on the other with fresh seeds, and then the halves swap roles, so that every reported number comes from images that played no part in choosing its learning rate.\sidenote{A reported error counts mistakes out of all 539 images, so one image is 0.19 points of test error; the runs of \cref{fig:heldfixed:gap}b fall on that grid.}
+
+\begin{lab}{Four protocols for one comparison}{07-heldfixed-gap}\label{lab:heldfixed:gap}
+\labpart{Setup} Batch sizes $8,16,\dots,1024$ and $1{,}258$; in every run a linear warm-up over the first 5\% of the steps and cosine decay to zero. A $2\times2$ design: a budget of 10 epochs ($T=10\lfloor1258/B\rfloor$ steps) or of 1,570 steps for every batch (those of $B=8$ in 10 epochs), crossed with a learning rate held at the value selected for $B=8$ or selected for each $B$ on a doubling grid, with two selection seeds. Protocols: (i) epochs and rate fixed, as in the batch-size sweep of Keskar et al.; (ii) epochs fixed, rate tuned; (iii) steps fixed, rate tuned; (iv) steps fixed, rate fixed. Ten fresh seeds per cell. About two minutes.
+\labpart{Predict first} Under (i), how much worse is full batch than $B=8$? At $B=128$, a tenth of the training set as in Keskar et al., which protocols show a gap? Does tuning the rate close it at a fixed number of epochs? Does matching the steps?
+\labpart{Look for} Where each protocol's error starts to rise; the selected learning rates; the training loss at the end; the paired differences from $B=8$ under (iii) and (iv).
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},lplot,
+  width=0.5\linewidth,height=0.32\linewidth,xmode=log,xmin=6.5,xmax=1600,
+  xtick={8,32,128,512,1258},xticklabels={$8$,$32$,$128$,$512$,$1258$},minor x tick num=0,
+  xlabel={batch size $B$}]
+\nextgroupplot[title={(a) four protocols},ymode=log,lloglog,ylabel={test error (\%)},ymin=1.8,ymax=90,
+  ytick={2,5,10,20,50},yticklabels={$2$,$5$,$10$,$20$,$50$},
+  legend to name=heldfixedgaplegend,legend columns=2,
+  legend style={/tikz/every even column/.append style={column sep=5mm}}]
+\addplot[heldfixed hollowB,ebarsB] table[x=B,y=mean,y error=hw] {figures/data/07-heldfixed-gap-i.dat};
+\addlegendentry{(i) epochs fixed, learning rate fixed}
+\addplot[armB,ebarsB] table[x=B,y=mean,y error=hw] {figures/data/07-heldfixed-gap-ii.dat};
+\addlegendentry{(ii) epochs fixed, learning rate tuned}
+\addplot[armA,ebars] table[x=B,y=mean,y error=hw] {figures/data/07-heldfixed-gap-iii.dat};
+\addlegendentry{(iii) steps fixed, learning rate tuned}
+\addplot[ink!65,line width=0.8pt,densely dashed,mark=diamond*,mark size=1.9pt,mark options={solid,fill=ink!65,draw=white,line width=0.2pt},heldfixed ebarsC] table[x=B,y=mean,y error=hw] {figures/data/07-heldfixed-gap-iv.dat};
+\addlegendentry{(iv) steps fixed, learning rate fixed}
+\nextgroupplot[title={(b) steps matched},ylabel={test error (\%)},ymin=1.8,ymax=3.8,ytick={2,2.5,3,3.5},
+  yticklabels={$2.0$,$2.5$,$3.0$,$3.5$}]
+\addplot[run] table[x=x,y=err] {figures/data/07-heldfixed-gap-runs-iii.dat};
+\addplot[heldfixed runC] table[x=x,y=err] {figures/data/07-heldfixed-gap-runs-iv.dat};
+\addplot[mean,ebars] table[x expr=\thisrow{B}*1.03,y=mean,y error=hw] {figures/data/07-heldfixed-gap-iii.dat};
+\addplot[heldfixed meanC,heldfixed ebarsC] table[x expr=\thisrow{B}*1.08,y=mean,y error=hw] {figures/data/07-heldfixed-gap-iv.dat};
+\end{groupplot}
+\end{tikzpicture}
+
+\smallskip
+\pgfplotslegendfromname{heldfixedgaplegend}
+\caption{\Cref{lab:heldfixed:gap}: test error against batch size under the four protocols, two-layer MLP on the digits (split 0; 1,258 training and 539 test images; $B=1{,}258$ is full batch). Each point is the mean over ten fresh seeds (100--109) of errors on the half of the test set not used to select the learning rate, with a 95\% $t$-interval over seeds. (a)~All four protocols, logarithmic scale. (b)~The two protocols with matched steps on a linear scale: hollow marks are single runs (equal errors coincide; the protocols are offset horizontally), filled marks the means.}
+\label{fig:heldfixed:gap}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} Under protocol (i), the design of Keskar et al.'s batch-size sweep in miniature, the test error grew from \pmval{2.71}{0.30}\% at $B=8$ (mean over ten seeds, 95\% $t$-interval) to \pmval{5.3}{0.5}\% at $B=64$, \pmval{13.7}{1.1}\% at 128, and \pmval{66.7}{4.9}\% at full batch (\cref{fig:heldfixed:gap}a). These runs had not learned the training set either: their final training loss was $0.54$ at $B=128$ and $2.21$ at full batch, where a uniform guess scores $2.30$. Tuning the learning rate (ii) removed the gap at moderate batches, to \pmval{3.19}{0.35}\% at $B=128$, with the selected rate growing from $0.2$ at $B\le16$ to $1.6$ at $B\ge128$, first about in proportion to the batch and then not at all. But at a fixed number of epochs the full batch takes ten steps, and no rate made up for that: \pmval{15.0}{1.4}\%, \pmval{12.3}{1.2} points worse than $B=8$ in the paired comparison over seeds. With the steps matched (iii), the error stayed between $2.71\%$ and $2.86\%$ at every batch size, full batch included; the paired differences from $B=8$ lay between $+0.06$ and $+0.15$ points, with half-widths from $0.33$ to $0.39$ (\cref{fig:heldfixed:gap}b). Matching the steps alone (iv), with the rate left at its small-batch value, gave $2.65\%$ to $2.91\%$. At $B=128$ either remedy alone removed nearly all of the 11-point gap, so their interaction was nearly as large as either effect; at full batch the steps alone removed $63.8$ points and the learning rate alone $51.6$.
+
+In this miniature the fixed-epoch gap is not a gap in generalization alone: the large batches did not finish training, on the training set or the test set, as \cref{cor:heldfixed:epochs} predicts. With the steps matched, no residual gap appeared even at full batch, to within about 0.4 points; the residual that \textcite{SmithElsenDe2020} found for a Wide-ResNet at a third of the training set is beyond the reach of a network this small and a test set this size.
+
+\begin{lab}{Steps to a target}{07-heldfixed-steps}\label{lab:heldfixed:steps}
+\labpart{Setup} The network of \cref{lab:heldfixed:gap} with a constant learning rate and no warm-up, the setting of the theorem. For each batch size and learning rate $0.1\cdot2^{k/2}$, $k=0,\dots,9$, the first step at which the test error reaches $10\%$, $5\%$, and $3.5\%$, evaluated after every step up to 64 and then every 3\%, up to 1,500 steps. For each target and batch size the learning rate with the smallest median over four selection seeds is scored with eight fresh seeds on the other half: 16 hitting times per point. The hyperbola $T=\heldfixedTmin(1+\heldfixedBcrit/B_{\mathrm{eff}})$ is fitted in log steps, with bootstrap intervals over seeds; the noise scales come from per-example gradients on the training set along a reference run. About two minutes.
+\labpart{Predict first} Between $B=8$ and $B=16$, how much do the steps fall? Between 512 and 1,024? Which target has the largest critical batch size? How should the best learning rate change with the batch?
+\labpart{Look for} The slope $-1$ at small batches and the floor at large ones; the examples $BT$ at small batches; the selected learning rates; the noise scales against the fitted $\heldfixedBcrit$.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},lplot,lloglog,
+  width=0.5\linewidth,height=0.34\linewidth,xmode=log,ymode=log,xmin=6.5,xmax=1600,
+  xtick={8,32,128,512,1258},xticklabels={$8$,$32$,$128$,$512$,$1258$},xlabel={batch size $B$}]
+\nextgroupplot[title={(a) steps to the target},ylabel={steps to reach the target},ymin=9,ymax=700,
+  ytick={10,30,100,300},yticklabels={$10$,$30$,$100$,$300$},
+  legend to name=heldfixedstepslegend,legend columns=3,
+  legend style={/tikz/every even column/.append style={column sep=5mm}}]
+\addplot[run,forget plot] table[x expr=\thisrow{B}*0.95,y=steps] {figures/data/07-heldfixed-steps-runs-t100.dat};
+\addplot[runB,forget plot] table[x=B,y=steps] {figures/data/07-heldfixed-steps-runs-t050.dat};
+\addplot[heldfixed runC,forget plot] table[x expr=\thisrow{B}*1.05,y=steps] {figures/data/07-heldfixed-steps-runs-t035.dat};
+\addplot[inkblue,line width=0.8pt,no marks,forget plot] table[x=B,y=fit] {figures/data/07-heldfixed-steps-fit-t100.dat};
+\addplot[rubric,line width=0.8pt,no marks,forget plot] table[x=B,y=fit] {figures/data/07-heldfixed-steps-fit-t050.dat};
+\addplot[ink!65,line width=0.8pt,no marks,forget plot] table[x=B,y=fit] {figures/data/07-heldfixed-steps-fit-t035.dat};
+\addplot[mean,error bars/.cd,y dir=both,y explicit,error bar style={inkblue,line width=0.5pt}] table[x expr=\thisrow{B}*0.95,y=med,
+  y error plus expr=\thisrow{hi}-\thisrow{med},y error minus expr=\thisrow{med}-\thisrow{lo}] {figures/data/07-heldfixed-steps-t100.dat};
+\addlegendentry{target $10\%$}
+\addplot[meanB,error bars/.cd,y dir=both,y explicit,error bar style={rubric,line width=0.5pt}] table[x=B,y=med,
+  y error plus expr=\thisrow{hi}-\thisrow{med},y error minus expr=\thisrow{med}-\thisrow{lo}] {figures/data/07-heldfixed-steps-t050.dat};
+\addlegendentry{target $5\%$}
+\addplot[heldfixed meanC,error bars/.cd,y dir=both,y explicit,error bar style={ink!70,line width=0.5pt}] table[x expr=\thisrow{B}*1.05,y=med,
+  y error plus expr=\thisrow{hi}-\thisrow{med},y error minus expr=\thisrow{med}-\thisrow{lo}] {figures/data/07-heldfixed-steps-t035.dat};
+\addlegendentry{target $3.5\%$}
+\nextgroupplot[title={(b) the selected learning rate},ylabel={learning rate},ymin=0.08,ymax=3,
+  ytick={0.1,0.3,1,3},yticklabels={$0.1$,$0.3$,$1$,$3$}]
+\addplot[reference,domain=6.5:120] {0.168*x/8};
+\addplot[armA] table[x expr=\thisrow{B}*0.95,y=lrgeo] {figures/data/07-heldfixed-steps-t100.dat};
+\addplot[armB] table[x=B,y=lrgeo] {figures/data/07-heldfixed-steps-t050.dat};
+\addplot[ink!65,line width=0.8pt,mark=diamond*,mark size=1.9pt,mark options={fill=ink!65,draw=white,line width=0.2pt}] table[x expr=\thisrow{B}*1.05,y=lrgeo] {figures/data/07-heldfixed-steps-t035.dat};
+\end{groupplot}
+\end{tikzpicture}
+
+\smallskip
+\pgfplotslegendfromname{heldfixedstepslegend}
+\caption{\Cref{lab:heldfixed:steps}: steps to a target test error against batch size, constant learning rate, the network and data of \cref{fig:heldfixed:gap}. (a)~Hollow marks: the 16 first-hitting steps per batch size and target (eight fresh seeds, 100--107, on each test half; the targets are offset horizontally); filled marks: their medians, with 95\% bootstrap intervals over seeds; lines: the hyperbola $\heldfixedTmin(1+\heldfixedBcrit/B_{\mathrm{eff}})$ fitted to the medians. (b)~The learning rate selected for each batch size and target (geometric mean of the two halves' choices); the dashed line is proportional to $B$, the linear scaling rule.}
+\label{fig:heldfixed:steps}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} The curves have the shape of \cref{thm:heldfixed:nqm} (\cref{fig:heldfixed:steps}a). For the 5\% target the median steps fell from 155 at $B=8$ (95\% bootstrap interval 147 to 209) to 87.5, 48.5, and 32 as the batch doubled up to 64, while the examples $BT$ grew only from 1,240 to 2,048; from $B=256$ on they stayed between 18 and 20 steps, so the full batch, 157 times larger than $B=8$, was eight times faster. The fitted critical batch sizes were 27 (25 to 34) for the 10\% target and 59 (52 to 74) for 5\%, with floors of 14.5 and 17.9 steps. For 3.5\% the curve turned more sharply than the hyperbola, like the single curvature of \cref{fig:heldfixed:nqm}: the examples stayed between 2,300 and 2,800 up to $B=64$ and the steps near 28 to 30 from 128 to 512, and the fit, 59 (41 to 66), compromises between the two. Read directly as the crossing of the asymptotes, the examples at $B=8$ divided by the fewest steps, the critical batch sizes are 40 (35 to 50), 69 (61 to 93), and 92 (74 to 108): the more demanding the target, the larger the critical batch size, as the model predicts. The selected learning rate grew in proportion to the batch up to about $B=64$ and then stayed between about 1 and 1.6 (\cref{fig:heldfixed:steps}b), the two regimes of the theorem.
+
+Two observations depart from the model. At the two largest batches, 81\% and 100\% of the training set, the steps to the 3.5\% target rose again, from 27.5 at $B=512$ to about 40, which the model, whose $T^\star$ is nonincreasing, cannot produce, and which \textcite{ShallueEtAl2019} never saw; a possible reason is that the first passage of a noisy curve below a level comes earlier than that of a smooth one, so that moderate batches gain in the measurement as well as in the training. And the noise scales, measured along a reference run at $B=64$, were $\heldfixedBsimple=184$ and 284 when the run first reached 10\% and 5\%, five to seven times the fitted critical batch sizes, as for McCandlish et al.'s MNIST network; at 3.5\% the simple noise scale fell, to 250, as the per-example gradients shrank with the training loss.
+
+\section{Protocol}\label{sec:heldfixed:protocol}
+
+\begin{protocol}{Choosing what to hold fixed}\label{prot:heldfixed:fixed}
+\item Write the claim with its budget: equal epochs, equal steps, equal operations, equal time on stated hardware, or a curve over the budget; a claim without a budget is a claim about saturated runs and needs evidence that they saturated.
+\item List the derived quantities that move with the treatment under that budget (steps, examples, the ratio of learning rate to batch, normalization statistics, the schedule's length) and decide for each whether it belongs to the treatment or confounds it.
+\item Retune, at every level of the treatment and with the same search, the hyperparameters that interact with it, such as learning rate, warm-up, momentum, schedule, and regularization; check that no selected value sits at the edge of its grid.
+\item Decay every schedule within its own budget and compare final results, not intermediate checkpoints.
+\item For a claim about scale or parallelism, measure steps to a stated target over a range of batch sizes and report $\heldfixedTmin$, $\heldfixedDmin$ and $\heldfixedBcrit$ with intervals and with their target.
+\item When the question does not fix the budget, cross the budget with the treatment in a factorial design and report the parts of the effect and their interaction.
+\item Before attributing a residual gap to a mechanism, show that it survives matched budgets and retuning, then test the mechanism by intervention (\cref{ch:mechanisms,ch:sharpness}).
+\end{protocol}
+
+The protocol makes a comparison fair to the batch size within a stated budget; it does not make the budget the right one. It does not protect against layers whose behavior depends on the batch, such as batch normalization, whose statistics should be computed over a fixed number of examples, against optimizer settings whose best values change with scale (\cref{ch:protocol}), or against a target chosen after seeing the curves. Its cost is real: matching steps multiplies the examples by the ratio of batch sizes, retuning multiplies the runs by the number of batch sizes, and first-hitting times are noisy enough to need several seeds per point. When that is unaffordable, measure the curve on a smaller proxy and transfer it with stated rules, use the noise scale as an order-of-magnitude guide, and at the least report results at two budgets, epochs and steps, so that a reader can see which one decided the comparison.
+
+\begin{exercises}
+\item \consolidation (The hyperbola.) Suppose $T(B)=\heldfixedTmin(1+\heldfixedBcrit/B)$. (a) Show that $D(B)=BT(B)=\heldfixedDmin(1+B/\heldfixedBcrit)$ with $\heldfixedDmin=\heldfixedTmin\heldfixedBcrit$, and that $(T/\heldfixedTmin-1)(D/\heldfixedDmin-1)=1$. (b) At which batch size are the steps and the examples both twice their minimum? (c) For the single curvature of \cref{fig:heldfixed:nqm}, $T^\star(\heldfixedBcrit)=1.20\,\heldfixedTmin$; explain from the proof of \cref{thm:heldfixed:nqm} why one curvature turns more sharply than the hyperbola.\label{ex:heldfixed:hyperbola}
+
+\item \consolidation (The linear scaling rule.) In part~(iii) of \cref{thm:heldfixed:nqm}, let $u_R$ minimize $L(u)/u$ on $(0,1)$. (a) Show that the minimizer is unique, by differentiating $uL'(u)-L(u)$. (b) Show that as $B\to0$ the best step satisfies $\eta^\star(B)\heldfixedBnoise\kappa/B\to2u_R$, so that the best learning rate grows in proportion to the batch. (c) Show that the best learning rate is $\eta_{\max}$ for all large $B$, and compare with \cref{fig:heldfixed:nqm}(b).\label{ex:heldfixed:linear}
+
+\item \consolidation\hard (Momentum in the model.) Heavy-ball momentum on \cref{ass:heldfixed:nqm} sets $\theta_{t+1}=\theta_t-\eta(\kappa\theta_t+\xi_{t+1})+\beta(\theta_t-\theta_{t-1})$. (a) Show that the stationary variance, when the iteration is stable, is $(1+\beta)\eta c/\bigl(B\kappa(1-\beta)(2(1+\beta)-\eta\kappa)\bigr)$. (b) Deduce that for small $\eta\kappa$ momentum acts like SGD with learning rate $\eta/(1-\beta)$, so it cannot lower $\heldfixedDmin$. (c) Argue that it can lower $\heldfixedTmin$ when other directions cap the step, and so raise $\heldfixedBcrit$. \hint{the recursion is an autoregression of order two; use the Yule--Walker equations.}\label{ex:heldfixed:momentum}
+
+\item \consolidation (A fixed number of epochs.) In the single-curvature model of \cref{fig:heldfixed:nqm}, every run processes $D=3\heldfixedDmin$ examples. Using \cref{cor:heldfixed:epochs}, find a batch size beyond which no learning rate reaches the target, and the limit of the best final loss as $B\to\infty$. Which observation of Keskar et al.\ does the model reproduce, and which does it not?\label{ex:heldfixed:epochs}
+
+\item \labwork (Adam and the square-root rule.) Rerun protocol (ii) of \cref{lab:heldfixed:gap} with Adam, on a grid of learning rates around $10^{-3}$. Compare the slope of the selected learning rate against $B$ with the linear rule and with the square-root rule of \textcite{MalladiEtAl2022}, then repeat with $\beta_1$, $\beta_2$ and $\epsilon$ scaled as that rule prescribes.\label{ex:heldfixed:adam}
+
+\item \labwork (Momentum extends perfect scaling.) Rerun \cref{lab:heldfixed:steps} with momentum $0.9$ and the learning-rate grid divided by ten. Predict from \cref{ex:heldfixed:momentum} which part of the curve moves, then check whether $\heldfixedBcrit$ grows and whether $\heldfixedDmin$ changes.\label{ex:heldfixed:momlab}
+
+\item \labwork (Train until the loss stops improving.) Add Keskar et al.'s stopping rule to \cref{lab:heldfixed:gap}: at the learning rate of protocol (i), train $B=8$ and $B=128$ until the training loss has not improved for ten epochs. Compare the test errors with those of protocols (i) and (iv), and count the steps each run took. What did the stopping rule hold fixed?\label{ex:heldfixed:stopping}
+
+\item \design (A batch-size study on a budget.) You have 200 GPU-hours to choose the batch size for a model whose run at batch 256 takes two hours on eight GPUs, and whose throughput grows almost linearly with the batch up to 4,096. Design a study that estimates $\heldfixedBcrit$ for your target with an interval: which batch sizes, how many learning rates and seeds at each, whether to use a proxy, and what to report.\label{ex:heldfixed:design}
+
+\item \design (An efficiency claim.) A method is claimed to reach a baseline's accuracy in half the epochs while doubling the batch size. Design the experiment that tests whether it saves wall-clock time, and the one that tests whether it saves computation, saying what each holds fixed and which schedule each arm uses.\label{ex:heldfixed:efficiency}
+
+\item \critique (Half the epochs.) A paper reports that its method reaches the baseline's test accuracy in half the epochs, comparing its curve with the curve of the baseline's standard 90-epoch run read at 45 epochs. List what the comparison holds fixed and what it does not, describe the baseline run it should have used, and say in which direction each omission biases the claim.\label{ex:heldfixed:critique1}
+
+\item \critique (Tuned at the base batch.) A study tunes the learning rate at batch 128, scales it linearly up to 32,768 at a fixed number of epochs, and reports the rising error beyond 4,096 as evidence that large batches generalize worse. What can the study show and what can it not, and which two additional runs per batch size would most change its conclusion?\label{ex:heldfixed:critique2}
+
+\item \research (The residual gap.) Under matched steps and tuned learning rates, \textcite{SmithElsenDe2020} found large batches worse at a third of the training set and more, and \cref{lab:heldfixed:gap} found nothing at full batch. Open: a criterion, computable early in training, that predicts whether and at which batch size a residual gap appears under matched steps, and an experiment that separates its candidate causes, such as gradient noise, normalization statistics, and the curvature reached, by intervening on each. Also open: what replaces the critical batch size when the gradient noise is far from isotropic or changes as fast as the loss.\label{ex:heldfixed:research}
+\end{exercises}
+
+\notesandrefs
+The idea that small batches are better is older than deep learning: \textcite{LeCunEtAl1998} argued it for on-line learning, and \textcite{WilsonMartinez2003} found that full-batch training needed many more passes through the data than on-line training, with no apparent difference in accuracy. \Textcite{KeskarEtAl2017} made it a claim about generalization and gave it the explanation of \textcite{HochreiterSchmidhuber1997}, flat minima, which \textcite{DinhEtAl2017} and \cref{ch:sharpness} examine. The response came within three years: regime adaptation and ghost batches \parencite{HofferEtAl2017}, linear scaling with warm-up \parencite{GoyalEtAl2017}, the noise scale \parencite{SmithLe2018,SmithEtAl2018}, the ratio of learning rate to batch size and the width of minima \parencite{JastrzebskiEtAl2017}, steps to a result \parencite{ShallueEtAl2019}, the gradient noise scale \parencite{McCandlishEtAl2018}, and the noisy quadratic model \parencite{ZhangEtAl2019}. \Textcite{MaBassilyBelkin2018} derived a critical batch size for SGD in the interpolation regime: below it one step with a batch of $m$ is nearly worth $m$ steps with a batch of one, above it nearly one step of full-batch gradient descent, and it is nearly independent of the size of the data.
+
+The critical batch size became a planning quantity for large models. \Textcite{KaplanEtAl2020} found that it grows as a power of the loss reached, approximately doubling for every $13\%$ decrease in loss, and does not depend directly on model size; \textcite{ZhangEtAl2025} found it to scale with the size of the data rather than of the model. Whether a generalization benefit of small batches survives matched steps remains debated: \textcite{SmithElsenDe2020} found one at very large batches, and \textcite{GeipingEtAl2022} replaced it by explicit regularization. Unfair budgets are not special to batch sizes: \textcite{KaddourEtAl2023} and \cref{ch:budgets,ch:protocol} meet them in efficient training, optimizer comparisons, and scaling laws.
+
+\paragraph{Translating the literature.} \Textcite{KeskarEtAl2017} write $x$ for our $\theta$, $f$ for the training loss $\Lhat$, $\alpha_k$ for the learning rate, and $\abs{B_k}$ for the batch size, call the regimes SB and LB, and use $\epsilon$ for the size of the box of their sharpness measure, unrelated to Adam's $\epsilon$. \Textcite{McCandlishEtAl2018} write $\epsilon$ for the learning rate, $S$ and $E$ for our steps $T$ and examples $D$, $S_{\min}$ and $E_{\min}$ for $\heldfixedTmin$ and $\heldfixedDmin$, and $\epsilon_{\max}$ for our $\eta_{\mathrm{gr}}$; $B_{\mathrm{noise}}$, $B_{\mathrm{simple}}$, and $B_{\mathrm{crit}}$ keep their names. \Textcite{ZhangEtAl2019} write $\alpha$ for the learning rate and $h_i$ for our curvatures $\kappa_i$, and their steady-state risk is our $f_\infty$. \Textcite{SmithLe2018} write $\epsilon$ for the learning rate and $N$ for our $n_{\mathrm{tr}}$. \Textcite{ShallueEtAl2019} say metaparameters for hyperparameters, workload for a model, data set, and optimizer together, and steps to result for our $T(B)$. \Textcite{HofferEtAl2017} write $M$ for the batch size and call matched steps regime adaptation; \textcite{GoyalEtAl2017} write $kn$ for a batch of $k$ workers with $n$ examples each.
+
+\printchapterbib
+\end{refsection}

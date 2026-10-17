@@ -1,0 +1,413 @@
+% Chapter 11 of Deep Learning as an Experimental Science: fitting a scaling law.
+\newcommand{\fittingHuber}{\operatorname{Huber}}
+\newcommand{\fittingLSE}{\operatorname{LSE}}
+\newcommand{\fittingNopt}{N_{\mathrm{opt}}}
+\newcommand{\fittingDopt}{D_{\mathrm{opt}}}
+\labchapter{Fitting a Scaling Law}{Chinchilla's third approach and its replication}{$L(N,D)=1.69+406.4/N^{0.34}+410.7/D^{0.28}$.}{Hoffmann et al.\ (2022), Approach~3: the final training loss of a transformer language model with $N$ parameters trained on $D$ tokens}{Unreplicated: refitting data read off the paper's own figure gives a different law, whose allocation agrees with the paper's other two approaches.}{ch:fitting}
+\begin{refsection}[chapters/11-fitting.bib]
+
+\begin{chaptersummary}
+In 2022 Hoffmann and colleagues estimated in three ways how a compute budget should be split between a language model's parameters and its training tokens; the third fitted a five-parameter law to the final losses of their runs and reported its allocation with an interval a thousandth wide, a little off the other two. In 2024 Besiroglu and colleagues read 245 runs off the paper's figure and refitted the law with the paper's own recipe: the exponents changed, the published law fitted the data poorly, intervals that narrow would have needed some 600,000 runs, and the refitted allocation agreed with the other two approaches; by the original authors' account, their optimizer had stopped early. The method treats a fitted law as a measurement: an objective matched to the noise, an optimizer shown to have converged, parameters that a short range of scales cannot separate, and derived quantities with delta-method and bootstrap intervals. In the laboratory, 126 runs of a small network give an allocation exponent of $0.53$ by the paper's recipe and $0.52$ by isoFLOP parabolas; averaging the loss and stopping early leaves the estimate in place and makes its interval eight times too narrow.
+\end{chaptersummary}
+
+\section{The claim: three estimates of one allocation}\label{sec:fitting:claim}
+
+How large a model should be trained with a given amount of compute? A dense network with $N$ parameters costs about $6N$ floating-point operations per training token, two per parameter in the forward pass and four in the backward pass, so a run on $D$ tokens costs $C\approx6ND$, and every budget $C$ offers a trade between a larger model and more data.\sidenote{The count ignores the attention over the context and treats every parameter alike; \cref{ch:protocol} shows how such choices of counting move a fitted exponent.} In 2020 \textcite{KaplanEtAl2020} had answered that most of a growing budget should go to parameters, $\fittingNopt\propto C^{0.73}$, and most of the largest language models of the next two years were trained on about 300 billion tokens, whatever their size \parencite[Table~1]{HoffmannEtAl2022}. \Cref{ch:protocol} tells how that answer was overturned; this chapter is about one of the instruments that overturned it.
+
+In March 2022 Jordan Hoffmann and 21 colleagues at DeepMind posted a study, published at NeurIPS that year, of over 400 transformer language models with 70 million to over 16 billion parameters, trained on 5 to 500 billion tokens of their MassiveText corpus \parencite{HoffmannEtAl2022}. They estimated the compute-optimal allocation in three ways. In \emph{Approach~1} they trained each of a range of sizes with four schedule lengths, took at each of 1500 FLOP counts the run with the lowest loss, and fitted power laws in $C$ to the sizes and token counts of these winners. In \emph{Approach~2}, the \term{isoFLOP profile}\index{isoFLOP profile}, they fixed nine budgets from $6\times10^{18}$ to $3\times10^{21}$ FLOPs, trained several sizes at each with the tokens set by the budget, and fitted a parabola to the final loss against the logarithm of the size, whose vertex located the optimal size. In \emph{Approach~3} they fitted a parametric law to the final losses of all these runs.
+
+\begin{finding}[\textcite{HoffmannEtAl2022}, Section~3.3, Table~2 and Appendix~D.2]\label{fd:fitting:approach3}
+The law $\hat L(N,D)=E+A/N^{\alpha}+B/D^{\beta}$ was fitted by minimizing the sum over runs of a Huber loss with $\delta=10^{-3}$ between the predicted and the observed log loss, with L-BFGS started from a grid of initializations. The fit gave $E=1.69$, $A=406.4$, $B=410.7$, $\alpha=0.34$, and $\beta=0.28$. Minimizing the fitted law under $C=6ND$ gives $\fittingNopt\propto C^{a}$ with $a=\beta/(\alpha+\beta)$, reported as $a=0.46$ with 10th and 90th percentiles $(0.454,0.455)$, estimated by bootstrapping, with 80\% of the data sampled 100 times. Approaches 1 and 2 gave $a=0.50$ $(0.488,0.502)$ and $a=0.49$ $(0.462,0.534)$. For the budget of the authors' Gopher model, $5.76\times10^{23}$ FLOPs, Approach~3 projected an optimal size of 40 billion parameters, Approaches 1 and 2 about 67 and 63 billion.
+\end{finding}
+
+All three estimates say that parameters and tokens should grow in about equal proportions, against Kaplan et al.'s $0.73$. Approach~3 predicts smaller optimal models at large budgets, and the paper offered a reason: runs with less than $10^{21}$ FLOPs had larger residuals than the rest, the Huber loss treated them as outliers, and the frontier of optimal sizes bends downward at large budgets, so a fit dominated by the larger runs predicts smaller models.\sidenote{The printed estimate $a=0.46$ lies outside its own printed interval $(0.454,0.455)$; with the rounded exponents of the finding, $0.28/0.62=0.452$ lies outside it on the other side.} The paper put the optimal size for Gopher's budget between 40 and 70 billion parameters and trained Chinchilla at the upper end, 70 billion parameters on 1.4 trillion tokens, 20 tokens per parameter; with the compute of Gopher (280 billion parameters, 300 billion tokens), Chinchilla outperformed it and several larger models on a wide range of downstream evaluations.
+
+The formula of Approach~3 then had a life of its own. Of the three approaches it alone predicts the loss of every pair $(N,D)$, so later work took its constants as given: \textcite{SardanaEtAl2024} used them to add the cost of inference to the allocation, \textcite{MuennighoffEtAl2023} built their law for repeated data on the same form fitted by the same Huber objective from a grid of starting points, and \textcite{BesirogluEtAl2024} note that its estimates drew the interest of theories of neural scaling. The received reading is the formula of the opening: a measured law of language modeling with exponents known to two digits and an allocation known to a thousandth.
+
+The study deserves credit on four counts. Its main conclusion rested on all three approaches and on a model that was then trained and tested, and it has held. It described its fitting recipe precisely enough to be followed. It drew its figures as vector graphics, from which the data could later be read. And it reported the disagreement of Approach~3 instead of discarding it. Nothing in 2022 marked the formula as fragile: it was fitted to hundreds of runs, it looked right on the paper's plots, and its interval came from a bootstrap, the standard tool.
+
+\section{The experiment: one fit, one run per configuration}\label{sec:fitting:experiment}
+
+Approach~3 is an experiment whose measuring instrument is an optimizer.
+
+\begin{experiment}[Hoffmann et al., Approach 3, 2022]
+\field{question}{How does the final loss depend on parameters $N$ and tokens $D$, and how should $C\approx6ND$ be split?}
+\field{treatment}{model size $N$ and number of training tokens $D$ of a decoder-only transformer on MassiveText}
+\field{levels}{over 400 runs, 70M to 16B parameters, 5B to 500B tokens; four schedule lengths per size (Approach~1) and nine budgets of $6\times10^{18}$--$3\times10^{21}$ FLOPs (Approach~2)}
+\field{tuned}{learning rate and batch size by heuristics per size; cosine schedule decaying tenfold over the run's $D$}
+\field{held fixed}{data, tokenizer, architecture family, optimizer}
+\field{response}{final training loss, smoothed; with no repeated data it estimates the held-out loss}
+\field{replicates}{one run per configuration: no repeated seeds}
+\field{analysis}{Huber loss ($\delta=10^{-3}$) on log loss, L-BFGS from a grid, best fit; 10th--90th percentiles of 100 refits on 80\% of the data}
+\field{released}{neither the losses nor the code}
+\end{experiment}
+
+The last two fields come from the paper's NeurIPS checklist, which states that the code and data were proprietary, that the paper instead gave instructions for reproducing the scaling methodology, and that the cost of training large models ruled out repeated runs, the clear trends suggesting small noise.
+
+What could this design show? The five numbers are the end point of an optimizer. The paper reports the end point but not the objective there, the gradient, the reason for stopping, or how many starting points reached the same place, so a reader cannot tell a converged fit from one that stopped early. The interval is the spread of 100 more end points; it measures the data only if each refit converges, and whether the 80\% were drawn with or without replacement changes what it means (\cref{lem:fitting:subsample}). With $\delta=10^{-3}$ on the log scale, the Huber loss is quadratic only for residuals below a tenth of a percent, while runs differ by more (seed-to-seed differences of up to 4\% in loss, by \textcite{ChoshenEtAl2025}), so the fit is in effect a least-absolute-deviation fit (\cref{lem:fitting:lad}). With one run per configuration the noise is not measured at all; it enters only through the misfit. And with neither data nor code released, the only independent check open to others was to read the data back out of a figure, which is what happened.
+
+\section{The post-mortem: 245 points read off a figure}\label{sec:fitting:postmortem}
+
+\paragraph{Reading the data.} In April 2024 Tamay Besiroglu, Ege Erdil, Matthew Barnett, and Josh You of Epoch AI posted a replication attempt, revised in May \parencite{BesirogluEtAl2024}. Figure~4 of Hoffmann et al.\ plots each run as a point at its training FLOPs and model size, colored by its loss. Converting the arXiv PDF to SVG, they read each point's position and fill color, mapped positions to sizes and FLOPs through the axis labels (the size axis has no tick marks) and colors to losses through the color bar, logarithmic from 2 to 5 in 256 shades, which limits the loss to about $0.01$. They recovered 245 runs.\sidenote{Besiroglu et al.\ released the reconstructed data and their code, so that the replication can itself be rerun.} Five of them, near $10^{19}$ FLOPs and with fewer than $0.4$ tokens per parameter, had losses up to 70\% above runs of similar compute; the main analysis drops them, and an appendix shows that keeping them changes no conclusion.
+
+\paragraph{The refit.} With the paper's recipe, the 240 runs gave the law in the third row of \cref{tab:fitting:estimates}. The published law fitted the same runs poorly: its residuals were not centered on zero, and the refit attained a lower Huber loss on 90\% of the runs. Most of the misfit was rounding. The comments in the paper's \TeX\ source, which arXiv distributes with the paper, give $E=1.6934$, $\alpha=0.3392$, and $\beta=0.2849$, and replacing $0.2849$ by the printed $0.28$ multiplies the data term by $(10^{11})^{0.0049}\approx1.13$ at $D=10^{11}$ tokens. Even unrounded, the published parameters were worse than the refit by 40 to 50 nats of log-likelihood, under a likelihood whose negative logarithm is the Huber loss with a fitted scale; a likelihood-ratio test put the difference at $p\approx10^{-16}$.
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\small
+\begin{tabular}{@{}l*{6}{c}cc@{}}
+\toprule
+& $E$ & $A_N$ & $A_D$ & $\alpha_N$ & $\alpha_D$ & $a$ & $\fittingNopt$ & $\fittingDopt/\fittingNopt$\\
+\midrule
+printed & 1.69 & 406.4 & 410.7 & 0.34 & 0.28 & 0.452 & 32B & 93\\
+\TeX\ source & 1.6934 & 406.4 & 410.7 & 0.3392 & 0.2849 & 0.457 & 40B & 59\\
+refit & 1.82 & 482 & 2085 & 0.348 & 0.366 & 0.513 & 72B & 18\\
+(standard error) & (0.03) & (125) & (1293) & (0.02) & (0.02) & (0.018) & & \\
+\bottomrule
+\end{tabular}
+\caption{Approach~3 as printed by \textcite{HoffmannEtAl2022}, with the unrounded values of their \TeX\ source, and as refitted by \textcite{BesirogluEtAl2024} to 240 runs read off the paper's Figure~4 (bootstrap standard errors, 4000 resamples). The exponent $a=\alpha_D/(\alpha_N+\alpha_D)$, the optimal size and the tokens per parameter at Gopher's budget, $5.76\times10^{23}$ FLOPs, are computed by \cref{thm:fitting:allocation} in \script{11-fitting-fits.py}; the refit's own computation gives $a=0.5126$.}
+\label{tab:fitting:estimates}
+\end{fullwidth}
+\end{table}
+
+\paragraph{The intervals.} The refit's bootstrap standard error of $a$ is $0.018$, so an 80\% interval would be about $2\times1.28\times0.018\approx0.05$ wide, fifty times the published width. Standard errors fall like the square root of the number of runs, so a fiftyfold narrower interval needs about 2500 times as many runs: some 600,000, against the 400 to 500 that Besiroglu et al.\ read into the paper's ``over 400''.
+
+\paragraph{The allocation.} The refit puts $a$ at $0.51$, with an interval that overlaps those of Approaches 1 and 2, and at Gopher's budget it calls for 72 billion parameters and 18 tokens per parameter, close to Chinchilla's 70 billion and 20 (\cref{tab:fitting:estimates}). The published law calls for 40 billion parameters and 59 tokens per parameter there, and more tokens per parameter at larger budgets. The disagreement between Approach~3 and the other two, which the paper explained by outliers and curvature, disappears when the fit is redone.
+
+\paragraph{The cause.} In the second version of their preprint, Besiroglu et al.\ report that one of the lead authors of the original paper had explained the narrow intervals in a thread on Twitter, cited as Borgeaud (2024), which we could not retrieve: the Huber losses had been averaged over the runs instead of summed, and at this scale of the objective the L-BFGS-B optimizer stopped early, in the main fit and in the bootstrap, where the refits barely moved from their starting values. The same account attributes the poor fit of the published parameters to this early stop and to rounding. We report it as Besiroglu et al.\ give it. As of October 2026, the arXiv record of the original paper has a single version, of March 2022, and the NeurIPS proceedings list no correction.
+
+\paragraph{Other checks.} \Textcite{SchaefferEtAl2025}, in a preprint, find that the paper's parameter counts admit three readings that differ by up to 15\%, none of which changes its main results much. On fitting itself, \textcite{LiEtAl2025} surveyed 51 papers on scaling laws, found that 23 do not describe how their fits were optimized and 15 do not say how parameters or FLOPs were counted, and showed in their own refits that the initialization, the optimizer, and the loss can each change a fitted law. \Textcite{ChoshenEtAl2025}, fitting over a thousand laws to 485 published models, found that the five parameters vary across model families along only about three directions, a sign that the form has fewer effective degrees of freedom than parameters (\cref{prop:fitting:short}).
+
+\begin{verdict}{unreplicated}
+A refit of the paper's own data, read off its figure and fitted with its own recipe, did not reproduce the published parameters, their interval, or the allocation they imply, and the published law fits those data poorly; by the original authors' account the fit had stopped before converging. What survives is the conclusion the paper drew from all three approaches: parameters and tokens should grow at about the same rate, $a\approx0.5$, as the refit, Approaches 1 and 2, and Chinchilla itself agree.
+\end{verdict}
+
+\section{The method: the law, its optimum and their uncertainty}\label{sec:fitting:law}
+
+\begin{definition}[Parametric law and fit]\label{def:fitting:law}
+For $\theta=(E,A_N,A_D,\alpha_N,\alpha_D)$ with $E\ge0$ and $A_N,A_D,\alpha_N,\alpha_D>0$, the \term{parametric scaling law}\index{scaling law!parametric} is
+\[
+\Loss(N,D;\theta)=E+A_NN^{-\alpha_N}+A_DD^{-\alpha_D}.
+\]
+Given runs $i=1,\dots,n$ with sizes $N_i$, token counts $D_i$, and final losses $L_i$, a \term{fit} minimizes $F(\theta)=\sum_i\rho\bigl(r_i(\theta)\bigr)$, where the residual is $r_i(\theta)=\ln\Loss(N_i,D_i;\theta)-\ln L_i$ (log space) or $\Loss(N_i,D_i;\theta)-L_i$ (loss space), and $\rho$ is the square $\rho(r)=r^2/2$ or \term{Huber's loss}\index{Huber loss} with threshold $\delta>0$,
+\begin{equation}\label{eq:fitting:huber}
+\fittingHuber_\delta(r)=\begin{cases}r^2/2,&\abs r\le\delta,\\ \delta\bigl(\abs r-\delta/2\bigr),&\abs r>\delta.\end{cases}
+\end{equation}
+\end{definition}
+
+Hoffmann et al.\ fit in log space with $\fittingHuber_\delta$, $\delta=10^{-3}$, writing the law as a log-sum-exp, $\ln\Loss=\fittingLSE(\ln A_N-\alpha_N\ln N,\ \ln A_D-\alpha_D\ln D,\ \ln E)$, which keeps the coefficients positive. The quantity the study was after is the allocation the law implies.
+
+\begin{theorem}[Compute-optimal allocation]\label{thm:fitting:allocation}\index{compute-optimal allocation}
+Let $A_N,A_D,\alpha_N,\alpha_D>0$, $E\in\R$, and $C>0$, and put
+\[
+a=\frac{\alpha_D}{\alpha_N+\alpha_D},\qquad b=\frac{\alpha_N}{\alpha_N+\alpha_D},\qquad G=\Bigl(\frac{\alpha_NA_N}{\alpha_DA_D}\Bigr)^{1/(\alpha_N+\alpha_D)}.
+\]
+Among the pairs $N,D>0$ with $6ND=C$, the law $\Loss(N,D)=E+A_NN^{-\alpha_N}+A_DD^{-\alpha_D}$ has exactly one minimizer,
+\begin{equation}\label{eq:fitting:opt}
+\fittingNopt=G\Bigl(\frac C6\Bigr)^{a},\qquad\fittingDopt=G^{-1}\Bigl(\frac C6\Bigr)^{b}.
+\end{equation}
+At the minimizer the two reducible terms balance as $\alpha_NA_N\fittingNopt^{-\alpha_N}=\alpha_DA_D\fittingDopt^{-\alpha_D}$, and the minimal loss is
+\[
+\Loss_{\mathrm{opt}}(C)=E+\frac{\alpha_N+\alpha_D}{\alpha_D}\,A_NG^{-\alpha_N}\Bigl(\frac C6\Bigr)^{-\alpha_Na}.
+\]
+\end{theorem}
+
+\begin{proof}
+The plan is to remove $D$ with the constraint, to write the remaining function of $N$ in the variable $x=\ln N$, in which it is strictly convex, and to solve its first-order condition. Write $K=C/6$. On the constraint set $D=K/N$, so
+\[
+\Loss=E+A_Ne^{-\alpha_Nx}+A_DK^{-\alpha_D}e^{\alpha_Dx}=E+f(x),\qquad x=\ln N\in\R,
+\]
+and since $N\mapsto\ln N$ maps $(0,\infty)$ onto $\R$ one to one, we minimize $f$ on $\R$. Both terms of $f$ are positive, and
+\[
+f''(x)=\alpha_N^2A_Ne^{-\alpha_Nx}+\alpha_D^2A_DK^{-\alpha_D}e^{\alpha_Dx}>0,
+\]
+so $f$ is strictly convex. The first term tends to infinity as $x\to-\infty$ because $\alpha_N>0$, and the second as $x\to\infty$ because $\alpha_D>0$. A strictly convex function that tends to infinity at both ends has exactly one minimizer, the unique zero of its derivative: $f'(x)=0$, that is,
+\begin{equation}\label{eq:fitting:foc}
+\alpha_NA_Ne^{-\alpha_Nx}=\alpha_DA_DK^{-\alpha_D}e^{\alpha_Dx}.
+\end{equation}
+Multiplying \eqref{eq:fitting:foc} by $e^{\alpha_Nx}/(\alpha_DA_DK^{-\alpha_D})$ gives $e^{(\alpha_N+\alpha_D)x}=G^{\alpha_N+\alpha_D}K^{\alpha_D}$, that is, $\fittingNopt=GK^{a}$. Then $\fittingDopt=K/\fittingNopt=G^{-1}K^{1-a}=G^{-1}K^{b}$, because $a+b=1$. At the minimizer $K^{-\alpha_D}e^{\alpha_Dx}=(K/\fittingNopt)^{-\alpha_D}=\fittingDopt^{-\alpha_D}$, so \eqref{eq:fitting:foc} is the balance $\alpha_NA_N\fittingNopt^{-\alpha_N}=\alpha_DA_D\fittingDopt^{-\alpha_D}$. Replacing the data term by the size term with this balance gives $\Loss_{\mathrm{opt}}(C)=E+(1+\alpha_N/\alpha_D)A_N\fittingNopt^{-\alpha_N}$, which is the stated formula because $\fittingNopt^{-\alpha_N}=G^{-\alpha_N}K^{-\alpha_Na}$.
+\end{proof}
+
+Three consequences are worth stating. The \term{allocation exponent}\index{allocation exponent} $a=1/(1+\alpha_N/\alpha_D)$ depends on the exponents only through their ratio, and $E$ plays no part in the allocation. The \term{tokens per parameter}\index{tokens per parameter} at the optimum, $\fittingDopt/\fittingNopt=G^{-2}(C/6)^{b-a}$, is constant only when $\alpha_N=\alpha_D$; otherwise it drifts with the budget. And the prediction is sensitive to the digits: with the printed exponents of \cref{fd:fitting:approach3}, \cref{thm:fitting:allocation} puts the optimal size at Gopher's budget at 32 billion parameters, with the unrounded ones at 40 billion, the figure the paper reports (\cref{tab:fitting:estimates}). A law meant for extrapolation must be reported with enough digits to reproduce its own predictions.
+
+How uncertain is $a$? The appendix computes the variance of $\hat a$ by the delta method from the covariance of the exponents (\cref{sec:toolkit:delta}); the ratio form gives the result a more useful shape, and the same computation covers the optimal size at every budget.
+
+\begin{proposition}[Uncertainty of the allocation]\label{prop:fitting:delta}\index{delta method}
+Let $\hat\theta_n$ be estimators of $\theta=(\ln A_N,\ln A_D,\ln E,\alpha_N,\alpha_D)$, with $\alpha_N,\alpha_D>0$, such that $\sqrt n(\hat\theta_n-\theta)$ converges in distribution to $\cN(0,\Sigma)$, and write $\Sigma_{NN},\Sigma_{ND},\Sigma_{DD}$ for the entries of $\Sigma$ that belong to the two exponents. Let $\hat a_n$ and $\hat N_{\mathrm{opt}}(C)$ be computed from $\hat\theta_n$ by \eqref{eq:fitting:opt}.
+\begin{enumerate}
+\item $\sqrt n(\hat a_n-a)$ converges in distribution to $\cN(0,a^2b^2\tau^2)$, where
+\[
+\tau^2=\frac{\Sigma_{NN}}{\alpha_N^2}-\frac{2\Sigma_{ND}}{\alpha_N\alpha_D}+\frac{\Sigma_{DD}}{\alpha_D^2}
+\]
+is the asymptotic variance of $\sqrt n\,(\ln\hat\alpha_N-\ln\hat\alpha_D)$.
+\item For each $C>0$, with $u=\ln(C/6)$, $\sqrt n\bigl(\ln\hat N_{\mathrm{opt}}(C)-\ln\fittingNopt(C)\bigr)$ converges in distribution to $\cN(0,s^2(u))$ with $s^2(u)=(g+uh)^\top\Sigma(g+uh)$, where $g$ and $h$ are the gradients of $\theta\mapsto\ln G$ and $\theta\mapsto a$. The variance $s^2(u)$ is a quadratic polynomial in $u$ with leading coefficient $a^2b^2\tau^2$.
+\item For each $C>0$, the same holds for $\ln(\fittingDopt/\fittingNopt)$ with variance $4s^2(u)$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to write each derived quantity as a differentiable function of $\theta$ and to apply the delta method (\cref{thm:toolkit:delta}) to it. Throughout, $\alpha_N,\alpha_D>0$ makes every logarithm below differentiable at $\theta$.
+
+\emph{Part (i).} Put $t=\ln\alpha_N-\ln\alpha_D$ and $\varphi(t)=1/(1+e^{t})$, so that $a=\alpha_D/(\alpha_N+\alpha_D)=\varphi(t)$. The function $\varphi$ is differentiable with $\varphi'(t)=-e^t/(1+e^t)^2=-\varphi(t)\bigl(1-\varphi(t)\bigr)=-ab$. The map $\theta\mapsto t$ has gradient $\nabla t$ with entries $1/\alpha_N$ and $-1/\alpha_D$ in the coordinates of the two exponents and zeros elsewhere, so $\nabla t^\top\Sigma\nabla t=\tau^2$, which by the delta method is the asymptotic variance of $\sqrt n(\hat t_n-t)$. By the chain rule $h=-ab\,\nabla t$, so $h^\top\Sigma h=a^2b^2\tau^2$, and the delta method gives part (i).
+
+\emph{Part (ii).} By \cref{thm:fitting:allocation}, $\ln\fittingNopt(C)=\ln G+au$, with
+\[
+\ln G=\frac{\ln\alpha_N+\ln A_N-\ln\alpha_D-\ln A_D}{\alpha_N+\alpha_D},
+\]
+a differentiable function of $\theta$. For fixed $u$ the gradient of $\theta\mapsto\ln G+au$ is $g+uh$, and the delta method gives the variance $(g+uh)^\top\Sigma(g+uh)=g^\top\Sigma g+2u\,g^\top\Sigma h+u^2h^\top\Sigma h$, a quadratic in $u$ whose leading coefficient is $a^2b^2\tau^2$ by part (i).
+
+\emph{Part (iii).} Since $\fittingDopt=(C/6)/\fittingNopt$, we have $\ln(\fittingDopt/\fittingNopt)=u-2\ln\fittingNopt(C)$, an affine function of $\ln\fittingNopt(C)$ with slope $-2$ for fixed $C$, so its asymptotic variance is $4s^2(u)$.
+\end{proof}
+
+Three readings make the proposition practical. First, $ab\le1/4$: the allocation exponent is at most a quarter as uncertain as the log-ratio of the exponents. Second, with coefficients of variation $\kappa_N,\kappa_D$ of the exponents and correlation $\varrho$, $\tau^2=\kappa_N^2-2\varrho\kappa_N\kappa_D+\kappa_D^2$, so positively correlated exponents, the usual case since both trade off against $E$ (\cref{prop:fitting:short}), make $\hat a$ more precise than either. With the refit's standard errors of $0.02$ for both exponents, $\hat a$ has standard error $0.020$ for uncorrelated exponents and $0.014$ for $\varrho=0.5$; Besiroglu et al.'s bootstrap gave $0.018$. Read as a normal 10--90\% interval, the published $(0.454,0.455)$ means a standard error of about $0.0004$, and so a standard deviation of about $0.0016$ for $\ln\hat\alpha_N-\ln\hat\alpha_D$: the ratio of the two exponents known to $0.16\%$. Such an interval is not impossible in itself, since the log-ratio varies little whenever the exponents move together; the comparison with a bootstrap of comparable data made it implausible. Third, by part (ii) the uncertainty of the optimal size is smallest at one budget, in practice near the middle of those measured, and grows linearly in $\abs u$ far from it, as \cref{ch:extrapolation} develops.
+
+A bootstrap estimates $\Sigma$, or the distribution of $\hat a$ directly, by refitting the law to resampled runs (\cref{thm:toolkit:bootstrap}). The \term{bootstrap over runs}\index{bootstrap!over runs} draws $n$ runs with replacement; Hoffmann et al.'s scheme drew 80\% of them, and the difference is not cosmetic.
+
+\begin{lemma}[Subsamples]\label{lem:fitting:subsample}\index{subsampling}
+Let $y_1,\dots,y_n$ be real numbers, $n\ge2$, with mean $\bar y$ and $S^2=\sum_i(y_i-\bar y)^2/(n-1)$, and let $\bar y_m$ be the mean of $m$ of them, $1\le m\le n$. If the $m$ are drawn uniformly without replacement, then $\E\bar y_m=\bar y$ and $\Var\bar y_m=(S^2/m)(1-m/n)$. If they are drawn independently with replacement, then $\E\bar y_m=\bar y$ and $\Var\bar y_m=(n-1)S^2/(nm)$.
+\end{lemma}
+
+\begin{proof}
+Without replacement, let $Z_i$ indicate that $y_i$ is drawn. Each $Z_i$ has mean $m/n$, so $\E\bar y_m=\frac1m\sum_i\frac mny_i=\bar y$. Subtracting $\bar y$ from every $y_i$ changes neither $\Var\bar y_m$ nor $S^2$, so we may assume $\sum_iy_i=0$. The variance of $Z_i$ is $\frac mn(1-\frac mn)$ and, for $i\ne j$, $\Cov(Z_i,Z_j)=\frac{m(m-1)}{n(n-1)}-\frac{m^2}{n^2}=-\frac mn\bigl(1-\frac mn\bigr)\frac1{n-1}$. Since $\sum_{i\ne j}y_iy_j=(\sum_iy_i)^2-\sum_iy_i^2=-\sum_iy_i^2$,
+\[
+\Var\Bigl(\sum_iZ_iy_i\Bigr)=\frac mn\Bigl(1-\frac mn\Bigr)\Bigl(\sum_iy_i^2+\frac{\sum_iy_i^2}{n-1}\Bigr)=m\Bigl(1-\frac mn\Bigr)S^2,
+\]
+using $\sum_iy_i^2=(n-1)S^2$; dividing by $m^2$ gives the first claim. With replacement, the $m$ draws are independent, each with mean $\bar y$ and variance $\frac1n\sum_i(y_i-\bar y)^2=(n-1)S^2/n$, and their mean has $1/m$ of that variance.
+\end{proof}
+
+The lemma is the finite-population correction of survey sampling \parencite{Cochran1977}. Relative to the standard error $S/\sqrt n$ of $\bar y$, the subsample means spread by $\sqrt{(1-f)/f}$ for a fraction $f=m/n$ drawn without replacement and about $\sqrt{1/f}$ with replacement: $0.50$ and $1.12$ for $f=0.8$. A smooth estimator is to first order an average over runs, so the same factors apply to it. Even for converged fits, then, refits on 80\% subsamples drawn without replacement show half the standard error, and their 10th--90th percentiles form an 80\% interval, not a 95\% one; a report should say which scheme it used and rescale it, or use the bootstrap of \cref{def:toolkit:bootstrap}.
+
+\section{The method: objective, optimizer and identifiability}\label{sec:fitting:fitting}
+
+\paragraph{Log space or loss space.} A residual in log space is a relative error, $\ln\hat L-\ln L\approx(\hat L-L)/L$, which is the right scale when the noise of a run is proportional to its loss. Least squares on the loss itself gives the most weight to the largest losses, those of the smallest and often noisiest runs. When the noise varies across runs, as in our laboratory, where the seed-to-seed spread falls 25-fold from the smallest budget to the largest, the textbook covariance $\hat\sigma^2(\hat J^\top\hat J)^{-1}$ of \cref{thm:toolkit:nls}, which assumes one noise level, is too optimistic.
+
+\paragraph{Huber's loss and its threshold.} \Textcite{Huber1964} designed the loss \eqref{eq:fitting:huber} to estimate a location when a fraction of the data is contaminated: quadratic for small residuals and linear for large ones, so that a few wild runs cannot pull the fit far. The threshold sets what counts as wild, and must be compared with the noise.
+
+\begin{lemma}[A small threshold is least absolute deviations]\label{lem:fitting:lad}\index{least absolute deviations}
+For every $\delta>0$ and $r\in\R$, $0\le\delta\abs r-\fittingHuber_\delta(r)\le\delta^2/2$. Consequently, if $\theta_\delta$ minimizes $\sum_i\fittingHuber_\delta(r_i(\theta))$ and $\theta_1$ minimizes $\sum_i\abs{r_i(\theta)}$ over the same set, then $\sum_i\abs{r_i(\theta_\delta)}\le\sum_i\abs{r_i(\theta_1)}+n\delta/2$.
+\end{lemma}
+
+\begin{proof}
+If $\abs r>\delta$, then $\delta\abs r-\fittingHuber_\delta(r)=\delta^2/2$. If $\abs r\le\delta$, then $\delta\abs r-\fittingHuber_\delta(r)=\delta\abs r-r^2/2$, and $s\mapsto\delta s-s^2/2$ increases on $[0,\delta]$ from $0$ to $\delta^2/2$. This proves the inequality. Summing it over the runs, dividing by $\delta$, and using that $\theta_\delta$ minimizes the Huber objective,
+\begin{align*}
+\sum_i\abs{r_i(\theta_\delta)}&\le\frac1\delta\sum_i\fittingHuber_\delta\bigl(r_i(\theta_\delta)\bigr)+\frac{n\delta}2\\
+&\le\frac1\delta\sum_i\fittingHuber_\delta\bigl(r_i(\theta_1)\bigr)+\frac{n\delta}2\le\sum_i\abs{r_i(\theta_1)}+\frac{n\delta}2.\qedhere
+\end{align*}
+\end{proof}
+
+With $\delta=10^{-3}$ and residuals of a few percent, the fit is a least-absolute-deviation fit, a median regression, to within $n\delta/2$ in an objective of size about $n$ times the typical residual. That costs precision. For a location estimated at standard normal noise, the Huber estimate with threshold $k$ has asymptotic efficiency $(2\Phi(k)-1)^2/\E\min(Z^2,k^2)$ relative to the mean (\cref{ex:fitting:huber}): $0.95$ at the classical choice $k=1.345$, and $2/\pi\approx0.64$, that of the median, as $k\to0$. A threshold of $1.345\hat\sigma$, with $\hat\sigma$ the noise of the residuals measured from repeated seeds, keeps most of the efficiency of least squares and most of the robustness of the median. A tiny threshold has a second cost: the curvature of the objective sits in the few residuals inside $[-\delta,\delta]$, so neither the textbook covariance nor its sandwich form (\cref{sec:toolkit:nls}) is reliable, and the bootstrap is the safe way to an interval.
+
+\paragraph{The optimizer and its stopping tests.} The objective is not convex in $\theta$, and a quasi-Newton method such as L-BFGS \parencite{Nocedal1980}, in its bounded variant L-BFGS-B \parencite{ByrdEtAl1995}, finds a local minimum that depends on its start.\sidenote{L-BFGS approximates the inverse Hessian from the last few steps and changes of gradient, ten pairs by default in SciPy, so its memory and its cost per step stay small.} Hence the grid of starting points, and two questions every fit must answer: did each start converge, and how many reached the best value? In SciPy, which we use, L-BFGS-B stops when the relative decrease $(F_k-F_{k+1})/\max\{\abs{F_k},\abs{F_{k+1}},1\}$ falls below $\mathrm{ftol}=2.2\times10^{-9}$, when the largest component of the projected gradient falls below $\mathrm{gtol}=10^{-5}$, or when it runs out of iterations. Both tests depend on the scale of $F$: when $\abs F<1$ the first compares an absolute decrease with $\mathrm{ftol}$, the second is absolute at every scale, and dividing $F$ by $n$ makes both $n$ times easier to pass. The path does not depend on the scale: in exact arithmetic L-BFGS-B takes the same steps on $cF$ as on $F$ for every $c>0$, because the gradient and the quasi-Newton matrix both scale by $c$, leaving the search directions unchanged, and the tests that accept a step are homogeneous in $F$. Averaging the objective over $n$ runs instead of summing it therefore cuts the same path earlier, as the account in \cref{sec:fitting:postmortem} describes; \cref{lab:fitting:fits} checks both halves of this remark numerically. The cure is cheap: tighten the tolerances or scale the objective to order one, and report the termination message, the final objective and gradient, and the number of starts that reached the best value.\index{convergence check}
+
+\paragraph{Variable projection.} For fixed exponents the law is linear in $(E,A_N,A_D)$, so for least squares in loss space the best coefficients solve a nonnegative least-squares problem, and a dense grid over the two exponents finds the global minimum to its resolution, with no starting points to choose. This is \term{variable projection}\index{variable projection} \parencite{GolubPereyra1973}, proposed for scaling laws by \textcite{CzechEtAl2026} in a preprint; even when the main fit is in log space, it checks the region the optimizer found.
+
+\paragraph{Identifiability.} Over a short range of sizes, a curve $E+AN^{-\alpha}$ is nearly straight on log-log axes, and a nearly straight curve does not say where its floor is: a higher floor with a steeper exponent and a lower floor with a shallower one can pass through the same points. The next proposition makes this precise. Write the law near the start $N_0$ of the range as $\Loss(N)=E+A_0(N/N_0)^{-\alpha}$, with $A_0=AN_0^{-\alpha}$ the reducible loss at $N_0$.
+
+\begin{proposition}[A short range determines two numbers, not three]\label{prop:fitting:short}\index{identifiability}
+Fix $N_0>0$, $r>1$, points $t_1,\dots,t_n\in[0,1]$, and put $N_i=N_0r^{t_i}$ and $h=\ln r$. For the law $\Loss(N)=E+A_0(N/N_0)^{-\alpha}$ with $A_0,\alpha>0$, let $J$ be the $n\times3$ matrix whose $i$th row is the gradient of $\Loss(N_i)$ with respect to $(E,A_0,\alpha)$.
+\begin{enumerate}
+\item Up to terms of order $h^2$, each column of $J$ is an affine function of $x_i=\ln(N_i/N_0)$, and the three affine functions span a space of dimension two.
+\item For $v=(-1,1,-\alpha/A_0)$, every entry of $Jv$ lies in $[-\alpha^2h^2/2,0]$. Hence, with $w=v/\norm v$,
+\[
+w^\top J^\top Jw\le\frac{n\alpha^4h^4}{4(2+\alpha^2/A_0^2)}\le\frac{n\alpha^4h^4}8,
+\]
+while the largest eigenvalue of $J^\top J$ is at least $n$.
+\item If the observed losses are $\Loss(N_i)+\varepsilon_i$ with independent errors of mean zero and variance $\sigma^2$, and $J^\top J$ is invertible, then the least-squares covariance $\sigma^2(J^\top J)^{-1}$ of \cref{thm:toolkit:nls} gives the component of the estimate along $w$ a variance of at least $8\sigma^2/(n\alpha^4h^4)$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to compute the three columns as functions of $x=\ln(N/N_0)\in[0,h]$, read off their first-order parts for (i), bound the combination $Jv$ exactly for (ii), and convert the bound into a variance for (iii). With $(N/N_0)^{-\alpha}=e^{-\alpha x}$, the partial derivatives of $\Loss$ are
+\[
+\frac{\partial\Loss}{\partial E}=1,\qquad\frac{\partial\Loss}{\partial A_0}=e^{-\alpha x},\qquad\frac{\partial\Loss}{\partial\alpha}=-A_0xe^{-\alpha x}.
+\]
+
+\emph{Part (i).} Since $e^{-\alpha x}=1-\alpha x+O(x^2)$ and $x\le h$, the columns are, up to $O(h^2)$, the values at $x_i$ of the affine functions $1$, $1-\alpha x$, and $-A_0x$. All three lie in the span of $1$ and $x$, and the first and the third are independent, so the span has dimension two.
+
+\emph{Part (ii).} The $i$th entry of $Jv$ is
+\[
+-1+e^{-\alpha x_i}+\frac\alpha{A_0}A_0x_ie^{-\alpha x_i}=(1+y)e^{-y}-1,\qquad y=\alpha x_i\in[0,\alpha h].
+\]
+The function $q(y)=(1+y)e^{-y}-1$ has $q(0)=0$ and $q'(y)=-ye^{-y}$, so $q(y)=-\int_0^yse^{-s}\dd s$, and since $0\le se^{-s}\le s$, we get $-y^2/2\le q(y)\le0$. With $y\le\alpha h$ every entry of $Jv$ lies in $[-\alpha^2h^2/2,0]$, so $\norm{Jv}^2\le n\alpha^4h^4/4$. Dividing by $\norm v^2=2+\alpha^2/A_0^2\ge2$ gives the bound on $w^\top J^\top Jw$. The largest eigenvalue of $J^\top J$ is at least $e_1^\top J^\top Je_1=\sum_i(\partial\Loss/\partial E)^2=n$, with $e_1$ the first unit vector.
+
+\emph{Part (iii).} For a positive definite matrix $M$ and a unit vector $w$, the Cauchy--Schwarz inequality gives $1=(w^\top M^{1/2}M^{-1/2}w)^2\le(w^\top Mw)(w^\top M^{-1}w)$. With $M=J^\top J$, the variance $\sigma^2w^\top(J^\top J)^{-1}w$ is therefore at least $\sigma^2/(w^\top J^\top Jw)$, which by part (ii) is at least $8\sigma^2/(n\alpha^4h^4)$.
+\end{proof}
+
+The direction $v$ explains the trade. Moving along it lowers $E$ and raises $A_0$ by the same amount, which keeps the loss $E+A_0$ at the start of the range, and lowers $\alpha$ by $\alpha/A_0$ per unit, which keeps the slope $-\alpha A_0$ of the loss against $\ln N$ there. A short range measures a level and a slope; the curvature enters only at second order, so its information is at most of order $h^4$, and the standard error along $v$ is at least of order $1/(\ln r)^2$: halving the range in log scale quadruples this bound. The bound matters when $\alpha\ln r$ is below about one, a range of $e^{1/\alpha}$: a factor of 19 for $\alpha=0.34$, of 4 for the exponents near $0.7$ of our laboratory. The same holds in log space, where the rows of $J$ are divided by the losses, and in each variable of the two-variable law (\cref{ex:fitting:twovar}). Such \emph{sloppy} directions, along which parameters move with almost no effect on the fit, were found in every systems-biology model examined by \textcite{GutenkunstEtAl2007}, who recommend reporting predictions and their uncertainty rather than individual parameters. For a scaling law, the predictions are the allocation and the loss at given $(N,D)$.\sidenote{\Textcite{SardanaEtAl2024} refitted the Chinchilla form with Hoffmann et al.'s recipe to subsets of their 47 runs and obtained floors from $0.17$ to $1.45$ and size exponents from $0.08$ to $0.18$, depending on the range of tokens per parameter included.} The floor $E$ deserves an interval of its own, from a bootstrap or the profile of the objective \parencite{BatesWatts1988}\index{profile likelihood}, and a point estimate of $E$ should not be read as the entropy of anything without one.
+
+\paragraph{Cross-checks.} The isoFLOP analysis of Approach~2 shares the runs of a parametric fit but not its assumptions. On the slice $6ND=C$ the law in $x=\ln N$ is $E+A_Ne^{-\alpha_Nx}+A_D(C/6)^{-\alpha_D}e^{\alpha_Dx}$, a valley symmetric about its minimum only when $\alpha_N=\alpha_D$; a parabola estimates the minimum without a global form and without $E$, but its vertex is biased when the valley is asymmetric or the sizes are not centered on the optimum, even without noise \parencite{CzechEtAl2026}. The envelope of Approach~1 needs training curves. The decisive cross-check is the simplest: publish $N$, $D$, $C$, seed, and loss for every run, and the fitting code, so that the next reader reruns a script instead of reading a figure.
+
+\section{In the laboratory: one grid, two analyses}\label{sec:fitting:lab}
+
+The laboratory uses the teacher task of \script{labkit.py}: inputs in eight dimensions, targets from a fixed random two-layer network plus noise of variance $0.01$. The irreducible loss is known, $E=0.01$, a luxury no language model offers.\sidenote{We measure every run on the same 16,384 noise-free test inputs and add the noise variance, so the reported loss estimates the population loss and cannot fall below $0.01$.} A student is a two-layer ReLU network of width $w$ with $N=w^2+11w+1$ parameters. Under the online protocol it is trained for one pass over $D$ fresh examples with Adam, batch size 64, and a cosine schedule over its $D/64$ steps, so that, as in pretraining, the data term of the law is a term for unfinished optimization (\cref{ch:protocol}).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},lplot,lloglog,
+  width=0.5\linewidth,height=0.31\linewidth]
+\nextgroupplot[xmode=log,ymode=log,title={(a) seven isoFLOP slices},xlabel={parameters $N$},
+  ylabel={test loss},xmin=30,xmax=3e4,ymin=0.0095,ymax=0.13,
+  ytick={0.01,0.02,0.05,0.1},yticklabels={0.01,0.02,0.05,0.1},
+  xtick={100,1000,10000},xticklabels={$10^2$,$10^3$,$10^4$}]
+\addplot[reference] coordinates {(30,0.01) (30000,0.01)};
+\addplot[run] table[x=N,y=loss] {figures/data/11-fitting-runs.dat};
+\addplot[fit] table[x=N,y=k60] {figures/data/11-fitting-curves.dat};
+\addplot[fit] table[x=N,y=k65] {figures/data/11-fitting-curves.dat};
+\addplot[fit] table[x=N,y=k70] {figures/data/11-fitting-curves.dat};
+\addplot[fit] table[x=N,y=k75] {figures/data/11-fitting-curves.dat};
+\addplot[fit] table[x=N,y=k80] {figures/data/11-fitting-curves.dat};
+\addplot[fit] table[x=N,y=k85] {figures/data/11-fitting-curves.dat};
+\addplot[fit] table[x=N,y=k90] {figures/data/11-fitting-curves.dat};
+\addplot[mean,ebars] table[x=N,y=mean,y error=hw] {figures/data/11-fitting-cells.dat};
+\nextgroupplot[xmode=log,ymode=log,title={(b) the compute-optimal size},xlabel={compute $C$ (FLOPs)},
+  ylabel={optimal size $N_{\mathrm{opt}}$},xmin=6e5,xmax=6e10,ymin=10,ymax=2e4,
+  xtick={1e6,1e7,1e8,1e9,1e10},ytick={10,100,1000,10000}]
+\addplot[name path=fhi,draw=none,forget plot] table[x=C,y=hi] {figures/data/11-fitting-frontier.dat};
+\addplot[name path=flo,draw=none,forget plot] table[x=C,y=lo] {figures/data/11-fitting-frontier.dat};
+\addplot[ciband,forget plot] fill between[of=fhi and flo];
+\addplot[reference] coordinates {(6e6,10) (6e6,2e4)};
+\addplot[reference] coordinates {(6e9,10) (6e9,2e4)};
+\addplot[fit] table[x=C,y=law] {figures/data/11-fitting-frontier.dat};
+\addplot[mean,ebars] table[x=C,y=Nopt,y error plus=ep,y error minus=em] {figures/data/11-fitting-minima.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{\Cref{lab:fitting:grid}: 126 runs on the teacher task, online protocol, 42 cells of three seeds (seeds 1--3). (a)~Test loss against size on the isoFLOP slices $C=6\times10^{6}$ (top) to $6\times10^{9}$ FLOPs (bottom): runs (hollow marks), cell means with 95\% $t$-intervals (filled), and the law fitted by the recipe of \cref{lab:fitting:fits} (curves); dashed: the irreducible loss $0.01$. (b)~Optimal size against compute: vertices of parabolas fitted to log loss against $\ln N$ on each slice, with 95\% bootstrap intervals over runs, and the optimum $G(C/6)^{a}$ of the fitted law with a 95\% bootstrap band; dashed lines mark the measured range.}
+\label{fig:fitting:slices}
+\end{fullwidth}
+\end{figure}
+
+\begin{lab}{A grid of isoFLOP slices}{11-fitting-grid}\label{lab:fitting:grid}
+\labpart{Setup} Seven budgets $C=6ND$ from $6\times10^{6}$ to $6\times10^{9}$ FLOPs in half-decade steps; on each, the widths whose $N$ lies within a factor 6 of a pilot estimate of the optimum, with $4096\le D\le2^{20}$: 42 cells, $N$ from 43 to 17,793 and $D$ from 4096 to 730,304. In each cell the learning rate is the best of $\frac12$, 1, and 2 times a rule $\min(0.1,2/w)(4096/D)^{0.3}$ on one tuning run (seed 0), and three runs (seeds 1--3: initialization, data order, and training sample) are trained with it: 126 runs for the analysis, 126 for tuning. About three minutes.
+\labpart{Predict first} Will the optimal model grow faster or slower than its data as the budget grows? Where will the seeds of one cell disagree most, at small budgets or at large ones?
+\labpart{Look for} A valley on every slice; the spread of the three seeds against the budget; the law's curves through the cell means; the floor $0.01$ below the lowest losses.
+\end{lab}
+
+\paragraph{What happened.} The 126 runs and the 126 tuning runs took under three minutes, and every slice has a valley (\cref{fig:fitting:slices}a). The tuning kept the rule's learning rate in 25 cells, halved it in 13, and doubled it in 4.\sidenote{The three tuning runs of a cell are a tuning budget in the sense of \cref{ch:budgets}; choosing on seed 0 and measuring on seeds 1--3 keeps the selection out of the measurement, as in \cref{prop:seeds:bestof}(ii).} The seeds of a cell disagree most at small budgets: the median within-cell standard deviation of the log loss falls from $0.16$ on the smallest slice, where one run of 64 steps ended at almost twice the loss of its two twins, to $0.006$ on the largest, a factor of 25. No run comes within 13\% of the floor: the lowest loss is $0.0113$.
+
+\begin{lab}{One law, fitted many ways}{11-fitting-fits}\label{lab:fitting:fits}
+\labpart{Setup} The 126 runs of \cref{lab:fitting:grid}. The recipe: Huber loss, $\delta=10^{-3}$, on log loss summed over runs, minimized by SciPy's L-BFGS-B from Hoffmann et al.'s grid of 4500 points ($\ln E$ shifted by $-4$ and $\ln A_N,\ln A_D$ by $-5$ to our losses), every start run to convergence ($\mathrm{ftol}=10^{-15}$, $\mathrm{gtol}=10^{-11}$). Variants: the objective averaged over runs with SciPy's default tolerances; the recipe stopped after 5 to 50 iterations; $\delta=1.345\hat\sigma$; least squares on log loss and on loss; $E$ fixed at $0.01$. Intervals: bootstrap over runs (1000 resamples for the recipe, 300 per variant), delta method, and 200 refits on 80\% subsamples as in Hoffmann et al. IsoFLOP parabolas with a bootstrap within slices. About two minutes.
+\labpart{Predict first} How many of the 4500 starts reach the best fit? Will averaging instead of summing move the estimate, its interval, or both? Will the fitted $E$ be $0.01$?
+\labpart{Look for} Termination messages and iteration counts; where the starts end; the width of every interval for $a$; the parametric estimate against the isoFLOP estimate; the ridge between $E$ and $\alpha_N$.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[lplot,width=0.56\linewidth,height=0.33\linewidth,
+  xmin=0.40,xmax=0.66,ymin=0.4,ymax=11.6,ytick={1,...,11},minor y tick num=0,
+  xtick={0.40,0.45,0.50,0.55,0.60,0.65},
+  xticklabels={0.40,0.45,0.50,0.55,0.60,0.65},
+  yticklabels={isoFLOP parabolas,{$E$ fixed at $0.01$},least squares on loss,
+    {least squares on log loss, NLS formula},least squares on log loss,
+    {Huber, $\delta=1.345\hat\sigma$},{early-stopped refits, bootstrap},
+    {early-stopped refits, 80\% subsamples},recipe stopped after 10 iterations,
+    {recipe, delta method},{recipe, bootstrap}},
+  y tick label style={font=\footnotesize},xlabel={allocation exponent $a$},ymajorgrids=false,yminorgrids=false]
+\fill[inkblue!8] (axis cs:0.4858,0.4) rectangle (axis cs:0.5994,11.6);
+\addplot[reference] coordinates {(0.5344,0.4) (0.5344,11.6)};
+\addplot[mean,xebars] table[x=a,y=row,x error plus=ehi,x error minus=elo] {figures/data/11-fitting-forest-main.dat};
+\addplot[meanB,error bars/x dir=both,error bars/x explicit,
+  error bars/error bar style={rubric,line width=0.5pt},
+  error bars/error mark options={rubric,mark size=1.7pt,line width=0.5pt}]
+  table[x=a,y=row,x error plus=ehi,x error minus=elo] {figures/data/11-fitting-forest-art.dat};
+\addplot[only marks,mark=diamond*,mark size=2.2pt,color=inkblue,mark options={fill=white,line width=0.6pt}]
+  table[x=a,y=row] {figures/data/11-fitting-forest-pt.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{\Cref{lab:fitting:fits}: the allocation exponent $a$ from the 126 runs, fitted many ways. Circles: estimates with 95\% intervals (bootstrap over runs unless marked; ``NLS formula'': $\hat\sigma^2(\hat J^\top\hat J)^{-1}$ and the delta method). Vermilion: the averaged objective with SciPy's default tolerances, every refit started at its estimate; the 80\% subsamples give 10th--90th percentiles, as in Hoffmann et al.'s Table~2. Diamond: the recipe stopped after ten iterations. Band and dashed line: the recipe's bootstrap interval and estimate.}
+\label{fig:fitting:forest}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened: the recipe.} Run to convergence, the recipe gives $E=0.0078$, $A_N=0.42$, $A_D=30$, $\alpha_N=0.686$, and $\alpha_D=0.787$, so $a=0.534$ with a bootstrap 95\% interval of $0.486$--$0.599$; the exponents have intervals $0.513$--$0.845$ and $0.630$--$0.957$, and the coefficients have intervals spanning factors of 5 and 20. Of the 4500 starts, 3677 (82\%) reach the best objective; the others stop at local minima with 1.2 to 6.6 times its value and $a$ from $0.05$ to $0.94$, most of them (591) at $a=0.88$ (\cref{fig:fitting:ident}a): a single start is right four times in five. The bootstrap correlation of the exponents is $0.45$, and \cref{prop:fitting:delta} turns it into a standard error of $0.030$ for $\hat a$ (interval $0.476$--$0.593$), against $0.040$ had they been uncorrelated. The median absolute residual is $0.052$, fifty-two times $\delta$, and 95\% of the residuals exceed $\delta$: the recipe is a least-absolute-deviation fit (\cref{lem:fitting:lad}).
+
+\paragraph{What happened: averaging and stopping early.} With the objective averaged and SciPy's default tolerances, a start stops after a median of 11 iterations instead of 92, and only 4\% of the starts end within 1\% of the best value; their end points spread $a$ from $0.12$ to $0.84$ (5th to 95th percentile). From one start, the averaged and the summed runs agree to $8\times10^{-6}$ in every coordinate for 26 iterations; then the averaged run stops, at a summed objective 6\% above the optimum and $a=0.568$: the same path, cut earlier. Yet the best of the 4500 early-stopped fits lies within $10^{-6}$ of the optimum, $a=0.5345$: in our miniature the grid rescued the point estimate. It did not rescue the interval. Started from the estimate, the early-stopped refits of 80\% subsamples stop after a median of 6 iterations, and their 10th--90th percentiles span $0.532$--$0.538$, a width of $0.006$, against $0.526$--$0.573$, a width of $0.047$, when every refit converges (\cref{fig:fitting:forest}): the failure of the published interval, reproduced at a factor of eight instead of fifty. A bootstrap of early-stopped refits is also too narrow, $0.522$--$0.545$. Stopping after a fixed number of iterations moves the estimate itself: the best of the grid gives $a=0.514$ after 5 iterations, $0.563$ after 10, $0.549$ after 20, and the converged $0.534$ after 50, differences of up to one standard error. Converged refits on 80\% subsamples spread by $0.58$ bootstrap standard errors, or $1.03$ when drawn with replacement (\cref{lem:fitting:subsample}: $0.50$ and $1.12$).
+
+\paragraph{What happened: other objectives and the isoFLOP check.} The objectives agree within their uncertainty (\cref{fig:fitting:forest}): Huber with $\delta=1.345\hat\sigma=0.12$ gives $a=0.539$ ($0.489$--$0.589$), least squares on log loss $0.543$ ($0.493$--$0.591$), and least squares on loss $0.529$ ($0.424$--$0.634$), the widest because the noisiest runs have the largest losses; variable projection on a grid of step $0.01$ confirms the last minimum. The textbook interval for least squares on log loss, $0.508$--$0.577$, is 30\% narrower than its bootstrap interval, because it assumes one noise level for runs whose spread varies 25-fold. The isoFLOP parabolas give $a=0.522$ ($0.449$--$0.607$, bootstrap within slices), $0.013$ from the recipe; parabolas fitted to the recipe's own law at the same sizes put their vertices 0.4\% to 2.8\% below the law's optima, a bias too small to matter here. In this miniature, as in Hoffmann et al.'s data once refitted, the third approach agrees with the second when its optimizer has converged, and every honestly computed interval in \cref{fig:fitting:forest} contains $1/2$: parameters and data grow at about the same rate.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},lplot,
+  width=0.5\linewidth,height=0.28\linewidth]
+\nextgroupplot[ymode=log,title={(a) where 4500 starts end},xlabel={allocation exponent $a$ at the end point},
+  ylabel={objective / best},xmin=0,xmax=1,ymin=0.8,ymax=12,minor tick num=4,
+  ytick={1,2,5,10},yticklabels={1,2,5,10}]
+\addplot[runB] table[x=ma,y=mratio] {figures/data/11-fitting-starts.dat};
+\addplot[run] table[x=a,y=ratio] {figures/data/11-fitting-starts.dat};
+\draw[->,inkblue,line width=0.4pt] (axis cs:0.43,0.89) -- (axis cs:0.515,0.985);
+\node[anchor=west,font=\footnotesize,text=inkblue,inner sep=1pt] at (axis cs:0.03,0.88) {3677 converged starts};
+\nextgroupplot[title={(b) the ridge between $E$ and $\alpha_N$},xlabel={irreducible loss $E$},
+  ylabel={exponent $\alpha_N$},xmin=0.004,xmax=0.0108,ymin=0.45,ymax=0.95,
+  xtick={0.004,0.006,0.008,0.010},xticklabels={0.004,0.006,0.008,0.010}]
+\addplot[run] table[x=E,y=alN] {figures/data/11-fitting-boot.dat};
+\addplot[fit] table[x=E,y=alN] {figures/data/11-fitting-profile.dat};
+\addplot[reference] coordinates {(0.01,0.45) (0.01,0.95)};
+\addplot[mean] coordinates {(0.007817,0.6855)};
+\end{groupplot}
+\end{tikzpicture}
+\caption{\Cref{lab:fitting:fits}. (a)~End points of 500 of the 4500 starts (drawn at random): summed objective divided by its best value, against $a$, for the recipe run to convergence (ink; the 3677 starts at the optimum coincide) and for the averaged objective with SciPy's default tolerances (vermilion). (b)~The recipe's estimate (filled) and 400 of its 1000 bootstrap refits (hollow); the curve is $\hat\alpha_N$ with $E$ fixed and the rest refitted by least squares on log loss; dashed: the true floor $0.01$.}
+\label{fig:fitting:ident}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened: the floor.} The fitted floor is $0.0078$, with a bootstrap interval of $0.0050$--$0.0091$ that excludes the true $0.01$; the profile of least squares on log loss gives $0.0064$--$0.0086$ (twice the log-likelihood within $3.84$ of its maximum) and a deviance of 21 at $0.01$. Fitted over three decades of compute, the law is not the mechanism of the teacher task, and its floor absorbs the misfit. Fixing $E$ at the truth raises both exponents, to $0.85$ and $1.00$, and leaves $a=0.542$; along the profile, as $E$ goes from $0.006$ to $0.0104$, $\alpha_N$ climbs from $0.60$ to $0.85$ while $a$ moves only from $0.548$ to $0.534$, and across the bootstrap $\ln\hat E$ and $\hat\alpha_N$ have correlation $0.81$ (\cref{fig:fitting:ident}b). This is \cref{prop:fitting:short} at work: the parameters slide along a ridge, and the allocation, a ratio of exponents that slide together, barely moves. Finally, the bootstrap standard deviation of $\ln\hat N_{\mathrm{opt}}(C)$ is $0.06$ in the middle of the measured range, $0.11$ to $0.13$ at its ends and $0.26$ two decades beyond, the quadratic of \cref{prop:fitting:delta}(ii).
+
+The miniature reproduced the mechanism of the failure and half of its effect: the early stop narrowed the interval eightfold, while the grid of starting points, in our runs, still found the right estimate.
+
+\section{Protocol}\label{sec:fitting:protocol}
+
+\begin{protocol}{Fitting and reporting a scaling law}\label{prot:fitting:fit}
+\item Design the runs before the fit: isoFLOP slices over at least two decades of compute with sizes on both sides of each optimum, schedules matched to each run (\cref{ch:protocol}), and two or more seeds in some cells to measure the noise.
+\item Fix the objective in advance and report it: log space or loss space, the loss function, a threshold set from the measured noise ($\delta\approx1.345\hat\sigma$), and a sum, not a mean, over runs.
+\item Minimize from a grid of starts with tolerances suited to the scale of the objective; report the termination message, the final objective and gradient, and how many starts reached the best value; check the region by variable projection.
+\item Plot the residuals against compute, size, tokens, and tokens per parameter, and refit without the smallest budget and without the largest models.
+\item Get intervals from a bootstrap over runs, refitting every resample to convergence from several starts; give derived quantities such as $a$ and $\fittingNopt(C)$ both delta-method and percentile intervals, and give poorly identified parameters such as $E$ a bootstrap or profile interval.
+\item Cross-check the allocation on the same runs with isoFLOP parabolas and, when training curves exist, with envelopes.
+\item Report the exponents to three or four digits with their intervals and the number of runs, and release $N$, $D$, $C$, seed, and loss for every run together with the fitting code.
+\item State the range of $N$, $D$, and $C$ that the fit covers, and mark every prediction outside it as an extrapolation (\cref{ch:extrapolation}).
+\end{protocol}
+
+The protocol makes a fit reproducible and its uncertainty honest; it does not make the functional form true, as the floor of our laboratory shows, and it does not correct a bias shared by all the runs, such as a schedule that does not match the run or a count of parameters that leaves something out (\cref{ch:protocol}). The bootstrap treats runs as exchangeable; when the noise varies strongly across scales, resampling within slices or weighting by measured variances is more faithful. Fitting costs seconds; the runs are what cost. When seeds are unaffordable at the largest scale, measure the noise on smaller runs and say so, and report every fit with its objective, its convergence diagnostics, and its data.
+
+\begin{exercises}
+\item \consolidation (Other cost models.) (a) Show that if a run costs $C=\kappa ND$ for some $\kappa>0$, then \cref{thm:fitting:allocation} holds with $C/6$ replaced by $C/\kappa$. (b) Suppose a run costs $C=6ND+cD$, a per-token overhead independent of $N$. Write the first-order condition for $\fittingNopt$ and show that $\ln\fittingNopt/\ln C\to a$ as $C\to\infty$.\label{ex:fitting:cost}
+
+\item \consolidation (Tokens per parameter.) Fitted exponents $\hat\alpha_N=0.35$ and $\hat\alpha_D=0.37$ have standard errors $0.02$ each and correlation $\varrho$. (a) By \cref{prop:fitting:delta}(i), compute the standard error of $\hat a$ for $\varrho=0$, $0.5$, and $0.9$. (b) Show that $\ln(\fittingDopt/\fittingNopt)$ changes with $\ln C$ at the rate $b-a$, and use \cref{prop:fitting:delta}(iii) to explain why its interval is narrowest at one budget.\label{ex:fitting:tokens}
+
+\item \consolidation (Huber's efficiency.) (a) Using the asymptotic variance $\E\psi(Z)^2/(\E\psi'(Z))^2$ of an M-estimator of location with score $\psi$ at standard normal $Z$, show that the Huber estimate with threshold $k$ has efficiency $(2\Phi(k)-1)^2/\E\min(Z^2,k^2)$ relative to the mean. (b) Show that $\E\min(Z^2,k^2)=2\Phi(k)-1-2k\varphi(k)+2k^2(1-\Phi(k))$, and evaluate the efficiency at $k=1.345$ and as $k\to0$. (c) With residuals of standard deviation $0.03$ in log loss, what is the efficiency of $\delta=10^{-3}$?\label{ex:fitting:huber}
+
+\item \consolidation\hard (Two variables.) Extend \cref{prop:fitting:short} to the law $E+A_N'(N/N_0)^{-\alpha_N}+A_D'(D/D_0)^{-\alpha_D}$ in five parameters, on a design inside the rectangle $[N_0,rN_0]\times[D_0,sD_0]$. Find two directions in the five parameters along which $J$ is small, and bound $w^\top J^\top Jw$ for each in terms of $\ln r$ and $\ln s$. Which combinations do a short range of $N$ and a long range of $D$ determine? \hint{take one direction of the proposition in $(E,A_N',\alpha_N)$ and the analogous one in $(E,A_D',\alpha_D)$; their difference does not involve $E$.}\label{ex:fitting:twovar}
+
+\item \labwork (Fewer scales.) Modify \script{11-fitting-fits.py} to fit only the budgets up to $6\times10^{8}$ FLOPs, then only the widths up to 45. Predict first from \cref{prop:fitting:delta}(ii) and \cref{prop:fitting:short} which estimate widens most, $a$, $\alpha_N$, or $E$, and compare the parametric and isoFLOP estimates of $a$ in each case.\label{ex:fitting:fewer}
+
+\item \labwork (Rescuing the early stop.) Fit the averaged objective with SciPy's defaults from 1, 32, and 243 starting points drawn at random from the 4500 of the grid. How many starts does it take for the best end point to lie within 1\% of the optimum? Then tighten $\mathrm{ftol}$ and $\mathrm{gtol}$ and observe that the averaged objective converges like the summed one.\label{ex:fitting:rescue}
+
+\item \labwork (Weights.) Fit least squares on log loss with each run weighted by the inverse variance of its cell (with a floor), and compare the estimate of $a$, its bootstrap interval, and its textbook interval with those of \cref{fig:fitting:forest}. Which interval changes, and why?\label{ex:fitting:weights}
+
+\item \design (The cheapest grid.) A pilot like \cref{lab:fitting:grid} gives the noise of the log loss at each budget. Using \cref{prop:fitting:delta} and a bootstrap of the pilot, design the cheapest grid, in total FLOPs, that pins down $a$ to $\pm0.05$ (95\%): how many budgets, how many sizes per slice, how many seeds, and where on each slice. Which choice buys precision most cheaply, a wider range of compute or more seeds?\label{ex:fitting:design}
+
+\item \design (A study of fifty runs.) A team can afford fifty runs to decide whether a new architecture changes the allocation exponent of a baseline, $a\approx0.5$. Design the comparison: the two grids, the shared seeds, the fit, the difference of the two estimates of $a$ with an interval from a paired bootstrap, and the smallest difference the design can detect.\label{ex:fitting:fifty}
+
+\item \critique (Exponents without data.) A paper reports $\Loss(N,D)=1.9+310/N^{0.31}+520/D^{0.29}$ for its model family, fitted to ``about 200 runs'' with ``standard methods'', with no intervals, no data, and no code, and concludes that its models should be trained on 40 tokens per parameter. List what a reader cannot check, which conclusions follow from \cref{thm:fitting:allocation} alone, and the minimum a report must add.\label{ex:fitting:critique1}
+
+\item \critique (A fast bootstrap.) To save time, a study refits each of 50 resamples of 80\% of its runs, drawn without replacement, starting from the full-data estimate with at most 20 iterations, and reports the 10th and 90th percentiles as its 95\% interval. Name each of the three ways in which this interval is too narrow, estimate the factor contributed by each that \cref{lem:fitting:subsample} and \cref{lab:fitting:fits} allow you to estimate, and repair the procedure.\label{ex:fitting:critique2}
+
+\item \research (Unknown floors.) The irreducible loss of language is not known, and \cref{prop:fitting:short} shows that a finite range of scales determines it poorly. Open: designs or priors (from compression bounds, from the scaling of the largest models, or from held-out estimates of entropy) that pin down $E$ without biasing the exponents, and a test of the additive form that can tell a misspecified law, like that of our laboratory, from noise. Also open: when the noise of runs varies strongly across scales, which resampling unit, runs, cells, or slices, gives intervals with the right coverage.\label{ex:fitting:research}
+\end{exercises}
+
+\notesandrefs
+Fitting power laws with an asymptote to learning curves is older than deep learning: \textcite{CortesEtAl1993} estimated a classifier's asymptotic error from small training sets this way. \Textcite{HestnessEtAl2017} found power laws in training-set size for translation, language modeling, images, and speech; \textcite{RosenfeldEtAl2020} proposed the additive form in model and data size, $an^{-\alpha}+bm^{-\beta}+c_\infty$, inside an envelope for the transition from random guessing; \textcite{KaplanEtAl2020} fitted a non-additive joint law; and \textcite{CaballeroEtAl2023} proposed smoothly broken power laws for curves that bend. \Textcite{LiEtAl2025} review the fitting practice of the field, with a reproducibility checklist that overlaps \cref{prot:fitting:fit}.
+
+Approach~3 and its replication are \textcite{HoffmannEtAl2022} and \textcite{BesirogluEtAl2024}. \Textcite{ChoshenEtAl2025} draw practical guidance from over a thousand fitted laws, among it to fit intermediate checkpoints as well as final losses, and \textcite{MuennighoffEtAl2023} extend the form to repeated data. How the protocol of the runs shapes the allocation is the subject of \cref{ch:protocol}; how far a law can be carried beyond its data, of \cref{ch:extrapolation}.
+
+On the statistics: \textcite{Huber1964} introduced the loss, \textcite{BatesWatts1988} treat nonlinear regression with its curvature and profile intervals, \textcite{GolubPereyra1973} variable projection, \textcite{EfronTibshirani1993} the bootstrap, and \textcite{Cochran1977} the finite-population correction; \textcite{Nocedal1980} and \textcite{ByrdEtAl1995} describe L-BFGS and L-BFGS-B, and \textcite{GutenkunstEtAl2007} sloppiness, of which \cref{prop:fitting:short} is a small instance.
+
+\paragraph{Translating the literature.} \Textcite{HoffmannEtAl2022} and \textcite{BesirogluEtAl2024} write $A,B,\alpha,\beta,E$ for our $A_N,A_D,\alpha_N,\alpha_D,E$, and in the log-sum-exp form write $a,b,e$ for $\ln A_N,\ln A_D,\ln E$, while also using $a$ and $b$, as we do, for the allocation exponents of $\fittingNopt\propto C^a$ and $\fittingDopt\propto C^b$. \Textcite{KaplanEtAl2020} count non-embedding parameters as $N$; their joint law $[(N_c/N)^{\alpha_N/\alpha_D}+D_c/D]^{\alpha_D}$ has no floor, and their $\alpha_N,\alpha_D$ are the exponents of the laws $(N_c/N)^{\alpha_N}$ and $(D_c/D)^{\alpha_D}$, not of our additive terms. \Textcite{RosenfeldEtAl2020} write $n$ for data and $m$ for model size, with $\alpha$ the exponent of data and $\beta$ that of the model, the reverse of Hoffmann et al.'s $\alpha,\beta$. \Textcite{ChoshenEtAl2025} write the law as $e^{E}+e^{A}/N^{\alpha}+e^{B}/D^{\beta}$, so that their $E,A,B$ are our $\ln E,\ln A_N,\ln A_D$.
+
+\printchapterbib
+\end{refsection}

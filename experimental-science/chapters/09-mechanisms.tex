@@ -1,0 +1,380 @@
+% Chapter 9 of Deep Learning as an Experimental Science: mechanisms and mediation.
+\newcommand{\mechanismsones}{\mathbf{1}}
+\labchapter{Mechanisms}{Intervening on the explanation}{Batch normalization works by reducing internal covariate shift.}{Ioffe and Szegedy (2015), whose title names the mechanism}{Misattributed: the benefit survives when covariate shift is injected after every normalization, and which mechanism carries it is still debated.}{ch:mechanisms}
+\begin{refsection}[chapters/09-mechanisms.bib]
+
+\begin{chaptersummary}
+In 2015 Ioffe and Szegedy introduced batch normalization, which trained an ImageNet classifier to its predecessor's accuracy in a fourteenth of the steps, and explained it by the reduction of internal covariate shift, the drift of each layer's input distribution as the layers below it learn. In 2018 Santurkar and colleagues put the drift back, with fresh random shifts and scalings after every normalization at every step, and the networks trained almost as fast; by a gradient-based measure, normalization did not reduce the shift at all. The method treats a mechanism claim as a chain of causes whose links are tested one at a time, proves what a knockout of the mediator can bound, and proves the two exact facts about batch normalization on which the rival explanations rest: the projection in its Jacobian, and the scale invariance that turns the learning rate into an effective one. In the laboratory, nine times the covariate shift of an unnormalized network costs a normalized one a seventh of its speed-up, normalization whose statistics are hidden from the gradient keeps the distributions steady and trains worse than none, and the benefit of normalization reverses at small learning rates.
+\end{chaptersummary}
+
+\section{The claim: a drift inside the network}\label{sec:mechanisms:claim}
+
+In early 2015 training a deep network took care: small learning rates, carefully scaled initial weights, and rectified linear units in place of saturating sigmoids, whose gradients vanish for large inputs. Sergey Ioffe and Christian Szegedy, at Google, proposed a layer that removed much of this care \parencite{IoffeSzegedy2015}. For each unit and each minibatch of $B$ examples, \term{batch normalization}\index{batch normalization} subtracts the batch mean of the unit's pre-activations $y_1,\dots,y_B$, divides by their standard deviation, multiplies by a learned scale $\gamma$ and adds a learned shift $\beta$; at test time, estimates of the population mean and variance replace the batch statistics. The layer sits between each linear map and its nonlinearity, and the gradient flows through the normalization.
+
+They explained it with a borrowed idea. A learning system whose input distribution changes between training and use suffers \term{covariate shift}\index{covariate shift} \parencite{Shimodaira2000}. Inside a network, each layer's inputs are produced by the layers below it, whose parameters change at every step, so each layer is trained on a moving distribution and must keep adapting to it; with saturating nonlinearities the moving inputs also drift into the regions where gradients vanish. Ioffe and Szegedy called this \term{internal covariate shift}\index{internal covariate shift} and defined it as the change in the distribution of a network's activations caused by the change of its parameters during training; eliminating it, they wrote, \enquote{offers a promise of faster training}. The precedent was sound: whitening the inputs of a network was known to speed up its training \parencite{LeCunEtAl1998},\sidenote{LeCun et al.\ advised shifting each input to zero mean, scaling the inputs to about the same covariance and decorrelating them if possible, and added that the zero-mean heuristic \enquote{should be applied at all layers}, since each layer's outputs are the next layer's inputs.} and batch normalization standardizes the inputs of every layer, one unit and one batch at a time: a whitening without the decorrelation.
+
+\begin{finding}[\textcite{IoffeSzegedy2015}, Sections 4.1 and 4.2]\label{fd:mechanisms:ioffe}
+On MNIST, a network with three hidden layers of 100 sigmoid units reached a higher test accuracy sooner with batch normalization, and for one typical sigmoid of its last hidden layer the 15th, 50th and 85th percentiles of the input drifted in location and spread during 50,000 steps without normalization and were much more stable with it. On ImageNet, the Inception network reached its best validation accuracy, 72.2\%, after 31 million steps; with batch normalization added it reached the same accuracy after 13.3 million steps, and with batch normalization, a five times larger learning rate and six further changes to the recipe after 2.1 million, fourteen times fewer. An ensemble of six normalized networks reached a top-5 validation error of 4.9\%.
+\end{finding}
+
+The paper claimed more than one benefit: much higher learning rates, less careful initialization, a regularizing effect that sometimes made dropout unnecessary, and trainable sigmoid networks (with sigmoids, the normalized Inception reached 69.8\% and the original stayed at chance). For the higher learning rates it gave a second argument. Scaling a layer's weights by $a>0$ leaves the normalized output unchanged and divides the gradient with respect to the weights by $a$, so larger weights receive smaller gradients and their growth limits itself. The authors also conjectured that normalization keeps the singular values of the layer Jacobians near one, called its effect on gradient propagation a subject for further study, and stated the main claim with care: batch normalization \enquote{takes a step towards reducing} internal covariate shift.
+
+The title stated the received version: \emph{Accelerating Deep Network Training by Reducing Internal Covariate Shift}. Batch normalization became a default component of convolutional networks, and its explanation traveled with it; layer normalization, for instance, was motivated by the same covariate-shift problem \parencite{BaKirosHinton2016}. By 2017 the explanation was questioned in public. In the text of their NIPS 2017 test-of-time talk, Ali Rahimi and Ben Recht asked for evidence that batch normalization reduces internal covariate shift and for a definition of the term \parencite{RahimiRecht2017},\sidenote{The award was for their 2007 paper on random features for kernel machines.} and \textcite{LiptonSteinhardt2018} used it as an example of speculation offered as explanation, asking by which divergence the change in a distribution is to be measured.\sidenote{They add that covariate shift, in its original sense, changes the distribution of the inputs while the conditional distribution of the labels stays fixed, which is not the situation of a layer inside a network.} In 2025 the paper received the ICML Test of Time Award.
+
+The claim was reasonable. Normalized inputs were known to help, the MNIST percentiles showed the stabilization the theory predicted, and the speed-ups were large, 2.3-fold even in the comparison that changed nothing but the normalization. The paper also contained two ingredients of later explanations: the scale argument, and the report that in the authors' first experiments the model blew up when the normalization statistics were computed outside the gradient step, which turns out to test what the backward pass of the normalization contributes (\cref{sec:mechanisms:lab}). The question of this chapter is not whether batch normalization works, but whether it works for the reason in its title.
+
+\section{The experiment: one treatment, two consequences}\label{sec:mechanisms:experiment}
+
+\begin{experiment}[Ioffe and Szegedy 2015]
+\field{question}{Does batch normalization speed up training because it reduces internal covariate shift?}
+\field{units}{training runs: a three-layer sigmoid network on MNIST; Inception on ImageNet}
+\field{treatment}{batch normalization of the input to every nonlinearity}
+\field{levels}{without and with (MNIST); Inception, BN-Baseline, BN-x5, BN-x30, BN-x5-Sigmoid (ImageNet)}
+\field{mediator}{internal covariate shift, shown as three percentiles of the input to one sigmoid during training (MNIST only)}
+\field{held fixed}{architecture and data; BN-x5 and BN-x30 also changed the learning rate and its decay, dropout, weight decay, response normalization, shuffling and distortions}
+\field{response}{test accuracy against steps (MNIST); steps to 72.2\% validation accuracy (ImageNet)}
+\field{replicates}{one run per network; no spread reported}
+\field{analysis}{curves and percentiles compared by eye}
+\end{experiment}
+
+The record establishes two consequences of one treatment. Batch normalization speeds up training, 2.3-fold on ImageNet with nothing else changed, and it steadies the distribution of each normalized input, which it does by construction, since it fixes the batch mean and variance of every unit it normalizes. A mechanism claim says more: that the second consequence causes the first. The design cannot test this, because in every arm the steadier distributions came with the normalization. Whatever else normalization changes, in the gradients, in the learning rates the network tolerates or in the scale of its weights, would produce the same two observations: the mediator and the treatment are perfectly confounded. Separating them takes an arm in which the treatment acts while the mediator stays at its untreated level, or one in which the mediator changes without the treatment.
+
+Two further gaps made the claim hard to test. The mediator had no measurement: the percentiles of one unit in one network are a picture, and \enquote{the change in the distribution} needs a divergence, a time scale and a population of units before it can be compared between arms or given an interval. And the fourteen-fold speed-up bundled the normalization with a five-fold learning rate and six other changes, the problem of \cref{ch:confounding}; BN-Baseline is the clean measurement of the treatment. Neither gap is a fault of the method. The paper proposed a mechanism and showed its first link; the post-mortem supplied the missing arm.
+
+\section{The post-mortem: putting the shift back}\label{sec:mechanisms:postmortem}
+
+\paragraph{The knockout.} In 2018 Shibani Santurkar, Dimitris Tsipras, Andrew Ilyas and Aleksander Madry put the shift back \parencite{SanturkarEtAl2018}.\sidenote{The first arXiv version of the paper, in May 2018, carried the subtitle \enquote{No, It Is Not About Internal Covariate Shift}.} They trained a VGG network on CIFAR-10 with plain SGD, batch size 128 and learning rate $0.1$ for 15,000 steps without data augmentation, reaching 83\% test accuracy with normalization and 80\% without. In a third arm they injected noise after every normalization: at every step each unit drew a shift $\mu$ uniform on $[-0.5,0.5]$ and a scale $\sigma$ uniform on $[1,1.25]$, and each example's activation $a$ became $sa+m$, with $m$ uniform within $0.1$ of $\mu$ and $s$ normal around $\sigma$ with spread $0.1$.\sidenote{The paper writes this distribution as $N(\sigma,r_\sigma)$ with $r_\sigma=0.1$; our script reads $0.1$ as a standard deviation.} Each layer thus received inputs whose distribution changed at every step, by an amount the experimenter set.
+
+\begin{finding}[\textcite{SanturkarEtAl2018}, Section 2 and Figures 2 and 3]\label{fd:mechanisms:santurkar}
+With the shift injected after every normalization, the network trained almost exactly as fast as with ordinary batch normalization and much faster than without normalization, although its activations had less stable distributions than those of the unnormalized network; the same noise added to the unnormalized network prevented it from training. Measured instead by how much the gradient of a layer's weights changes when the layers below it are updated, normalized networks had as much internal covariate shift as unnormalized ones or more; in a 25-layer deep linear network the gradients before and after the update were almost uncorrelated with normalization and almost identical without it.
+\end{finding}
+
+Normalizing by the $\ell_1$, $\ell_2$ or $\ell_\infty$ norm of the centered activations instead of their standard deviation also trained about as well, with more distributional shift than the unnormalized networks had. As a replacement the authors proposed that batch normalization makes the loss landscape smoother, so that larger steps become safe, and supported it with measurements along the gradient direction and with theorems about one normalized layer, the first of which we prove in corrected form as \cref{thm:mechanisms:jacobian}.
+
+\paragraph{The learning rate.} \Textcite{BjorckEtAl2018} trained a residual network of 110 layers on CIFAR-10. Without normalization the learning rate had to be lowered to $10^{-4}$ and training took about 2,400 epochs; at that learning rate the normalized network reached no better test accuracy than the unnormalized one (five runs per setting). The higher learning rate that normalization permits, they concluded, \enquote{mediates the majority of its benefits}; without normalization, a few activations deep in the network explode within the first steps.
+
+\paragraph{Scale invariance.} Because the normalization divides by the standard deviation, a normalized unit's output does not depend on the length of its incoming weight vector, only on its direction: Ioffe and Szegedy's scale argument. In an unrefereed note, \textcite{vanLaarhoven2017} concluded that weight decay on such weights does not constrain the function the network computes and acts only on their length, and through it on the effective learning rate. \Textcite{AroraLiLyu2019} proved that gradient descent on scale-invariant weights reaches a stationary point with a fixed learning rate as fast, in their bounds, as with a well-tuned one, because the growth of the weights tunes the step, and \textcite{LiArora2020} derived from the invariance a schedule that no other account suggests, an exponentially increasing learning rate, proved it equivalent to the standard schedule with weight decay, and trained networks with it.
+
+\paragraph{The replacement contested.} With a mean-field theory of wide fully connected networks, \textcite{YangEtAl2019} showed that at initialization batch normalization makes gradients grow exponentially with depth, that no choice of the initial weight variance or of the nonlinearity prevents it, and that deep normalized networks without skip connections are untrainable under common initializations: at the start of training, at least, the normalized landscape is not the smoother one. \Textcite{CohenEtAl2021} found that under full-batch gradient descent the largest Hessian eigenvalue rises to about $2/\eta$ and stays there with and without normalization, and that the effective smoothness of Santurkar et al., measured at the step actually taken, does the same, while the normalized networks still train faster at every step size.\sidenote{They read Santurkar et al.'s measurement for VGG, which hovers near $20=2/0.1$ in both arms, as consistent with this.} On the other side, \textcite{GhorbaniKrishnanXiao2019} found that the large isolated Hessian eigenvalues that appear early in unnormalized networks, and the concentration of the gradient in their directions, are almost absent with batch normalization.
+
+\paragraph{Necessity.} With a rescaled initialization, Fixup trained residual networks without normalization as stably as with it, even at 10,000 layers, and with suitable regularization matched the state of the art in image classification and machine translation \parencite{ZhangDauphinMa2019}. \Textcite{DeSmith2020} showed that in residual networks batch normalization scales each residual branch down by a factor of the order of the square root of the depth, so that the blocks start close to the identity, that an initialization doing the same trains deep residual networks without normalization, and that the larger learning rates normalization allows help little at small batch sizes. The normalizer-free networks of \textcite{BrockEtAl2021} matched EfficientNet-B7 on ImageNet while training up to 8.7 times faster; that paper credits normalization with four separate benefits, downscaling the residual branch, removing the mean shift of rectified activations, regularizing, and smoothing the landscape enough for large batches. None of these results says why normalization works; each says which of its consequences can be supplied without it.
+
+\begin{verdict}{misattributed}
+The effect is real: batch normalization speeds up training, widens the range of usable learning rates, and on ImageNet cut the steps to the baseline's accuracy 2.3-fold on its own. The explanation is not supported: networks given back more distributional shift after every normalization than unnormalized networks ever had train about as fast, and by a gradient-based measure normalization increases the shift. What carries the effect is contested: larger stable learning rates, scale invariance, a smoother landscape and downscaled residual branches each account for part of the evidence, and the smoothing account conflicts with measurements at initialization and at the edge of stability.
+\end{verdict}
+
+\section{The method: a mechanism is a chain of causes}\label{sec:mechanisms:mediation}
+
+A claim that a treatment works through a mechanism names a variable in between, a \term{mediator}\index{mediator}: the treatment changes it, and its change changes the outcome. \Textcite{BaronKenny1986} set out the logic of testing such claims in regression studies;\sidenote{Read causally, their regressions require among other things that nothing unmeasured affects both the mediator and the outcome. In a training run the mediator can often be set by code, which removes that requirement.} the potential-outcome definitions below are those of \textcite{RobinsGreenland1992} and \textcite{Pearl2001}.
+
+\begin{definition}[Natural direct and indirect effects]\label{def:mechanisms:effects}
+A treatment $A\in\{0,1\}$ is applied to a unit, here a training run with given seeds. A mediator is a real variable measured on the run, with potential values $M(a)$ under treatment $a$; the outcome has potential values $Y(a,m)$ under treatment $a$ with the mediator set to $m$, and $Y(a)=Y(a,M(a))$ without intervention on the mediator. For an outcome that is a loss, the \term{total effect}\index{effect!total} $\E Y(0)-\E Y(1)$ of the treatment splits into a \term{direct effect}\index{effect!direct} and an \term{indirect effect}\index{effect!indirect},
+\begin{equation}\label{eq:mechanisms:split}
+\E Y(0)-\E Y(1)=\underbrace{\E Y(0)-\E Y(1,M(0))}_{\text{direct}}+\underbrace{\E Y(1,M(0))-\E Y(1)}_{\text{indirect}} .
+\end{equation}
+\end{definition}
+
+The split is a telescoping sum. The direct effect compares the two treatments with the mediator held where it would be without treatment; the indirect effect is what a treated run gains when its mediator moves from its untreated to its treated value. That batch normalization works by reducing internal covariate shift says that the indirect effect is most of the total. The quantity $\E Y(1,M(0))$, the loss of a normalized run with the covariate shift of an unnormalized one, is never observed without intervention: an experiment has to construct it, or bound it.
+
+A mechanism claim has four links, and each has a test. \emph{The mediator is a measurement}: it needs an operational definition, naming the quantity, the data, the time scale and the divergence, and different definitions make different claims. \emph{The treatment moves the mediator}: measure the mediator in every arm, with intervals over seeds. \emph{The mediator moves the outcome}: vary the mediator with the treatment fixed, by injecting it into the untreated arm or varying its dose in the treated one. \emph{The treatment acts through the mediator}: a \term{knockout}\index{knockout} applies the treatment and restores the mediator to its untreated level, and if the outcome keeps its benefit, then the benefit did not need the change in the mediator; a \term{rescue}\index{rescue} supplies the treated level of the mediator without the treatment, or with its other actions removed, and if the outcome does not improve, then the change in the mediator was not enough. The names come from genetics, where a gene is knocked out to see whether a trait needs it. The noisy normalization of Santurkar et al.\ is a knockout, and the following proposition says what it can establish.
+
+\begin{proposition}[What a knockout bounds]\label{prop:mechanisms:knockout}
+In the setting of \cref{def:mechanisms:effects}, let a knockout arm apply the treatment together with an operation that sets the mediator of each run to $M_\kappa$, and let $Y_\kappa$ be its outcome. Suppose that
+\begin{enumerate}
+\item the operation acts on the outcome only through the mediator: $Y_\kappa=Y(1,M_\kappa)$;
+\item more of the mediator never lowers the loss of a treated run: $m\mapsto Y(1,m)$ is nondecreasing for every run;
+\item the knockout restores at least the untreated level: $M_\kappa\ge M(0)$ for every run.
+\end{enumerate}
+Then the indirect effect is at most $\E Y_\kappa-\E Y(1)$, and the direct effect is at least $\E Y(0)-\E Y_\kappa$. If $M_\kappa=M(0)$ for every run, then the first bound holds with equality.
+\end{proposition}
+
+\begin{proof}
+Fix a run. By hypothesis (iii) and the monotonicity (ii), $Y(1,M(0))\le Y(1,M_\kappa)$, and by (i) the right side is $Y_\kappa$. Taking expectations, $\E Y(1,M(0))\le\E Y_\kappa$, and subtracting $\E Y(1)$ bounds the indirect effect of \eqref{eq:mechanisms:split} by $\E Y_\kappa-\E Y(1)$. Subtracting the indirect effect from the total effect $\E Y(0)-\E Y(1)$ bounds the direct effect below by $\E Y(0)-\E Y_\kappa$. If $M_\kappa=M(0)$, then $Y_\kappa=Y(1,M(0))$ for every run by (i), and the first inequality is an equality.
+\end{proof}
+
+The proposition is elementary; its use is to say what each hypothesis costs. Hypothesis (iii) can be checked, by measuring the mediator in the knockout arm and in the untreated arm with the same seeds and comparing them seed by seed, but only for the definition of the mediator that was measured. Hypothesis (ii) is the premise of the claim itself, that the mediator hurts. Hypothesis (i) cannot be checked directly and is the weak point of every knockout: noise injected to restore a shift may also regularize, or slow training, by routes of its own. Applying the same operation in the untreated arm checks it partly.
+
+Three consequences guide the design. \emph{The right dose is the smallest that restores the mediator}: an overshooting knockout gives a valid but looser bound, and a dose that restores the mediator exactly gives an estimate; varying the dose traces the outcome against the measured mediator, the most direct picture of the second link. \emph{A knockout that does not hurt is informative, and one that hurts is not}, since the operation may hurt by other routes. And \emph{the indirect effect depends on the arm in which it is evaluated} when the treatment changes how the mediator acts: if normalization makes a network indifferent to shifts that slow an unnormalized one, then the indirect effect of \eqref{eq:mechanisms:split} is small, while the gain $\E Y(0)-\E Y(0,M(1))$ of an unnormalized network from the reduced shift may be large. These are the total and the pure indirect effects of \textcite{RobinsGreenland1992}; a knockout in the treated arm bounds the first, and only a rescue in the untreated arm measures the second.
+
+\paragraph{Rival mediators.} The useful experiment is one in which rival mediators predict different things. Failed runs in the fine-tuning of BERT (\cref{ch:seeds}) had been attributed to catastrophic forgetting and to small datasets. \Textcite{MosbachEtAl2021} set the second against a rival, the small number of steps that a few epochs on a small dataset provide: they subsampled 1,000 examples from each of three tasks and trained 25 seeds either for three epochs or for as many steps as on the full dataset. With three epochs the failed runs multiplied; with the full number of steps there were none on two tasks and one on the third. Holding the steps fixed while shrinking the data knocked out one mediator and kept the other. For batch normalization the rivals are many, and some are consequences of others, which is one reason the question is still open.
+
+\paragraph{Necessity and prediction.} The normalizer-free networks show that the treatment is not necessary for good training, a statement about the treatment rather than its mechanism. A mechanism earns belief by predicting what its rivals do not. Scale invariance predicted that weight decay acts on the effective learning rate rather than on the function, and that a growing learning rate can replace a decaying one \parencite{vanLaarhoven2017,LiArora2020}; the covariate-shift account predicted that putting the shift back would cancel the benefit, and it did not.
+
+\section{The method: two exact facts about batch normalization}\label{sec:mechanisms:bn}
+
+The rival explanations rest on two facts about a single normalized unit. Fix one unit and a batch of $B\ge2$ examples, and write $y\in\R^B$ for the unit's pre-activations on the batch, $\mechanismsones\in\R^B$ for the vector of ones and $\ip{\cdot}{\cdot}$ for the Euclidean inner product. If the entries of $y$ are not all equal, then the batch mean, standard deviation and normalized vector
+\[
+\mu=\frac1B\ip{\mechanismsones}{y},\qquad\sigma=\Bigl(\frac1B\norm{y-\mu\mechanismsones}^2\Bigr)^{1/2}>0,\qquad\hat y=\frac{y-\mu\mechanismsones}{\sigma}
+\]
+are defined, and the unit's output is $z=\gamma\hat y+\beta\mechanismsones$ for real $\gamma\neq0$ and $\beta$. The rest of the network and the loss, as a function of this unit's outputs on the batch with everything else held fixed, is a function $\ell:\R^B\to\R$; write $L(y)=\ell(z)$ and $g=\nabla\ell(z)$ for the gradient that arrives at the output. We omit the small constant that implementations add to $\sigma^2$; \cref{ex:mechanisms:epsilon} restores it.
+
+\begin{theorem}[The Jacobian of batch normalization]\label{thm:mechanisms:jacobian}\index{batch normalization!Jacobian}
+Let $B\ge2$, let $y$ have entries that are not all equal, and let $\ell$ be differentiable at $z$. Put $P=I-\frac1B\mechanismsones\mechanismsones^\top-\frac1B\hat y\hat y^\top$.
+\begin{enumerate}
+\item $P$ is the orthogonal projection onto the subspace of $\R^B$ orthogonal to $\mechanismsones$ and $\hat y$, which has dimension $B-2$.
+\item $\nabla L(y)=\frac\gamma\sigma\,Pg$.
+\item $\norm{\nabla L(y)}^2=\frac{\gamma^2}{\sigma^2}\Bigl(\norm g^2-\frac1B\ip{\mechanismsones}{g}^2-\frac1B\ip{\hat y}{g}^2\Bigr)$.
+\item $\ip{\mechanismsones}{\nabla L(y)}=0$ and $\ip{y}{\nabla L(y)}=0$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to show that $\mechanismsones/\sqrt B$ and $\hat y/\sqrt B$ are orthonormal, which gives part (i), to compute the Jacobian of $\hat y$, which turns out to be $P/\sigma$ and gives part (ii) by the chain rule, and to read off parts (iii) and (iv) from the projection.
+
+\emph{Part (i).} The entries of $y-\mu\mechanismsones$ sum to zero, so $\ip{\mechanismsones}{\hat y}=0$, and $\norm{\hat y}^2=\norm{y-\mu\mechanismsones}^2/\sigma^2=B$ by the definition of $\sigma$. Hence $e_1=\mechanismsones/\sqrt B$ and $e_2=\hat y/\sqrt B$ are orthonormal, and $P=I-e_1e_1^\top-e_2e_2^\top$ is the orthogonal projection onto the complement of their span. The span has dimension two because $\hat y\neq0$, since the entries of $y$ are not all equal.
+
+\emph{Part (ii).} We differentiate $\mu$, then $\sigma$, then $\hat y$. First, $\partial\mu/\partial y_j=1/B$. Next, $\sigma^2=\frac1B\sum_i(y_i-\mu)^2$, and because $\sum_i(y_i-\mu)=0$ the dependence of $\mu$ on $y_j$ contributes nothing:
+\[
+\frac{\partial\sigma^2}{\partial y_j}=\frac2B\sum_i(y_i-\mu)\Bigl(\delta_{ij}-\frac1B\Bigr)=\frac2B(y_j-\mu).
+\]
+Since $\sigma>0$, the square root is differentiable there, and $\partial\sigma/\partial y_j=(y_j-\mu)/(B\sigma)=\hat y_j/B$. The quotient rule then gives
+\[
+\frac{\partial\hat y_i}{\partial y_j}=\frac{\delta_{ij}-1/B}{\sigma}-\frac{(y_i-\mu)\,\hat y_j}{B\sigma^2}=\frac1\sigma\Bigl(\delta_{ij}-\frac1B-\frac{\hat y_i\hat y_j}B\Bigr),
+\]
+so the Jacobian of $y\mapsto\hat y$ is $P/\sigma$ and that of $y\mapsto z$ is $\gamma P/\sigma$. By the chain rule and the symmetry of $P$, $\nabla L(y)=(\gamma P/\sigma)^\top g=(\gamma/\sigma)Pg$.
+
+\emph{Part (iii).} An orthogonal projection is symmetric and idempotent, so $\norm{Pg}^2=\ip{g}{Pg}=\norm g^2-\ip{e_1}{g}^2-\ip{e_2}{g}^2$, where $\ip{e_1}{g}^2=\ip{\mechanismsones}{g}^2/B$ and $\ip{e_2}{g}^2=\ip{\hat y}{g}^2/B$; multiplying by $\gamma^2/\sigma^2$ and using part (ii) gives the identity.
+
+\emph{Part (iv).} By part (i), $Pg$ is orthogonal to $\mechanismsones$ and to $\hat y$, hence to $y=\mu\mechanismsones+\sigma\hat y$, and so is $\nabla L(y)$ by part (ii).
+\end{proof}
+
+\begin{corollary}[Biases and weight rows]\label{cor:mechanisms:rows}
+If $y=Xw+b\mechanismsones$ for a batch of inputs $X\in\R^{B\times d}$, a weight row $w\in\R^d$ and a bias $b$, then $\partial L/\partial b=0$ and $\ip{\nabla_wL}{w}=0$.
+\end{corollary}
+
+\begin{proof}
+By the chain rule $\partial L/\partial b=\ip{\mechanismsones}{\nabla L(y)}$ and $\nabla_wL=X^\top\nabla L(y)$, so $\ip{\nabla_wL}{w}=\ip{\nabla L(y)}{y}-b\ip{\nabla L(y)}{\mechanismsones}$. All three inner products vanish by part (iv) of the theorem.
+\end{proof}
+
+The backward pass of a normalization therefore takes the gradient arriving at the unit,\sidenote{The bias before a normalization is idle, which is why implementations usually omit it.} removes its components along $\mechanismsones$ and $\hat y$, and rescales the rest by $\gamma/\sigma$. The removed directions are the changes of $y$ that shift its batch or rescale it about its mean, which the forward pass undoes, so the loss is blind to them. In this precise sense batch normalization does not hold the distributions still: it makes the network indifferent to the first two moments of every normalized unit's batch, whatever moves them, a parameter update or injected noise.
+
+\begin{remark}[The printed form of the theorem]\label{rem:mechanisms:printed}
+Part (iii) is Theorem~4.1 of \textcite{SanturkarEtAl2018} in our notation. They write $m$ for the batch size, compare a normalized network with an \enquote{identical} unnormalized one, and assume that the gradient arriving at the normalized output equals the gradient of the unnormalized network at its pre-activations, our $g$; under that assumption their theorem is the identity (iii), stated with $\le$. In the NeurIPS proceedings, and in the arXiv version of October 2018, the last term carries $1/\sqrt m$ instead of $1/m$; the arXiv version of March 2019 prints $1/m$. The slip is in the last step of their proof, where the squared inner product with the unit vector $\hat y/\norm{\hat y}$, which is $\ip{\hat y}{g}^2/m$ because $\norm{\hat y}=\sqrt m$, becomes $\ip{\hat y}{g}^2/\sqrt m$. As printed in the proceedings the inequality is false whenever $m\ge2$ and $\ip{\hat y}{g}\neq0$, since its left side equals the right side with $1/m$, which exceeds the right side with $1/\sqrt m$. A numerical check in \script{09-mechanisms-lr.py} confirms the identity with $1/m$ to $2\times10^{-15}$, while the right side with $1/\sqrt m$ is negative in 20 of 200 random draws with $m=8$.
+\end{remark}
+
+The identity does not by itself make normalized networks smoother. Removing components never lengthens a vector, but the factor $\gamma/\sigma$ can exceed one, and $g$ is computed by different downstream networks in the two cases; Santurkar et al.\ add that $\sigma$ tends to be large in practice. The identity also holds one layer at a time, and through many layers the factors multiply: at initialization they can compound into the gradient explosion of \textcite{YangEtAl2019}.
+
+The second fact is the invariance behind the effective learning rate, of which \cref{cor:mechanisms:rows} is the infinitesimal form.
+
+\begin{proposition}[Scale invariance]\label{prop:mechanisms:scale}\index{scale invariance}
+Let $f:\R^d\setminus\{0\}\to\R$ be differentiable and \term{scale invariant}, $f(cw)=f(w)$ for every $c>0$ and $w\neq0$.
+\begin{enumerate}
+\item $\ip{\nabla f(w)}{w}=0$ for every $w\neq0$.
+\item $\nabla f(cw)=\nabla f(w)/c$ for every $c>0$.
+\item A gradient step $w'=w-\eta\nabla f(w)$ with $\eta>0$ satisfies $\norm{w'}^2=\norm w^2+\eta^2\norm{\nabla f(w)}^2$; in particular $w'\neq0$, and along gradient descent the norm never decreases.
+\item Write $u=w/\norm w$ and $\eta_{\mathrm{eff}}=\eta/\norm w^2$. The step moves the direction as a gradient step with learning rate $\eta_{\mathrm{eff}}$ taken from $u$ and projected back onto the unit sphere:
+\[
+\frac{w'}{\norm{w'}}=\frac{u-\eta_{\mathrm{eff}}\nabla f(u)}{\norm{u-\eta_{\mathrm{eff}}\nabla f(u)}}.
+\]
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+For part (i), the function $\varphi(c)=f(cw)$ is constant on $c>0$, so its derivative $\varphi'(c)=\ip{\nabla f(cw)}{w}$ vanishes, in particular at $c=1$. For part (ii), differentiate the identity $f(cw)=f(w)$ in $w$: the chain rule gives $c\,\nabla f(cw)=\nabla f(w)$. For part (iii), expand $\norm{w-\eta\nabla f(w)}^2=\norm w^2-2\eta\ip{w}{\nabla f(w)}+\eta^2\norm{\nabla f(w)}^2$, whose middle term vanishes by part (i); the result is at least $\norm w^2>0$. For part (iv), part (ii) with $c=\norm w$ gives $\nabla f(w)=\nabla f(u)/\norm w$, so $w'=\norm w\bigl(u-\eta_{\mathrm{eff}}\nabla f(u)\bigr)$; the vector in parentheses is nonzero by part (i), and dividing $w'$ by its norm gives the formula.
+\end{proof}
+
+With batch statistics, the loss on a minibatch is scale invariant in every weight row that feeds a normalization, so the proposition applies to each such row at every step of SGD. Four consequences follow. The step that moves a row's direction is $\eta/\norm w^2$, not $\eta$, so the same nominal learning rate is a different step with and without normalization. The norms grow, so the effective learning rate decays by itself, faster when $\eta$ is large: the automatic rate tuning of \textcite{AroraLiLyu2019}. Weight decay with coefficient $\lambda$ turns part (iii) into $\norm{w'}^2=(1-\eta\lambda)^2\norm w^2+\eta^2\norm{\nabla f(w)}^2$; it cannot change what a row computes, only its length and hence its effective learning rate (\cref{ex:mechanisms:decay}). And a shift and scaling added after the normalization leaves all of this intact, since it does not make the output depend on the length of the row: the noisy normalization of Santurkar et al.\ knocked out one candidate mediator and spared this one.
+
+\section{In the laboratory: knockout, dose and learning rate}\label{sec:mechanisms:lab}
+
+Both labs train a perceptron with six hidden layers of 64 rectified linear units on the digits (1,258 training and 539 test images, split~0 of \cref{ch:seeds}), with He-normal initial weights, by plain SGD without momentum or weight decay, batch size 64, for 600 steps; with normalization, each hidden layer is a linear map, a batch normalization and a ReLU. Run $s$ uses seed $s$ for the weights, the data order and the injected noise, so the arms of each comparison share their seeds. Every 50 steps we measure the training loss and test error with the noise off and, in normalized networks, with the batch statistics recomputed on the whole training set, since those accumulated with the noise on would mismeasure a noisy network. The speed of training is summarized by the \emph{mean training loss} over these twelve checkpoints. These choices, and the learning rate of \cref{lab:mechanisms:noisybn}, were fixed after a pilot with three seeds per arm.
+
+\begin{lab}{Knocking out covariate shift}{09-mechanisms-noisybn}\label{lab:mechanisms:noisybn}
+\labpart{Setup} Learning rate $0.3$, at which the unnormalized network reaches its lowest test error in \cref{lab:mechanisms:lr}. A $2\times2$ design, batch normalization (off, on) crossed with the injected shift of \cref{fd:mechanisms:santurkar} (off, on), 20 seeds per cell; the shift follows each normalization or, without normalization, each linear map. A fifth arm detaches the batch mean and variance from the gradient: its forward pass, and so the steadiness of its distributions, is that of batch normalization, but its gradient ignores the normalization. The normalized network also gets the shift at doses $\frac18,\frac12,2,4$ (8 seeds each), a dose scaling the four half-widths of the noise. Covariate shift is measured three ways on 256 training images: the \emph{experienced shift}, the change in one step of the distribution of each unit's input to its nonlinearity (Wasserstein distance in units of the unit's standard deviation, averaged over units and layers), noise included; the \emph{update shift}, the same with the noise held fixed, which counts only the change caused by the parameter update, as Ioffe and Szegedy's definition does; and Santurkar et al.'s \emph{gradient cosine} between the gradients of a layer's weights before and after the layers below it are updated. About four minutes.
+\labpart{Predict first} How much of normalization's speed-up survives an injected shift larger than the unnormalized network's own? Does the same shift hurt a network without normalization? Does steadiness without the projection of \cref{thm:mechanisms:jacobian} help?
+\labpart{Look for} Whether the knockout restores the mediator seed by seed under each definition; the dose at which the shift starts to cost speed; the test error, where the noise has a side effect.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=14mm},lplot,
+  width=0.335\linewidth,height=0.29\linewidth]
+\nextgroupplot[title={(a) training loss},xlabel={step},ylabel={training loss},ymode=log,lloglog,
+  xmin=0,xmax=610,ymin=8e-5,ymax=3,xtick={0,200,400,600},
+  legend to name=mechanismscurveslegend,legend columns=3,
+  legend style={/tikz/every even column/.append style={column sep=4mm}}]
+\addplot[name path=a,draw=none,forget plot] table[x=step,y=plainlo] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addplot[name path=b,draw=none,forget plot] table[x=step,y=plainhi] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addplot[inkblue!12,forget plot] fill between[of=a and b];
+\addplot[name path=a,draw=none,forget plot] table[x=step,y=bnlo] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addplot[name path=b,draw=none,forget plot] table[x=step,y=bnhi] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addplot[inkblue!12,forget plot] fill between[of=a and b];
+\addplot[name path=a,draw=none,forget plot] table[x=step,y=noisyplainlo] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addplot[name path=b,draw=none,forget plot] table[x=step,y=noisyplainhi] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addplot[rubric!12,forget plot] fill between[of=a and b];
+\addplot[name path=a,draw=none,forget plot] table[x=step,y=noisybnlo] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addplot[name path=b,draw=none,forget plot] table[x=step,y=noisybnhi] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addplot[rubric!12,forget plot] fill between[of=a and b];
+\addplot[name path=a,draw=none,forget plot] table[x=step,y=detachedlo] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addplot[name path=b,draw=none,forget plot] table[x=step,y=detachedhi] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addplot[muted!20,forget plot] fill between[of=a and b];
+\addplot[inkblue,line width=1pt,densely dashed,no marks] table[x=step,y=plain] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addlegendentry{no normalization}
+\addplot[rubric,line width=1pt,densely dashed,no marks] table[x=step,y=noisyplain] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addlegendentry{no normalization + shift}
+\addplot[inkblue,line width=1pt,no marks] table[x=step,y=bn] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addlegendentry{batch normalization}
+\addplot[rubric,line width=1pt,no marks] table[x=step,y=noisybn] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addlegendentry{batch normalization + shift}
+\addplot[muted,line width=1pt,densely dotted,no marks] table[x=step,y=detached] {figures/data/09-mechanisms-noisybn-curves.dat};
+\addlegendentry{statistics detached}
+\nextgroupplot[title={(b) by arm},ylabel={mean training loss},ymode=log,lloglog,
+  xmin=0.4,xmax=5.6,ymin=0.008,ymax=0.6,xtick={1,2,3,4,5},minor x tick num=0,
+  xticklabels={none,none + shift,BN,BN + shift,BN detached},xticklabel style={rotate=32,anchor=north east,font=\scriptsize,inner sep=1pt}]
+\addplot[run,restrict x to domain=0.5:1.5] table[x=x,y=meanloss] {figures/data/09-mechanisms-noisybn-runs.dat};
+\addplot[runB,restrict x to domain=1.5:2.5] table[x=x,y=meanloss] {figures/data/09-mechanisms-noisybn-runs.dat};
+\addplot[run,restrict x to domain=2.5:3.5] table[x=x,y=meanloss] {figures/data/09-mechanisms-noisybn-runs.dat};
+\addplot[runB,restrict x to domain=3.5:4.5] table[x=x,y=meanloss] {figures/data/09-mechanisms-noisybn-runs.dat};
+\addplot[run,color=muted,restrict x to domain=4.5:5.5] table[x=x,y=meanloss] {figures/data/09-mechanisms-noisybn-runs.dat};
+\addplot[mean,ebars,restrict x to domain=0.5:1.5] table[x=x,y=meanloss,y error=meanlosshw] {figures/data/09-mechanisms-noisybn-means.dat};
+\addplot[meanB,ebarsB,restrict x to domain=1.5:2.5] table[x=x,y=meanloss,y error=meanlosshw] {figures/data/09-mechanisms-noisybn-means.dat};
+\addplot[mean,ebars,restrict x to domain=2.5:3.5] table[x=x,y=meanloss,y error=meanlosshw] {figures/data/09-mechanisms-noisybn-means.dat};
+\addplot[meanB,ebarsB,restrict x to domain=3.5:4.5] table[x=x,y=meanloss,y error=meanlosshw] {figures/data/09-mechanisms-noisybn-means.dat};
+\addplot[mean,ebars,color=muted,restrict x to domain=4.5:5.5] table[x=x,y=meanloss,y error=meanlosshw] {figures/data/09-mechanisms-noisybn-means.dat};
+\nextgroupplot[title={(c) dose and response},xlabel={experienced shift per step},ylabel={mean training loss},
+  xmode=log,ymode=log,lloglog,xmin=0.007,xmax=1.6,ymin=0.008,ymax=0.6]
+\addplot[rubric,line width=0.8pt,mark=square*,mark size=1.6pt,mark options={fill=rubric,draw=white,line width=0.2pt},ebarsB]
+  table[x=tot,y=meanloss,y error=meanlosshw] {figures/data/09-mechanisms-noisybn-dose.dat};
+\addplot[mean,ebars,restrict expr to domain={\thisrow{x}}{0.5:1.5}] table[x=tot,y=meanloss,y error=meanlosshw] {figures/data/09-mechanisms-noisybn-means.dat};
+\addplot[only marks,mark=o,mark size=1.8pt,color=rubric,mark options={line width=0.6pt},ebarsB,restrict expr to domain={\thisrow{x}}{1.5:2.5}] table[x=tot,y=meanloss,y error=meanlosshw] {figures/data/09-mechanisms-noisybn-means.dat};
+\addplot[only marks,mark=diamond*,mark size=2pt,color=muted,restrict expr to domain={\thisrow{x}}{4.5:5.5}] table[x=tot,y=meanloss] {figures/data/09-mechanisms-noisybn-means.dat};
+\node[font=\scriptsize,text=rubric,anchor=north] at (axis cs:0.0126,0.0122) {$0$};
+\node[font=\scriptsize,text=rubric,anchor=north] at (axis cs:0.0499,0.0128) {$\frac18$};
+\node[font=\scriptsize,text=rubric,anchor=north] at (axis cs:0.167,0.0137) {$\frac12$};
+\node[font=\scriptsize,text=rubric,anchor=north west] at (axis cs:0.306,0.0176) {$1$};
+\node[font=\scriptsize,text=rubric,anchor=west] at (axis cs:0.56,0.0386) {$2$};
+\node[font=\scriptsize,text=rubric,anchor=west] at (axis cs:0.9,0.133) {$4$};
+\end{groupplot}
+\end{tikzpicture}
+
+\smallskip
+\pgfplotslegendfromname{mechanismscurveslegend}
+\caption{\Cref{lab:mechanisms:noisybn}: the six-layer perceptron on the digits at learning rate $0.3$, 20 seeds per arm (seeds $0$--$19$, shared across arms). (a)~Training loss every 50 steps: geometric means over runs with 95\% $t$-bands on the log scale. (b)~Mean training loss over the twelve checkpoints, one hollow mark per run, filled marks the means with 95\% $t$-intervals; vermilion marks the injected shift. (c)~Mean training loss against the measured experienced shift: the normalized network at the doses of the shift written beside the squares (8 seeds at doses $\frac18,\frac12,2,4$), the unnormalized network without and with the shift (filled and hollow circles), and batch normalization with detached statistics (diamond).}
+\label{fig:mechanisms:noisybn}
+\end{fullwidth}
+\end{figure}
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\small
+\begin{tabular}{lccccc}
+\toprule
+& \multicolumn{3}{c}{covariate shift} & \multicolumn{2}{c}{outcome}\\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}
+arm & experienced & from the update & gradient cosine & mean training loss & test error (\%)\\
+\midrule
+no normalization & \pmval{0.037}{0.005} & \pmval{0.037}{0.005} & \pmval{0.82}{0.03} & \pmval{0.056}{0.025} & \pmval{3.84}{0.20}\\
+\quad with the shift & \pmval{0.240}{0.008} & \pmval{0.081}{0.009} & \pmval{0.45}{0.06} & \pmval{0.185}{0.037} & \pmval{4.71}{1.92}\\
+batch normalization & \pmval{0.013}{0.001} & \pmval{0.013}{0.001} & \pmval{0.68}{0.04} & \pmval{0.014}{0.002} & \pmval{2.99}{0.26}\\
+\quad with the shift & \pmval{0.306}{0.001} & \pmval{0.016}{0.001} & \pmval{0.59}{0.04} & \pmval{0.020}{0.001} & \pmval{2.65}{0.19}\\
+\quad statistics detached & \pmval{0.016}{0.001} & \pmval{0.016}{0.001} & & \pmval{0.324}{0.026} & \pmval{8.82}{0.77}\\
+\bottomrule
+\end{tabular}
+\caption{\Cref{lab:mechanisms:noisybn}: three measures of covariate shift and two outcomes in the five arms, means with 95\% $t$-intervals over 20 seeds (over the 19 runs that trained for the unnormalized network with the shift). The shifts are per step, in units of a unit's standard deviation; a gradient cosine of one would mean no shift by Santurkar et al.'s definition.}
+\label{tab:mechanisms:arms}
+\end{fullwidth}
+\end{table}
+
+\paragraph{What happened.} Normalization sped up training on every one of the 20 seeds, lowering the mean training loss by \pmval{0.042}{0.026} (paired differences, mean and 95\% $t$-interval) and the final test error by \pmval{0.85}{0.30} points (\cref{fig:mechanisms:noisybn}, \cref{tab:mechanisms:arms}), although the unnormalized network ended with the lower training loss, 0.0003 against 0.003. The first link of the claim held as well: by the update shift, the normalized distributions moved a third as much per step as the unnormalized ones, less on every seed. For one unit of the last hidden layer, the spread between the 15th and 85th percentiles of its input grew from 1.27 to 4.79 without normalization and from 1.75 to 2.45 with it, Ioffe and Szegedy's picture in miniature.
+
+The knockout restored the mediator, by one definition. With the shift injected, the experienced shift was nine times that of the unnormalized network on average and larger on every seed, so hypothesis~(iii) of \cref{prop:mechanisms:knockout} held. The normalized network still trained almost as fast: its mean training loss rose by \pmval{0.0057}{0.0021} (on 19 of 20 seeds), against a total effect of 0.042, so that under the proposition's hypotheses at most about a seventh of the speed-up runs through the reduced shift. The dose--response (panel~c) sharpens the point. At dose $\frac12$, which already exceeds the unnormalized network's shift on all 8 seeds, the loss rose by only \pmval{0.0004}{0.0049}, against a total effect of 0.038 on the same seeds; the cost appears between doses $\frac12$ and 1, reaches most of the benefit at dose 2 (0.023 of 0.038), and only at dose 4, 23 times the unnormalized network's shift, does the normalized network train more slowly than the unnormalized one. Test error is not a valid outcome for the bound: the shift lowered it, by \pmval{0.33}{0.27} points, a side effect of the noise that violates the proposition's hypotheses for that outcome.
+
+The other arms locate the effect. Injected into the unnormalized network, the same shift slowed it, raising the mean training loss by \pmval{0.128}{0.044} on the 19 seeds that trained; one seed diverged and another ended at 21\% test error. The shift that a normalized network ignores hurts a network without normalization, as \cref{thm:mechanisms:jacobian} explains: normalization does not keep the distributions still, it removes their first two moments from the loss. The detached arm is a rescue in the sense of \cref{sec:mechanisms:mediation}: it keeps the normalized forward pass and removes the normalization from the gradient. Its distributions were nearly as steady as those of batch normalization (an update shift of 0.016 against 0.013) and steadier than the unnormalized network's on 19 of 20 seeds, yet it trained worse than either, with a mean training loss of \pmval{0.32}{0.03} and a test error of \pmval{8.82}{0.77}\%: steadiness without the projection is not enough, as Ioffe and Szegedy found in their first experiments. Finally, the three definitions of the mediator tell different stories. By the gradient cosine, normalization increased the shift (0.82 to 0.68, lower on 19 of 20 seeds), as Santurkar et al.\ found; and by the update shift, which counts only the change caused by the parameter update, the injected noise did not restore the shift at all (0.016 against 0.037, lower on every seed). Under Ioffe and Szegedy's own definition, then, the noisy arm is not a knockout and the proposition is silent; \cref{lab:mechanisms:lr} supplies the comparison.
+
+\begin{lab}{The advantage against the learning rate}{09-mechanisms-lr}\label{lab:mechanisms:lr}
+\labpart{Setup} The network of \cref{lab:mechanisms:noisybn} without and with batch normalization at learning rates $0.01,0.03,0.1,0.3,1,3,10$, ten seeds per cell, paired across arms; mean training loss, final test error and update shift as there. For the normalized network the script checks at every step, for every weight row that feeds a normalization, that the bias before the normalization gets no gradient (\cref{cor:mechanisms:rows}) and that the squared norm of the row grows by exactly $\eta^2\norm{\nabla_w\Lhat}^2$ (\cref{prop:mechanisms:scale}(iii)), and it reports the median effective learning rate $\eta/\norm w^2$ over rows at the start and end of training. A numerical check of \cref{thm:mechanisms:jacobian} precedes the runs. About three minutes.
+\labpart{Predict first} At which learning rates does normalization help, and does it ever hurt? Up to which learning rate does each network train? Each at its own best learning rate, by how much does normalization win?
+\labpart{Look for} The sign of the advantage at small learning rates; where the unnormalized network diverges; the update shift of the normalized network where the unnormalized one fails; the growth of the norms.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=4 by 1,horizontal sep=12mm},lplot,
+  width=0.272\linewidth,height=0.25\linewidth,xmode=log,lloglog,xmin=0.006,xmax=16,
+  xtick={0.01,0.1,1,10},xticklabels={$0.01$,$0.1$,$1$,$10$},xlabel={learning rate $\eta$}]
+\nextgroupplot[title={(a) test error (\%)},ymin=1.5,ymax=12.5,ytick={2,4,6,8,10,12}]
+\addplot[run,restrict expr to domain={\thisrow{failed}}{0:0}] table[x=lr,y=err] {figures/data/09-mechanisms-lr-runs-plain.dat};
+\addplot[runB,restrict expr to domain={\thisrow{failed}}{0:0}] table[x=lr,y=err] {figures/data/09-mechanisms-lr-runs-bn.dat};
+\addplot[armA,ebars] table[x=lr,y=err,y error=errhw] {figures/data/09-mechanisms-lr-means-plain.dat};
+\addplot[armB,ebarsB] table[x=lr,y=err,y error=errhw] {figures/data/09-mechanisms-lr-means-bn.dat};
+\node[font=\scriptsize,text=inkblue,align=center] at (axis cs:2.3,11.2) {none\\diverges};
+\nextgroupplot[title={(b) mean training loss},ymode=log,ymin=0.008,ymax=4]
+\addplot[run,restrict expr to domain={\thisrow{failed}}{0:0}] table[x=lr,y=meanloss] {figures/data/09-mechanisms-lr-runs-plain.dat};
+\addplot[runB,restrict expr to domain={\thisrow{failed}}{0:0}] table[x=lr,y=meanloss] {figures/data/09-mechanisms-lr-runs-bn.dat};
+\addplot[armA,ebars] table[x=lr,y=meanloss,y error=meanlosshw] {figures/data/09-mechanisms-lr-means-plain.dat};
+\addplot[armB,ebarsB] table[x=lr,y=meanloss,y error=meanlosshw] {figures/data/09-mechanisms-lr-means-bn.dat};
+\nextgroupplot[title={(c) update shift},ymode=log,ymin=0.002,ymax=0.06,ytick={0.003,0.01,0.03},yticklabels={$0.003$,$0.01$,$0.03$}]
+\addplot[run,restrict expr to domain={\thisrow{failed}}{0:0}] table[x=lr,y=upd] {figures/data/09-mechanisms-lr-runs-plain.dat};
+\addplot[runB,restrict expr to domain={\thisrow{failed}}{0:0}] table[x=lr,y=upd] {figures/data/09-mechanisms-lr-runs-bn.dat};
+\addplot[armA,ebars] table[x=lr,y=upd,y error=updhw] {figures/data/09-mechanisms-lr-means-plain.dat};
+\addplot[armB,ebarsB] table[x=lr,y=upd,y error=updhw] {figures/data/09-mechanisms-lr-means-bn.dat};
+\nextgroupplot[title={(d) $\eta/\norm w^2$ at the end},ymode=log,ymin=0.003,ymax=3]
+\addplot[reference,domain=0.006:16,samples=2] {x/2};
+\addplot[armB,ebarsB] table[x=lr,y=effT,y error=effThw] {figures/data/09-mechanisms-lr-means-bn.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{\Cref{lab:mechanisms:lr}: the network of \cref{lab:mechanisms:noisybn} without normalization (ink circles) and with it (vermilion squares), ten seeds per learning rate, paired; hollow marks are runs, jittered horizontally, and filled marks with lines are means with 95\% $t$-intervals over the runs that trained. The unnormalized network diverged on every seed at $\eta\ge1$, and the normalized one ended at chance on every seed at $\eta=10$; neither is drawn. (d)~Median over rows of the effective learning rate of the weight rows that feed a normalization, at the end of training; the dashed line is its value at the start, $\eta/2$.}
+\label{fig:mechanisms:lr}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} The advantage of normalization depends on the learning rate and changes sign (\cref{fig:mechanisms:lr}). At $\eta=0.01$ the normalized network is worse on every seed, with a test error higher by \pmval{2.06}{0.77} points (paired, over ten seeds) and slower training. At $\eta=0.03$ and $0.1$ it reaches a lower test error, by \pmval{1.04}{0.87} and \pmval{1.08}{0.54} points, but still trains more slowly on every seed; only at $\eta=0.3$ is it both faster, on all ten seeds, and better, by \pmval{0.96}{0.53} points. Beyond that the comparison ends: the unnormalized network diverges on every seed at $\eta\ge1$, while the normalized one trains at $\eta=1$ and $3$, reaches its best test error, 2.50\%, at $\eta=1$, and fails at $\eta=10$, with more than a third of its units dead at the end. Each at its own best learning rate, normalization wins by \pmval{1.50}{0.47} points. This is the finding of \textcite{BjorckEtAl2018} in miniature: the benefit belongs to the large learning rates that only the normalized network survives, and at a small common learning rate, which is not a common step (\cref{prop:mechanisms:scale}), it reverses.
+
+The update shift grows with the learning rate in both networks, and the normalized network at $\eta=1$ and $3$ moves its distributions about as much per step as the unnormalized one at $0.1$ and $0.3$ (0.022 and 0.035 against 0.025 and 0.037), while reaching a lower test error. At equal update shift normalization still helps, which is the comparison the injected noise could not provide for Ioffe and Szegedy's definition; it is suggestive rather than decisive, since a learning rate changes more than the shift. Scale invariance held to rounding error. On every step the biases before the normalizations received gradients below $5\times10^{-8}$ ($1.4\times10^{-6}$ at $\eta=10$), and the squared norm of every row grew by $\eta^2\norm{\nabla_w\Lhat}^2$ to a relative error of at most $2\times10^{-5}$ over 600 steps. At $\eta\le0.3$ the norms barely grew; at $\eta=1$ and $3$ they grew by factors of 1.22 and 2.09, and the effective learning rate fell to 0.40 and 0.72, so that a threefold range of nominal learning rates became a range of 1.8. The normalized network survives large learning rates in part because it does not take them.
+
+The miniature reproduced the post-mortem in its main lines, the knockout, the gradient-based shift and the learning rate, and differed from it in one respect: in Santurkar et al.'s network the injected shift stopped the unnormalized network from training, while here it slowed it down.
+
+\section{Protocol}\label{sec:mechanisms:protocol}
+
+\begin{protocol}{Testing a mechanism claim}\label{prot:mechanisms:test}
+\item Write the claim as a chain from treatment to mediator to outcome, and list the rival mediators, before running anything.
+\item Define the mediator by a measurement, naming the quantity, the data, the time scale and the divergence, and measure it in every arm with intervals over seeds.
+\item Check the first link: the treatment moves the mediator at the settings of the claim.
+\item Knock the mediator out: with the treatment on, restore it to its untreated level and no further, verify the level seed by seed, and report the remaining benefit as a bound on the indirect effect, with the assumptions that make it one.
+\item Control the knockout by applying the same operation without the treatment; if it changes the outcome by a route of its own, then judge the knockout on an outcome that this route does not touch.
+\item Rescue: supply the mediator without the treatment, or remove the treatment's other actions; vary the dose and plot the outcome against the measured mediator across all arms.
+\item Compare the arms at their own best hyperparameters as well as at shared ones.
+\item Name a prediction that the mechanism makes and its rivals do not, and test it.
+\end{protocol}
+
+The protocol tests a mechanism against the mediators someone thought of; it cannot exclude one that nobody named. Every intervention on a mediator risks side effects, which the control of step~5 checks only in the arm where it is run, and the mediators of a training run are high-dimensional processes summarized by scalars, so that a different summary can change the verdict, as the definitions of covariate shift did. The protocol is also expensive: a knockout, its control and a rescue triple the arms of a comparison, and a dose--response multiplies them again. At scale, run the tests on the smallest model in which the effect is present and say so, since the mechanism of a small network may not be that of a large one; and when only the runs of a sweep are available, the evidence is correlational and \cref{ch:sharpness} applies.
+
+\begin{exercises}
+\item \consolidation\hard (The constant in the denominator.) Implementations normalize by $\sigma_\epsilon=(\sigma^2+\epsilon)^{1/2}$ with a small $\epsilon>0$. Show that the Jacobian of $y\mapsto\hat y$ is then $\sigma_\epsilon^{-1}(I-\frac1B\mechanismsones\mechanismsones^\top-\frac1B\hat y\hat y^\top)$ with $\norm{\hat y}^2=B\sigma^2/\sigma_\epsilon^2$, that this matrix is not a projection, and that $\norm{\nabla L(y)}^2=(\gamma^2/\sigma_\epsilon^2)\bigl(\norm g^2-\frac1B\ip{\mechanismsones}{g}^2-a(2-a)\ip{\hat y}{g}^2/\norm{\hat y}^2\bigr)$ with $a=\sigma^2/\sigma_\epsilon^2$. Which parts of \cref{thm:mechanisms:jacobian} and \cref{cor:mechanisms:rows} survive exactly? \hint{the matrix is $I-e_1e_1^\top-a\,e_2e_2^\top$ with $e_2=\hat y/\norm{\hat y}$, and its square is $I-e_1e_1^\top-(2a-a^2)e_2e_2^\top$.}\label{ex:mechanisms:epsilon}
+
+\item \consolidation (Batches of two.) Show that for $B=2$ the normalized vector is $(1,-1)$ or $(-1,1)$, so that near every $y$ with $y_1\neq y_2$ the unit's output does not depend on $y$, and check that \cref{thm:mechanisms:jacobian} gives $P=0$. Show that the form printed in the proceedings (\cref{rem:mechanisms:printed}) would assert that $0\le(\gamma^2/\sigma^2)(\frac12-\frac1{\sqrt2})\ip{\hat y}{g}^2$. What does $P=0$ mean for training with batches of two?\label{ex:mechanisms:two}
+
+\item \consolidation (Weight decay and the effective learning rate.) For a scale-invariant $f$ and the step $w'=w-\eta(\nabla f(w)+\lambda w)$, show that $\norm{w'}^2=(1-\eta\lambda)^2\norm w^2+\eta^2\norm{\nabla f(w)}^2$. Assuming $\norm{\nabla f(u)}=G$ for every unit vector $u$, show that the squared norm has a fixed point $N$ with $N^2(1-(1-\eta\lambda)^2)=\eta^2G^2$, and that the effective learning rate there is close to $\sqrt{2\eta\lambda}/G$ for small $\eta\lambda$: the learning rate and the weight decay act on the direction only through their product.\label{ex:mechanisms:decay}
+
+\item \consolidation (Two indirect effects.) Construct potential outcomes for two equally likely kinds of run in which the treatment makes the outcome insensitive to the mediator, $Y(1,m)$ constant in $m$, while $Y(0,m)$ increases with $m$ and $M(1)<M(0)$. Compute the total effect, the indirect effect of \eqref{eq:mechanisms:split} and the pure indirect effect $\E Y(0,M(0))-\E Y(0,M(1))$, and show that a knockout in the treated arm finds no mediation while a rescue in the untreated arm finds a large one. Which of the two does the covariate-shift claim assert?\label{ex:mechanisms:interaction}
+
+\item \labwork (Shift before the normalization.) In \script{09-mechanisms-noisybn.py}, inject the shift before each normalization instead of after it. Predict the experienced shift and the training curve before running it: which part of the noise does the normalization remove, and which survives? Why is this design not a knockout?\label{ex:mechanisms:before}
+
+\item \labwork (Which half of the projection.) In the detached arm of \cref{lab:mechanisms:noisybn}, record the norms of the weight rows and the biases before each normalization during training, and compare them with \cref{cor:mechanisms:rows} and \cref{prop:mechanisms:scale}(iii). Then detach only the batch mean, and then only the standard deviation: which half of the projection carries the benefit in this network?\label{ex:mechanisms:detached}
+
+\item \labwork (Weight decay in the sweep.) Repeat \cref{lab:mechanisms:lr} with weight decay $\lambda=10^{-3}$. Compare the final effective learning rate with the fixed point of \cref{ex:mechanisms:decay}, using the measured gradient norm for $G$, and observe whether the reversal at small learning rates persists.\label{ex:mechanisms:lrdecay}
+
+\item \design (Warm-up.) A linear warm-up of the learning rate is said to help Adam because it reduces the variance of the adaptive learning rate, which is large while the second-moment estimate rests on few gradients \parencite{LiuEtAl2020}, or because it limits the size of the first updates \parencite{MaYarats2021}. With 200 runs of a small model, design a knockout and a rescue that separate the two, with the measurement of each mediator and what each explanation predicts for each arm.\label{ex:mechanisms:warmup}
+
+\item \design (Two rivals across batch sizes.) \Textcite{DeSmith2020} found that the larger learning rates permitted by normalization matter mainly at large batch sizes, and \textcite{LuoEtAl2019} that the noise of the batch statistics regularizes. Within 300 runs, design an experiment that separates the two across batch sizes, for instance by computing the statistics on sub-batches of fixed size.\label{ex:mechanisms:batch}
+
+\item \critique (A correlation offered as a mechanism.) A paper proposes a normalization layer. Across 40 trained networks of different depths and widths, the covariate shift measured by the authors' divergence correlates with the number of steps to 95\% training accuracy (Kendall's $\tau=0.55$), and the new layer has both the lowest shift and the fewest steps; the authors conclude that it works by reducing covariate shift. Which links of the chain does this evidence test, what could produce the correlation without the mechanism, and which two experiments would test the claim?\label{ex:mechanisms:critique1}
+
+\item \critique (A knockout that hurts.) To show that dropout regularizes by preventing co-adaptation, a study adds to a network trained with dropout a penalty that rewards correlated hidden units, finds that test accuracy falls, and concludes that co-adaptation mediates the benefit of dropout. Which hypothesis of \cref{prop:mechanisms:knockout} carries the conclusion, why does a knockout that hurts prove little, and what control would make the result informative?\label{ex:mechanisms:critique2}
+
+\item \research (Small batches.) The benefit of batch normalization fades at small batch sizes, where batch renormalization \parencite{Ioffe2017} and group normalization \parencite{WuHe2018} were proposed to replace it. Which mediator explains the loss? Open: a design that separates the noise of the batch statistics, the effective learning rate and the projection of \cref{thm:mechanisms:jacobian} at small batch sizes, and whether some definition of covariate shift predicts training speed across normalization layers at a fixed effective learning rate.\label{ex:mechanisms:research}
+\end{exercises}
+
+\notesandrefs
+Normalizing a network's inputs to zero mean and unit variance is old advice \parencite{LeCunEtAl1998}, and covariate shift is a term from statistics, where \textcite{Shimodaira2000} corrected maximum likelihood for a change of the input distribution between training and prediction. Batch normalization was followed by normalizations that avoid its dependence on the batch, among them layer normalization \parencite{BaKirosHinton2016}, batch renormalization \parencite{Ioffe2017} and group normalization \parencite{WuHe2018}. The explanations offered after 2018 are those of the post-mortem, to which \textcite{LuoEtAl2019} add regularization by the noise of the batch statistics; several are compatible, and the field has not agreed on their weights.
+
+Mediation analysis has a long history outside machine learning. \Textcite{BaronKenny1986} gave the regression approach that became standard in psychology, \textcite{RobinsGreenland1992} and \textcite{Pearl2001} defined direct and indirect effects by potential outcomes and asked when they are identified, and \textcite{VanderWeele2015} treats mediation together with interaction. In machine learning the interventions are cheap, since code can often set a mediator directly, as the injected noise sets covariate shift; the main danger is then the side effect of the intervention rather than unmeasured confounding. \Textcite{LiptonSteinhardt2018} used internal covariate shift as an example of speculation offered as explanation, and \cref{ch:sharpness} takes up the other common support for a mechanism, a correlation across a sweep of trained networks.
+
+\paragraph{Translating the literature.} \Textcite{IoffeSzegedy2015} write $m$ for the batch size (our $B$), $\alpha$ for the learning rate (our $\eta$), $x=Wu+b$ for the normalized pre-activation (our $y$) and $\mathrm{BN}(x)$ for the output (our $z$). \Textcite{SanturkarEtAl2018} also write $m$ for the batch size; their $y_j$, $\hat y_j$, $z_j$, $\gamma$, $\beta$ and $\sigma_j$ are ours for unit $j$, their $\widehat{\mathcal L}$ is our loss of the normalized network, and their $\nabla_{y_j}\mathcal L$, the gradient of the unnormalized network, is our $g$ under their identical-network assumption. Their internal covariate shift of Definition~2.1 is the distance between the gradients $G$ and $G'$, whose cosine is our gradient cosine, and their noisy batch normalization with $n_\mu=0.5$, $n_\sigma=1.25$, $r_\mu=r_\sigma=0.1$ is our injected shift at dose one. The scale-invariant parameters of \textcite{AroraLiLyu2019} are our weight rows that feed a normalization, and their auto rate-tuning is the decay of our $\eta_{\mathrm{eff}}$. Our direct and indirect effects \eqref{eq:mechanisms:split} are Pearl's natural direct and indirect effects, the pure direct and total indirect effects of Robins and Greenland; the mediation literature, like this chapter, writes $A$ for the treatment and $M$ for the mediator, which is not the best of $k$ draws of the book's notation.
+
+\printchapterbib
+\end{refsection}

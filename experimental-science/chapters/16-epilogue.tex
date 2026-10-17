@@ -1,0 +1,143 @@
+% Epilogue of Deep Learning as an Experimental Science.
+\specialchapter{Epilogue}{The laboratory notebook}{16}\label{ch:epilogue}
+\begin{refsection}[chapters/16-epilogue.bib]
+\labfloatprefix{E}
+
+The fifteen chapters of this book examined other people's experiments. The epilogue runs one of its own, from the question to the report, and keeps its notebook in the open. The question is small on purpose: does label smoothing lower the test error of the small network that the laboratory sections have trained throughout? Label smoothing replaces the one-hot training target by a mixture of the one-hot vector and the uniform distribution over classes \parencite{SzegedyEtAl2016}, and its effects on accuracy, calibration and distillation have been studied at scale \parencite{MullerKornblithHinton2019}. In \cref{ch:aggregates} it came out ahead of a baseline on every task of a suite, but there the two arms shared one fixed configuration and nobody asked how much of the gain survived a fair protocol. Every step below follows a protocol of an earlier chapter; the script that ran the whole study is \script{16-epilogue-study.py}, and it prints every number quoted here.
+
+\addsec{The question and the predictions}
+
+A question becomes an experiment when its unit, treatment and response are fixed. The unit is a run of the two-layer network with 64 units per layer, trained for 30 epochs by stochastic gradient descent with momentum on the scikit-learn digits; the treatment is the smoothing parameter, $0$ or $0.1$; the response is the error on the 539 test images, measured once per run at the end of training. Before anything was run, four predictions were written into the header of the script, where the version history of the repository dates them (\cref{tab:epilogue:predictions}, middle column). They are not forecasts to be proud of. They record what the experimenter expected, so that the experiment can show how far the expectation was from the result.
+
+\begin{experiment}[the epilogue's study]
+\field{question}{Does label smoothing ($0.1$) lower the test error of the digits network?}
+\field{treatment}{smoothing parameter $0$ (baseline) or $0.1$}
+\field{tuned}{learning rate and weight decay, on the same 10-point grid for both arms, 3 seeds per point, scored on a validation split carved from the training set}
+\field{held fixed}{architecture, optimizer, epochs, batch size, data split, test set}
+\field{varied}{initialization and data-order seeds, paired across the arms}
+\field{response}{test error, read once per run}
+\field{replicates}{chosen by a power calculation on a pilot}
+\field{controls}{a positive control: the tuned baseline on half of the training set}
+\field{analysis}{paired $t$-interval, sign-flip permutation test and bootstrap for the difference; a $2\times2$ check of the interaction with weight decay}
+\end{experiment}
+
+\addsec{A pilot, and the number of seeds}
+
+\Cref{ch:seeds} asks for the number of runs to be fixed before the comparison is made, and \cref{thm:toolkit:power} turns a pilot into that number. Ten paired seeds per arm at a learning rate of $0.05$, scored on a validation split of 300 images taken from the training set, gave validation errors of $3.97$ and $2.80$ percent and a standard deviation of the paired difference of $0.61$ points. To detect a difference of $0.25$ points with power $0.8$ at level $0.05$, the formula asks for $(z_{0.975}+z_{0.8})^2\,0.61^2/0.25^2\approx48$ paired seeds. The pilot's own difference was large, but a pilot is for estimating the spread, not the effect; the effect it shows is a single noisy draw and was not used.
+
+\addsec{Tuning with equal budgets}
+
+\Cref{ch:budgets} showed how a comparison turns into a comparison of tuning budgets when one arm is searched and the other is not, and \cref{ch:ablations} how hyperparameters tuned for one arm favor it. Both arms were therefore searched over the same ten configurations, learning rates $0.01$, $0.02$, $0.05$, $0.1$ and $0.2$ with weight decay $0$ or $10^{-4}$, three seeds each, on the validation split only. The searches chose different configurations: a learning rate of $0.05$ with weight decay $10^{-4}$ for the baseline, and $0.1$ without weight decay for label smoothing. Had label smoothing been run at the baseline's tuned settings, the comparison would have given the baseline the home-field advantage of \cref{ch:ablations}; the $2\times2$ check below, which runs at the baseline's learning rate, shows that the effect would have looked about a sixth smaller.
+
+\addsec{A positive control}
+
+An experiment that cannot detect a known effect cannot be trusted to report the absence of an unknown one (\cref{ch:controls}). The positive control trains the tuned baseline on half of the training set. Its test error rose from $2.87$ to $4.27$ percent, a paired difference of \pmval{1.40}{0.16} points: the pipeline sees an effect of this size easily. The baseline arm itself is the negative control: it runs the same code with the smoothing parameter set to zero, so that the treatment is the only difference between the arms.
+
+\addsec{The result}
+
+Forty-eight paired seeds per arm, each arm at its own tuned configuration, scored once on the test set, gave test errors of \pmval{2.87}{0.12} percent for the baseline and \pmval{1.91}{0.10} percent with label smoothing (means with $95$ percent $t$-intervals). The paired difference is $-0.96$ points with $95$ percent interval $[-1.10,-0.82]$; a bootstrap over seeds gives $[-1.09,-0.83]$, and a sign-flip permutation test of the paired differences gives $p<10^{-4}$ (no permutation out of 20{,}000 reached the observed mean). Label smoothing was better on $47$ of the $48$ seeds and tied on the remaining one (\cref{fig:epilogue:result}a).
+
+Pairing helped less than it often does. The outcomes of the two arms on the same seed correlate only weakly ($0.23$), because the arms were trained at different learning rates and so follow different trajectories from the same initialization; the paired interval is $0.14$ points wide on each side, against $0.16$ unpaired. Pairing costs nothing, and here it buys a little.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=20mm},lplot,width=0.45\linewidth,height=0.40\linewidth]
+\nextgroupplot[xlabel={baseline test error (\%)},ylabel={label smoothing test error (\%)},xmin=1,xmax=4.6,ymin=1,ymax=4.6,minor tick num=1]
+\addplot[reference,domain=1:4.6,samples=2] {x};
+\addplot[run] table[x=baseline,y=smoothing] {figures/data/16-epilogue-paired.dat};
+\nextgroupplot[ylabel={test error (\%)},xlabel={weight decay},symbolic x coords={0,0.001},xtick=data,enlarge x limits=0.5,ymin=1.6,ymax=3.2,minor tick num=1,legend pos=north east]
+\addplot[armA,mark=*,error bars/y dir=both,error bars/y explicit,error bars/error bar style={inkblue,line width=0.5pt}] coordinates {(0,2.895) +- (0,0.119) (0.001,2.659) +- (0,0.114)};
+\addplot[armB,mark=square*,error bars/y dir=both,error bars/y explicit,error bars/error bar style={rubric,line width=0.5pt}] coordinates {(0,2.018) +- (0,0.104) (0.001,1.933) +- (0,0.105)};
+\legend{baseline,label smoothing}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The epilogue's study. (a) Each mark is one of $48$ seeds, trained in both arms at each arm's tuned configuration; points below the diagonal are seeds on which label smoothing had the lower test error. (b) The $2\times2$ check at the baseline's tuned learning rate ($0.05$): mean test error over the same $48$ seeds with $95$ percent $t$-intervals, for weight decay $0$ or $10^{-3}$. Script \script{16-epilogue-study.py}.}\label{fig:epilogue:result}
+\end{figure}
+
+\addsec{An interaction check}
+
+\Cref{ch:confounding,ch:ablations} warn that an effect measured at one setting of the other factors may not be the effect at another. A $2\times2$ design at the baseline's tuned learning rate crossed the smoothing parameter with weight decay $0$ or $10^{-3}$, again with $48$ paired seeds per cell (\cref{fig:epilogue:result}b). The main effect of label smoothing is \pmval{-0.80}{0.11} points, the main effect of weight decay \pmval{-0.16}{0.04}, and the interaction, the difference between the effect of smoothing with and without weight decay, \pmval{+0.15}{0.09}: smoothing helps a little less when weight decay is on, and helps in both cells. Two factors at two levels are not a characterization of the method, but they rule out the most common way for a single comparison to mislead, an effect that exists only at the settings where it was measured.
+
+\addsec{Predictions against outcomes}
+
+\Cref{tab:epilogue:predictions} sets the predictions beside what happened. Two of the four were right. The other two were wrong in the same direction: the effect was about twice the upper end of the predicted range, and the spread of the paired differences was larger than expected, so that $48$ seeds were needed where about $20$ had been guessed. A prediction that misses is not a failure of the experiment; it is the experiment's report on the experimenter. Had the predictions not been written down, the large effect would have been easy to remember as expected.
+
+\begin{table}[t]
+\centering\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.27\linewidth}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X@{}}
+\toprule
+quantity & predicted before the runs & observed\\
+\midrule
+effect of label smoothing on test error & between $-0.5$ and $-0.1$ points & $-0.96$ $[-1.10,-0.82]$: larger\\
+half-width of its 95\% interval & about $0.15$ points with about 20 seeds & $0.14$ with 48 seeds, $0.22$ projected for 20\\
+positive control (half the data) & worse by at least 1 point & worse by \pmval{1.40}{0.16}\\
+interaction with weight decay & smaller than $0.2$ points & \pmval{+0.15}{0.09}\\
+\bottomrule
+\end{tabularx}
+\caption{The predictions written into the study's script before the first run, and the outcomes.}\label{tab:epilogue:predictions}
+\end{table}
+
+\addsec{The report}
+
+A report states the claim with its uncertainty, the protocol that produced it, and what it does not show. For this study:
+
+\begin{aside}[Report]
+On the scikit-learn digits, label smoothing with parameter $0.1$ lowered the test error of a two-layer network with 64 units per layer from $2.87$ to $1.91$ percent: a paired difference of $-0.96$ points, $95$ percent interval $[-1.10,-0.82]$, over $48$ paired seeds (better on $47$, tied on one). Each arm was tuned over the same grid of ten configurations with three seeds each on a validation split; the test set was read once per run. The number of seeds was fixed beforehand by a power calculation on a pilot. A positive control (half of the training set) raised the error by $1.40$ points. At the baseline's learning rate the effect of smoothing changed by $0.15\pm0.09$ points when weight decay was added. The study does not show that the effect extends to other data, architectures or training lengths, and it does not identify how smoothing helps; predictions written before the runs underestimated the effect by about half.
+\end{aside}
+
+The last sentence of the report is the one that most reports leave out. Its first half is \cref{ch:extrapolation} in one line; its second is \cref{ch:mechanisms}.
+
+\addsec{Fifteen protocols}
+
+Each chapter ended with a protocol. \Cref{tab:epilogue:protocols} lists them with the step that is most often skipped; the study above used five of them, those of \cref{ch:seeds,ch:budgets,ch:controls,ch:ablations,ch:extrapolation}, and the predictions in its script are the first step of the last.
+
+\begin{table}[t]
+\centering\small
+\renewcommand{\arraystretch}{1.12}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.36\linewidth}>{\raggedright\arraybackslash}X@{}}
+\toprule
+protocol & the step most often skipped\\
+\midrule
+\Cref{prot:seeds:measure}, \nameref{prot:seeds:measure} & Fix the number of runs before looking, and report every run.\\
+\Cref{prot:instability:protocol}, \nameref{prot:instability:protocol} & Record every seed and version; a fixed seed buys an audit trail, not evidence.\\
+\Cref{prot:aggregates:suite}, \nameref{prot:aggregates:suite} & Choose one aggregate and its interval in advance, and rerun every baseline under the same protocol.\\
+\Cref{prot:budgets:compare}, \nameref{prot:budgets:compare} & Give the arms equal budgets over every hyperparameter that distinguishes them.\\
+\Cref{prot:controls:search}, \nameref{prot:controls:search} & Run the placebo: random draws from the same space, through the same pipeline.\\
+\Cref{prot:confounding:attribute}, \nameref{prot:confounding:attribute} & List every difference from the baseline, and cross the architecture with the recipe.\\
+\Cref{prot:heldfixed:fixed}, \nameref{prot:heldfixed:fixed} & State the budget of the claim, and retune what moves with the treatment.\\
+\Cref{prot:ablations:design}, \nameref{prot:ablations:design} & Name the estimand, use a factorial design when components interact, and retune the ablated variant.\\
+\Cref{prot:mechanisms:test}, \nameref{prot:mechanisms:test} & Define the mediator by a measurement, then knock it out and rescue it.\\
+\Cref{prot:sharpness:sweep}, \nameref{prot:sharpness:sweep} & Give every configuration its own seeds, fix the measure first, and check it under rescaling.\\
+\Cref{prot:fitting:fit}, \nameref{prot:fitting:fit} & Fix the objective in advance, start from a grid, and report convergence and bootstrap intervals.\\
+\Cref{prot:protocol:card}, \nameref{prot:protocol:card} & Count every operation, and train each configuration as it would be trained at its budget.\\
+\Cref{prot:extrapolation:before}, \nameref{prot:extrapolation:before} & Write the forecast and its interval down before the run finishes, and backtest the form.\\
+\Cref{prot:emergence:announce}, \nameref{prot:emergence:announce} & Plot a continuous metric beside the headline one, with intervals and zero counts as bounds.\\
+\Cref{prot:instruments:evaluate}, \nameref{prot:instruments:evaluate} & Sample the settings, score every arm under the same ones, and compare within settings.\\
+\bottomrule
+\end{tabularx}
+\caption{The protocols of the fifteen chapters.}\label{tab:epilogue:protocols}
+\end{table}
+
+\addsec{What this book did not cover}
+
+The book is about the training experiment, and three neighboring subjects were left to others. The science of benchmarks, of how a shared test set comes to rank models and what those rankings mean, is the subject of \textcite{Hardt2026}. Causal inference from observational data, where the experimenter cannot assign the treatment, is a field with its own textbooks \parencite{Pearl2009,ImbensRubin2015}; \cref{ch:sharpness} used only its first lesson. Human evaluation, where the instrument is a person, has methods of its own that \cref{ch:instruments} touched only through model judges. The documentation of data and models \parencite{GebruEtAl2021,MitchellEtAl2019} is part of reporting but was not treated here.
+
+\addsec{The culture of experiments}
+
+Every method in this book costs runs, and the incentives of a fast field reward the result that appears first more than the one that was checked \parencite{SculleyEtAl2018}. Some of the remedies are institutional. Preregistration, the public registration of a study's design and analysis before its data are seen, is standard for clinical trials and spread through psychology after its replication crisis \parencite{NosekEtAl2018}; the predictions in the header of a script are its private version. Reproducibility programs and checklists at machine learning conferences ask authors to report seeds, intervals and compute \parencite{PineauEtAl2021}. Other remedies are habits. Report negative results and failed replications as findings; a miniature that does not reproduce a famous effect, like several in this book, is information. Review a failed claim as an incident, without blame, as the prologue proposed. Keep the notebook.
+
+The ornament at the foot of this page carries the sixteenth draw. The interval that ran off the page after two draws is now narrow, and the running mean, after a first draw $2.8$ standard deviations too high, sits $0.001$ below the line. Sixteen is still a small number of runs; but the estimate has an honest interval, which is more than one run could give, and that is the whole difference between a number and a measurement.
+
+\notesandrefs
+
+Label smoothing was introduced by \textcite{SzegedyEtAl2016} as a regularizer for the Inception networks; \textcite{MullerKornblithHinton2019} found that it improves calibration and accuracy in many settings and hurts knowledge distillation, and explained the latter by its effect on the geometry of the penultimate layer. The study in this epilogue says nothing about those settings: it is a worked example of a protocol, not a contribution to the literature on label smoothing.
+
+\textcite{NosekEtAl2018} argue the case for preregistration across the sciences and describe its forms. \textcite{PineauEtAl2021} report on the reproducibility program of NeurIPS 2019, including its checklist. Datasheets for datasets \parencite{GebruEtAl2021} and model cards \parencite{MitchellEtAl2019} are the standard proposals for documenting data and trained models.
+
+\printchapterbib
+\end{refsection}
+\labfloatrestore

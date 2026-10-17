@@ -1,0 +1,356 @@
+% Chapter 10 of Deep Learning as an Experimental Science: flat minima and correlation in a sweep.
+\labchapter{Correlation in a Sweep}{Flat minima and the measures of generalization}{Flat minima generalize better.}{Hochreiter and Schmidhuber (1997); made the explanation of the large-batch generalization gap by Keskar et al.\ (2017)}{Narrowed: sharpness changes under rescalings that leave the function intact, and across controlled sweeps it tracks generalization along some hyperparameters and not others, with either sign.}{ch:sharpness}
+\begin{refsection}[chapters/10-sharpness.bib]
+
+\begin{chaptersummary}
+Hochreiter and Schmidhuber argued in 1997 that a flat minimum, a large region of weights with nearly constant training error, should generalize; in 2017 Keskar et al.\ explained the poorer test accuracy of large-batch training by the sharper minima it reached. But rescaling a ReLU network changes the curvature of its loss without bound and leaves the function unchanged, and in controlled sweeps sharpness tracked generalization along some hyperparameters only, and in modern networks followed the learning rate. The method is the analysis of a correlation in a sweep: pooled correlations split within and between strata, granulated rank correlations, replicate and random controls, invariant measures, and the intervention that a correlation calls for. In the laboratory, three sharpnesses correlate with the gap of 162 networks with both signs, all through the width, and a rescaling moves the top Hessian eigenvalue by a factor of 5,200 while the test error stays fixed.
+\end{chaptersummary}
+
+\section{The claim: flat minima and the large-batch gap}\label{sec:sharpness:claim}
+
+\Textcite{HochreiterSchmidhuber1997} made the size of the neighborhood of a solution a principle. A \term{flat minimum}\index{flat minimum} is, in their definition, a large connected region of weight space in which the training error stays approximately constant; at a sharp minimum it rises quickly. Their argument came from the theory of minimum description length: the weights of a flat minimum can be specified with low precision and therefore with few bits, a network with a short description is a simple one, and a simple network should overfit less.\sidenote{Limiting the information in the weights by making them noisy is older: \textcite{HintonVanCamp1993} trained networks with Gaussian weights and penalized the information the weights carried.} They made the principle an algorithm, flat minimum search, which lowers the training error together with a term for the precision that the weights need, at about the cost of backpropagation thanks to the Hessian--vector products of \textcite{Pearlmutter1994}; a short version had appeared in 1995 \parencite{HochreiterSchmidhuber1995}.
+
+\begin{finding}[\textcite{HochreiterSchmidhuber1997}, Section~5]\label{fd:sharpness:fms}
+On a noisy two-class problem with 200 training points, ten networks trained by flat minimum search had lower test error than ten networks trained by backpropagation from the same initializations, in each of the ten pairs. On three tasks of predicting the German stock index, flat minimum search had the best mean performance over 7 or 10 trials, ahead of the next method by 0.13, 2.79 and 8.29 points of the authors' measure; in the first task the trials of flat minimum search and of weight decay each spread over eight points.
+\end{finding}
+
+Twenty years later the principle found its most famous application. Training with large minibatches, which parallelizes well, produced networks that tested worse, and \textcite{KeskarEtAl2017} set out to explain why.\sidenote{The paper first circulated on arXiv in September 2016 (arXiv:1609.04836).}
+
+\begin{finding}[\textcite{KeskarEtAl2017}, Tables~2 and~3]\label{fd:sharpness:keskar}
+Six networks (fully connected on MNIST and TIMIT, convolutional on CIFAR-10 and CIFAR-100) were trained with Adam on batches of 256 examples or of 10\% of the training set, five runs each, until the loss stopped improving. Both regimes fit the training data to high accuracy, but the large-batch networks tested worse on all six, by 0.22 to 5.27 points of accuracy. A sensitivity measure, the largest relative increase of the training loss within a small box around the solution, was one to two orders of magnitude larger for the large-batch solutions: 205.14 against 1.23 for the network on MNIST.
+\end{finding}
+
+Large-batch methods, they concluded, converge to sharp minimizers, with many large positive eigenvalues of the Hessian, while the noise of small batches pushes the iterates out of sharp basins; and the abstract treated the last link as settled: ``as is well known, sharp minima lead to poorer generalization.'' The field received the general claim, that flat minima generalize better. It was received alongside the finding of \textcite{ZhangEtAl2017} that standard classifiers fit random labels as easily as true ones, so that capacity measures that ignore the training algorithm could not explain generalization; it fitted the PAC-Bayesian bounds of \textcite{McAllester1999}, which reward solutions that tolerate random perturbations of the weights and which \textcite{DziugaiteRoy2017} made nonvacuous for deep networks; and it became a design target: Entropy-SGD biased training toward wide valleys \parencite{ChaudhariEtAl2017}, and \term{sharpness-aware minimization}\index{sharpness-aware minimization} (SAM), which minimizes the largest training loss within a small ball around the weights, reported state-of-the-art results on several image benchmarks \parencite{ForetEtAl2021}.
+
+\paragraph{What was right.} The observation held where it was made: in all six settings the large-batch solutions were the sharper ones by the authors' metric, and their test accuracy was lower. The authors called their metric imperfect and computed it in the full space and in random subspaces, and the abstract offers numerical evidence that supports a view. The description-length and PAC-Bayesian arguments are sound as far as they go, and later work keeps finding settings in which flatter solutions do generalize better. Why the large-batch gap appeared, with fewer updates and a learning rate not adapted to the batch size, is the subject of \cref{ch:heldfixed}; this chapter examines the explanation, that sharpness causes, or at least measures, generalization.
+
+\section{The experiment: two batch sizes and a sensitivity}\label{sec:sharpness:experiment}
+
+\begin{experiment}[Keskar et al.\ 2017]
+\field{question}{Why do large-batch methods generalize worse? Do they converge to sharp minimizers?}
+\field{treatment}{the batch size: 256 examples, or 10\% of the training set}
+\field{held fixed}{network and data set, the Adam optimizer, the initialization scheme; training until the loss stops improving}
+\field{varied}{the starting point: five random initializations per arm}
+\field{response}{test accuracy; the largest relative increase of the training loss in a box of relative half-width $10^{-3}$ or $5\cdot10^{-4}$, by ten iterations of L-BFGS-B, in the full space and in random subspaces}
+\field{replicates}{five runs per arm, for each of six networks}
+\field{analysis}{means and standard deviations of both responses in each arm; plots of the loss on the line through the two solutions}
+\end{experiment}
+
+What could this design show? It varies one thing, the batch size, and records two outcomes, and both differed between the arms for every network. A causal chain from batch size through sharpness to test accuracy would produce this pattern; so would a batch size that changes test accuracy through another path, such as the number of updates, and changes sharpness as a side effect. With one treatment at two levels, nothing in the data separates the two accounts: there is no variation in sharpness at a fixed batch size, and no intervention on sharpness that leaves the batch size alone. And the metric's box is defined in the coordinates of the weights,\sidenote{With $A$ the identity, the box of \textcite{KeskarEtAl2017} allows each weight $x_i$ to move by $\eps(\abs{x_i}+1)$: partly in proportion to the weight, partly by a fixed amount.} while a network has many coordinate systems that compute the same function; nothing in the design shows that the metric belongs to the function. The evidence of 1997 had a similar shape: flat minimum search also pruned units and weights, so its success supports the algorithm more directly than the principle, and in the first stock-market task its margin was small against the spread of the trials (\cref{ch:seeds}). Later studies replaced the two arms by a sweep of many networks; a sweep has far more variation, but it remains an observational study of the measure.
+
+\section{The post-mortem: rescaled minima and controlled sweeps}\label{sec:sharpness:postmortem}
+
+\paragraph{Rescaled minima.} \Textcite{DinhEtAl2017} examined the coordinates. A rectifier is \term{positively homogeneous}\index{positive homogeneity}, $\relu(cz)=c\relu(z)$ for $c>0$, so a network with one hidden layer computes the same function after its first layer is multiplied by $c$ and its second divided by $c$. With this family of equivalent weights they showed that every minimum of such a network (other than a constant function) has a region of nearly constant loss of infinite volume; that every minimum with a nonzero Hessian is equivalent to one whose Hessian has arbitrarily large spectral norm; and that the box sharpness of Keskar et al.\ can be made large in the same way. With other changes of parameters, such as weight normalization, a minimum can be made flatter or sharper at will: flatness cannot be separated from the parametrization. \Cref{thm:sharpness:rescaling} below proves the rescaling result for the networks of our laboratory. \Textcite{NeyshaburEtAl2017} argued that sharpness can control generalization only together with a norm, as in a PAC-Bayesian bound.
+
+\paragraph{Forty measures, two thousand networks.} \Textcite{JiangEtAl2020} built the large controlled sweep that the question needed.
+
+\begin{finding}[\textcite{JiangEtAl2020}, Tables~1--3]\label{fd:sharpness:jiang}
+Convolutional networks of the network-in-network type were trained on CIFAR-10 under seven hyperparameters at three levels each (batch size, dropout, learning rate, depth, weight decay, width, optimizer), 2,187 networks, each until its training cross-entropy reached 0.01; repetitions and a second data set brought the total above 10,000. Among more than 40 measures, a magnitude-aware sharpness reached Kendall $\tau=0.484$ with the generalization gap and a granulated coefficient $\Psi=0.516$, above the $\Psi=0.487$ of an oracle that sees the gap with Gaussian noise of standard deviation 0.02. A bound built on the spectral norms of the layers reached $\tau=-0.537$, and many norm-based measures correlated negatively. The sharpness of Keskar et al.\ reached $\tau=0.400$, but its coefficient for dropout alone was $-0.359$.
+\end{finding}
+
+The design guarded against confounding: every run stopped at the same training loss, because after a fixed number of epochs the training loss itself predicts generalization; correlations were averaged within groups of networks that differ in one hyperparameter only; and a conditional mutual information asked whether a measure keeps its information once one or two hyperparameters are known. By their account sharpness passed best, but the conditional information of its magnitude-aware form, 0.054 on their normalized scale, was about that of an oracle that sees the gap with noise of standard deviation 0.05 (0.050).\sidenote{The noisy oracles rank the networks by their true gap plus Gaussian noise of a stated size, which calibrates how far a measure could get.}
+
+\paragraph{Robustness.} \Textcite{DziugaiteEtAl2020} asked what an average hides. They trained 10,000 networks, 1,000 settings of learning rate, depth, width, training-set size and data set with ten seeds each, and scored 24 of Jiang et al.'s measures on more than 1.6 million pairs of runs by their worst \emph{environment}, a pair of settings that differ in one hyperparameter. For every measure there was an environment in which it predicted the direction of the change in generalization wrongly for every pair of seeds. Noise mattered as much: of 4,000 environments that changed the width, only 328 showed a difference in generalization larger than the variation between seeds.
+
+\paragraph{Modern networks.} \Textcite{KwonEtAl2021} made sharpness invariant to rescaling by measuring each perturbation relative to the size of its weight, their \emph{adaptive} sharpness, which on 625 wide residual networks correlated with the gap at $\tau=0.64$ against 0.17 for the plain version. \Textcite{AndriushchenkoEtAl2023} tested it where networks are now trained: vision transformers on ImageNet (56 models), CLIP fine-tuned on ImageNet (72), BERT fine-tuned on MNLI (50), and 200 ResNets and 200 transformers on CIFAR-10. Sharpness did not predict which models generalized best. It correlated instead with the learning rate, whose effect on generalization changed sign from one setting to the next; and for the ResNets it tracked the test error within groups sharing their augmentation and mixup but not across them, where the pooled $\tau$ was $0.30$ or $-0.36$, depending on a normalization.
+
+\paragraph{Interventions.} SAM's success invited the converse reading, that lowering sharpness is why it works. \Textcite{AndriushchenkoFlammarion2022} found that the variants closest to the theory, random perturbations and SAM on the whole training set, barely improve generalization, while SAM on small batches does, and that a flatter minimum can generalize worse: SAM with batches of 1024 found flatter minima than plain training with batches of 128, which tested better (6.17\% against 6.80\% error on CIFAR-10). \Textcite{WenLiMa2023} proved that for two-layer ReLU networks, depending on the architecture, the flattest minimizers may generalize; flattest minimizers may fail to generalize and sharpness minimization fail with them; or they may fail while sharpness minimization still generalizes. And \textcite{KaurCohenLipton2023} found that scaling the batch size and the learning rate together changes the top Hessian eigenvalue without changing generalization.
+
+\begin{verdict}{narrowed}
+The claim that flat minima generalize better did not survive as a general law. Sharpness is not a property of the function a network computes, since rescaling a ReLU network changes it without bound, and within a fixed parametrization its correlation with generalization depends on what varies: magnitude-aware sharpness ranked small convolutional networks well on average, every measure failed under some intervention, and in modern networks adaptive sharpness followed the learning rate rather than the test error. What survives is narrower: along some hyperparameters and in some families of networks flatter solutions generalize better, and training that seeks flat regions often helps, for reasons not yet settled.
+\end{verdict}
+
+\section{The method: what a correlation across a sweep measures}\label{sec:sharpness:sweep}
+
+A sweep trains a network for each configuration $h$ of a grid of hyperparameters, usually with a few seeds per configuration, and records for each run a candidate \term{generalization measure}\index{generalization measure} $M$, computed from the trained network and its training data, and its \term{generalization gap}\index{generalization gap} $G$, the test error minus the training error. Both are outcomes of the run, so a sweep is a designed experiment for the hyperparameters and an observational study for the measure: a correlation between $M$ and $G$ can arise because $M$ influences $G$, because the configuration moves both, or because the seed moves both.
+
+\begin{definition}[Three measures of sharpness]\label{def:sharpness:measures}
+Let $\theta\in\R^N$ be the parameters of a trained network, $\Lhat$ its training loss, twice differentiable at $\theta$, and $\xi$ a standard Gaussian vector in $\R^N$.
+\begin{enumerate}
+\item The \term{top eigenvalue}\index{sharpness!top Hessian eigenvalue} $\lambda_{\max}(\theta)$ is the largest eigenvalue of $\nabla^2\Lhat(\theta)$.
+\item The \term{perturbation sharpness}\index{sharpness!perturbation} at scale $\sigma>0$ is $P_\sigma(\theta)=\E\,\Lhat(\theta+\sigma\xi)-\Lhat(\theta)$.
+\item The \term{adaptive perturbation sharpness}\index{sharpness!adaptive} is $P^{\mathrm{ad}}_\sigma(\theta)=\E\,\Lhat(\theta+\sigma\,\theta\odot\xi)-\Lhat(\theta)$, where $\odot$ multiplies coordinatewise, so that each weight is perturbed in proportion to its size.
+\end{enumerate}
+\end{definition}
+
+The first is the curvature in the steepest direction, which a small box of Keskar et al.\ approximates; the second averages over random directions, as a PAC-Bayesian bound does; the third is the average-case form of the adaptive sharpness of \textcite{KwonEtAl2021}. The top eigenvalue follows from \term{power iteration}\index{power iteration} $v\mapsto\nabla^2\Lhat(\theta)v/\norm{\nabla^2\Lhat(\theta)v}$, each step a Hessian--vector product that costs about as much as a gradient \parencite{Pearlmutter1994}; the others, from a few dozen Gaussian draws.
+
+\paragraph{Pooled and within strata.} The basic tool splits a pooled correlation into a part within groups of runs, the \emph{strata}, and a part between them: for covariances by the law of total covariance, for Kendall's $\tau$ by a split of the pairs of runs.
+
+\begin{proposition}[Simpson's decomposition]\label{prop:sharpness:simpson}
+\begin{enumerate}
+\item Let $X$ and $Y$ be random variables with finite variances and $V$ a random variable with finitely many values, each taken with positive probability. Then
+\[
+\Cov(X,Y)=\E\bigl[\Cov(X,Y\mid V)\bigr]+\Cov\bigl(\E[X\mid V],\E[Y\mid V]\bigr).
+\]
+\item Let $n\ge2$ runs of a sweep have values $(x_j,y_j)$ and strata $v_j$; write $s_{jk}=\sgn(x_j-x_k)\sgn(y_j-y_k)$, let a fraction $w$ of the $\binom n2$ pairs $j<k$ lie in a common stratum, and let $\tau_{\mathrm{within}}$ and $\tau_{\mathrm{between}}$ be the averages of $s_{jk}$ over these pairs and over the other pairs (an average over no pairs counts as zero). Then Kendall's $\tau=\binom n2^{-1}\sum_{j<k}s_{jk}$ of \cref{thm:toolkit:kendall}, with ties counted as zero, satisfies
+\begin{equation}\label{eq:sharpness:pairs}
+\tau=w\,\tau_{\mathrm{within}}+(1-w)\,\tau_{\mathrm{between}}.
+\end{equation}
+If the runs form $m$ strata of $r\ge2$ runs each, then $w=(r-1)/(mr-1)$ and $\tau_{\mathrm{within}}$ is the average of the $m$ values of $\tau$ within the strata.
+\item In the sweep of nine runs $(x,y)=(3v+d,\,3v-d)$ with $v\in\{1,2,3\}$ and $d\in\{-1,0,1\}$, stratified by $v$, every stratum has Pearson correlation $-1$ and $\tau=-1$, while the pooled Pearson correlation is $4/5$ and the pooled $\tau$ is $1/2$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to prove (i) by centering at the conditional means, (ii) by splitting a sum, and (iii) from both.
+
+\emph{Part (i).} Write $\bar X=\E[X\mid V]$ and $\bar Y=\E[Y\mid V]$, the elementary conditional means $\E[X\mid V=v]=\E[X\ind\{V=v\}]/\Prob(V=v)$. For every function $g$ of $V$, $\E[(X-\bar X)g(V)]=\sum_vg(v)\,\E[(X-\bar X)\ind\{V=v\}]=0$, because each term vanishes by the definition of $\E[X\mid V=v]$. Splitting $X-\E X=(X-\bar X)+(\bar X-\E X)$ and $Y-\E Y$ in the same way and expanding the product, the cross terms have mean zero by this remark, since $\bar X-\E X$ and $\bar Y-\E Y$ are functions of $V$. The remaining terms have means $\E[(X-\bar X)(Y-\bar Y)]=\E[\Cov(X,Y\mid V)]$ and $\E[(\bar X-\E X)(\bar Y-\E Y)]=\Cov(\bar X,\bar Y)$, the latter because $\E\bar X=\E X$ and $\E\bar Y=\E Y$. All products are integrable by the Cauchy--Schwarz inequality.
+
+\emph{Part (ii).} Splitting the sum over pairs into the $w\binom n2$ pairs in a common stratum and the others gives $\sum_{j<k}s_{jk}=w\binom n2\tau_{\mathrm{within}}+(1-w)\binom n2\tau_{\mathrm{between}}$, and dividing by $\binom n2$ gives \eqref{eq:sharpness:pairs}. With $m$ strata of $r$ runs, $m\binom r2$ of the $\binom{mr}2$ pairs lie in a common stratum, a fraction $mr(r-1)/\bigl(mr(mr-1)\bigr)=(r-1)/(mr-1)$; every stratum contributes the same number $\binom r2$ of pairs, so the average over these pairs is the average of the strata's values of $\tau$.
+
+\emph{Part (iii).} Within stratum $v$ we have $y=6v-x$, a decreasing function of $x$, so the Pearson correlation is $-1$ and every pair is discordant. Two runs in strata $v<v'$, with offsets $d$ and $d'$, satisfy $x'-x=3(v'-v)+(d'-d)\ge3-2>0$ and $y'-y=3(v'-v)-(d'-d)\ge1$, so every pair in different strata is concordant. Part (ii) with $m=r=3$ gives $w=1/4$ and $\tau=-\frac14+\frac34=\frac12$. For the Pearson correlation, let $(X,Y,V)$ be one of the nine runs drawn uniformly, so that $V$ and the offset $d$ are independent and uniform on three values, with variances $2/3$. Given $V$, $\Cov(X,Y\mid V)=\Cov(d,-d)=-2/3$ and $\E[X\mid V]=\E[Y\mid V]=3V$, so part (i) gives $\Cov(X,Y)=-\frac23+9\cdot\frac23=\frac{16}3$; part (i) with $Y=X$ gives $\Var X=\frac23+6=\frac{20}3$, and in the same way $\Var Y=\frac{20}3$. Hence $\Corr(X,Y)=(16/3)/(20/3)=4/5$.
+\end{proof}
+
+Part (ii) is the arithmetic of \term{Simpson's paradox}\index{Simpson's paradox} \parencite{Simpson1951} for rank correlations:\sidenote{Kendall's $\tau$ depends only on ranks, so it does not care that the adaptive sharpness of \cref{lab:sharpness:sweep} spans a factor of 60; a Pearson correlation would be dominated by the extremes.} the weight $(r-1)/(mr-1)$ of the part within strata falls as the number of strata grows, so that in a sweep of many configurations with a few seeds each, the pooled $\tau$ is essentially the agreement between the effects of the hyperparameters on the measure and on the gap. That agreement is real, but it is no evidence that the measure has anything to do with generalization beyond the hyperparameters that move both. In the classic example, the graduate admissions at Berkeley in 1973, the pooled admission rate of women was lower than that of men while department by department there was little sign of a bias against them: women had applied more often to the departments that admitted few applicants \parencite{BickelHammelOConnell1975}. Whether to stratify is a causal question, answered by the graph of causes and not by the data: stratify by a common cause of measure and gap, not by a consequence of either \parencite{Pearl2009}.
+
+\begin{definition}[Granulated coefficient]\label{def:sharpness:granulated}
+Let a sweep cross hyperparameters $h=(h_1,\dots,h_q)$ in a full factorial design, with the replicate index treated as one more coordinate to hold fixed. For each coordinate $i$, the strata of $i$ are the groups of runs that agree in every coordinate except $h_i$. The \term{granulated coefficient}\index{granulated coefficient} $\psi_i$ is the average over the strata of $i$ of Kendall's $\tau$ between measure and gap within the stratum, and $\Psi=\frac1q\sum_i\psi_i$ \parencite{JiangEtAl2020}.
+\end{definition}
+
+By \cref{prop:sharpness:simpson}(ii), $\psi_i$ keeps only the pairs of runs that differ in $h_i$ alone: it asks whether the measure predicts the effect on generalization of changing one hyperparameter while the others stay fixed. In a thought experiment of Jiang et al., a measure that recovers the depth of a network exactly but is random among networks of equal depth reached $\tau=0.362$ in their sweep but $\Psi=0.11$. And if the gap and the measure were increasing functions of one common quantity, then every $\psi_i$ would be positive up to noise; coefficients of both signs rule this out.
+
+\paragraph{Hyperparameters as common causes.} Why would hyperparameters move sharpness? The cleanest mechanism concerns the learning rate. On a quadratic loss with Hessian $A$, gradient descent with step $\eta$ multiplies the component of the error along an eigenvector of $A$ by $1-\eta\lambda$ at each step, so that it grows geometrically when $\eta\lambda>2$: a run with step $\eta$ cannot settle where $\lambda_{\max}>2/\eta$ (\cref{ex:sharpness:momentum}).\sidenote{With heavy-ball momentum $\beta$ the cap is $2(1+\beta)/\eta$, or $3.8/\eta$ at $\beta=0.9$.} On real networks, full-batch gradient descent drives the top eigenvalue up to this bound and holds it just above $2/\eta$, the \term{edge of stability}\index{edge of stability} of \textcite{CohenEtAl2021}; with minibatches the noise imposes further conditions that depend on the batch size \parencite{WuMaE2018}. Width, weight decay and the training loss at which a run stops move sharpness too, each with its own path to generalization; weight decay, for instance, shrinks the weights, so that flatness and a small norm arrive together and cannot be told apart (\cref{ch:mechanisms}).
+
+\paragraph{Controls and the reliability of the gap.} A correlation with the gap can be no stronger than the gap is reproducible.
+
+\begin{remark}[The replicate ceiling]\label{rem:sharpness:ceiling}
+Suppose that the gap of a run is $G=g(h)+\varepsilon$, a part $g(h)$ fixed by the configuration and seed noise $\varepsilon$ with mean zero and variance $\sigma_\varepsilon^2$, independent of $h$, and let $G'=g(h)+\varepsilon'$ be the gap of a replicate run, with $\varepsilon'$ an independent copy of $\varepsilon$. Then $\Cov(G,G')=\Var g(h)$ and $\Var G=\Var G'=\Var g(h)+\sigma_\varepsilon^2$, so the two replicates have correlation
+\[
+\rho_I=\frac{\Var g(h)}{\Var g(h)+\sigma_\varepsilon^2},
+\]
+the intraclass correlation of the gap, which a one-way analysis of variance of replicate runs estimates (\cref{thm:toolkit:anova}). A measure $M=m(h)$ of the configuration has $\Cov(M,G)=\Cov(m(h),g(h))$, so that $\Corr(M,G)=\Corr(m(h),g(h))\sqrt{\rho_I}\le\sqrt{\rho_I}$, with equality for $m=g$. This is the attenuation of \textcite{Spearman1904}: a noisy gap caps every measure of the configuration, and a measure computed on the run itself can pass the cap only by tracking the seed noise of that run.
+\end{remark}
+
+Two controls make the ceiling and the noise visible (\cref{ch:controls}). The \term{positive control}\index{control!positive} uses the gap of a replicate run as if it were a measure: its correlation with the gap estimates $\rho_I$, and with it the ceiling. The negative control, a random number per run, shows how far the statistics wander with no signal at all. Stratifying by every hyperparameter leaves only the replicates of one configuration; if a measure predicts which of two such runs generalizes better, then it carries information that no hyperparameter supplies. And \textcite{DziugaiteEtAl2020} replace the average over strata by the worst stratum, since a measure meant to explain generalization should predict the direction of change in every environment.
+
+\section{The method: measures that respect the function}\label{sec:sharpness:invariance}
+
+A measure meant to describe the function a network computes should not change when the parameters change without changing the function, and for ReLU networks the positive homogeneity of the rectifier supplies a large family of such changes. Let a network with $L\ge1$ hidden layers of widths $d_1,\dots,d_L$ map an input $x=a_0\in\R^{d_0}$ through
+\[
+z_l=W_la_{l-1}+b_l,\qquad a_l=\relu(z_l)\qquad(l=1,\dots,L)
+\]
+to the logits $f_\theta(x)=W_{L+1}a_L+b_{L+1}\in\R^K$, $K\ge2$, with parameters $\theta=(W_1,b_1,\dots,W_{L+1},b_{L+1})\in\R^N$, and let $\Lhat(\theta)$ be the mean over a training set $\cT$ of the cross-entropy $\ell(f_\theta(x),y)=\log\sum_ke^{f_\theta(x)_k}-f_\theta(x)_y$. For positive numbers $\alpha_1,\dots,\alpha_{L+1}$ with product $1$, put $\beta_l=\alpha_1\cdots\alpha_l$, and let $T_\alpha$ multiply $W_l$ by $\alpha_l$ and $b_l$ by $\beta_l$ for every $l$; the output bias is unchanged, since $\beta_{L+1}=1$. The map $T_\alpha$ is linear, $T_\alpha\theta=R_\alpha\theta$ for a diagonal matrix $R_\alpha$ with positive diagonal; for $L=1$ and $\alpha=(c,c^{-1})$ it is the rescaling of \textcite{DinhEtAl2017}.
+
+\begin{theorem}[Rescaling a ReLU network]\label{thm:sharpness:rescaling}\index{rescaling, function-preserving}
+In this setting:
+\begin{enumerate}
+\item The rescaled network computes the same function, $f_{T_\alpha\theta}=f_\theta$, for every $\theta$; the training loss, the test loss and the test error are the same at $\theta$ and at $T_\alpha\theta$.
+\item Let $U$ be the set of parameters at which no hidden pre-activation is zero on a training input. Then $U$ is open, $T_\alpha(U)=U$, $\Lhat$ is twice continuously differentiable on $U$, and for every $\theta\in U$
+\begin{equation}\label{eq:sharpness:hessian}
+\nabla^2\Lhat(T_\alpha\theta)=R_\alpha^{-1}\,\nabla^2\Lhat(\theta)\,R_\alpha^{-1}.
+\end{equation}
+\item Let $\theta\in U$ be a point at which some unit of the last hidden layer is active on some training input, and for $c>0$ let $T_c$ be $T_\alpha$ with $\alpha=(c,1,\dots,1,c^{-1})$. Then the block of $\nabla^2\Lhat(\theta)$ belonging to the output weights $W_{L+1}$ has a positive largest eigenvalue $\mu$, and $\lambda_{\max}\bigl(\nabla^2\Lhat(T_c\theta)\bigr)\ge c^2\mu$ for every $c>0$. In particular $\lambda_{\max}\bigl(\nabla^2\Lhat(T_c\theta)\bigr)\to\infty$ as $c\to\infty$, while $f_{T_c\theta}=f_\theta$.
+\item If in addition the block of $\nabla^2\Lhat(\theta)$ belonging to the coordinates of $W_1,b_1,\dots,b_L$ has a positive largest eigenvalue $\nu$, then $\lambda_{\max}\bigl(\nabla^2\Lhat(T_c\theta)\bigr)\ge\max(c^2\mu,\nu/c^2)\ge\sqrt{\mu\nu}$ for every $c>0$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to prove (i) by induction over the layers, (ii) by differentiating the identity of (i) twice, and (iii) and (iv) by evaluating the quadratic form of the rescaled Hessian at vectors supported on one block, using that the loss is a convex function of the logits.
+
+\emph{Part (i).} Write $z_l(\theta;x)$ and $a_l(\theta;x)$ for the quantities computed from the input $x$ at the parameters $\theta$, and put $\beta_0=1$. We show by induction on $l$ that $z_l(T_\alpha\theta;x)=\beta_lz_l(\theta;x)$ and $a_l(T_\alpha\theta;x)=\beta_la_l(\theta;x)$; for $l=0$ the second statement says $a_0=x$. If it holds for $l-1$, then
+\[
+z_l(T_\alpha\theta;x)=\alpha_lW_l\,\beta_{l-1}a_{l-1}(\theta;x)+\beta_lb_l=\beta_lz_l(\theta;x),
+\]
+because $\alpha_l\beta_{l-1}=\beta_l$, and $a_l(T_\alpha\theta;x)=\beta_la_l(\theta;x)$ because $\relu(\beta z)=\beta\relu(z)$ for $\beta>0$, coordinatewise. At the output, $\alpha_{L+1}\beta_L=\alpha_1\cdots\alpha_{L+1}=1$, so
+\[
+f_{T_\alpha\theta}(x)=\alpha_{L+1}W_{L+1}\,\beta_La_L(\theta;x)+b_{L+1}=f_\theta(x).
+\]
+Every loss and every error computed from the logits is therefore unchanged.
+
+\emph{Part (ii).} Each pre-activation $z_{l,j}(\theta;x)$ is continuous in $\theta$, so $U$, the intersection of the finitely many open sets $\{\theta:z_{l,j}(\theta;x)\ne0\}$ over units and training inputs, is open. By the induction in (i), $T_\alpha$ multiplies every pre-activation by some $\beta_l>0$ and so maps $U$ into $U$; its inverse is $T_{\alpha'}$ with $\alpha'_l=1/\alpha_l$, which maps $U$ into $U$ as well, so $T_\alpha(U)=U$. Fix $\theta\in U$. By continuity every pre-activation keeps its sign on a neighborhood $V\subseteq U$ of $\theta$; on $V$ each rectifier acts on each training input as the identity or as zero, so every logit is a polynomial in the coordinates, and $\Lhat$, which composes these polynomials with the infinitely differentiable cross-entropy, is twice continuously differentiable on $V$, hence on $U$. For $\varphi\in V$, part (i) gives $\Lhat(R_\alpha\varphi)=\Lhat(\varphi)$, with $R_\alpha\varphi\in U$. Differentiating twice in $\varphi$ by the chain rule, with the constant symmetric matrix $R_\alpha$, gives
+\[
+R_\alpha\,\nabla^2\Lhat(R_\alpha\varphi)\,R_\alpha=\nabla^2\Lhat(\varphi),
+\]
+and at $\varphi=\theta$, multiplying by $R_\alpha^{-1}$ on both sides gives \eqref{eq:sharpness:hessian}.
+
+\emph{Part (iii).} For $\alpha=(c,1,\dots,1,c^{-1})$ the matrix $R_\alpha$ multiplies the coordinates of $W_{L+1}$ by $1/c$, so $R_\alpha^{-1}$ multiplies them by $c$. Let $u$ be a unit eigenvector of the $W_{L+1}$-block of $\nabla^2\Lhat(\theta)$ for its largest eigenvalue $\mu$, extended by zeros to all coordinates, so that $R_\alpha^{-1}u=cu$. The largest eigenvalue of a symmetric matrix is at least its quadratic form at every unit vector, so by \eqref{eq:sharpness:hessian}
+\[
+\lambda_{\max}\bigl(\nabla^2\Lhat(T_c\theta)\bigr)\ge u^\top R_\alpha^{-1}\nabla^2\Lhat(\theta)R_\alpha^{-1}u=c^2\,u^\top\nabla^2\Lhat(\theta)u=c^2\mu .
+\]
+It remains to show that $\mu>0$. Write $a_L(x)=a_L(\theta;x)$. Changing only $W_{L+1}$, to $W_{L+1}+t\Delta$ for a matrix $\Delta\in\R^{K\times d_L}$, changes each logit vector to $f_\theta(x)+t\Delta a_L(x)$. The Hessian of the cross-entropy in the logits is $\diag(p)-pp^\top$ with $p=\softmax(f_\theta(x))$, so the second derivative of $\Lhat$ along this path at $t=0$, the quadratic form of the $W_{L+1}$-block at $\Delta$, is
+\[
+\frac1{\abs\cT}\sum_{(x,y)\in\cT}\bigl(\Delta a_L(x)\bigr)^\top\bigl(\diag(p_x)-p_xp_x^\top\bigr)\bigl(\Delta a_L(x)\bigr),\qquad p_x=\softmax\bigl(f_\theta(x)\bigr).
+\]
+The quadratic form of $\diag(p)-pp^\top$ at $\delta\in\R^K$, $\sum_kp_k\delta_k^2-\bigl(\sum_kp_k\delta_k\bigr)^2$, is the variance of the coordinates of $\delta$ under the probabilities $p$: it is nonnegative, and positive unless $\delta$ is constant, because every $p_k$ is positive. By hypothesis some training input $x^\circ$ has $a^\circ=a_L(x^\circ)\ne0$. Take $\delta=e_1-e_2$, which is not constant because $K\ge2$, and $\Delta=\delta a^{\circ\top}/\norm{a^\circ}^2$, so that $\Delta a^\circ=\delta$. The term of $x^\circ$ is then positive and the other terms are nonnegative, so the $W_{L+1}$-block has a positive quadratic form at $\Delta\ne0$, and its largest eigenvalue $\mu$ is positive.
+
+\emph{Part (iv).} The coordinates of $W_1,b_1,\dots,b_L$ are those that $R_\alpha$ multiplies by $c$, since $\alpha_1=c$ and $\beta_l=c$ for $1\le l\le L$, so $R_\alpha^{-1}$ multiplies them by $1/c$. The argument of (iii), with a unit eigenvector of their block, gives $\lambda_{\max}(\nabla^2\Lhat(T_c\theta))\ge\nu/c^2$. The larger of two positive numbers is at least their geometric mean, and $c^2\mu\cdot\nu/c^2=\mu\nu$.
+\end{proof}
+
+The theorem needs no minimum, since sharpness is measured where training stops, and its hypotheses are mild:\sidenote{\Textcite{DinhEtAl2017} state their result at a minimum whose Hessian is not zero; part (iii) replaces this by a condition that can be checked on the data.} part (iii) needs only that the last hidden layer is not silent on the training set, and part (ii) that no pre-activation sits exactly at a kink, which holds for almost every $\theta$. Within this family the top eigenvalue can be made as large as one likes, though not smaller than $\sqrt{\mu\nu}$; \textcite{DinhEtAl2017} reach arbitrarily flat minima with other reparametrizations. The top eigenvalue therefore describes a network together with its coordinates. A measure can be protected by perturbing each weight in proportion to its size.
+
+\begin{proposition}[Invariance of adaptive sharpness]\label{prop:sharpness:invariant}
+Let $R$ be a diagonal matrix with positive diagonal such that $\Lhat(R\varphi)=\Lhat(\varphi)$ for every $\varphi$; examples are the matrices $R_\alpha$ of \cref{thm:sharpness:rescaling} and the matrix that multiplies the incoming weights and the bias of one hidden unit by $\gamma>0$ and its outgoing weights by $1/\gamma$. Then $\Lhat(R\theta+\sigma\,(R\theta)\odot\xi)=\Lhat(\theta+\sigma\,\theta\odot\xi)$ for every $\theta$, $\sigma$ and $\xi$. In particular $P^{\mathrm{ad}}_\sigma(R\theta)=P^{\mathrm{ad}}_\sigma(\theta)$, and every other summary of the perturbed loss, such as a worst case over a set of perturbations, is invariant as well.
+\end{proposition}
+
+\begin{proof}
+For a diagonal matrix $R$, $(R\theta)\odot\xi=R(\theta\odot\xi)$, so $R\theta+\sigma(R\theta)\odot\xi=R(\theta+\sigma\,\theta\odot\xi)$, and the hypothesis on $R$ gives the first equality, as well as $\Lhat(R\theta)=\Lhat(\theta)$; taking expectations gives the second. The rescaling of one unit preserves the function by the positive homogeneity used in \cref{thm:sharpness:rescaling}(i): it multiplies the unit's output by $\gamma$, and the outgoing weights divide it again.
+\end{proof}
+
+The perturbation sharpness $P_\sigma$ has no such protection, since a rescaling moves the weights relative to a perturbation of fixed size; \cref{lab:sharpness:reparam} finds it changing by three orders of magnitude. Invariance is necessary for a measure to describe the function, but not sufficient for it to describe generalization: an invariant measure still depends on the architecture, the data and $\sigma$, and \cref{lab:sharpness:sweep} shows its dependence on width deciding the sign of a correlation. Other invariant notions normalize the curvature by the size of the weights or of the features \parencite{TsuzukuSatoSugiyama2020,PetzkaEtAl2021}; the matrix $\diag(\abs\theta)\nabla^2\Lhat(\theta)\diag(\abs\theta)$, whose trace is the small-$\sigma$ limit of $P^{\mathrm{ad}}_\sigma$, is invariant in the same way (\cref{ex:sharpness:adaptive}).
+
+\paragraph{From correlation to intervention.} A correlation in a sweep suggests a cause; an intervention tests it. SAM intervenes on the training procedure, not on sharpness, and to attribute its effect to flatness an experiment needs what \cref{ch:mechanisms} asks of every mechanism: a \emph{manipulation check}, showing that the procedure lowers an invariant measure of sharpness; a \emph{sham} of the same strength, such as perturbations in random directions, which \textcite{AndriushchenkoFlammarion2022} found to help little (\cref{ch:controls}); a \emph{dose--response} over the perturbation radius; and an account of \emph{rival mediators}, since SAM also changes the norm and the implicit bias of the solution. The evidence of 1997 calls for the same caution, since flat minimum search also pruned.
+
+\section{In the laboratory: one sweep, three sharpnesses}\label{sec:sharpness:lab}
+
+Both labs train the digits MLP of \cref{ch:seeds}, with two hidden layers of ReLU units, by plain stochastic gradient descent without momentum, on the 539 training images of labkit's split~0 (with 30\% of the digits for training), keeping 1,258 images for testing. Every run stops when its cross-entropy on the whole training set reaches 0.02, the rule of Jiang et al.\sidenote{Power iteration used at most 163 Hessian--vector products per run and agreed with the Lanczos method of SciPy to a relative $5\cdot10^{-6}$ on six runs.} Every run also has its own seeds. In a first version every configuration reused the seeds 0 and 1, so that the 27 configurations of one width started from the same two networks; the seed then acted as a block shared by many configurations, and the sweep looked as if the configuration did not matter, with a replicate control of \cref{rem:sharpness:ceiling} at $\tau=\pmval{-0.07}{0.15}$ and 8\% of the variance of the gap between configurations (run the script with \texttt{-{}-shared-seeds}).
+
+\begin{lab}{Three sharpnesses in one sweep}{10-sharpness-sweep}\label{lab:sharpness:sweep}
+\labpart{Setup} A full factorial sweep of learning rate $\eta\in\{0.03,0.1,0.3\}$, batch size $B\in\{8,32,128\}$, width $\in\{32,128,512\}$ and weight decay $\lambda\in\{0,10^{-3},3\cdot10^{-3}\}$: 81 configurations, two runs each with their own seeds (162 runs). For every run, the gap $G$ in percentage points; $\lambda_{\max}$ by power iteration on Hessian--vector products of the full training loss; $P_{0.05}$ and $P^{\mathrm{ad}}_{0.5}$ from 32 Gaussian draws; the parameter norm. One to four minutes.
+\labpart{Predict first} Will the pooled $\tau$ between $\lambda_{\max}$ and the gap be positive, as the flat-minima claim predicts? Which hyperparameter moves the gap most, and which moves $\lambda_{\max}$ most?
+\labpart{Look for} The sign of the pooled $\tau$ of each measure and where it comes from: the granulated coefficients, $\tau$ within strata of equal width, the split \eqref{eq:sharpness:pairs}, and the two controls.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=15mm},lplot,
+  width=0.5\linewidth,height=0.27\linewidth,ymin=3.2,ymax=7.0,ytick={4,5,6,7},
+  unbounded coords=discard]
+\nextgroupplot[title={(a) top Hessian eigenvalue},xlabel={$\lambda_{\max}$ of the training loss},
+  ylabel={generalization gap (points)},xmin=0.3,xmax=2.3,xtick={0.5,1,1.5,2},
+  legend to name=leg:sharpness:sweep,legend columns=4,
+  legend style={draw=none,fill=none,font=\footnotesize,/tikz/every even column/.append style={column sep=6mm}}]
+\addplot[runB,restrict expr to domain={\thisrow{width}}{30:34}] table[x=lam,y=gap] {figures/data/10-sharpness-sweep-runs.dat};
+\addlegendentry{width 32}
+\addplot[only marks,mark=triangle,mark size=1.5pt,color=black!50,mark options={line width=0.35pt,fill=white},
+  restrict expr to domain={\thisrow{width}}{120:136}] table[x=lam,y=gap] {figures/data/10-sharpness-sweep-runs.dat};
+\addlegendentry{width 128}
+\addplot[run,restrict expr to domain={\thisrow{width}}{500:520}] table[x=lam,y=gap] {figures/data/10-sharpness-sweep-runs.dat};
+\addlegendentry{width 512}
+\addplot[mean,mark size=2pt,xebars,ebars] table[x=lam,y=gap,x error=lam_hw,y error=gap_hw] {figures/data/10-sharpness-sweep-width.dat};
+\addlegendentry{mean of each width}
+\nextgroupplot[title={(b) adaptive perturbation sharpness},xmode=log,log basis x=10,
+  xlabel={$P^{\mathrm{ad}}_{0.5}$ (logarithmic scale)},xmin=0.008,xmax=0.85,
+  xtick={0.01,0.03,0.1,0.3},xticklabels={0.01,0.03,0.1,0.3}]
+\addplot[runB,restrict expr to domain={\thisrow{width}}{30:34}] table[x=s_ad,y=gap] {figures/data/10-sharpness-sweep-runs.dat};
+\addplot[only marks,mark=triangle,mark size=1.5pt,color=black!50,mark options={line width=0.35pt,fill=white},
+  restrict expr to domain={\thisrow{width}}{120:136}] table[x=s_ad,y=gap] {figures/data/10-sharpness-sweep-runs.dat};
+\addplot[run,restrict expr to domain={\thisrow{width}}{500:520}] table[x=s_ad,y=gap] {figures/data/10-sharpness-sweep-runs.dat};
+\addplot[mean,mark size=2pt,xebars,ebars] table[x=s_ad,y=gap,x error=s_ad_hw,y error=gap_hw] {figures/data/10-sharpness-sweep-width.dat};
+\end{groupplot}
+\end{tikzpicture}\par\smallskip
+\pgfplotslegendfromname{leg:sharpness:sweep}
+\caption{The sweep of \cref{lab:sharpness:sweep}: 162 runs of the digits MLP on 539 training images (1,258 test images), 81 configurations of learning rate, batch size, width and weight decay with two runs each, every run with its own seeds and stopped at training cross-entropy 0.02. Hollow marks: single runs, by width; filled marks: the mean of the 54 runs of each width, with 95\% $t$-intervals in both directions. (a)~The gap against the top Hessian eigenvalue: pooled $\tau=-0.17$. (b)~The gap against the adaptive perturbation sharpness, on a logarithmic scale: pooled $\tau=+0.39$. Within each width neither measure is related to the gap (\cref{tab:sharpness:tau}).}\label{fig:sharpness:sweep}
+\end{fullwidth}
+\end{figure}
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\footnotesize
+\caption{Kendall's $\tau$ between each measure and the generalization gap in \cref{lab:sharpness:sweep} (162 runs). Pooled: all pairs of runs, with a 95\% jackknife interval, which recomputes $\tau$ without one configuration (both runs) at a time. Granulated $\psi$ (\cref{def:sharpness:granulated}): for each hyperparameter, the mean over 54 strata of three runs that differ in it alone, with a 95\% $t$-interval over the strata. Given width: the mean of the three values of $\tau$ within widths, with a jackknife interval. The replicate is the gap of the other run of the same configuration (positive control), the random measure a standard normal draw per run (negative control). Dashes: the measure is constant within those strata.}\label{tab:sharpness:tau}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+ & & \multicolumn{4}{c}{granulated coefficient $\psi$ along} & \\
+\cmidrule(lr){3-6}
+measure & pooled $\tau$ & learning rate & batch size & width & weight decay & $\tau$ given width\\
+\midrule
+top eigenvalue $\lambda_{\max}$ & \pmval{-0.17}{0.13} & \pmval{-0.10}{0.17} & \pmval{-0.06}{0.19} & \pmval{-0.36}{0.15} & \pmval{0.13}{0.16} & \pmval{0.05}{0.13}\\
+perturbation $P_{0.05}$ & \pmval{-0.38}{0.10} & \pmval{-0.12}{0.16} & \pmval{-0.10}{0.17} & \pmval{-0.60}{0.13} & \pmval{0.10}{0.19} & \pmval{-0.04}{0.12}\\
+adaptive $P^{\mathrm{ad}}_{0.5}$ & \pmval{0.39}{0.09} & \pmval{-0.09}{0.15} & \pmval{-0.07}{0.18} & \pmval{0.60}{0.13} & \pmval{0.04}{0.18} & \pmval{0.02}{0.12}\\
+parameter norm $\norm\theta$ & \pmval{-0.33}{0.09} & \pmval{0.21}{0.16} & \pmval{0.02}{0.18} & \pmval{-0.62}{0.13} & \pmval{0.04}{0.17} & \pmval{0.11}{0.13}\\
+$1/\text{width}$ & \pmval{0.39}{0.08} & --- & --- & \pmval{0.60}{0.13} & --- & ---\\
+\midrule
+replicate gap & \pmval{0.36}{0.13} & \pmval{0.31}{0.17} & \pmval{0.06}{0.18} & \pmval{0.46}{0.12} & \pmval{0.27}{0.14} & \pmval{0.19}{0.14}\\
+random & \pmval{0.03}{0.11} & \pmval{0.05}{0.17} & \pmval{0.16}{0.17} & \pmval{-0.09}{0.18} & \pmval{-0.03}{0.17} & \pmval{0.02}{0.11}\\
+\bottomrule
+\end{tabular}
+\end{fullwidth}
+\end{table}
+
+\paragraph{What happened.} All 162 runs reached the target loss, after 111 to 2,974 steps and at losses between 0.0120 and 0.0200; their gaps range from 3.5 to 6.7 points. The positive control shows that the gap depends on the configuration: the gaps of a run and of its replicate have $\tau=\pmval{0.36}{0.13}$ (95\% jackknife interval over configurations), and a one-way analysis of variance puts 49\% of its variance between configurations (standard deviation 0.41 points between configurations, 0.41 between the runs of one configuration). For normal variables a correlation of 0.49 corresponds to $\tau=0.33$ (\cref{lem:controls:kendall}), close to the replicate, and by \cref{rem:sharpness:ceiling} the best measure of the configuration would reach $\sqrt{0.49}=0.70$, or $\tau\approx0.50$. The negative control gives $\tau=\pmval{0.03}{0.11}$.
+
+Pooled over the sweep, the three measures of sharpness disagree in sign (\cref{tab:sharpness:tau}). The top eigenvalue correlates negatively with the gap, $\tau=\pmval{-0.17}{0.13}$, so that the sharper networks generalize better; the perturbation sharpness does so more strongly, \pmval{-0.38}{0.10}; and the invariant adaptive sharpness correlates positively, \pmval{0.39}{0.09}, as the flat-minima claim predicts. Each sign comes from the width (\cref{fig:sharpness:sweep}). Width moves the gap most, from \pmval{4.92}{0.15} points at width 32 to \pmval{4.33}{0.12} at 128 and \pmval{4.13}{0.10} at 512 (means of 54 runs with 95\% $t$-intervals), and each measure moves with the width in its own direction: $\lambda_{\max}$ rises by almost a quarter, from \pmval{0.97}{0.05} to \pmval{1.19}{0.07}; the perturbation sharpness, which perturbs more weights in a wider network, rises by a factor of 4.0; and the adaptive one falls by a factor of 18, from 0.34 to 0.019. The split \eqref{eq:sharpness:pairs} makes the attribution exact: a third of the pairs of runs share a width, and for $\lambda_{\max}$ these pairs give $\tau=0.05$ and the pairs across widths $-0.27$, for the adaptive sharpness $0.02$ and $0.58$. And $1/\text{width}$, which knows nothing about the trained network, reaches a pooled $\tau$ of \pmval{0.39}{0.08}, with exactly the $0.58$ of the adaptive sharpness across widths.
+
+Within widths the gap still varies reproducibly between configurations, and no measure of sharpness follows it. The replicate keeps $\tau=\pmval{0.19}{0.14}$ within widths, and its coefficients along the learning rate (\pmval{0.31}{0.17}) and the weight decay (\pmval{0.27}{0.14}) show real effects of both; within widths, $\tau$ is \pmval{0.05}{0.13} for $\lambda_{\max}$ and \pmval{0.02}{0.12} for the adaptive sharpness. The learning rate raises the gap from 4.41 points at $\eta=0.03$ to 4.60 at $\eta=0.3$ while $\lambda_{\max}$ falls by 17\%, from 1.14 to 0.95 (means of 54 runs), so that the networks that end flatter generalize worse, though $\psi=\pmval{-0.10}{0.17}$ does not separate this from noise; the batch size, which leaves the gap alone, raises $\lambda_{\max}$ by 22\%, from 0.94 at $B=8$ to 1.15 at $B=128$. Weight decay lowers the gap only at its largest value (4.51, 4.52 and 4.35 points) but lowers $\lambda_{\max}$ (1.14, 1.08, 0.94) and the parameter norm at every step, and the measures reach $\psi$ between 0.04 and 0.13 along it, against 0.27 for the replicate. Comparing the two runs of each configuration, with every hyperparameter fixed, gives $\tau=\pmval{-0.01}{0.22}$ for $\lambda_{\max}$ and \pmval{0.23}{0.21} for the adaptive sharpness ($t$-intervals over 81 configurations), against \pmval{-0.09}{0.22} for the random measure; the adaptive sharpness may track some of the seed noise of a run, but among the forty-odd intervals of this section one or two should exclude zero by chance alone (\cref{ch:aggregates}).
+
+\begin{lab}{Rescaling a trained network}{10-sharpness-reparam}\label{lab:sharpness:reparam}
+\labpart{Setup} Five networks of one configuration of \cref{lab:sharpness:sweep} (width 128, $\eta=0.1$, $B=32$, no weight decay, seeds 0--4), rescaled by $T_c$ of \cref{thm:sharpness:rescaling} for 17 values of $c$ from $0.01$ to $100$. At each $c$: the three measures, the training loss, the test error and the largest change of a logit; at $c=1$, the block eigenvalues $\mu$ and $\nu$. Under half a minute.
+\labpart{Predict first} By what factor can a rescaling that changes no prediction move $\lambda_{\max}$ between $c=0.01$ and $c=100$? Which of the three measures will not move?
+\labpart{Look for} Slopes of $+2$ and $-2$ on logarithmic axes; the bounds $c^2\mu$ and $\nu/c^2$; the test error and the adaptive sharpness.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=15mm},lplot,lloglog,
+  xmode=log,ymode=log,log basis x=10,log basis y=10,width=0.5\linewidth,height=0.28\linewidth,
+  xmin=0.007,xmax=140,xtick={0.01,0.1,1,10,100},xticklabels={0.01,0.1,1,10,100},
+  ymin=0.3,ymax=3e4,ytick={1,10,100,1000,10000},yticklabels={1,10,$10^2$,$10^3$,$10^4$},
+  xlabel={rescaling factor $c$},legend style={at={(0.5,0.97)},anchor=north}]
+\nextgroupplot[title={(a) top eigenvalue and its bounds},ylabel={$\lambda_{\max}$}]
+\addplot[run] table[x=c,y=lam] {figures/data/10-sharpness-reparam-runs.dat};
+\addlegendentry{five networks}
+\addplot[extrapolation] table[x=c,y=bound_mu] {figures/data/10-sharpness-reparam-mean.dat};
+\addlegendentry{$c^2\mu$ and $\nu/c^2$}
+\addplot[extrapolation,forget plot] table[x=c,y=bound_nu] {figures/data/10-sharpness-reparam-mean.dat};
+\nextgroupplot[title={(b) relative to $c=1$},ylabel={value at $c$ / value at $c=1$}]
+\addplot[armA] table[x=c,y=rel_lam] {figures/data/10-sharpness-reparam-mean.dat};
+\addlegendentry{$\lambda_{\max}$}
+\addplot[armB] table[x=c,y=rel_sabs] {figures/data/10-sharpness-reparam-mean.dat};
+\addlegendentry{$P_{0.05}$}
+\addplot[black!60,line width=1pt,mark=o,mark size=1.5pt,mark options={fill=white}] table[x=c,y=rel_sad] {figures/data/10-sharpness-reparam-mean.dat};
+\addlegendentry{$P^{\mathrm{ad}}_{0.5}$}
+\addplot[reference,line width=0.9pt] table[x=c,y=rel_err] {figures/data/10-sharpness-reparam-mean.dat};
+\addlegendentry{test error}
+\end{groupplot}
+\end{tikzpicture}
+\caption{\Cref{lab:sharpness:reparam}: five networks of one configuration (width 128, learning rate 0.1, batch size 32, seeds 0--4), each rescaled by $T_c$ of \cref{thm:sharpness:rescaling}, which changes no prediction, for 17 values of $c$. (a)~The top Hessian eigenvalue of each network (hollow marks; on this scale the five nearly coincide) and the bounds $c^2\mu$ and $\nu/c^2$ of \cref{thm:sharpness:rescaling}, with $\mu$ and $\nu$ averaged over the five networks (dashed). (b)~Means over the five networks of $\lambda_{\max}$, the perturbation sharpness, the adaptive perturbation sharpness and the test error, each divided by its value at $c=1$; the last two stay at 1. Rescaling is deterministic; the spread over the networks is shown in (a).}\label{fig:sharpness:reparam}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} Rescaling changes no prediction: the logits move by at most $1.1\cdot10^{-5}$, the rounding error of single precision, and each network keeps its test error, between 4.29\% and 5.33\% across the five. The top eigenvalue moves by a factor of 5,200 (\cref{fig:sharpness:reparam}): averaged over the five networks it is 1.15 at $c=1$, 6,034 at $c=100$ and 2,796 at $c=0.01$. All 85 values exceed the bound $\max(c^2\mu,\nu/c^2)$ of \cref{thm:sharpness:rescaling}, with $\mu$ between 0.54 and 0.66 and $\nu$ between 0.24 and 0.32 across the networks, and at both ends they exceed it by a relative 0.005\% to 0.013\%, so that the slopes are $+2$ and $-2$. The perturbation sharpness moves by a factor of 2,100 to 2,700 for each network, the adaptive one by a relative $2\cdot10^{-7}$, the rounding error, as \cref{prop:sharpness:invariant} requires. By choosing $c$ for each network, the five can be put in every order of sharpness; their test errors keep theirs.
+
+\paragraph{What the miniature reproduces and what it does not.} The miniature reproduces the parametrization problem of \textcite{DinhEtAl2017} exactly; the finding of \textcite{AndriushchenkoEtAl2023} that sharpness tracks the learning rate rather than generalization; and the lesson of \textcite{JiangEtAl2020} and \textcite{DziugaiteEtAl2020} that the sign of a pooled correlation depends on what the sweep varies and on how the measure is defined. It does not reproduce the batch-size half of \cref{fd:sharpness:keskar}: our larger batches end sharper, but at equal training loss they do not generalize worse (\cref{ch:heldfixed}). And our networks stop early, at $\lambda_{\max}\approx1$, far below the cap $2/\eta\ge6.7$; in networks trained to the edge of stability the learning rate sets $\lambda_{\max}$ more directly.
+
+\section{Protocol}\label{sec:sharpness:protocol}
+
+\begin{protocol}{Reading a correlation in a sweep}\label{prot:sharpness:sweep}
+\item Sweep the population the claim is about as a factorial design, with at least two runs per configuration, each with its own seeds, all stopped at the same training loss.
+\item Fix the measure and its free parameters before looking at the gap; never tune them on the correlation.
+\item Rescale one trained network without changing its function, check that the measure does not move, and report how it depends on the architecture.
+\item Estimate the reliability of the gap from the replicates, and report a positive control (the replicate gap) and a negative control (a random measure).
+\item Report the pooled $\tau$ with an interval, the granulated $\psi$ of every hyperparameter, and $\tau$ within the strata of each hyperparameter that moves the gap, split as in \eqref{eq:sharpness:pairs}; compare with trivial measures built from the hyperparameters and with rivals such as the norm.
+\item Judge the measure by its worst stratum as well as by its average.
+\item Before calling the measure a cause, intervene on it with everything else fixed, beside a sham of the same strength.
+\end{protocol}
+
+The protocol makes a correlational study of a measure honest; it does not make it causal. Stratifying removes the confounding by the hyperparameters that were varied, not by those held fixed, and a measure that passes every stratum of one sweep may fail in a population that the sweep did not contain: a larger network, another data set, another optimizer. Interventions have their own confound, since a procedure that lowers sharpness changes other things too (\cref{ch:mechanisms}). And the protocol is expensive: 162 runs are affordable for our miniature, not for a large model. Then sweep the hyperparameters that matter most at a smaller scale, say so, and treat a correlation found there as a hypothesis about the large model.
+
+\begin{exercises}
+\item \consolidation (Rescaling one unit.) Multiply the incoming weights and the bias of one unit of the last hidden layer of the network of \cref{thm:sharpness:rescaling} by $\gamma>0$ and its outgoing weights by $1/\gamma$. Show that the function is unchanged and that, if the unit is active on some training input, then $\lambda_{\max}$ tends to infinity as $\gamma\to\infty$. \hint{for the limit, repeat part (iii) of the proof with $\Delta$ supported on the outgoing weights of the unit.}\label{ex:sharpness:unit}
+
+\item \consolidation (An invariant curvature.) Let $\theta\in U$ have no zero coordinate, and put $D=\diag(\abs\theta)$. (a) Show that the matrix $D\nabla^2\Lhat(\theta)D$, and hence its trace and top eigenvalue, are unchanged when $\theta$ is replaced by $R\theta$ for a matrix $R$ as in \cref{prop:sharpness:invariant}. (b) Assuming that $\Lhat$ has bounded third derivatives, show that $P^{\mathrm{ad}}_\sigma(\theta)=\frac{\sigma^2}2\tr\bigl(D\nabla^2\Lhat(\theta)D\bigr)+O(\sigma^3)$ whether or not $\nabla\Lhat(\theta)=0$, as in \textcite{AndriushchenkoEtAl2023}.\label{ex:sharpness:adaptive}
+
+\item \consolidation (Simpson in both directions.) (a) For $m\ge2$ strata of $r\ge2$ runs that are separated as in \cref{prop:sharpness:simpson}(iii), with $\tau=-1$ within every stratum, show that the pooled $\tau$ is $1-2(r-1)/(mr-1)$, and find its limit as $m\to\infty$. (b) Construct nine runs with $\tau=+1$ within every stratum and a negative pooled $\tau$. (c) From \cref{tab:sharpness:tau} and \eqref{eq:sharpness:pairs}, compute the $\tau$ of the parameter norm over pairs of runs of different widths, and check it against the sweep script.\label{ex:sharpness:simpson}
+
+\item \consolidation\hard (The cap of a step size.) (a) For gradient descent with step $\eta$ on $\frac12(\theta-\theta^\star)^\top A(\theta-\theta^\star)$ with $A$ symmetric, show that the iterates converge to $\theta^\star$ from every starting point if and only if every eigenvalue of $A$ lies in $(0,2/\eta)$, and that they diverge geometrically from every start with a component along the top eigenvector if $\lambda_{\max}(A)>2/\eta$. (b) For heavy-ball momentum, $\theta_{t+1}=\theta_t-\eta\nabla\Lhat(\theta_t)+\beta(\theta_t-\theta_{t-1})$ with $0\le\beta<1$, show that the cap becomes $2(1+\beta)/\eta$. Which cap applies to stochastic gradient descent with momentum $0.9$ in PyTorch? \hint{in (b), find when both roots of $z^2-(1+\beta-\eta\lambda)z+\beta$ lie in the open unit disk.}\label{ex:sharpness:momentum}
+
+\item \labwork (Condition on the learning rate.) Add strata of equal learning rate, and of equal learning rate and batch size, to the analysis of the sweep script. Predict how $\tau$ for $\lambda_{\max}$ changes, then check. Why does stratifying by the hyperparameters that move $\lambda_{\max}$ change the correlation so little, while stratifying by width removes it?\label{ex:sharpness:condition}
+
+\item \labwork (Stop by the clock.) Replace the stopping rule of the sweep by a fixed budget of 40 epochs. Predict how the final training losses, $\lambda_{\max}$ and its correlation with the gap will change, then run it, and compare with the reason Jiang et al.\ give for stopping at a fixed training loss.\label{ex:sharpness:clock}
+
+\item \labwork (Intervene on sharpness.) Implement SAM \parencite{ForetEtAl2021} in the training loop of the sweep: at each step move the weights by $\rho\,g/\norm g$ along the minibatch gradient $g$, compute the gradient there, and apply it at the unperturbed weights. For one configuration and ten seeds, compare plain training, SAM with $\rho=0.05$, and a sham that moves the weights by the same distance in a random direction: does SAM lower $P^{\mathrm{ad}}_{0.5}$, does it lower the gap, and does the sham?\label{ex:sharpness:sam}
+
+\item \design (Does flatness cause generalization?) With a budget of 300 runs of the network of \cref{lab:sharpness:sweep}, design an experiment that tests whether lowering sharpness, with the training procedure otherwise fixed, lowers the gap. Specify two interventions that lower sharpness by different routes, shams, manipulation checks, a dose--response, the runs per arm (\cref{ch:seeds}), and the result that would refute the claim.\label{ex:sharpness:causal}
+
+\item \design (Validating a measure.) A team proposes a new measure of generalization and can train 400 networks. Design the sweep, the controls and the analyses that would convince a skeptic who has read \textcite{DziugaiteEtAl2020}. Which factor would you take most care to include?\label{ex:sharpness:validate}
+
+\item \critique (A correlation of 0.62.) A paper reports that its new flatness measure has Kendall $\tau=0.62$ with the generalization gap over 300 networks that differ in width (8 to 512 units), depth and learning rate, one run per configuration, after choosing the perturbation radius from twelve values to maximize $\tau$, and concludes that the measure explains generalization. What can $\tau=0.62$ mean, and what does the conclusion need? (The description is invented.)\label{ex:sharpness:critique1}
+
+\item \critique (Flatter and better.) A study trains a network with SAM and with plain stochastic gradient descent, five seeds each, finds that the SAM networks have a lower top Hessian eigenvalue and a test error lower by 0.8 points, and concludes that flat minima cause better generalization. Which explanations does the design leave open, and which experiment of \cref{sec:sharpness:invariance} addresses each? (The description is invented.)\label{ex:sharpness:critique2}
+
+\item \research (An invariant measure that survives interventions.) Open: a measure, invariant under the function-preserving reparametrizations of a stated family of architectures, whose changes predict the direction of the change in generalization under interventions on width, learning rate, batch size and data size, in the worst case over environments \parencite{DziugaiteEtAl2020}; or a proof, in the spirit of \textcite{WenLiMa2023}, that no measure computed from the training loss near the solution can.\label{ex:sharpness:research}
+\end{exercises}
+
+\notesandrefs
+The flat-minimum idea has two roots: the description length of the weights, in \textcite{HintonVanCamp1993} and \textcite{HochreiterSchmidhuber1995,HochreiterSchmidhuber1997}, and the PAC-Bayesian bound of \textcite{McAllester1999}, which \textcite{DziugaiteRoy2017} made nonvacuous for deep networks and \textcite{NeyshaburEtAl2017} related to sharpness and to norms. Entropy-SGD \parencite{ChaudhariEtAl2017} and SAM \parencite{ForetEtAl2021} turned flatness into a training objective, and ASAM made SAM's neighborhood adaptive to the size of the weights \parencite{KwonEtAl2021}. Scale-invariant notions of flatness \parencite{TsuzukuSatoSugiyama2020,PetzkaEtAl2021} answer \textcite{DinhEtAl2017}, and the role of the optimizer in setting the sharpness is the theme of \textcite{WuMaE2018}, \textcite{CohenEtAl2021} and \textcite{KaurCohenLipton2023}.
+
+On the statistics, \textcite{Simpson1951} gave the paradox its classical form for contingency tables, \textcite{BickelHammelOConnell1975} its most cited example and \textcite{Pearl2009} the causal account of when to stratify; the attenuation of a correlation by an unreliable variable is due to \textcite{Spearman1904}, and the rank correlation to \textcite{Kendall1938}.
+
+\paragraph{Translating the literature.} \Textcite{KeskarEtAl2017} write $x$ for our $\theta$ and $f$ for our $\Lhat$; their $(C_\eps,A)$-sharpness is the box measure of \cref{fd:sharpness:keskar}, with $A$ the identity in the full space. \Textcite{DinhEtAl2017} write $\theta_1,\theta_2$ for our $W_1,W_2$ (they omit biases), $T_\alpha$ for our $T_c$ with $c=\alpha$, and observationally equivalent for function-preserving. \Textcite{JiangEtAl2020} write $\theta$ for a hyperparameter configuration (our $h$), $\mu(\theta)$ for a measure (our $M$) and $g(\theta)$ for the generalization gap (our $G$, as a fraction rather than in points); their $\psi_i$ and $\Psi$ are ours, and their magnitude-aware sharpness perturbs each weight in proportion to its size, as our $P^{\mathrm{ad}}_\sigma$ does, but in the worst case and with a radius calibrated to a fixed increase of the loss. \Textcite{AndriushchenkoEtAl2023} write $S^\rho_{\mathrm{avg}}(w,\abs w)$ for our $P^{\mathrm{ad}}_\rho$, and \textcite{KwonEtAl2021} write $T_w$ for our $\diag(\abs\theta)$. An environment of \textcite{DziugaiteEtAl2020} is a pair of configurations that differ in one hyperparameter, a stratum of two in our terms, and their sign-error in an environment is $(1-\tau)/2$.
+
+\printchapterbib
+\end{refsection}

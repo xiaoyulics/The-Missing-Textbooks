@@ -1,0 +1,432 @@
+% Chapter 12 of Deep Learning as an Experimental Science: the protocol behind a scaling exponent.
+\newcommand{\protocolopt}{\mathrm{opt}}
+\labchapter{The Protocol Behind the Exponent}{Kaplan, Chinchilla and the learning-rate schedule}{Model size should grow much faster than data: $N_{\mathrm{opt}}\propto C^{0.73}$.}{Kaplan et al.\ (2020), Section~6; the allocation that GPT-3 and its successors followed}{Reversed: counted in full, with warm-up and hyperparameters set for each scale, parameters and data grow at about the same rate, and the larger, shorter-trained models lose.}{ch:protocol}
+\begin{refsection}[chapters/12-protocol.bib]
+
+% styles for the third arm of the lab figures (palette colours only)
+\pgfplotsset{
+  protocol runC/.style={only marks,mark=diamond,mark size=1.5pt,color=ink!55,mark options={line width=0.35pt,fill=white}},
+  protocol meanC/.style={only marks,mark=diamond*,mark size=2.0pt,color=ink!70,mark options={fill=ink!70,draw=white,line width=0.2pt}},
+  protocol ebarsC/.style={error bars/y dir=both,error bars/y explicit,
+    error bars/error bar style={ink!70,line width=0.5pt},
+    error bars/error mark options={ink!70,rotate=90,mark size=1.7pt,line width=0.5pt}},
+  protocol fitC/.style={ink!70,line width=0.9pt,densely dotted,no marks},
+  protocol fitA/.style={inkblue,line width=0.9pt,no marks},
+  protocol fitB/.style={rubric,line width=0.9pt,dashed,no marks},
+}
+
+\begin{chaptersummary}
+Kaplan and colleagues read the compute-optimal size of a language model off the learning curves of models trained once each with one long schedule, and concluded in 2020 that model size should grow almost three times as fast as data; GPT-3 and its successors were trained accordingly. Hoffmann and colleagues trained a separate run for every budget, found parameters and data growing at the same rate, and blamed the unfinished schedule; later reconstructions found the schedule the smallest of four causes, behind what was counted as a parameter, a warm-up too long for small budgets, and hyperparameters held fixed across scales. The method treats a fitted exponent as the reading of an instrument: a power law without a floor measures a local exponent, the allocation exponent is a ratio of two rates of diminishing returns, and a counting convention or a penalty moves it by amounts that can be computed. In a miniature study on the teacher task the exponent is $0.64$ with matched schedules, $0.56$ read from an unfinished schedule, $0.66$ with Kaplan et al.'s fraction of warm-up added, and $0.74$ with the input and output layers counted as embeddings.
+\end{chaptersummary}
+
+\section{The claim: a billion-fold increase in compute}\label{sec:protocol:claim}
+
+In January 2020 Jared Kaplan, Sam McCandlish and eight colleagues at OpenAI posted a study of how the loss of a language model depends on its scale \parencite{KaplanEtAl2020}.\sidenote{The paper was posted to arXiv once, on 23 January 2020, and has remained a preprint.} They trained decoder-only Transformers on WebText2, about 23 billion tokens of web text, with 768 to 1.5 billion parameters and 22 million to 23 billion tokens, and found that the held-out loss falls as a power law in each of the number of parameters $N$, the number of training tokens $D$ and the compute $C$, about $6ND$ operations, whenever the other two do not limit it. Parameters were counted without the embeddings, because the curves of models of different depths then fell onto one line. A model with two layers of width 128 has 393,216 parameters in this count, and about 6.6 million more in its embeddings of 50,257 vocabulary tokens and 1,024 positions.
+
+A budget of compute buys a large model trained on few tokens or a smaller one trained on many. To find the \term{compute-optimal allocation}\index{compute-optimal allocation}, the authors took for each budget the model with the lowest loss after the steps that spend it, and fitted a power law to the best size.
+
+\begin{finding}[\textcite{KaplanEtAl2020}, Section~6, Figure~14 and Table~6]\label{fd:protocol:kaplan}
+For compute-efficient training the number of non-embedding parameters should grow as $N_{\protocolopt}\propto C^{0.73}$ and the number of training tokens as $D_{\protocolopt}\propto C^{0.27}$, where $C$ is the non-embedding compute, adjusted to the compute that training below the critical batch size would need; the unadjusted trend was $N\propto C^{0.88}$. The best model for a budget is stopped far short of convergence. A fitted model of the loss as a function of size and training steps predicted the exponent $0.71$.
+\end{finding}
+
+A tenfold increase in compute should thus buy a model 5.4 times larger and only 1.9 times more data; in the paper's words, \enquote{Big models may be more important than big data.} The authors were careful about limits: extrapolated, their laws contradict each other near $10^{12}$ parameters and $10^{12}$ tokens, where they expected the predictions to break down, and among their caveats they noted that some hyperparameter with an important effect on scaling might have gone untuned, and that higher learning rates had not been tried for runs that did not proceed to convergence.
+
+The allocation shaped the next models. The eight models of GPT-3 \parencite{BrownEtAl2020}, from 125 million to 175 billion parameters, were all trained on 300 billion tokens; based on the scaling analysis, their authors wrote, they trained much larger models on many fewer tokens than was typical, and two authors of the scaling study used it to guide the decisions about model and data scale. Jurassic-1 and Gopher, with 178 and 280 billion parameters, were also trained on 300 billion tokens, and Megatron-Turing NLG, with 530 billion, on 270 billion.\sidenote{The list of models and tokens is Table~1 of \textcite{HoffmannEtAl2022}.} The received version was a rule of thumb: as the budget grows, grow the model, and let the data follow slowly.
+
+Much of the paper has stood: the power laws, the greater sample efficiency of larger models, and the conclusion, shared by the study that reversed the allocation, that the compute-optimal model is not trained to convergence. The method was reasonable too: one run per model, read along its learning curve, gave the whole frontier at the price of one run per size, and the authors corrected it for an artifact they knew of, training above the critical batch size \parencite{McCandlishEtAl2018}, the subject of \cref{ch:heldfixed}.
+
+\section{The experiment: one long run per model}\label{sec:protocol:experiment}
+
+\begin{experiment}[Kaplan et al.\ 2020]
+\field{question}{How should a fixed budget of compute be divided between model size and training data?}
+\field{units}{Training runs of decoder-only Transformers on WebText2, with contexts of 1,024 tokens.}
+\field{treatment}{Model size, counted as non-embedding parameters, from 768 to $1.5\times10^9$; shapes varied as well.}
+\field{budget}{Non-embedding compute $C\approx6NBS$ after $S$ steps of $B$ tokens; a budget reads every model at the step at which it has spent $C$.}
+\field{held fixed}{Batch of $2^{19}$ tokens; $2.5\times10^5$ steps; linear warm-up over 3,000 steps, then cosine decay to zero at $2.5\times10^5$ steps; Adam (Adafactor above a billion parameters); a learning rate decreasing slowly in $\log N$.}
+\field{response}{Cross-entropy loss on held-out WebText2 text.}
+\field{replicates}{One run per model; the seed-to-seed variation was estimated at about $0.02$ in the loss.}
+\field{analysis}{The best model at each budget; a power law in the budget, after adjusting the compute to training at the critical batch size.}
+\end{experiment}
+
+Read as a measurement, the record is sound and reproduces: with these choices \textcite{PorianEtAl2024} obtained exponents of $0.84$ and $0.86$ on two datasets, close to the unadjusted $0.88$. Read as evidence for an allocation, every entry in the row \textsc{held fixed} is an assumption, and several act on small and large budgets differently. The frontier is made of checkpoints. A budget $C$ reads the model of size $N$ after $C/(6BN)$ steps of a schedule designed for $2.5\times10^5$, and in Porian et al.'s reconstruction of the setup it was never optimal to train beyond 10 of the schedule's 131 billion tokens, over which a cosine falls by less than $1.5\%$. Every point of the frontier is thus read from an \term{unfinished schedule}\index{unfinished schedule}: a run at nearly constant learning rate, interrupted, not the run a practitioner with that budget would make. The warm-up of 1.57 billion tokens was a large part of the best runs at small budgets,\sidenote{Kaplan et al.'s own Figure~14 shows, for many budgets, an optimal number of steps near or below the 3,000 of the warm-up \parencite{PorianEtAl2024}.} the embeddings left out of both counts held most of the parameters of the small models, the fixed batch gave the small compute-optimal models few steps, and the learning-rate rule had been chosen for runs that converge.
+
+The design could show that, under these choices, the best checkpoint at each budget belongs to a model whose size grows like $C^{0.73}$; it could not separate a property of language models from choices made once for all budgets, nor, with one run per configuration, say how far the exponent would move on a rerun.
+
+\section{The post-mortem: three explanations}\label{sec:protocol:postmortem}
+
+\paragraph{Separate runs for every budget.} In March 2022 Jordan Hoffmann and 21 colleagues at DeepMind revisited the question with more than 400 models, from 70 million to over 16 billion parameters, trained on 5 to 500 billion tokens \parencite{HoffmannEtAl2022}. They counted every parameter and every operation, the embeddings included, let the learning rate fall tenfold along a cosine set to each run's own length, and estimated the allocation in three ways: from the lower envelope of the training curves (Approach~1), from \term{isoFLOP profiles}\index{isoFLOP profile}, which compare at each of nine budgets the final losses of models whose numbers of tokens exhaust it (Approach~2), and from a parametric law fitted to all runs (Approach~3, the subject of \cref{ch:fitting}).
+
+\begin{finding}[\textcite{HoffmannEtAl2022}, Table~2, Section~4 and Appendix~D.4]\label{fd:protocol:hoffmann}
+The three approaches gave $N_{\protocolopt}\propto C^{a}$ with $a=0.50$, $0.49$ and $0.46$, and $D_{\protocolopt}\propto C^{b}$ with $b=0.50$, $0.51$ and $0.54$: parameters and tokens should grow at about the same rate. At the compute of Gopher, 280 billion parameters trained on 300 billion tokens, the analysis recommended a model about four times smaller trained on four times more data; Chinchilla, with 70 billion parameters and 1.4 trillion tokens, outperformed Gopher on a large range of evaluations. At $10^{21}$ operations a model of 2.80 billion parameters, the size their analysis recommended, reached a lower loss than one of 4.74 billion, the size Kaplan et al.'s law recommended.
+\end{finding}
+
+They attributed the difference mainly to the schedule. Kaplan et al.\ had used one schedule for all models, and a cosine longer than the run by more than $25\%$ degrades the final loss; the intermediate losses of a schedule to 130 billion tokens therefore overestimate those of matched runs, which underestimates training on less data and, Hoffmann et al.\ wrote, contributes to the conclusion that size should grow faster than data. They added that most of their models had more than 500 million parameters, many of Kaplan et al.'s fewer than 100 million, and that the frontier curves slightly over that range. The schedule became the received explanation, and with it the practice of a separate run, with its own schedule, for every budget.\sidenote{\textcite{HageleEtAl2024} open their study by recalling this observation of the Chinchilla project: a cosine schedule reaches its best loss only when its length matches the training run.}
+
+\paragraph{One factor at a time.} Two years later Tomer Porian, Mitchell Wortsman, Jenia Jitsev, Ludwig Schmidt and Yair Carmon reproduced Kaplan et al.'s exponent and took its protocol apart one factor at a time \parencite{PorianEtAl2024}, in more than 900 runs of Transformers with 5 to 901 million parameters on OpenWebText2, close to Kaplan et al.'s WebText2, and RefinedWeb. The reproduction adopted Kaplan et al.'s batch size, warm-up and schedule and, like them, left the final layer, which maps to the vocabulary, out of the counts (\cref{tab:protocol:porian}).
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lll}
+\toprule
+protocol & OpenWebText2 & RefinedWeb\\
+\midrule
+Kaplan et al.'s, reproduced & $0.864$ $(0.82,0.90)$ & $0.835$ $(0.82,0.85)$\\
+$+$ last layer counted & $0.699$ $(0.66,0.72)$ & $0.706$ $(0.69,0.72)$\\
+$+$ warm-up of $N$ tokens & $0.603$ $(0.57,0.63)$ & $0.602$ $(0.59,0.62)$\\
+$+$ matched cosine decay & $0.574$ $(0.54,0.61)$ & $0.571$ $(0.56,0.59)$\\
+$+$ $B$, $\eta$, $\beta_2$ tuned; constant $\eta$ & $0.518$ $(0.49,0.54)$ & $0.497$ $(0.49,0.50)$\\
+\bottomrule
+\end{tabular}
+\caption{The allocation exponent $a$ as Kaplan et al.'s protocol is corrected one factor at a time, with 95\% intervals, from Table~1 of \textcite{PorianEtAl2024}. Each row keeps the changes above it, except that the last replaces the matched decay by a constant learning rate, with batch size, learning rate and $\beta_2$ set for each size.}
+\label{tab:protocol:porian}
+\end{table}
+
+Three of the four changes moved the exponent by about $0.1$ each. Leaving out the last layer misses about $10\%$ of the operations of their largest models and $90\%$ of their smallest, so small models looked cheaper than they were. At small budgets the best number of tokens was close to or below the warm-up; those runs had to use more tokens to escape it, so the optimal number of tokens grew slowly with the budget, which is a large exponent for the model. A fixed batch of $2^{19}$ tokens leaves the small compute-optimal models a few hundred steps; setting the batch, learning rate and $\beta_2$ for each size, the authors found that $\beta_2=0.95$ performed poorly at batches of 128 sequences and fewer, where $0.99$ or $0.999$ was needed. The schedule, the factor that Hoffmann et al.\ had proposed, moved the exponent by $0.03$, and the final agreement with Chinchilla, an exponent within $0.6\%$ of $0.5$, was reached with a constant learning rate: careful decay, in their words, \enquote{is not essential} for the Chinchilla law, although it lowers the loss substantially, and more so at larger budgets.
+
+\paragraph{Counting at small scale.} Independently, Tim Pearce and Jinyeop Song explained most of the discrepancy with the published numbers alone \parencite{PearceSong2024}. They rewrote Hoffmann et al.'s law, fitted in total parameters, in non-embedding parameters and compute, with embeddings growing like the cube root of the other parameters, and simulated a study over Kaplan et al.'s sizes: the simulated frontier had the exponent $0.74$ or $0.78$, depending on which fit of the Chinchilla law they started from. In small experiments of their own, with 0.8 to 4.6 million parameters, the same runs gave $0.49$ in total parameters and $0.74$ in non-embedding ones; one run per size at a constant learning rate tuned per size gave $0.49$, as did six cosine schedules per size, and one learning rate for all sizes gave $0.58$.
+
+\paragraph{The mechanism.} The frontier of \cref{fd:protocol:kaplan} was produced by four choices that act on small and large budgets differently: a count that leaves out a part of the model that is large in small models, a warm-up that is long for small budgets, hyperparameters held fixed across scales, and checkpoints read from schedules far from their end. In the most complete reconstruction the first three moved the exponent by about $0.1$ each and the last by $0.03$: the explanation adopted first was the weakest of the four, although the observation behind it is right, since a run read before its schedule ends has a higher loss. Two points remain open. The reconstructions differ in detail, Pearce and Song attributing most of the gap to the counting and Porian et al.\ dividing it among three factors, in setups much smaller than either original study. And an exponent of $0.5$ is a property of a protocol and a dataset, not a constant of language models: DeepSeek's study of scaling \parencite{BiEtAl2024}, a preprint, which measured size by non-embedding operations per token because both conventional counts are off by up to $50\%$ for small models, found $0.52$ on its data and $0.45$ to $0.58$ across three datasets, larger for data of higher quality.
+
+\begin{verdict}{reversed}
+The claim that compute should go mostly into model size does not survive a protocol that counts the whole model, fits the warm-up and the hyperparameters to each scale, and trains every configuration as it would be trained: parameters and tokens then grow at about the same rate, and the comparison that the claim implied, a large model on few tokens against a smaller one on many at equal compute, came out the other way when Chinchilla was trained. The exponent $0.73$ was a property of the protocol that measured it. The first explanation of the reversal, the unfinished schedule, accounts for the smallest part of it.
+\end{verdict}
+
+\section{The method: what a fitted exponent measures}\label{sec:protocol:exponents}
+
+A scaling exponent is often reported as if it were a constant of nature. It is better understood as the reading of an instrument: a protocol produces losses for a set of configurations, and an estimator turns them into a number. The method begins by writing the instrument down.
+
+\begin{definition}[Protocol of a scaling study]\label{def:protocol:card}
+A \term{scaling study}\index{scaling study} measures the loss of a family of models at configurations $(N,D)$. Its \term{protocol}\index{protocol of a scaling study} fixes (i) the \emph{counting}: which parameters make up $N$, and how the compute $C$ of a run is computed; (ii) the \emph{source} of each configuration: a run of its own, or a checkpoint of a longer run; (iii) the \emph{schedule}: its warm-up and decay, and how both depend on the run; (iv) the \emph{hyperparameters} at each scale, and how they were chosen; (v) the \emph{range} of $N$ and $D$; (vi) the \emph{replicates}; and (vii) the \emph{estimator} of the compute-optimal size $N_{\protocolopt}(C)$ and of the \term{allocation exponent}\index{allocation exponent} $a$ in $N_{\protocolopt}\propto C^{a}$, with its interval. The written record of these choices is the study's \term{protocol card}\index{protocol card}.
+\end{definition}
+
+The studies of Kaplan et al.\ and Hoffmann et al.\ differ in every item of the card except the replicates, one run per configuration in both. The results below say what the items can do to an exponent.
+
+\subsection*{Local exponents}
+
+The loss of every study in this chapter approaches a floor: the entropy of text for language, the noise variance $E=0.01$ for the teacher task of the laboratory. A power law without a floor cannot follow such a curve; what it measures instead is an average of the curve's local slopes, by a fact about least squares.
+
+\begin{lemma}[A least-squares slope averages the derivative]\label{lem:protocol:ols}
+Let $x_1<\dots<x_n$, with $n\ge2$, let $\varphi$ be continuously differentiable on $[x_1,x_n]$, and let $b$ be the least-squares slope of the points $(x_i,\varphi(x_i))$. Write $\bar x$ for the mean of the $x_i$ and $S_{xx}=\sum_i(x_i-\bar x)^2$. Then
+\[
+b=\int_{x_1}^{x_n}\varphi'(t)\,K(t)\dd t,\qquad K(t)=\frac1{S_{xx}}\sum_{i:\,x_i>t}(x_i-\bar x).
+\]
+The weight $K$ is nonnegative and integrates to one; in particular, $b$ lies between the smallest and the largest value of $\varphi'$ on $[x_1,x_n]$.
+\end{lemma}
+
+\begin{proof}
+The plan is to write each $\varphi(x_i)$ as $\varphi(x_1)$ plus an integral of $\varphi'$ and to exchange the sum and the integral. Put $w_i=(x_i-\bar x)/S_{xx}$, so that $b=\sum_iw_i\varphi(x_i)$, $\sum_iw_i=0$ and $\sum_iw_ix_i=1$. Since $\varphi(x_i)=\varphi(x_1)+\int_{x_1}^{x_n}\varphi'(t)\ind\{t<x_i\}\dd t$ and the $w_i$ sum to zero,
+\[
+b=\int_{x_1}^{x_n}\varphi'(t)\sum_iw_i\ind\{t<x_i\}\dd t=\int_{x_1}^{x_n}\varphi'(t)K(t)\dd t .
+\]
+For $t$ in $[x_k,x_{k+1})$, $K(t)$ is the sum of the $n-k$ largest weights. The weights increase with $i$, so the average of the largest $n-k$ of them is at least the average of all $n$, which is zero; hence $K\ge0$. Finally, $\int_{x_1}^{x_n}K(t)\dd t=\sum_iw_i(x_i-x_1)=\sum_iw_ix_i-x_1\sum_iw_i=1$, and a weighted average of values of $\varphi'$ lies between their extremes.
+\end{proof}
+
+\begin{proposition}[Local exponents]\label{prop:protocol:local}
+Let $\Loss(N)=E+A_NN^{-\alpha_N}$ with $E\ge0$, $A_N>0$ and $\alpha_N>0$, and call $\lambda(N)=-\dd\ln\Loss/\dd\ln N$ the \term{local exponent}\index{local exponent} of $\Loss$ at $N$.
+\begin{enumerate}
+\item $\lambda(N)=\alpha_N\bigl(1-E/\Loss(N)\bigr)$. If $E>0$, then $\lambda$ decreases strictly in $N$, from $\alpha_N$ as $N\to0$ to $0$ as $N\to\infty$. For $E=0$, $\lambda=\alpha_N$ everywhere.
+\item Let $N_1<\dots<N_n$, with $n\ge2$, and let $\hat\alpha$ be minus the least-squares slope of $\ln\Loss(N_i)$ on $\ln N_i$, the exponent of a power law without floor fitted in log--log coordinates. Then $\lambda(N_n)\le\hat\alpha\le\lambda(N_1)$; in particular, if $E>0$, then $\hat\alpha\le\alpha_N\bigl(1-E/\Loss(N_1)\bigr)<\alpha_N$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+For part~(i), differentiate: $N\Loss'(N)=-\alpha_NA_NN^{-\alpha_N}=-\alpha_N(\Loss(N)-E)$, so $\lambda=\alpha_N(\Loss-E)/\Loss$. If $E>0$, then $\Loss$ decreases strictly from $+\infty$ to $E$ as $N$ runs from $0$ to $\infty$, so $E/\Loss$ increases strictly from $0$ to $1$, and $\lambda$ decreases from $\alpha_N$ to $0$. If $E=0$, then $\lambda=\alpha_N$. For part~(ii), apply \cref{lem:protocol:ols} to $\varphi(x)=\ln\Loss(e^x)$ at the points $x_i=\ln N_i$: since $\varphi'(x)=-\lambda(e^x)$, the number $\hat\alpha$ is a weighted average of $\lambda$ over $[N_1,N_n]$, and $\lambda$ is nonincreasing by part~(i).
+\end{proof}
+
+A power law fitted without a floor thus reports at best the exponent near the small end of its range. A term that does not depend on $N$ acts as part of the floor: at fixed $D$ the local exponent in $N$ of $E+A_NN^{-\alpha_N}+A_DD^{-\alpha_D}$ is $\alpha_NA_NN^{-\alpha_N}/\Loss$. For Hoffmann et al.'s fitted law, with $E=1.69$, $A_N=406.4$ and $\alpha_N=0.34$, the local exponent at unlimited data is $0.11$ at $N=10^8$ and $0.06$ at $10^9$, around Kaplan et al.'s $\alpha_N=0.076$. The laws were fitted on different data with different counts of $N$, so the comparison is one of orders of magnitude, but the two exponents measure different things: a local exponent of the loss, and the exponent of the loss above its floor. The same holds for loss against compute, which is part of how \textcite{PearceSong2024} reconciled Kaplan et al.'s exponent $0.057$, fitted without a floor, with Chinchilla's $0.155$ for the loss above it (\cref{ex:protocol:frontier}).
+
+\subsection*{The local allocation exponent}
+
+For the parametric law the compute-optimal size has a closed form, derived with its constants in \cref{ch:fitting}: $N_{\protocolopt}\propto C^{a}$ with $a=\alpha_D/(\alpha_N+\alpha_D)$. A protocol changes the law, rarely into another power law, so we need a local version. For a separable law $\Loss(N,D)=E+f(N)+h(D)$, write $s_N=-\partial\Loss/\partial\ln N=-Nf'(N)$ and $s_D=-Dh'(D)$ for the \term{marginal values}\index{marginal value} of size and of data, the loss that one more percent of each buys, and $\kappa_N=-\dd\ln s_N/\dd\ln N$ and $\kappa_D=-\dd\ln s_D/\dd\ln D$ for the rates at which they fall; for power laws, $\kappa_N=\alpha_N$ and $\kappa_D=\alpha_D$.\sidenote{A percent more size and a percent more data cost the same compute, since $C\propto ND$; the balance $s_N=s_D$ of \cref{lem:protocol:allocation} is the economist's equal marginal returns per unit of cost.}
+
+\begin{lemma}[The local allocation exponent]\label{lem:protocol:allocation}
+Let $\Loss(N,D)=E+f(N)+h(D)$, with $f$ and $h$ twice continuously differentiable on $(0,\infty)$ and $s_N,s_D>0$. Fix $C_0>0$, and suppose that $N_0$ minimizes $N\mapsto\Loss(N,C_0/(6N))$, with $D_0=C_0/(6N_0)$, and that $\kappa_N(N_0)+\kappa_D(D_0)>0$. Then $s_N(N_0)=s_D(D_0)$, and for $C$ near $C_0$ there is a unique stationary point $N_{\protocolopt}(C)$ near $N_0$, a strict local minimizer, differentiable in $C$, with
+\[
+\frac{\dd\ln N_{\protocolopt}}{\dd\ln C}=\frac{\kappa_D}{\kappa_N+\kappa_D},\qquad\frac{\dd\ln D_{\protocolopt}}{\dd\ln C}=\frac{\kappa_N}{\kappa_N+\kappa_D},
+\]
+the rates evaluated at $N_{\protocolopt}(C)$ and $D_{\protocolopt}(C)=C/(6N_{\protocolopt}(C))$.
+\end{lemma}
+
+\begin{proof}
+The plan is to write the loss along the isoFLOP line as a function of $u=\ln N$ and to apply the implicit function theorem to its derivative. Put $c=\ln C$ and $v=c-\ln6-u$, the logarithm of $D=C/(6N)$, and let $\phi(u,c)=E+f(e^u)+h(e^v)$. Since $\partial v/\partial u=-1$ and $\partial v/\partial c=1$, the chain rule gives $\partial\phi/\partial u=-s_N(e^u)+s_D(e^v)$, which vanishes at the minimizer $u_0=\ln N_0$; this is the balance $s_N(N_0)=s_D(D_0)$. Differentiating once more, with $\dd s_N/\dd u=-\kappa_Ns_N$ and $\dd s_D/\dd v=-\kappa_Ds_D$,
+\[
+\frac{\partial^2\phi}{\partial u^2}=\kappa_Ns_N+\kappa_Ds_D,\qquad\frac{\partial^2\phi}{\partial u\,\partial c}=-\kappa_Ds_D .
+\]
+At $(u_0,\ln C_0)$ the two marginal values are equal, to $s>0$ say, so $\partial^2\phi/\partial u^2=s(\kappa_N+\kappa_D)>0$ by hypothesis. The function $\partial\phi/\partial u$ is continuously differentiable, because $f$ and $h$ are twice so; by the implicit function theorem there is a continuously differentiable $u^\star(c)$ near $\ln C_0$, unique near $u_0$, with $\partial\phi/\partial u(u^\star(c),c)=0$, and
+\[
+\frac{\dd u^\star}{\dd c}=-\frac{\partial^2\phi/\partial u\,\partial c}{\partial^2\phi/\partial u^2}=\frac{\kappa_Ds_D}{\kappa_Ns_N+\kappa_Ds_D}=\frac{\kappa_D}{\kappa_N+\kappa_D};
+\]
+the last equality holds because $s_N=s_D$ at $u^\star(c)$. By continuity the second derivative in $u$ stays positive near $(u_0,\ln C_0)$, so each $u^\star(c)$ is a strict local minimizer. The formula for $D_{\protocolopt}$ follows from $\ln D_{\protocolopt}=c-\ln6-u^\star(c)$.
+\end{proof}
+
+For power laws the lemma returns the exponent of \cref{ch:fitting} at every budget. The floor $E$ does not appear: unlike the loss exponents, the allocation exponent does not depend on the irreducible loss, only on the balance of two rates of diminishing returns. Whatever in a protocol changes how fast the marginal value of size or of data falls changes the measured exponent; whatever changes the loss without changing those rates does not.
+
+\section{The method: counting, penalties and cheaper protocols}\label{sec:protocol:counting}
+
+\subsection*{Counting}
+
+Kaplan et al.\ left the embeddings out of both the size $N$ and the compute $6ND$.\sidenote{\textcite{PearceSong2024} recommend counting total parameters and compute, since embeddings learn structure that the model uses.} A model has a size that sets its loss and a cost per token that sets its compute, and a counting convention can misstate both. Let the counted size $\tilde N$ leave out an \term{overhead}\index{overhead (in parameter counts)} $e(\tilde N)\ge0$, so that the full size is $N=\tilde N+e(\tilde N)$, and write
+\[
+\varepsilon(\tilde N)=\frac{\dd\ln N}{\dd\ln\tilde N}=\frac{\tilde N\bigl(1+e'(\tilde N)\bigr)}{N}
+\]
+for the elasticity of the full size with respect to the counted one; for a constant overhead, $\varepsilon=\tilde N/N$.
+
+\begin{proposition}[Counting]\label{prop:protocol:counting}
+Let $e$ be twice continuously differentiable on $(0,\infty)$ with $e\ge0$ and $1+e'>0$, let the loss be $\Loss(N,D)=E+A_NN^{-\alpha_N}+A_DD^{-\alpha_D}$ with positive constants $A_N,A_D,\alpha_N,\alpha_D$, and let $a=\alpha_D/(\alpha_N+\alpha_D)$ be the allocation exponent in full counts.
+\begin{enumerate}
+\item Measured against the counted size, the local exponent of the size term is $\alpha_N\varepsilon(\tilde N)$.
+\item If compute is counted in full, $C=6ND$, then the counted size of the compute-optimal model satisfies $\dd\ln\tilde N_{\protocolopt}/\dd\ln C=a/\varepsilon(\tilde N_{\protocolopt})$.
+\item If compute is counted as $\tilde C=6\tilde ND$, then at every minimizer of $\Loss$ at fixed $\tilde C$ at which $\tilde\kappa=\alpha_N\varepsilon-\dd\ln\varepsilon/\dd\ln\tilde N$ satisfies $\tilde\kappa+\alpha_D>0$, the measured allocation exponent is $\dd\ln\tilde N_{\protocolopt}/\dd\ln\tilde C=\alpha_D/(\alpha_D+\tilde\kappa)$.
+\item Let $e(\tilde N)=\omega\tilde N^{q}$ with $\omega>0$ and $0<q<1$. Then the exponent of part~(iii) exceeds $a$ wherever part~(iii) applies; as a function of $\tilde N$, it tends to $a$ as $\tilde N\to\infty$ and to $\alpha_D/(\alpha_D+q\alpha_N)$ as $\tilde N\to0$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to treat the counted size as a change of variable in the size term and to apply \cref{lem:protocol:allocation}. Since $1+e'>0$, the map $\tilde N\mapsto N$ is strictly increasing and continuously differentiable, with $\dd\ln N/\dd\ln\tilde N=\varepsilon>0$.
+
+\emph{Part (i).} By the chain rule, $\dd\ln(A_NN^{-\alpha_N})/\dd\ln\tilde N=-\alpha_N\,\dd\ln N/\dd\ln\tilde N=-\alpha_N\varepsilon$.
+
+\emph{Part (ii).} In full counts the law is separable with $\kappa_N=\alpha_N$ and $\kappa_D=\alpha_D$. Along the isoFLOP line the derivative $-s_N+s_D$ of \cref{lem:protocol:allocation} increases strictly in $\ln N$, from $-\infty$ as $N\to0$ to $+\infty$ as $N\to\infty$, so the minimizer $N_{\protocolopt}(C)$ is unique, and the lemma gives $\dd\ln N_{\protocolopt}/\dd\ln C=a$. Its counted size $\tilde N_{\protocolopt}(C)$ is, where it exists, the inverse image of $N_{\protocolopt}(C)$ under the increasing map, so $\dd\ln\tilde N_{\protocolopt}/\dd\ln C=(\dd\ln\tilde N/\dd\ln N)\,a=a/\varepsilon$.
+
+\emph{Part (iii).} In the variables $(\tilde N,D)$ the loss is $E+\tilde f(\tilde N)+A_DD^{-\alpha_D}$ with $\tilde f(\tilde N)=A_N(\tilde N+e(\tilde N))^{-\alpha_N}$, twice continuously differentiable because $e$ is, and the constraint $\tilde C=6\tilde ND$ has the form of the lemma. The marginal value of counted size is $\tilde s=-\tilde N\tilde f'(\tilde N)=\alpha_NA_NN^{-\alpha_N}\varepsilon>0$, so $\ln\tilde s=\mathrm{const}-\alpha_N\ln N+\ln\varepsilon$ and its rate of decrease is $-\dd\ln\tilde s/\dd\ln\tilde N=\alpha_N\varepsilon-\dd\ln\varepsilon/\dd\ln\tilde N=\tilde\kappa$. The lemma, with $\kappa_D=\alpha_D$, gives the exponent $\alpha_D/(\alpha_D+\tilde\kappa)$.
+
+\emph{Part (iv).} Write $u=\omega\tilde N^{q-1}$, which decreases from $+\infty$ to $0$ as $\tilde N$ runs from $0$ to $\infty$, because $q<1$. Then $N=\tilde N(1+u)$ and
+\[
+\varepsilon=\frac{1+qu}{1+u},\qquad\frac{\dd\ln\varepsilon}{\dd\ln\tilde N}=\frac{(1-q)^2u}{(1+u)^2\varepsilon},
+\]
+the second from $\dd\varepsilon/\dd u=-(1-q)/(1+u)^2$ and $\dd u/\dd\ln\tilde N=-(1-q)u$. Since $q<1$, $\varepsilon<1$, and the derivative of $\ln\varepsilon$ is positive; hence $\tilde\kappa<\alpha_N$, and where $\tilde\kappa+\alpha_D>0$ the exponent $\alpha_D/(\alpha_D+\tilde\kappa)$ exceeds $\alpha_D/(\alpha_D+\alpha_N)=a$. As $\tilde N\to\infty$, $u\to0$, so $\varepsilon\to1$, $\dd\ln\varepsilon/\dd\ln\tilde N\to0$ and $\tilde\kappa\to\alpha_N$. As $\tilde N\to0$, $u\to\infty$, so $\varepsilon\to q$ and $\dd\ln\varepsilon/\dd\ln\tilde N\to0$, because $u/(1+u)^2\to0$; then $\tilde\kappa\to q\alpha_N$.
+\end{proof}
+
+For a Transformer whose width $d$ is a fixed multiple $r$ of its depth $l$, the blocks have $\tilde N=12ld^2=12d^3/r$ parameters and the embeddings $(n_{\mathrm{vocab}}+n_{\mathrm{ctx}})d$, so the overhead is $\omega\tilde N^{1/3}$ with $\omega=(n_{\mathrm{vocab}}+n_{\mathrm{ctx}})(r/12)^{1/3}$: the case $q=1/3$, which \textcite{PearceSong2024} analyzed. With Kaplan et al.'s vocabulary and context and Hoffmann et al.'s $\alpha_N=0.34$, $\alpha_D=0.28$, so that $a=0.45$ in full counts, \cref{tab:protocol:family} lists what the partial conventions report. Over Kaplan et al.'s range of sizes, from $10^3$ to $1.5\times10^9$ counted parameters, the exponent of part~(iii) rises from $0.71$ to $0.93$ near $10^7$ and falls to $0.49$ at $10^9$; a power law fitted across the range averages these local values (\cref{lem:protocol:ols}), and Pearce and Song's simulation of the whole study gave $0.74$ to $0.78$. The convention alone produces an exponent near the one Kaplan et al.\ reported, with no change in the models or the data. Counting compute in the same convention as size partly compensates: with the compute counted in full and the size not, part~(ii) reports exponents above one at the small end. A constant overhead, $q=0$, is worse: part~(iii) then has no interior minimizer at small sizes, because the overhead's compute is free (\cref{ex:protocol:fixed}).
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lcccc}
+\toprule
+counted size $\tilde N$ & $N/\tilde N$ & $\varepsilon$ & part (ii): $\tilde N$, $6ND$ & part (iii): $\tilde N$, $6\tilde ND$\\
+\midrule
+$10^{3}$ & 767 & $0.334$ & $1.35$ & $0.71$\\
+$10^{5}$ & $36.6$ & $0.352$ & $1.28$ & $0.77$\\
+$10^{6}$ & $8.66$ & $0.410$ & $1.10$ & $0.91$\\
+$10^{7}$ & $2.65$ & $0.585$ & $0.77$ & $0.93$\\
+$10^{8}$ & $1.36$ & $0.825$ & $0.55$ & $0.61$\\
+$10^{9}$ & $1.08$ & $0.953$ & $0.47$ & $0.49$\\
+\bottomrule
+\end{tabular}
+\caption{The local allocation exponent of \cref{prop:protocol:counting} when the embeddings are left out, for Transformers of width 40 times their depth (an assumption) with Kaplan et al.'s 50,257 tokens and 1,024 learned positions, and $\alpha_N=0.34$, $\alpha_D=0.28$, so that $a=0.45$ in full counts. A computation, not an experiment (\script{12-protocol-counting.py}).}
+\label{tab:protocol:family}
+\end{table}
+
+\subsection*{Penalties}
+
+A protocol that reads a configuration from a checkpoint, or starts every run with the same warm-up, measures a loss $\Loss_{\mathrm P}$ that differs from the loss $\Loss$ of the run a practitioner would make with that budget; call $g=\Loss_{\mathrm P}-\Loss$ the protocol's \term{penalty}\index{penalty of a protocol}. Whether it moves the exponent depends on its shape, not its size.
+
+\begin{proposition}[How a penalty moves the exponent]\label{prop:protocol:penalty}
+Let $\Loss(N,D)=E+A_NN^{-\alpha_N}+A_DD^{-\alpha_D}$ as in \cref{prop:protocol:counting}, and let a protocol measure $\Loss_{\mathrm P}=\Loss+g(D)$ with $g$ twice continuously differentiable. Write $s_g(D)=-Dg'(D)$ for the marginal value that the penalty adds to data, and let $a_{\mathrm P}$ be the exponent that \cref{lem:protocol:allocation} gives for $\Loss_{\mathrm P}$ at a minimizer where its hypotheses hold and $s_D+s_g>0$. Then $a_{\mathrm P}-a$ has the sign of
+\[
+-\frac{\dd}{\dd\ln D}\bigl(D^{\alpha_D}s_g(D)\bigr).
+\]
+The measured allocation thus tilts toward larger models where $D^{\alpha_D}s_g$ decreases, toward smaller ones where it increases, and not at all where it is constant; a constant penalty, or one proportional to the data term $A_DD^{-\alpha_D}$, leaves the exponent unchanged. For a penalty $g(N)$ of the model size, with $s_g=-Ng'(N)$ and $s_N+s_g>0$, $a_{\mathrm P}-a$ has the sign of $\dd(N^{\alpha_N}s_g)/\dd\ln N$.
+\end{proposition}
+
+\begin{proof}
+The plan is to compute the rate of decrease of the penalized marginal value and to note that the exponent of \cref{lem:protocol:allocation} is monotone in it. Under the protocol the size term is unchanged, so $\kappa_N=\alpha_N$, and the marginal value of data is $s_D+s_g$ with $s_D=\alpha_DA_DD^{-\alpha_D}$, whose derivative in $\ln D$ is $-\alpha_Ds_D$. Writing $s_g'$ for $\dd s_g/\dd\ln D$, its rate of decrease is
+$\kappa_D^{\mathrm P}=(\alpha_Ds_D-s_g')/(s_D+s_g)$, and therefore
+\[
+\kappa_D^{\mathrm P}-\alpha_D=-\frac{s_g'+\alpha_Ds_g}{s_D+s_g}=-\frac{D^{-\alpha_D}}{s_D+s_g}\,\frac{\dd}{\dd\ln D}\bigl(D^{\alpha_D}s_g\bigr).
+\]
+By the lemma $a_{\mathrm P}=\kappa_D^{\mathrm P}/(\alpha_N+\kappa_D^{\mathrm P})$, a strictly increasing function of $\kappa_D^{\mathrm P}$ where $\alpha_N+\kappa_D^{\mathrm P}>0$, and it equals $a$ when $\kappa_D^{\mathrm P}=\alpha_D$; since $s_D+s_g>0$, the sign of $a_{\mathrm P}-a$ is the stated one. A constant $g$ has $s_g=0$, and $g=\gamma A_DD^{-\alpha_D}$ has $D^{\alpha_D}s_g=\gamma\alpha_DA_D$, constant. For a penalty of the size the same computation gives $\kappa_N^{\mathrm P}-\alpha_N=-N^{-\alpha_N}(s_N+s_g)^{-1}\,\dd(N^{\alpha_N}s_g)/\dd\ln N$, and $a_{\mathrm P}=\alpha_D/(\kappa_N^{\mathrm P}+\alpha_D)$ decreases in $\kappa_N^{\mathrm P}$.
+\end{proof}
+
+A protocol can thus raise every loss by a third and leave the exponent alone, while a penalty of one percent concentrated at the smallest budgets moves it. The shapes of real penalties come from a model, not a proof.
+
+\begin{heuristic}[Warm-up and unfinished schedules]
+Model the loss of a run after $D$ examples, under a learning-rate schedule $\eta(\cdot)$ with peak $\eta_0$, by two effects: progress, which depends on the area $S=\int_0^D\eta(x)\dd x$ under the schedule, and a floor of noise proportional to the current rate,
+\[
+\Loss=E+A_NN^{-\alpha_N}+A_SS^{-\alpha_D}+c\,\eta(D),
+\]
+with constants $A_S,c\ge0$ that may depend on the model. It is a simplified relative of the laws of \textcite{TissueEtAl2025}, which combine a power law in the area with a term for annealing, and for SGD on a quadratic it holds in the sense that the stationary excess loss is proportional to the step (\cref{thm:heldfixed:nqm}) while progress is set by the accumulated steps. A run whose cosine schedule decays to zero at $D$ has $\eta(D)=0$ and $S=\eta_0D/2$, and the model reduces to the parametric law with $A_D=A_S(\eta_0/2)^{-\alpha_D}$.
+
+\emph{An unfinished schedule far from its end.} A checkpoint at $D$ of a cosine over $D_{\max}\gg D$ has run at nearly the peak rate, so $\eta(D)\approx\eta_0$ and $S\approx\eta_0D$, twice the area of the matched run. Its penalty is
+\[
+g(D)\approx-\bigl(1-2^{-\alpha_D}\bigr)A_DD^{-\alpha_D}+c\,\eta_0 :
+\]
+the doubled area helps, by a fixed fraction of the data term, and the unannealed noise hurts, by a constant, so the checkpoint wins at small $D$ and loses at large $D$. By \cref{prop:protocol:penalty} neither part moves the exponent; what does is second-order, the dependence of the floor $c\,\eta_0$ on the model through the learning-rate rule, and checkpoints read late enough that the schedule has begun to decay, and its sign depends on details.
+
+\emph{A fixed warm-up.} A linear warm-up over $W$ examples followed by the peak rate has area $\eta_0(D-W/2)$ for $D\ge W$. Against the same run without warm-up its penalty is
+\[
+g(D)=A_S\eta_0^{-\alpha_D}\Bigl[\bigl(D-\tfrac W2\bigr)^{-\alpha_D}-D^{-\alpha_D}\Bigr]\approx\tfrac12\alpha_DA_S\eta_0^{-\alpha_D}\,W D^{-\alpha_D-1}\qquad(D\gg W),
+\]
+so that $D^{\alpha_D}s_g$ is proportional to $W/D$ and decreases. By the proposition the measured exponent is too large, and more so the closer the compute-optimal runs are to the warm-up. A warm-up proportional to the run, $W=\rho D$, makes the penalty proportional to the data term, and the tilt disappears.
+\end{heuristic}
+
+The model accounts for the ordering of \cref{tab:protocol:porian}. A warm-up of 1.57 billion tokens, comparable to the compute-optimal runs at small budgets, tilts the allocation toward large models, and Porian et al.'s warm-up of $N$ tokens, which their compute-optimal runs exceeded at least fivefold, removes most of the tilt. A schedule read far from its end changes the losses much and the exponent little, in a direction the model leaves open: matched decay lowered the exponent by $0.03$ for Porian et al.\ and raised it by $0.03$ for \textcite{PearceSong2024}. Hoffmann et al.'s argument assumed a penalty that grows as the budget shrinks relative to the schedule; at Kaplan et al.'s frontier the schedules had barely begun to decay, and the penalty was close to its constant value.
+
+\subsection*{Hyperparameters and cheaper protocols}
+
+Hyperparameters held fixed across scales add a penalty that depends on both $N$ and $D$: a learning rate tuned for one size is wrong for others, and a batch fixed in tokens gives small budgets few steps. Kaplan et al.\ corrected the batch with the critical-batch model of \textcite{McCandlishEtAl2018}, which turned $0.88$ into $0.73$ (\cref{ex:protocol:batch}). The maximal-update parametrization of \textcite{YangEtAl2021} keeps the best hyperparameters fixed as the width grows: tuned on a proxy of 40 million parameters at $7\%$ of the pretraining cost, a 6.7-billion-parameter GPT-3 beat the published one. Alternatively, laws for the hyperparameters can be fitted on small runs first, as DeepSeek did, $\eta_{\protocolopt}=0.3118\,C^{-0.125}$ and $B_{\protocolopt}=0.2920\,C^{0.3271}$; either way the hyperparameters become a stated function of scale.
+
+A matched run for every configuration costs about twice as much as one run per model, by Porian et al.'s accounting. A constant learning rate followed by a short cooldown matches a cosine of the same length \parencite{HageleEtAl2024}, so one constant-rate run per size, with a cooldown branched from its checkpoint at each budget, serves every budget without an unfinished schedule; the idea was used earlier to scale vision Transformers \parencite{ZhaiEtAl2022}, was named \term{warmup--stable--decay}\index{warmup--stable--decay schedule} in the MiniCPM preprint \parencite{HuEtAl2024}, and by Hägele et al.'s estimate would have more than halved the compute of the Chinchilla study. A constant rate without cooldown recovers the exponent, according to Porian et al.\ and Pearce and Song, but not the loss. Laws for the loss along arbitrary schedules \parencite{TissueEtAl2025} predict every schedule from a few runs, with the cautions of \cref{ch:fitting,ch:extrapolation}.
+
+\section{In the laboratory: a miniature allocation study}\label{sec:protocol:lab}
+
+Both labs use the teacher task of \script{labkit.py}:\sidenote{Runs of protocols K and KW stop after the last cell they are read at; later steps could not change their checkpoints.} eight-dimensional normal inputs, targets from a fixed random two-layer network plus noise of variance $0.01$, the irreducible loss, and one pass over fresh examples per run, the book's online protocol. The models are two-layer ReLU perceptrons of widths 4 to 91, with $N=w^2+11w+1$ parameters, from 61 to 9,283, trained by Adam with batches of 64 and a learning rate $0.032\,(16/w)^{1/2}$ chosen by a small sweep under matched schedules and used in every protocol. A run of $D$ examples costs $C=6ND$ operations; thirteen compute levels a factor $\sqrt2$ apart span $1.2\times10^7$ to $7.7\times10^8$.
+
+\begin{lab}{Three protocols for one allocation}{12-protocol-schedules}\label{lab:protocol:schedules}
+\labpart{Setup} Ten widths; runs of 32 to 4,096 steps ($D$ from 2,048 to 262,144) on the cells near each width's compute-optimal budgets. \emph{Protocol C}: a separate run for every cell, its cosine schedule ending with the run. \emph{Protocol K}: one run per width with a cosine over $2^{15}$ steps, eight times the longest cell, read at the cells as checkpoints. \emph{Protocol KW}: as K, with a linear warm-up over its first 393 steps, the $1.2\%$ of the schedule that Kaplan et al.'s 3,000 warm-up steps were of 250,000. Six seeds, each fixing initial weights, order and examples in all three protocols; one test set of 8,192 examples. Losses on isoFLOP lines by interpolation in $\log D$, the optimum at each level by a parabola in $\log N$ through the five widths nearest the minimum, $a$ by least squares, and 95\% intervals from 2,000 bootstrap resamples of the seeds, paired across protocols. 468 runs, 1,044 losses; about three minutes.
+\labpart{Predict first} Will a checkpoint of the unfinished schedule have a higher or a lower loss than the matched run on the same data? Will the optima move, and the exponent? Which way will the warm-up push them?
+\labpart{Look for} The ratio of checkpoint to matched loss as the data grow; the shift of the optima against the factor $2^a$ that a doubled area predicts; the paired differences of the exponents; the spread of the checkpoint losses.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},lplot,
+  width=0.485\linewidth,height=0.345\linewidth]
+\nextgroupplot[xmode=log,ymode=log,lloglog,title={(a) isoFLOP curves},xlabel={parameters $N$},ylabel={test loss},
+  xmin=45,xmax=14000,ymin=0.0125,ymax=0.075,xtick={100,1000,10000},xticklabels={$10^2$,$10^3$,$10^4$},
+  ytick={0.015,0.02,0.03,0.05},yticklabels={$0.015$,$0.02$,$0.03$,$0.05$}]
+\pgfplotsinvokeforeach{0,6,12}{
+\addplot[run,forget plot,restrict expr to domain={\thisrow{level}}{#1:#1}] table[x=N,y=loss] {figures/data/12-protocol-schedules-isoruns-C.dat};
+\addplot[runB,forget plot,restrict expr to domain={\thisrow{level}}{#1:#1}] table[x expr=\thisrow{N}*1.09,y=loss] {figures/data/12-protocol-schedules-isoruns-K.dat};
+\addplot[protocol fitA,forget plot,restrict expr to domain={\thisrow{level}}{#1:#1},unbounded coords=jump] table[x=N,y=fit] {figures/data/12-protocol-schedules-iso-C.dat};
+\addplot[protocol fitB,forget plot,restrict expr to domain={\thisrow{level}}{#1:#1},unbounded coords=jump] table[x expr=\thisrow{N}*1.09,y=fit] {figures/data/12-protocol-schedules-iso-K.dat};
+\addplot[mean,ebars,forget plot,restrict expr to domain={\thisrow{level}}{#1:#1}] table[x=N,y=loss,y error=hw] {figures/data/12-protocol-schedules-iso-C.dat};
+\addplot[meanB,ebarsB,forget plot,restrict expr to domain={\thisrow{level}}{#1:#1}] table[x expr=\thisrow{N}*1.09,y=loss,y error=hw] {figures/data/12-protocol-schedules-iso-K.dat};
+}
+\nextgroupplot[xmode=log,ymode=log,lloglog,title={(b) compute-optimal size},xlabel={compute $C$ (operations)},ylabel={optimal size $N_{\protocolopt}$},
+  xmin=9e6,xmax=1e9,ymin=60,ymax=3000,xtick={1e7,1e8,1e9},ytick={100,1000},yticklabels={$10^2$,$10^3$},
+  legend pos=north west,legend cell align=left]
+\addplot[protocol fitA,forget plot] table[x=C,y=fit] {figures/data/12-protocol-schedules-opt-C.dat};
+\addplot[protocol fitB,forget plot] table[x=C,y=fit] {figures/data/12-protocol-schedules-opt-K.dat};
+\addplot[protocol fitC,forget plot] table[x=C,y=fit] {figures/data/12-protocol-schedules-opt-KW.dat};
+\addplot[mean,error bars/.cd,y dir=both,y explicit,error bar style={inkblue,line width=0.5pt},
+  error mark options={inkblue,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x=C,y=Nstar,y error plus expr=\thisrow{hi}-\thisrow{Nstar},y error minus expr=\thisrow{Nstar}-\thisrow{lo}] {figures/data/12-protocol-schedules-opt-C.dat};
+\addlegendentry{C, $a=0.64$}
+\addplot[meanB,error bars/.cd,y dir=both,y explicit,error bar style={rubric,line width=0.5pt},
+  error mark options={rubric,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x expr=\thisrow{C}*1.07,y=Nstar,y error plus expr=\thisrow{hi}-\thisrow{Nstar},y error minus expr=\thisrow{Nstar}-\thisrow{lo}] {figures/data/12-protocol-schedules-opt-K.dat};
+\addlegendentry{K, $a=0.56$}
+\addplot[protocol meanC,error bars/.cd,y dir=both,y explicit,error bar style={ink!70,line width=0.5pt},
+  error mark options={ink!70,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x expr=\thisrow{C}/1.07,y=Nstar,y error plus expr=\thisrow{hi}-\thisrow{Nstar},y error minus expr=\thisrow{Nstar}-\thisrow{lo}] {figures/data/12-protocol-schedules-opt-KW.dat};
+\addlegendentry{KW, $a=0.66$}
+\end{groupplot}
+\end{tikzpicture}
+\caption{\Cref{lab:protocol:schedules}: teacher task, two-layer MLPs of widths 4 to 91, six seeds (0--5) per protocol. (a)~IsoFLOP curves at $1.2\times10^7$, $9.6\times10^7$ and $7.7\times10^8$ operations (top to bottom): the loss of each width at the number of examples that spends the budget, for matched schedules (circles, solid parabolas) and checkpoints of an unfinished schedule (squares, dashed, shifted right). Hollow marks: single seeds; filled: means with 95\% $t$-intervals; parabolas in $\log N$ through the five widths nearest each minimum. (b)~The compute-optimal size at each level for protocols C (circles), K (squares) and KW (diamonds), with 95\% intervals from 2,000 bootstrap resamples of the seeds (offset horizontally), and the fitted power laws.}
+\label{fig:protocol:schedules}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} Under matched schedules the compute-optimal size grew from 98 parameters at the smallest budget to 1,206 at the largest (\cref{fig:protocol:schedules}b), with exponent $a=0.637$ (95\% bootstrap interval $0.617$ to $0.666$, \cref{thm:toolkit:bootstrap}). The isoFLOP curves were shallow near their minima (\cref{fig:protocol:schedules}a), as Kaplan et al.\ had noted for theirs, so each optimum carries a wide interval and the exponent rests on the trend across thirteen of them.
+
+Checkpoints of the unfinished schedule beat matched runs on short runs and lost on long ones (\cref{fig:protocol:penalty}a): the ratio of their losses was $0.85$ to $0.94$ up to 8,192 examples and $1.14$ to $1.36$ from 16,384 on, the change of sign that the heuristic predicts, from twice the area early to the unannealed noise later. Checkpoints were also noisier, with a median coefficient of variation over seeds of $10.8\%$ against $6.4\%$. Along the frontier, protocol K's losses were higher than C's by $5\%$ at the smallest budget and $41\%$ at the largest (point estimates). Its optima were larger than C's by a factor of $1.60$ on average over the levels (95\% bootstrap interval $1.13$ to $1.73$), against $2^{a}=1.55$ for a doubled area, and its exponent was $0.562$ ($0.497$ to $0.626$), lower than C's by $0.074$ (paired interval $0.015$ to $0.149$). Reading checkpoints thus tilted the allocation toward smaller models, as in the small experiments of \textcite{PearceSong2024} and against Hoffmann et al.'s argument, by more than the $0.03$ that Porian et al.\ found with the other sign.
+
+With the warm-up, checkpoint losses were $7.7$ times those of matched runs at 2,048 examples and $1.8$ times at 4,096, and within a few percent of the checkpoints without warm-up from 16,384 on: a penalty concentrated at small budgets. It raised the exponent over protocol K by $0.096$ (paired interval $0.016$ to $0.195$), the direction and about the size of Porian et al.'s warm-up correction, to $0.659$ ($0.537$ to $0.741$), within $0.02$ of the matched protocol: here the two choices of Kaplan et al.'s protocol nearly cancel, and only the three-way comparison shows that each moved the exponent. The setting was chosen for speed, and the sign of the first effect is fragile: a pilot with batches of 32, half the learning rate, a coarser grid and two seeds gave an exponent $0.03$ larger with checkpoints than with matched runs, Porian et al.'s sign.
+
+\begin{lab}{What counts as a parameter}{12-protocol-counting}\label{lab:protocol:counting}
+\labpart{Setup} The matched runs of \cref{lab:protocol:schedules}, reanalyzed without new training. The input layer ($9w$ parameters) plays the embedding and the output layer ($w+1$) the head, so that the counted size is the hidden layer, $\tilde N=w^2+w$, a third to nine tenths of $N$. Three conventions: full ($N$, $6ND$), relabeled ($\tilde N$, $6ND$) and Kaplan et al.'s ($\tilde N$, $6\tilde ND$); the estimator and bootstrap of \cref{lab:protocol:schedules}; predictions of \cref{prop:protocol:counting} with $\alpha_N,\alpha_D$ estimated on the full-count frontier and the known floor. A few seconds.
+\labpart{Predict first} At width 10, what are $\tilde N/N$ and $\varepsilon$? By how much will each partial convention raise the exponent, and which will raise it more?
+\labpart{Look for} The optima in the three conventions; the measured exponents against the proposition; how the predicted local exponent changes along the frontier.
+\end{lab}
+
+\paragraph{What happened.} The same runs gave three exponents (\cref{fig:protocol:penalty}b): $0.637$ in full counts, $0.797$ ($0.768$ to $0.839$) relabeled, and $0.744$ ($0.714$ to $0.795$) in Kaplan et al.'s convention, $0.108$ above the full count (paired interval $0.062$ to $0.161$). To check \cref{prop:protocol:counting} we need the exponents of the law: along the full-count frontier the loss above the floor fell like $C^{-0.451}$, which is $C^{-\alpha_N\alpha_D/(\alpha_N+\alpha_D)}$ for the parametric law, and with $a$ this gives the point estimates $\alpha_N=0.71$ and $\alpha_D=1.24$, steeper than in language models because the teacher is smooth. Part~(iii) then predicts local exponents falling from $0.74$ to $0.69$ along the Kaplan-count frontier, $0.72$ on average, and part~(ii) from $0.89$ to $0.73$ along the relabeled one, $0.80$ on average; the fits gave $0.744$ and $0.797$. Between the three numbers only the bookkeeping changed, and it moved the exponent more than either choice of schedule did, with an overhead of at most two thirds of a model on the frontier, against $94\%$ in Kaplan et al.'s two-layer model of width 128 (\cref{tab:protocol:family}).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},lplot,
+  width=0.485\linewidth,height=0.345\linewidth]
+\nextgroupplot[xmode=log,ymode=log,lloglog,title={(a) checkpoint loss / matched loss},xlabel={examples $D$},ylabel={ratio of losses},
+  xmin=1500,xmax=360000,ymin=0.7,ymax=14,xtick={1e4,1e5},ytick={0.8,1,1.5,2,4,8},yticklabels={$0.8$,$1$,$1.5$,$2$,$4$,$8$},
+  legend pos=north east,legend cell align=left]
+\addplot[reference,forget plot,domain=1500:360000,samples=2] {1};
+\addplot[runB,forget plot] table[x expr=\thisrow{D}*0.95,y=rK] {figures/data/12-protocol-schedules-penalty-cells.dat};
+\addplot[protocol runC,forget plot] table[x expr=\thisrow{D}*1.05,y=rW] {figures/data/12-protocol-schedules-penalty-cells.dat};
+\addplot[meanB,error bars/.cd,y dir=both,y explicit,error bar style={rubric,line width=0.5pt},
+  error mark options={rubric,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x expr=\thisrow{D}*0.95,y=rK,y error plus expr=\thisrow{rKhi}-\thisrow{rK},y error minus expr=\thisrow{rK}-\thisrow{rKlo}] {figures/data/12-protocol-schedules-penalty.dat};
+\addlegendentry{unfinished schedule (K)}
+\addplot[protocol meanC,error bars/.cd,y dir=both,y explicit,error bar style={ink!70,line width=0.5pt},
+  error mark options={ink!70,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x expr=\thisrow{D}*1.05,y=rW,y error plus expr=\thisrow{rWhi}-\thisrow{rW},y error minus expr=\thisrow{rW}-\thisrow{rWlo}] {figures/data/12-protocol-schedules-penalty.dat};
+\addlegendentry{and warm-up (KW)}
+\nextgroupplot[xmode=log,ymode=log,lloglog,title={(b) three ways of counting},xlabel={compute as counted},ylabel={optimal size as counted},
+  xmin=4e6,xmax=1e9,ymin=20,ymax=2000,xtick={1e7,1e8,1e9},ytick={100,1000},yticklabels={$10^2$,$10^3$},
+  legend pos=north west,legend cell align=left]
+\addplot[protocol fitA,forget plot] table[x=C,y=fit] {figures/data/12-protocol-counting-opt-full.dat};
+\addplot[protocol fitC,forget plot] table[x=C,y=fit] {figures/data/12-protocol-counting-opt-relabel.dat};
+\addplot[protocol fitB,forget plot] table[x=C,y=fit] {figures/data/12-protocol-counting-opt-kaplan.dat};
+\addplot[mean,error bars/.cd,y dir=both,y explicit,error bar style={inkblue,line width=0.5pt},
+  error mark options={inkblue,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x=C,y=Nstar,y error plus expr=\thisrow{hi}-\thisrow{Nstar},y error minus expr=\thisrow{Nstar}-\thisrow{lo}] {figures/data/12-protocol-counting-opt-full.dat};
+\addlegendentry{$N$ and $6ND$, $a=0.64$}
+\addplot[protocol meanC,error bars/.cd,y dir=both,y explicit,error bar style={ink!70,line width=0.5pt},
+  error mark options={ink!70,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x=C,y=Nstar,y error plus expr=\thisrow{hi}-\thisrow{Nstar},y error minus expr=\thisrow{Nstar}-\thisrow{lo}] {figures/data/12-protocol-counting-opt-relabel.dat};
+\addlegendentry{$\tilde N$ and $6ND$, $a=0.80$}
+\addplot[meanB,error bars/.cd,y dir=both,y explicit,error bar style={rubric,line width=0.5pt},
+  error mark options={rubric,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x=C,y=Nstar,y error plus expr=\thisrow{hi}-\thisrow{Nstar},y error minus expr=\thisrow{Nstar}-\thisrow{lo}] {figures/data/12-protocol-counting-opt-kaplan.dat};
+\addlegendentry{$\tilde N$ and $6\tilde ND$, $a=0.74$}
+\end{groupplot}
+\end{tikzpicture}
+\caption{(a)~\Cref{lab:protocol:schedules}: the loss of a checkpoint over that of the matched run with the same width, seeds and examples, for the unfinished schedule (squares) and with Kaplan et al.'s fraction of warm-up (diamonds). Hollow: geometric means over the six seeds for each width; filled: geometric means over widths, with 95\% $t$-intervals over widths. (b)~\Cref{lab:protocol:counting}: the matched runs under three counting conventions, $\tilde N=w^2+w$ leaving out the input and output layers; optima with 95\% bootstrap intervals over seeds, and fitted power laws.}
+\label{fig:protocol:penalty}
+\end{fullwidth}
+\end{figure}
+
+The miniature reproduced the ordering of the post-mortem: counting moved the exponent most, by $0.11$, the warm-up next, by $0.10$ over the protocol without it, and the unfinished schedule least, by $0.07$, in a direction set by details. It differs from the language-model studies in spanning two decades of compute rather than three to eight, in a data exponent about four times larger, and in a learning-rate rule tuned under matched schedules, which may favor protocol C.
+
+\section{Protocol}\label{sec:protocol:protocol}
+
+\begin{protocol}{A protocol card for a scaling study}\label{prot:protocol:card}
+\item Count size and compute as the operations the model performs: every layer that multiplies, the output layer included; if a convention leaves something out, then state what, and how large a share of the smallest model it is.
+\item Train every configuration as it would be trained at that budget: a schedule that ends with the run, or a cooldown from a constant-rate checkpoint; if budgets are read off a longer schedule, then say so and give the ratio of each checkpoint to the schedule's length.
+\item Make the warm-up a small fraction of every run, and check that the compute-optimal runs end long after it.
+\item Set the learning rate, the batch size and the optimizer constants for each scale, by sweeps at small scale, a transfer rule or a fitted law for the hyperparameters, and report the rule.
+\item Choose the range of sizes so that the counting convention does not matter, or state the exponent as local to the range.
+\item Repeat every configuration with several seeds at the small scales, and report the exponent with an interval from a bootstrap over seeds, together with the loss at the optimum.
+\item Estimate the exponent in two ways, such as isoFLOP parabolas and a parametric law, and publish the card, the seven items of \cref{def:protocol:card}, with the losses of every run.
+\end{protocol}
+
+The card makes an exponent reproducible and comparable, not a law of nature. It does not protect against data that change the exponent, as DeepSeek's range from $0.45$ to $0.58$ shows, against a law that bends beyond the range studied (\cref{ch:extrapolation}), or against a fit that has not converged (\cref{ch:fitting}); and compute-optimal concerns training alone, while a model that will answer many requests is cheaper to serve when smaller and trained longer \parencite{SardanaEtAl2024}. The card has a cost: matched schedules double the compute of a study, and per-scale tuning adds sweeps. When that is unaffordable, train one constant-rate run per size with cooldowns from its checkpoints, transfer the hyperparameters with a parametrization designed for it, and report which items of the card were left at defaults.
+
+\begin{exercises}
+\item \consolidation (Local exponents along the frontier.) For $\Loss(N,D)=E+A_NN^{-\alpha_N}+A_DD^{-\alpha_D}$ at the compute-optimal allocation of \cref{ch:fitting}, (a) show that $\Loss_{\protocolopt}(C)-E\propto C^{-\gamma}$ with $\gamma=\alpha_N\alpha_D/(\alpha_N+\alpha_D)$, so that the local exponent of $\Loss_{\protocolopt}$ in $C$ is $\gamma(1-E/\Loss_{\protocolopt})$; (b) with Hoffmann et al.'s $E=1.69$, $A_N=406.4$, $A_D=410.7$, $\alpha_N=0.34$, $\alpha_D=0.28$, compute it at $10^{19}$ and $10^{21}$ operations and compare with Kaplan et al.'s $0.050$. \hint{$N_{\protocolopt}=G(C/6)^a$ and $D_{\protocolopt}=G^{-1}(C/6)^{1-a}$ with $G=(\alpha_NA_N/(\alpha_DA_D))^{1/(\alpha_N+\alpha_D)}$; the answers are near $0.07$ and $0.04$.}\label{ex:protocol:frontier}
+
+\item \consolidation (A constant overhead.) In \cref{prop:protocol:counting} let $e>0$ be constant. (a) Show that $\varepsilon=\tilde N/N$ and $\dd\ln\varepsilon/\dd\ln\tilde N=1-\varepsilon$, so part~(iii) applies exactly where $\varepsilon>(1-\alpha_D)/(1+\alpha_N)$. (b) Show that below this threshold a stationary point of the loss at fixed $\tilde C$ is a local maximum, and that the loss tends to $E+A_Ne^{-\alpha_N}$ as $\tilde N\to0$; what does the study then conclude about its smallest models?\label{ex:protocol:fixed}
+
+\item \consolidation (How long may a warm-up be?) In the heuristic model a run with a linear warm-up over $W$ examples and $D\ge W$ has the data term $A_S\eta_0^{-\alpha_D}(D-W/2)^{-\alpha_D}$. (a) Show that its marginal value falls at the rate $\kappa_D=\alpha_D+(1+\alpha_D)x/(1-x)$, $x=W/(2D)$. (b) With $\alpha_N=\alpha_D=0.3$, find the largest $W/D$ at which the exponent of \cref{lem:protocol:allocation} is within $0.02$ of $a=0.5$. (c) Apply (b) to Kaplan et al.'s warm-up of 1.57 billion tokens at budgets whose compute-optimal runs have at most 10 billion. \hint{(b) gives $W/D\approx0.04$.}\label{ex:protocol:warmup}
+
+\item \consolidation (The batch adjustment.) Kaplan et al.\ replaced the compute $C$ of a run at batch $B$ by $C_{\min}=C/(1+B/B_{\mathrm{crit}})$, with $B_{\mathrm{crit}}=B_*\Loss^{-1/\alpha_B}$, $B_*=2\times10^8$ tokens and $\alpha_B=0.21$. (a) Show that a constant ratio $B/B_{\mathrm{crit}}$ along the frontier would leave the exponent unchanged. (b) With $B=2^{19}$, compute $C_{\min}/C$ at losses of 4 and 3 nats, convert the losses into compute with the unadjusted law $\Loss\propto C^{-0.057}$, and estimate $\dd\ln C_{\min}/\dd\ln C$ between them. (c) Show that the adjusted exponent is the raw one divided by this derivative, and compare $0.88$ divided by your estimate with $0.73$.\label{ex:protocol:batch}
+
+\item \labwork (Warmup--stable--decay.) Add to the script of \cref{lab:protocol:schedules} a protocol whose cells are constant-rate runs with a linear cooldown to zero over their last $20\%$, branched from one constant-rate run per width. Predict from the heuristic how its losses and exponent compare with protocols C and K, then run it and count its steps against protocol C. \hint{\script{labkit.py} has the schedule \texttt{wsd}.}\label{ex:protocol:wsd}
+
+\item \labwork (The learning-rate rule.) Rerun \cref{lab:protocol:schedules} with one learning rate, $0.016$, for all widths, and then with $0.032\,(16/w)$. How do the ratio of checkpoint to matched loss across widths and the difference between the exponents of K and C change? Explain with the part of \cref{prop:protocol:penalty} about penalties of the size.\label{ex:protocol:lrrule}
+
+\item \labwork (Only the head.) In \script{12-protocol-counting.py} leave out only the output layer, as Porian et al.\ left out the head. Predict the exponent from \cref{prop:protocol:counting}, then check; why is the effect smaller than for a language model's head?\label{ex:protocol:head}
+
+\item \design (Ten runs.) With ten runs of at most $10^{20}$ operations, estimate the allocation exponent of a new architecture: choose sizes, budgets and schedules, say which items of the protocol card you can do properly, and how you will report the uncertainty of $a$.\label{ex:protocol:tenruns}
+
+\item \design (Hungrier for parameters?) A team claims an allocation exponent of $0.58$ for its architecture against $0.50$ for a standard Transformer. Design the comparison: which items of the card the arms must share and which be tuned for each, and how many budgets and seeds detect a difference of $0.08$, by the delta method (\cref{thm:toolkit:delta}) or a paired bootstrap over seeds.\label{ex:protocol:compare}
+
+\item \critique (The longest run's checkpoints.) A paper on scaling laws for a new optimizer says: \enquote{to save compute, we read the loss of smaller budgets from the checkpoints of our longest run, whose cosine schedule spans 100 billion tokens}; its compute-optimal runs use 2 to 20 billion tokens. What does the protocol measure, which way are its losses and exponent likely biased, and what should the authors have run at similar cost?\label{ex:protocol:critique1}
+
+\item \critique (A small-scale exponent.) A study of protein language models fits $N_{\protocolopt}\propto C^{0.62}$ on 1 to 50 million non-embedding parameters, with 33 tokens and 1,024 learned positions, and concludes that data are worth less for proteins than for text. Audit the conclusion with \cref{prop:protocol:counting}, starting from the overhead at width 256.\label{ex:protocol:critique2}
+
+\item \research (Allocation with tuned hyperparameters.) Open: an estimator of the allocation exponent that treats the learning rate and batch size at each scale as nuisance parameters, with a valid interval and without a sweep at every scale; and a size variable (total parameters, non-embedding parameters, operations per token) for which the exponent is constant over the widest range.\label{ex:protocol:research}
+\end{exercises}
+
+\notesandrefs
+Power laws for the error of deep networks against data were measured across translation, language modeling, images and speech by \textcite{HestnessEtAl2017}; \textcite{KaplanEtAl2020} extended them to model size and compute and turned them into an allocation rule. The parametric fit of \textcite{HoffmannEtAl2022} has been refitted by \textcite{BesirogluEtAl2024}, the subject of \cref{ch:fitting}. The two reconstructions of the discrepancy, \textcite{PorianEtAl2024} from new experiments and \textcite{PearceSong2024} from published numbers, appeared within weeks of each other in June 2024, each citing the other as concurrent work.
+
+The cosine schedule comes from the warm restarts of \textcite{LoshchilovHutter2017}, used in language models as a single cycle; \textcite{SchaippEtAl2025} found that the loss curves of cosine and cooldown schedules closely track a bound from convex optimization, a step toward a theory of the unfinished schedule. Read before their end, schedules mislead comparisons of optimizers (\cref{ch:budgets}) and of efficient training methods (\cref{ch:heldfixed}) as well; how far a fitted law may be extended is the subject of \cref{ch:extrapolation}.
+
+\paragraph{Translating the literature.} \Textcite{KaplanEtAl2020} write $N$ for our counted size $\tilde N$ and $C$ for our $\tilde C=6\tilde ND$, and $C_{\min}$ for the compute adjusted to the critical batch size; their $\alpha_N$, $\alpha_D$, $\alpha_C^{\min}$ keep their names but are local exponents in the sense of \cref{prop:protocol:local}, and their law $\Loss(N,D)$ is not separable. \Textcite{HoffmannEtAl2022} write $A,B,\alpha,\beta$ for our $A_N,A_D,\alpha_N,\alpha_D$, and their Approach~2 is our protocol C with an isoFLOP estimator. \Textcite{PorianEtAl2024} count in $N$ every linear layer, the head included, and write $N^\star$ for $N_{\protocolopt}$. \Textcite{PearceSong2024} write $N_T$ and $N_{\setminus E}$ for our $N$ and $\tilde N$ and $g$ for the exponent of part~(iii) of \cref{prop:protocol:counting}; their schemes~3 and~4 are our protocols K and C. \Textcite{BiEtAl2024} measure size by $M$, the non-embedding operations per token, so that $C=MD$. Constant learning rate with cooldown \parencite{HageleEtAl2024} is the warmup--stable--decay schedule.
+
+\printchapterbib
+\end{refsection}

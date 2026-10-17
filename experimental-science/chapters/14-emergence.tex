@@ -1,0 +1,397 @@
+% Chapter 14 of Deep Learning as an Experimental Science: emergent abilities and the metric.
+\newcommand{\emergenceEM}{\mathrm{EM}}
+\newcommand{\emergenceeff}{\mathrm{eff}}
+\newcommand{\emergenceKL}{\mathrm{KL}}
+\labchapter{The Metric Makes the Phenomenon}{Emergent abilities and the smooth change beneath them}{Some abilities of large language models emerge abruptly and unpredictably with scale.}{Wei et al.\ (2022), drawing on Ganguli et al.\ (2022) and the BIG-bench collaboration; the received reading of their survey}{Artifact, in large part: most abrupt curves were exact-match or multiple-choice readings, on few items, of a quantity that changes smoothly; a few transitions are sharp under every metric.}{ch:emergence}
+\begin{refsection}[chapters/14-emergence.bib]
+
+\begin{chaptersummary}
+In 2022 Wei et al.\ collected scaling curves on which a family of language models scored at chance up to some size and far above it beyond, and called such abilities emergent: present in larger models, absent in smaller ones, and not predictable from them. Most of these curves were exact-match or multiple-choice scores read on tens to thousands of items, and the same outputs scored by a continuous metric, or measured with more resolution, change smoothly; the abruptness came largely from the metric. The method treats a metric as a transformation of a latent quantity: exact match on $L$ tokens turns a power law in the per-token log error into a Gumbel curve in the logarithm of model size, whose location moves with $L$ while its width does not; a count of zero bounds a success rate only below about $3/m$, and an exact-match count keeps a vanishing fraction of the information in per-token scores. In the laboratory, exact match on ten digits emerges in a family of digit classifiers whose per-digit cross-entropy falls steadily, a curve fitted to per-digit accuracy predicts it, fifty items scored digit by digit show what five thousand scored by exact match cannot, and a sparse-parity network shows what a transition looks like when the metric does not make it.
+\end{chaptersummary}
+
+\section{The claim: abilities that appear with scale}\label{sec:emergence:claim}
+
+By 2020 the loss of a language model had become predictable: \textcite{KaplanEtAl2020} found the test loss falling as a power law in parameters, data, and compute, over more than seven orders of magnitude. Tasks were another matter. GPT-3 was trained in eight sizes, from 125 million to 175 billion parameters, all on 300 billion tokens, and asked to do arithmetic from a few worked examples in its prompt \parencite{BrownEtAl2020}. Each of ten tests had 2,000 random problems, and an answer counted only if it was exactly right. The largest model added three-digit numbers correctly 80.4\% of the time; the 13-billion-parameter model, the second largest, solved two-digit additions and subtractions about half the time and every other operation less than 10\% of the time.
+
+\Textcite{GanguliEtAl2022} drew the general lesson, under the heading of abrupt, specific capability scaling. On three-digit addition, every GPT-3 model below 6 billion parameters was right less than 1\% of the time, the 13-billion model 8\% and the largest 80\%; Gopher on a multitask examination and a family of program-synthesis models showed similar jumps. Their explanation was that a single task is a tiny slice of the distribution that a model predicts, so that it can change quickly while the loss over the whole distribution changes smoothly, as the weather of one day is harder to predict than the average of a season.\sidenote{Ganguli et al.\ wrote for policymakers as well as researchers: their paper argues that the combination of predictable loss and unpredictable capabilities shapes how such models are developed and deployed.} The BIG-bench collaboration, 450 authors at 132 institutions, built 204 tasks to probe what models of millions to hundreds of billions of parameters could do \parencite{SrivastavaEtAl2023}. To flag tasks whose score stays flat across several model sizes and then jumps, it defined a statistic, \term{breakthroughness},\index{breakthroughness}\sidenote{For scores $y_1,\dots,y_n$ at increasing scales, breakthroughness is the overall improvement $\sgn(\argmax_i y_i-\argmin_i y_i)(\max_iy_i-\min_iy_i)$ divided by the square root of the median of the squared increments $(y_{i+1}-y_i)^2$: large when most steps are flat and one is not.} and found that the tasks with breakthrough behavior often involved several steps or brittle metrics.
+
+\Textcite{WeiEtAl2022} gave the phenomenon its name and its definition: an ability is \term{emergent}\index{emergent ability} if it is ``not present in smaller models but is present in larger models.'' Such abilities, they argued, cannot be predicted by extrapolating the performance of smaller models; on a plot of performance against scale they show performance near random up to a threshold and far above random after it, which the authors compared to a phase transition.
+
+\begin{finding}[\textcite{WeiEtAl2022}, Figure~2, Table~1 and Appendix~E]\label{fd:emergence:wei}
+Eight few-shot tasks, evaluated on five model families (LaMDA, GPT-3, Gopher, Chinchilla, and PaLM), had near-random performance up to a scale and well-above-random performance after it. On modified arithmetic from BIG-bench, performance jumped at $2\cdot10^{22}$ training FLOPs (13 billion parameters) for GPT-3 and at $10^{23}$ (68 billion) for LaMDA; on a multitask examination (MMLU), models of about $10^{22}$ FLOPs were no better than guessing and models of $3$--$5\cdot10^{23}$ FLOPs (70 to 280 billion parameters) far better; on word-in-context judgments only PaLM at 540 billion parameters rose above chance. Prompting strategies such as chain of thought helped only above a scale, about $10^{23}$ FLOPs for LaMDA. The authors classified 210 BIG-bench tasks by hand, two of them agreeing on every task labeled emergent: 67 emergent, 58 smoothly increasing, 45 flat, and 40 in none of these classes.
+\end{finding}
+
+The paper was published in \emph{Transactions on Machine Learning Research} with a survey certification, and the word spread: by November 2022 Wei listed 137 emergent abilities on his blog, 67 of them BIG-bench tasks and 51 subjects of the multitask examination \parencite{Wei2022Blog}. Its section on emergent risks argued that harmful behaviors could appear with scale in the same way. The received claim was the one at the head of this chapter: some abilities emerge abruptly and unpredictably as models grow.
+
+\paragraph{What was right.} The curves were real readings of real scores, and the authors anticipated the objection this chapter develops. They wrote that the scale of emergence depends on data and training and is not an immutable property of an ability; that exact match on long targets may disguise compounding incremental improvements as emergence; and, in an appendix, that the cross-entropy of the targets improved at small scales on all six BIG-bench tasks they examined, while the scores stayed at random \parencite{WeiEtAl2022}. They also found emergence on three generative tasks under every metric BIG-bench provided, including BLEU and ROUGE, which give partial credit, and on classification tasks where the answer is a single choice. And for many tasks the all-or-nothing score is the one that matters: an arithmetic answer with one wrong digit is wrong \parencite{Wei2023Blog}.
+
+\section{The experiment: a handful of models and one score}\label{sec:emergence:experiment}
+
+Stripped of its details, each curve of \cref{fd:emergence:wei} comes from the following design.
+
+\begin{experiment}[a scaling curve of a few-shot task; Brown et al.\ 2020, Wei et al.\ 2022]
+\field{question}{From what scale on can a model family do the task from a few examples in its prompt?}
+\field{treatment}{model scale: parameters and training compute, within a family trained on the same data}
+\field{levels}{GPT-3: eight sizes from 125M to 175B parameters; Wei et al.: five families spanning about $10^{18}$ to $10^{24}$ training FLOPs}
+\field{tuned}{nothing per task: one prompt with a few worked examples}
+\field{held fixed}{data and recipe within a family; prompt, examples, greedy decoding, and the scoring rule}
+\field{response}{exact match of the generated answer, BLEU, or multiple-choice grade, on 2,000 problems per arithmetic test or on the 32 to several thousand items of a BIG-bench task}
+\field{replicates}{one model per size; one evaluation per model and task}
+\field{analysis}{score against training FLOPs on a logarithmic axis; emergent if near random below a scale and well above it beyond, judged by eye}
+\end{experiment}
+
+What could this design show? Within its scope it is sound: the models and prompts are fixed, and the score is a deterministic function of the outputs. It cannot show where the abruptness comes from. A rule that gives credit only when every token of an answer is right, or only when the right option outranks every wrong one, can turn a gradual change in the model into an abrupt change in the score, and with one score per model the design cannot tell the two apart. Three further features matter, and the post-mortem turns on each. The points have no intervals, and a reading of zero on $m$ items is consistent with every success rate below about $3/m$ (\cref{thm:toolkit:clopper}): 0.15\% for 2,000 arithmetic problems, 9\% for the 32 items of BIG-bench's logical-arguments task, whose noise Wei et al.\ noted. The sizes are far apart: GPT-3's two largest models differ by a factor of 13.5 in parameters, and a curve that rises within that factor has no point on its rise.\sidenote{Wei et al.\ note that no single measure captures scale: Chinchilla has a quarter of Gopher's parameters and uses similar training compute.} And ``near random'' describes a floor, the chance level, on which a thresholded score sits until the model has improved enough to leave it.
+
+\section{The post-mortem: the metric, the items, and the spacing}\label{sec:emergence:postmortem}
+
+\paragraph{Changing the metric.} \Textcite{SchaefferMirandaKoyejo2023} proposed that emergent abilities appear only under metrics that scale a model's per-token error rate nonlinearly or discontinuously.\sidenote{The paper received an outstanding paper award at NeurIPS 2023.} In their model, if the per-token cross-entropy falls as a power law in the number of parameters and the tokens of an answer are right independently, then exact match on $L$ tokens is the exponential of $-L$ times a power law, a curve that looks sharp on a logarithmic axis, while the number of wrong tokens, a token edit distance,\index{token edit distance} falls smoothly; \cref{prop:emergence:gumbel} makes the model exact. They tested it on the four GPT-3-family models then available to the public, from 350 million to 175 billion parameters, with two-digit multiplication and four-digit addition in two-shot prompts. Scored by exact match, answers of four or five digits showed the familiar jump; scored by token edit distance, the same outputs improved smoothly and predictably with scale. With additional test problems, every model scored above chance even by exact match, on a curve that fell about geometrically with the length of the answer, as their model predicts.
+
+\paragraph{A meta-analysis.} Across BIG-bench, Schaeffer et al.\ computed breakthroughness for every combination of task, metric, and model family: at most 5 of the 39 preferred metrics produced emergence. Among the emergent abilities in Wei's hand-annotated list only 4 metrics occurred, and two of them accounted for more than 92\%: exact string match and multiple-choice grade, which counts an item as correct when the correct option receives the highest probability. For LaMDA, whose outputs are published with BIG-bench, they rescored the tasks on which it showed emergence under multiple-choice grade with the Brier score, and the emergence disappeared. The BIG-bench authors had seen the pattern: the log-likelihood of the target improved fairly gradually even on the tasks of highest breakthroughness, and smoother metrics revealed partial progress \parencite{SrivastavaEtAl2023}.
+
+\paragraph{Emergence made to order.} If the metric makes the jump, then a metric should be able to make one where nobody has seen one. Schaeffer et al.\ scored shallow autoencoders on CIFAR-100 by the fraction of images reconstructed with squared error below a cutoff, transformers classifying Omniglot characters by whether all of $L$ characters were right, and LeNet networks on MNIST by whether all of $K$ digits were right. Under the ordinary metrics all three families improved smoothly with size; under the thresholded ones each showed what looked like an emergent ability.\sidenote{Schaeffer et al.\ also separate emergence from grokking: grokking is studied in one model over training steps, with separate training and test curves, and emergence across the models of a family.} \Cref{lab:emergence:tokens} repeats the last experiment on the digits.
+
+\paragraph{Resolution.} \Textcite{HuEtAl2024} attacked the floor directly. Their evaluation, PassUntil,\index{PassUntil}\sidenote{PassUntil needs a task that random guessing cannot pass; Hu et al.\ leave multiple choice, with its chance level, to future work.} samples answers to an item until $r$ of them pass and estimates the pass probability by $r$ divided by the number of samples, the maximum-likelihood estimate under the negative binomial distribution, with up to $10^5$ samples per item. On two families of models from 0.03 to 2.4 billion parameters they measured pass rates of order $10^{-5}$ in the small models and found that $\ln(-\ln\text{pass rate})$ falls almost exactly linearly in $\ln N$, the signature of \cref{prop:emergence:gumbel}(iii); fitted on the models up to 1.5 billion parameters, the law predicted the 2.4-billion model's code-generation pass rate with a deviation of 0.05\%, as they report.\sidenote{The GPT-4 technical report forecast a coding pass rate in the same way, fitting the mean log pass rate as a power law in compute and keeping only problems that every model solved at least once within a large sample budget \parencite{OpenAI2023}; \cref{ch:extrapolation} discusses the forecast.} Predictability need not even use the scale axis: modeling the scores of about a hundred public models through a low-dimensional measure of capability, \textcite{RuanMaddisonHashimoto2024} found that several emergent phenomena follow smooth sigmoidal curves in that measure and can be predicted from smaller models.
+
+\paragraph{What remains.} Not every jump dissolves. On 5 of 8 BIG-bench tasks of unnatural in-context learning, Hu et al.\ found $\ln(-\ln\text{pass rate})$ concave in $\ln N$: the curve accelerated beyond the scaling law, which they call accelerated emergence, and a law fitted to smaller models does not predict it, however fine the resolution. \Textcite{DuEtAl2024} pre-trained more than 30 models from 300 million to 32 billion parameters on one corpus and found that performance tracks the pre-training loss whatever the size: on four benchmarks, among them the multitask examination and grade-school arithmetic, models of three sizes followed through training stayed at chance until their pre-training loss fell to about 2.2, and two continuous metrics, the probability of the correct choice and the Brier score, showed the same threshold, the Brier score never better than the 0.75 of uniform guessing before it. The probability of the correct option can rise while the model still cannot tell it from the wrong ones: on BIG-bench's periodic-elements task the log-likelihoods of right and wrong answers tracked each other up to $10^{10}$ parameters and then diverged \parencite{SrivastavaEtAl2023}, so that the quantity that matters, the margin between them, changed abruptly. Wei, replying to the critique, added that smooth surrogates had not yet forecast a jump and that some tasks show a kink even in cross-entropy \parencite{Wei2023Blog}.
+
+Genuine transitions are best documented in training time. In transformers of every size with more than one layer, \textcite{OlssonEtAl2022} found that the ability to use earlier context improves abruptly early in training, between about 2.5 and 5 billion tokens, together with the formation of induction heads and a bump in the training loss, the only place where the loss curve is not convex; the evidence is causal for small attention-only models and correlational for large ones. A network trained on division modulo 97 with half of the table fit its training data within $10^3$ steps, showed little sign of generalization until $10^5$ and generalized perfectly near $10^6$, its validation loss going through a double descent \parencite{PowerEtAl2022}. On sparse parities of $k$ out of $n$ bits, networks learn abruptly after about $n^{O(k)}$ steps, while gradient descent steadily amplifies the relevant features through a Fourier gap in the population gradient, progress that loss and error do not see \parencite{BarakEtAl2022}; progress measures\index{progress measure} for grokking tell the same story \parencite{NandaEtAl2023}. These transitions are sharp in continuous metrics too, and a verdict must name them.
+
+\begin{verdict}{artifact}
+The claim that abilities appear abruptly and unpredictably with scale did not survive as a general statement. Most of the abrupt curves were readings, by exact match or multiple-choice grade on tens to thousands of items, of quantities that change smoothly, and the same outputs scored by per-token likelihood, edit distance, or Brier score, or measured with enough items, change smoothly and predictably. What survives is narrower: thresholds in continuous quantities exist, such as the pre-training loss at which some benchmarks leave chance, the margin between right and wrong answers, accelerating pass rates, and the induction bump in training, and a claim of emergence must show one in a continuous metric rather than read it off a thresholded one.
+\end{verdict}
+
+\section{The method: a metric is a transformation}\label{sec:emergence:metric}
+
+Every score is computed from a model's outputs by a rule, and the rule sits between the model and the experimenter like an instrument between a sample and an observer. The first question about a curve of scores is what the rule does to the quantity beneath it.
+
+\begin{definition}[Latent quantity and metric]\label{def:emergence:metric}
+An evaluation scores a model on $m$ items. A \term{latent quantity}\index{latent quantity} of an item is a number computed from the model's predictive distribution that responds to arbitrarily small changes of it, such as the probability $q_i$ that the model assigns to the correct answer of item $i$ or its log-likelihood $\ln q_i$. A \term{metric}\index{metric} is a rule that maps the model's outputs on the $m$ items to a number; it is a \emph{threshold metric} if each item contributes only whether some latent quantity exceeds a threshold, as in exact match and multiple-choice grade, and a \emph{continuous metric} if it is a continuous function of the latent quantities, as in mean log-likelihood and the Brier score. A metric has a \term{floor}\index{floor effect} (a \emph{ceiling}) where it stops responding to decreases (increases) of the latent quantity, and its \term{resolution}\index{resolution} is the smallest change it can register; for a proportion of $m$ items, $1/m$.
+\end{definition}
+
+\paragraph{What a change of metric preserves.} \Textcite{Stevens1946} classified scales of measurement by the transformations they admit: every one-to-one relabeling for a nominal scale, every strictly increasing transformation for an ordinal scale, $y\mapsto ay+b$ with $a>0$ for an interval scale, and $y\mapsto ay$ for a ratio scale.\sidenote{Stevens also listed the statistics each scale permits: the median for ordinal scales, the mean for interval scales, the coefficient of variation for ratio scales.} A statement about measurements is meaningful on a scale when no admissible transformation changes its truth.\index{scale of measurement} Two metrics that are strictly increasing functions of one latent quantity rank the models of a family identically, so every ordinal statement carries over from one to the other. Statements about the shape of a curve do not. For every strictly increasing curve $\theta(x)$, every $x_0$, and every $h>0$, the strictly increasing map $g(u)=\Lambda\bigl((u-\theta(x_0))/h\bigr)$, with $\Lambda$ as in \cref{prop:emergence:gumbel}, makes $g(\theta(x))$ rise from near $0$ to near $1$ while $\theta(x)$ crosses an interval of length a few times $h$, as short as one likes. Abruptness is a property of a curve on a scale, and a claim of abruptness is a claim about the metric unless the question fixes the metric.
+
+The metric of most emergent abilities is exact match. Write $N$ for the number of parameters of a model, $p(N)$ for the probability that it gets one token of an answer right, and $\ell(N)=-\ln p(N)$ for the \term{per-token log error}\index{per-token log error}; for an answer sampled from the model, $\ell$ is the cross-entropy of the target token. The rate of exact matches on answers of $L$ tokens is $\emergenceEM_L(N)$, and $\Lambda(z)=\exp(-e^{-z})$ is the distribution function of the standard \term{Gumbel distribution}\index{Gumbel distribution}, the limit law of the maximum of many draws (\cref{thm:toolkit:orderstat}).
+
+\begin{proposition}[Exact match is a Gumbel curve]\label{prop:emergence:gumbel}\index{exact match}
+Suppose that the $L$ tokens of an answer are right independently, each with probability $p(N)$, and that the per-token log error follows the law
+\[
+\ell(N)=\ell_\infty+cN^{-\gamma},\qquad c>0,\ \gamma>0,\ \ell_\infty\ge0.
+\]
+Put $\beta=1/\gamma$ and $\mu_L=\ln(Lc)/\gamma$. Then the following hold for every $N>0$.
+\begin{enumerate}
+\item The exact-match rate is $\emergenceEM_L(N)=e^{-L\ell_\infty}\,\Lambda\bigl((\ln N-\mu_L)/\beta\bigr)$.
+\item The curves for different lengths are translates of one another in $\ln N$, with $\mu_{L'}-\mu_L=\ln(L'/L)/\gamma$. For $0<q_1<q_2<1$, the curve rises from the fraction $q_1$ to the fraction $q_2$ of its ceiling $e^{-L\ell_\infty}$ over an interval of $\ln N$ of length $\beta\ln\bigl(\ln(1/q_1)/\ln(1/q_2)\bigr)$, whatever $L$; from $10\%$ to $90\%$ this is $3.08\beta$. Its steepest slope, $\dd\emergenceEM_L/\dd\ln N=e^{-L\ell_\infty}\gamma/e$, is attained at $\ln N=\mu_L$.
+\item The double logarithm is affine: $\ln\bigl(-\ln\emergenceEM_L(N)-L\ell_\infty\bigr)=\ln(Lc)-\gamma\ln N$.
+\item As $N\to0$, $\emergenceEM_L(N)\,e^{L\ell_\infty}=\exp\bigl(-e^{\gamma(\mu_L-\ln N)}\bigr)$ falls to zero doubly exponentially in $\ln N$; as $N\to\infty$, $1-\emergenceEM_L(N)\,e^{L\ell_\infty}\sim LcN^{-\gamma}$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to write the exact-match rate in terms of $x=\ln N$ and to read off each part. By independence, all $L$ tokens are right with probability $p(N)^L=e^{-L\ell(N)}$, and the law for $\ell$ gives $\emergenceEM_L(N)=e^{-L\ell_\infty}\exp(-LcN^{-\gamma})$. Since $Lc>0$, the second factor's exponent can be written as
+\[
+LcN^{-\gamma}=\exp\bigl(\ln(Lc)-\gamma x\bigr)=\exp\bigl(-(x-\mu_L)/\beta\bigr),
+\]
+so that $\exp(-LcN^{-\gamma})=\Lambda\bigl((x-\mu_L)/\beta\bigr)$, which is part~(i).
+
+\emph{Part (ii).} The variable $z=(x-\mu_L)/\beta$ depends on $L$ only through $\mu_L$, which proves the first statement. The function $\Lambda$ increases strictly and $\Lambda(z)=q$ exactly when $z=-\ln\ln(1/q)$, so the fractions $q_1$ and $q_2$ of the ceiling are reached at values of $z$ that differ by $\ln\ln(1/q_1)-\ln\ln(1/q_2)$, and at values of $x$ that differ by $\beta$ times this; with $q_1=0.1$ and $q_2=0.9$ it is $\ln(2.3026/0.1054)=3.084$. For the slope, $\Lambda'(z)=u\,e^{-u}$ with $u=e^{-z}>0$, and $u\,e^{-u}$ is largest, with value $1/e$, at $u=1$, that is at $z=0$; since $\dd z/\dd x=1/\beta=\gamma$, the slope of $\emergenceEM_L$ in $x$ is at most $e^{-L\ell_\infty}\gamma/e$, with equality at $x=\mu_L$.
+
+\emph{Parts (iii) and (iv).} Taking logarithms in part~(i) gives $-\ln\emergenceEM_L-L\ell_\infty=LcN^{-\gamma}$, and taking logarithms once more gives part~(iii). As $x\to-\infty$, part~(i) reads $\exp(-e^{\gamma(\mu_L-x)})$ with an exponent that grows exponentially in $-x$. As $x\to\infty$, the quantity $t=LcN^{-\gamma}$ tends to $0$ because $\gamma>0$, and $1-e^{-t}\sim t$.
+\end{proof}
+
+The proposition is the model of \textcite{SchaefferMirandaKoyejo2023} made exact, and its part~(iii) is the task scaling law of \textcite{HuEtAl2024}. The per-token log error above its floor is a power law, a straight line on logarithmic axes, and $-\ln\emergenceEM_L-L\ell_\infty$ is $L$ times it. Exponentiating creates the S-shape, and the length of the answer moves it: a tenfold longer answer needs a model $10^{1/\gamma}$ times larger to reach the same fraction of its ceiling, and the rise spans the same factor $e^{3.08/\gamma}$ in $N$ at every length. The per-token accuracy, the case $L=1$, has the same shape, shifted to smaller models: where the long curves rise, it is already near its ceiling and changes slowly, and where it rises, the long curves sit on their floor, the doubly exponential left tail of $\Lambda$ (\cref{prop:emergence:resolution}). Tokens of different difficulty make $\ln(-\ln\emergenceEM_L)$ a convex function of $\ln N$ (\cref{ex:emergence:hetero}).
+
+\paragraph{Spacing.} If the models of a family are spaced by a factor $r$ in $N$, then about $3.08/(\gamma\ln r)$ of them fall where an exact-match curve rises from 10\% to 90\% of its ceiling. Between GPT-3's 13-billion and 175-billion models, $r=13.5$, and a curve with $\gamma>3.08/\ln13.5=1.19$ can rise from 10\% to 90\% between them, with no model on its rise: the plot shows a floor, then a jump.
+
+\paragraph{Multiple choice is a threshold too.} An item scored by multiple-choice grade counts as correct when the correct option receives a larger probability than every wrong one, that is when the margin between them is positive. Across items the expected grade is the fraction of items with a positive margin, one minus the distribution function of the margins at zero: smooth when the items differ widely in difficulty, sharp when they are alike, and flat at the chance level $1/K$ of $K$ options until the margins of many items move together (\cref{ex:emergence:mc}). The continuous alternatives are proper scores.\index{proper scoring rule}
+
+\begin{proposition}[Proper and improper scores]\label{prop:emergence:proper}
+An item has options $1,\dots,K$ with $K\ge2$; the model assigns them the probabilities $q=(q_1,\dots,q_K)$, nonnegative with sum $1$; the correct option $Y$ is random with distribution $\pi$ (for an item with one correct answer, $\pi$ puts mass $1$ on it). Let $k^\star(q)$ be the option with the largest $q_k$, ties broken by a fixed rule, and consider the \term{Brier score}\index{Brier score} $B(q,Y)=\sum_k(q_k-\ind\{Y=k\})^2$, the \term{log score}\index{log score} $S(q,Y)=\ln q_Y$ and the \term{multiple-choice grade}\index{multiple-choice grade} $G(q,Y)=\ind\{Y=k^\star(q)\}$.
+\begin{enumerate}
+\item The expected Brier score is $\E B(q,Y)=\sum_k(q_k-\pi_k)^2+1-\sum_k\pi_k^2$, a continuous function of $q$ whose unique minimum is at $q=\pi$.
+\item Let $\supp\pi=\{k:\pi_k>0\}$. If $q_k>0$ for every $k\in\supp\pi$, then the expected log score is $\E S(q,Y)=\sum_{k\in\supp\pi}\pi_k\ln\pi_k-\emergenceKL(\pi\,\|\,q)$ with $\emergenceKL(\pi\,\|\,q)=\sum_{k\in\supp\pi}\pi_k\ln(\pi_k/q_k)\ge0$, and otherwise it is $-\infty$; its unique maximum is at $q=\pi$.
+\item The expected grade is $\E G(q,Y)=\pi_{k^\star(q)}$. It is maximal at $q=\pi$, and also at every $q$ whose largest coordinate sits at a largest coordinate of $\pi$, and it is constant on each region where $k^\star(q)$ is constant.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+For part~(i), expand the square and use $\E\ind\{Y=k\}=\E\ind\{Y=k\}^2=\pi_k$:
+\[
+\E B=\sum_k\bigl(q_k^2-2q_k\pi_k+\pi_k\bigr)=\sum_k(q_k-\pi_k)^2+\sum_k(\pi_k-\pi_k^2),
+\]
+and $\sum_k\pi_k=1$. The first sum is a polynomial in $q$, zero exactly at $q=\pi$ and positive elsewhere.
+
+For part~(ii), the options outside $\supp\pi$ have probability zero and do not contribute to the expectation: $\E S=\sum_{k\in\supp\pi}\pi_k\ln q_k$, which is $-\infty$ when $q_k=0$ for some $k\in\supp\pi$. Otherwise, subtracting $\sum_{k\in\supp\pi}\pi_k\ln\pi_k$ leaves $-\emergenceKL(\pi\,\|\,q)$. Jensen's inequality for the concave logarithm, applied to the variable $q_Y/\pi_Y$ under $\pi$, gives
+\[
+-\emergenceKL(\pi\,\|\,q)=\sum_{k\in\supp\pi}\pi_k\ln\frac{q_k}{\pi_k}\le\ln\sum_{k\in\supp\pi}q_k,
+\]
+and the right side is at most $\ln1=0$ because the $q_k$ sum to $1$. Equality in Jensen's inequality requires $q_k/\pi_k$ to take one value for all $k\in\supp\pi$, and equality in the bound by $\ln1$ requires $\sum_{k\in\supp\pi}q_k=1$; together they force $q=\pi$.
+
+For part~(iii), $\E G=\Prob(Y=k^\star(q))=\pi_{k^\star(q)}$, which depends on $q$ only through $k^\star(q)$ and is at most $\max_k\pi_k$, with equality whenever $k^\star(q)$ is a largest coordinate of $\pi$; in particular at $q=\pi$.
+\end{proof}
+
+Both the Brier score and the log score are \emph{strictly proper}: a model optimizes its expected score only by reporting the true probabilities \parencite{GneitingRaftery2007}. For an item with one correct option $y$, $B=(1-q_y)^2+\sum_{k\ne y}q_k^2$ and $S=\ln q_y$ move whenever $q_y$ does; the grade moves only when $q_y$ overtakes the largest wrong option. A continuous metric removes the jumps that a threshold adds, but not a jump in the probabilities themselves, and it can rise without the model learning to discriminate, since raising the probability of every option raises that of the correct one; for multiple choice the latent quantity to watch is the margin, or the probability normalized over the options, as \textcite{DuEtAl2024} insist. The log score also magnifies changes near the floor, where $\dd\ln q/\dd q=1/q$ is largest; exact match flattens them.
+
+\section{The method: resolution, and transitions that are real}\label{sec:emergence:resolution}
+
+A score of zero is not a measurement of zero. The next proposition collects what a finite set of items can and cannot see, building on the exact binomial intervals of the appendix.
+
+\begin{proposition}[The resolution of a success rate]\label{prop:emergence:resolution}\index{rule of three}
+Let $X\sim\Bin(m,s)$ count the successes on $m$ independent items, each a success with probability $s\in(0,1)$.
+\begin{enumerate}
+\item No success is reported with probability $\Prob(X=0)=(1-s)^m\ge1-ms$. In particular, if $s\le\eps/m$, then the evaluation reports no success with probability at least $1-\eps$.
+\item If $X=0$, then the one-sided 95\% upper confidence bound for $s$ is $1-0.05^{1/m}<3/m$.
+\item Suppose that $s=\emergenceEM_L(N)$ as in \cref{prop:emergence:gumbel} with $\ell_\infty=0$, and evaluate it at a model $\Delta\ge0$ scale units before the midpoint, $\ln N=\mu_L-\Delta\beta$. Then $s=\exp(-e^\Delta)$, and the evaluation reports at least one success with probability at least $1/2$ if $m\ge\ln2\cdot\exp(e^\Delta)$, and with probability less than $1/2$ if $m<(1-s)\ln2\cdot\exp(e^\Delta)$.
+\item Suppose that each item has $L$ tokens, right independently with probability $p\in(0,1)$, so that $s=p^L$. The Fisher information about $p$ in the exact-match indicator of one item is the fraction
+\begin{equation}\label{eq:emergence:eff}
+\emergenceeff_L(p)=\frac{Lp^{L-1}(1-p)}{1-p^L}=\frac{L}{\sum_{i=0}^{L-1}p^{-i}}
+\end{equation}
+of the Fisher information in its $L$ token indicators. The fraction increases with $p$, tends to $1$ as $p\to1$, and satisfies $\emergenceeff_L(p)\le Lp^{L-1}$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+\emph{Part (i).} By independence $\Prob(X=0)=(1-s)^m$. The function $s\mapsto(1-s)^m-(1-ms)$ vanishes at $s=0$ and has derivative $m\bigl(1-(1-s)^{m-1}\bigr)\ge0$ on $[0,1]$, so it is nonnegative there (Bernoulli's inequality). If $s\le\eps/m$, then $1-ms\ge1-\eps$.
+
+\emph{Part (ii).} This is \cref{thm:toolkit:clopper}(ii) at level 95\%, which gives $1-0.05^{1/m}\le\ln(20)/m$, and $\ln20=2.996<3$.
+
+\emph{Part (iii).} At $\ln N=\mu_L-\Delta\beta$ the argument of $\Lambda$ in \cref{prop:emergence:gumbel}(i) is $-\Delta$, so $s=\exp(-e^{\Delta})$. At least one success has probability $1-(1-s)^m$, which is at least $1/2$ exactly when $m\ln\bigl(1/(1-s)\bigr)\ge\ln2$. The inequalities $s\le\ln\bigl(1/(1-s)\bigr)\le s/(1-s)$, which follow from $\ln(1+t)\le t$ applied to $t=-s$ and to $t=s/(1-s)$, show that $m\ge\ln2/s$ suffices and that $m<(1-s)\ln2/s$ makes the probability less than $1/2$; and $1/s=\exp(e^\Delta)$.
+
+\emph{Part (iv).} A Bernoulli variable whose success probability $\theta(p)$ depends smoothly on $p$ carries the Fisher information $\theta'(p)^2/\bigl(\theta(1-\theta)\bigr)$ about $p$. For the exact-match indicator $\theta=p^L$, which gives $L^2p^{2L-2}/\bigl(p^L(1-p^L)\bigr)=L^2p^{L-2}/(1-p^L)$. For one token $\theta=p$, which gives $1/\bigl(p(1-p)\bigr)$, and $L$ independent tokens carry $L$ times as much. The ratio is the first expression in \eqref{eq:emergence:eff}; dividing its numerator and denominator by $(1-p)p^{L-1}$ and using $1-p^L=(1-p)\sum_{j=0}^{L-1}p^j$ gives the second. Each $p^{-i}$ with $i\ge1$ decreases in $p$, so the sum decreases and the fraction increases; as $p\to1$ the sum tends to $L$; and the sum is at least its largest term $p^{-(L-1)}$, which gives the bound.
+\end{proof}
+
+Part~(iii) is the arithmetic of the floor. To see an exact-match curve, in the sense of one success with probability one half, one scale unit $\beta$ before its midpoint takes about 11 items; two units, 1,100; three units, $3.7\times10^8$. Whatever its size, a test set shows an exact-match curve only within two or three scale units of its rise, because the number of items needed grows doubly exponentially with the distance; repeated sampling, PassUntil's route, meets the same arithmetic, since it needs about $1/s$ samples per item. Part~(iv) prices the alternative: by the delta method (\cref{thm:toolkit:delta}), $p$ estimated from exact-match counts as $(X/m)^{1/L}$ has asymptotically $1/\emergenceeff_L(p)$ times the variance of the per-token proportion on the same items. At $p=1/2$ and $L=10$, $\emergenceeff_{10}=10/1023$: fifty items scored token by token carry as much information about $p$ as 5,100 scored by exact match. The per-token log-likelihood shares the advantage: its standard error is that of a mean of $mL$ terms at every scale, and it does not collapse as the success rate goes to zero.
+
+\paragraph{Genuine or metric-induced?} The verdict of \cref{sec:emergence:postmortem} names transitions that are sharp in continuous metrics. The method needs a test that tells them apart from the ones a metric makes.
+
+\begin{definition}[Metric-induced and genuine transitions]\label{def:emergence:genuine}
+Let the models of a family be ordered by a scale $x$, such as $\ln N$, the logarithm of compute, or the number of training steps, let $\theta(x)$ be a latent quantity measured on each, and let a metric be a fixed transformation $M=g(\theta)$. A rise of $M$ between $x_1$ and $x_2$ is \term{metric-induced}\index{transition!metric-induced} relative to $\theta$ if a smooth law for $\theta$, fitted to data that do not contain the rise, predicts through $g$ the values of $M$ between $x_1$ and $x_2$ within their measurement error. It is \term{genuine}\index{transition!genuine} relative to $\theta$ if $\theta$ itself departs from the law fitted outside $[x_1,x_2]$, by more than its measurement error, where $M$ rises.
+\end{definition}
+
+The definition is relative on purpose: a transition can be metric-induced relative to one latent quantity and genuine relative to another. On multiple-choice tasks the likelihood of the correct option may follow its law while the margin jumps; in sparse parity the loss jumps while a progress measure grows steadily (\cref{lab:emergence:parity}). The strongest form of the test predicts the larger models from the smaller ones, a backtest in the sense of \cref{ch:extrapolation}; \cref{prop:emergence:gumbel}(iii) supplies the transformation for exact match, and a concave double logarithm, Hu et al.'s accelerated emergence, is a departure that no resolution removes. The prompt, format, and examples of an evaluation move scores too, a separate source of variation (\cref{ch:instruments}).
+
+\section{In the laboratory: digits as tokens}\label{sec:emergence:lab}
+
+The first two labs use the recipe of \cref{ch:seeds} (two hidden ReLU layers, SGD with momentum 0.9 at learning rate 0.05, batch size 64, 20 epochs, labkit's split 0 with 1,258 training and 539 test digits) at fifteen widths from 1 to 512, from 87 to 301,066 parameters; width 64 is the network of \cref{ch:seeds}. A test digit plays the part of a token, and an answer of $L$ tokens is a sequence of $L$ test digits that the network must classify without a mistake.
+
+\begin{lab}{Digits as tokens}{14-emergence-tokens}\label{lab:emergence:tokens}
+\labpart{Setup} Twenty runs per width (seed $s$ for initialization and data order, $s=0,\dots,19$): 300 networks. Each is scored on the 539 test digits by per-digit accuracy $p$, by exact match on $L=3$ and $L=10$ digits, computed exactly over all sequences of $L$ test digits drawn with replacement (for one network, $p^L$), and by the per-digit cross-entropy. The law $\ell=\ell_\infty+cN^{-\gamma}$ is fitted to the mean per-digit accuracy alone (least squares on the double logarithm; bootstrap over runs). About a minute.
+\labpart{Predict first} At which width will exact match on ten digits pass 10\%? Will the cross-entropy show anything special there? By what factor in $N$ should the ten-digit curve lag the per-digit one?
+\labpart{Look for} One S-shape at three lengths, shifted and capped; parallel curves on the logarithmic scale; where the predictions for $L=3$ and $10$ miss, and why.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},lplot,lloglog,
+  width=0.5\linewidth,height=0.31\linewidth,xmode=log,log basis x=10,xmin=60,xmax=4.6e5,
+  xtick={100,1000,10000,100000},xticklabels={$10^2$,$10^3$,$10^4$,$10^5$},
+  xlabel={parameters $N$}]
+\nextgroupplot[title={(a) three scores of the same networks},ylabel={score},ymin=-0.03,ymax=1.03,
+  ytick={0,0.25,0.5,0.75,1},yticklabels={0,0.25,0.50,0.75,1},minor y tick num=4,
+  legend to name=leg:emergence:tokens,legend columns=4,
+  legend style={/tikz/every even column/.append style={column sep=5mm}}]
+\addplot[run,forget plot] table[x=N,y=acc] {figures/data/14-emergence-tokens-runs.dat};
+\addplot[only marks,mark=triangle,mark size=1.3pt,color=muted,mark options={line width=0.3pt,fill=white},forget plot]
+  table[x=N,y=em3] {figures/data/14-emergence-tokens-runs.dat};
+\addplot[runB,forget plot] table[x=N,y=em10] {figures/data/14-emergence-tokens-runs.dat};
+\addplot[inkblue,line width=0.9pt,no marks,forget plot] table[x=N,y=em1] {figures/data/14-emergence-tokens-fit.dat};
+\addplot[ink,line width=0.8pt,dash pattern=on 3pt off 2pt,no marks,forget plot] table[x=N,y=em3] {figures/data/14-emergence-tokens-fit.dat};
+\addplot[extrapolation,forget plot] table[x=N,y=em10] {figures/data/14-emergence-tokens-fit.dat};
+\addplot[mean,ebars] table[x=N,y=acc,y error=acc_hw] {figures/data/14-emergence-tokens-mean.dat};
+\addlegendentry{per-digit accuracy ($L=1$)}
+\addplot[only marks,mark=triangle*,mark size=2pt,color=ink,mark options={fill=ink,draw=white,line width=0.2pt},
+  error bars/y dir=both,error bars/y explicit,error bars/error bar style={ink,line width=0.5pt},
+  error bars/error mark options={ink,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x=N,y=em3,y error=em3_hw] {figures/data/14-emergence-tokens-mean.dat};
+\addlegendentry{exact match, $L=3$}
+\addplot[meanB,ebarsB] table[x=N,y=em10,y error=em10_hw] {figures/data/14-emergence-tokens-mean.dat};
+\addlegendentry{exact match, $L=10$}
+\addlegendimage{only marks,mark=diamond*,mark size=2.1pt,color=rubricdeep,mark options={fill=white,line width=0.5pt}}
+\addlegendentry{per-digit cross-entropy}
+\nextgroupplot[title={(b) the same on a logarithmic scale},ymode=log,log basis y=10,
+  ylabel={$-\ln(\text{score})$, cross-entropy (nats)},ymin=0.015,ymax=40,
+  ytick={0.1,1,10},yticklabels={0.1,1,10}]
+\addplot[inkblue,line width=0.9pt,no marks] table[x=N,y=nl1] {figures/data/14-emergence-tokens-fit.dat};
+\addplot[ink,line width=0.8pt,dash pattern=on 3pt off 2pt,no marks] table[x=N,y=nl3] {figures/data/14-emergence-tokens-fit.dat};
+\addplot[extrapolation] table[x=N,y=nl10] {figures/data/14-emergence-tokens-fit.dat};
+\addplot[mean,ebars] table[x=N,y=nl1,y error=nl1_hw] {figures/data/14-emergence-tokens-mean.dat};
+\addplot[only marks,mark=triangle*,mark size=2pt,color=ink,mark options={fill=ink,draw=white,line width=0.2pt},
+  error bars/y dir=both,error bars/y explicit,error bars/error bar style={ink,line width=0.5pt},
+  error bars/error mark options={ink,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x=N,y=nl3,y error=nl3_hw] {figures/data/14-emergence-tokens-mean.dat};
+\addplot[meanB,ebarsB] table[x=N,y=nl10,y error=nl10_hw] {figures/data/14-emergence-tokens-mean.dat};
+\addplot[only marks,mark=diamond*,mark size=2.1pt,color=rubricdeep,mark options={fill=white,line width=0.5pt},
+  error bars/y dir=both,error bars/y explicit,error bars/error bar style={rubricdeep,line width=0.5pt},
+  error bars/error mark options={rubricdeep,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x=N,y=ce,y error=ce_hw] {figures/data/14-emergence-tokens-mean.dat};
+\end{groupplot}
+\end{tikzpicture}\par\smallskip
+\pgfplotslegendfromname{leg:emergence:tokens}
+\caption{\Cref{lab:emergence:tokens}: 300 digit classifiers, 20 runs (seeds 0--19) at each of 15 widths from 1 to 512, scored on the 539 test digits. (a)~Per-digit accuracy and exact match on sequences of 3 and 10 digits; hollow marks are single runs, filled marks means with 95\% $t$-intervals over the 20 runs. Solid line: the curve of \cref{prop:emergence:gumbel} fitted to per-digit accuracy; dashed lines: its predictions for $L=3$ and $10$, with no further parameters. (b)~Means of $-\ln(\text{score})$ for the three lengths, with the same curves, and of the per-digit cross-entropy, with 95\% $t$-intervals.}\label{fig:emergence:tokens}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} Per-digit accuracy rises from \pmval{0.198}{0.039} at width 1 (mean and 95\% $t$-interval half-width over 20 runs) to 0.957 at width 12 and levels off at 0.974; exact match on ten digits is \pmval{0.0013}{0.0007} at width 2, \pmval{0.130}{0.044} at width 4 and 0.524 at width 8, and levels off at 0.77 (\cref{fig:emergence:tokens}a). The per-digit cross-entropy falls from \pmval{1.90}{0.13} nats at width 1 to 0.15 at width 128 and rises slightly at the widest networks (0.17 at width 512), whose confident mistakes the log score penalizes and accuracy does not. On a ladder of factors of two with one run per width (seed 0), exact match on ten digits reads 0.000, 0.003, 0.196, 0.386, and 0.634 at widths 1, 2, 4, 8, and 16, absent in the first two models and present from the third, while the cross-entropy of the same networks, 1.77, 1.11, 0.56, 0.38, and 0.20 nats, shows nothing at width 4.
+
+The law fitted to per-digit accuracy has $\gamma=1.80$ (bootstrap 95\% interval 1.75 to 1.87) and $\ell_\infty=0.0279$ (0.0273 to 0.0286), with a root-mean-square residual of 0.13 on the double logarithm. It places the midpoints for $L=1$, 3, and 10 at $N=129$, 238, and 464: the ten-digit curve lags the per-digit one by the factor $10^{1/\gamma}=3.6$, and each rises from 10\% to 90\% of its ceiling over a factor of 5.5 in $N$. With no parameter fitted to them, the predicted curves for $L=3$ and $10$ miss the measured means by at most 0.046 and 0.073, and fall inside the 95\% intervals at 7 and 8 of the 15 widths. The misses have three sources. Between widths 4 and 8 the per-digit curve is a little steeper than the law, and the tenth power multiplies the error: at width 6 the law gives $p=0.892$ against 0.907, and exact match 0.32 against 0.39. Means over runs are not powers of means: at width 1, where the runs' accuracies range from 0.06 to 0.29, the mean of $p^{10}$ is about eleven times the tenth power of the mean. And in the tail an error $\delta$ in $\ell$ becomes an error $L\delta$ in $\ln\emergenceEM_L$: at width 1 the law predicts $10^{-9}$ for ten digits, the runs average $10^{-6}$. On the logarithmic scale of panel~(b) the three lengths run parallel, and the cross-entropy falls with them from the smallest network on.
+
+\begin{lab}{The number of items}{14-emergence-items}\label{lab:emergence:items}
+\labpart{Setup} The 300 networks of \cref{lab:emergence:tokens}, scored on a fixed benchmark of 5,000 items, each a sequence of 10 test digits drawn with replacement (generator seed 1414); the first 50 and 500 items form the smaller benchmarks. One network per width makes a model family, so the runs give 20 families. Exact-match counts with Clopper--Pearson intervals, zero counts with the bound of \cref{prop:emergence:resolution}(ii); the per-digit cross-entropy over the $10m$ digit slots of the $m$ items. About a minute.
+\labpart{Predict first} Which widths will read zero on 50 items? How many items does it take to see the next smaller network? Will the cross-entropy on 50 items show a trend at the widths that read zero?
+\labpart{Look for} Zero counts and their bounds against the exact value $p^{10}$; the apparent onset in each family and how it moves with $m$; the interval of the cross-entropy at the smallest widths.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},lplot,lloglog,
+  width=0.5\linewidth,height=0.31\linewidth,xmode=log,ymode=log,log basis x=10,log basis y=10,
+  xmin=60,xmax=4.6e5,xtick={100,1000,10000,100000},xticklabels={$10^2$,$10^3$,$10^4$,$10^5$},
+  xlabel={parameters $N$}]
+\nextgroupplot[title={(a) exact match on ten digits},ylabel={exact-match rate},ymin=5e-8,ymax=2,
+  ytick={1e-7,1e-5,1e-3,1e-1},yticklabels={$10^{-7}$,$10^{-5}$,$10^{-3}$,$10^{-1}$},
+  legend to name=leg:emergence:items,legend columns=4,
+  legend style={/tikz/every even column/.append style={column sep=5mm}}]
+\addplot[reference,line width=0.7pt] table[x=N,y=em] {figures/data/14-emergence-items-pool.dat};
+\addlegendentry{exact value $p^{10}$}
+\addplot[only marks,mark=square*,mark size=1.6pt,color=rubric,mark options={fill=rubric,draw=white,line width=0.2pt},
+  error bars/y dir=both,error bars/y explicit,error bars/error bar style={rubric,line width=0.5pt},
+  error bars/error mark options={rubric,rotate=90,mark size=1.5pt,line width=0.5pt}]
+  table[x=Nplot,y=em,y error plus=plus,y error minus=minus] {figures/data/14-emergence-items-m50.dat};
+\addlegendentry{$m=50$}
+\addplot[only marks,mark=*,mark size=1.6pt,color=inkblue,mark options={fill=inkblue,draw=white,line width=0.2pt},
+  error bars/y dir=both,error bars/y explicit,error bars/error bar style={inkblue,line width=0.5pt},
+  error bars/error mark options={inkblue,rotate=90,mark size=1.5pt,line width=0.5pt}]
+  table[x=Nplot,y=em,y error plus=plus,y error minus=minus] {figures/data/14-emergence-items-m500.dat};
+\addlegendentry{$m=500$}
+\addplot[only marks,mark=diamond*,mark size=2pt,color=ink,mark options={fill=ink,draw=white,line width=0.2pt},
+  error bars/y dir=both,error bars/y explicit,error bars/error bar style={ink,line width=0.5pt},
+  error bars/error mark options={ink,rotate=90,mark size=1.5pt,line width=0.5pt}]
+  table[x=Nplot,y=em,y error plus=plus,y error minus=minus] {figures/data/14-emergence-items-m5000.dat};
+\addlegendentry{$m=5000$}
+\addplot[only marks,mark=triangle,mark size=2.3pt,color=rubric,mark options={rotate=180,line width=0.5pt},forget plot]
+  table[x=Nplot,y=bound] {figures/data/14-emergence-items-m50-zero.dat};
+\addplot[only marks,mark=triangle,mark size=2.3pt,color=inkblue,mark options={rotate=180,line width=0.5pt},forget plot]
+  table[x=Nplot,y=bound] {figures/data/14-emergence-items-m500-zero.dat};
+\addplot[only marks,mark=triangle,mark size=2.3pt,color=ink,mark options={rotate=180,line width=0.5pt},forget plot]
+  table[x=Nplot,y=bound] {figures/data/14-emergence-items-m5000-zero.dat};
+\nextgroupplot[title={(b) per-digit cross-entropy on the same items},ylabel={cross-entropy (nats)},
+  ymin=0.03,ymax=3,ytick={0.1,1},yticklabels={0.1,1}]
+\addplot[reference,line width=0.7pt] table[x=N,y=ce] {figures/data/14-emergence-items-pool.dat};
+\addplot[only marks,mark=square*,mark size=1.6pt,color=rubric,mark options={fill=rubric,draw=white,line width=0.2pt},
+  error bars/y dir=both,error bars/y explicit,error bars/error bar style={rubric,line width=0.5pt},
+  error bars/error mark options={rubric,rotate=90,mark size=1.5pt,line width=0.5pt}]
+  table[x=Nplot,y=ce,y error=hw] {figures/data/14-emergence-items-m50-ce.dat};
+\addplot[only marks,mark=*,mark size=1.6pt,color=inkblue,mark options={fill=inkblue,draw=white,line width=0.2pt},
+  error bars/y dir=both,error bars/y explicit,error bars/error bar style={inkblue,line width=0.5pt},
+  error bars/error mark options={inkblue,rotate=90,mark size=1.5pt,line width=0.5pt}]
+  table[x=Nplot,y=ce,y error=hw] {figures/data/14-emergence-items-m500-ce.dat};
+\addplot[only marks,mark=diamond*,mark size=2pt,color=ink,mark options={fill=ink,draw=white,line width=0.2pt},
+  error bars/y dir=both,error bars/y explicit,error bars/error bar style={ink,line width=0.5pt},
+  error bars/error mark options={ink,rotate=90,mark size=1.5pt,line width=0.5pt}]
+  table[x=Nplot,y=ce,y error=hw] {figures/data/14-emergence-items-m5000-ce.dat};
+\end{groupplot}
+\end{tikzpicture}\par\smallskip
+\pgfplotslegendfromname{leg:emergence:items}
+\caption{\Cref{lab:emergence:items}: one model family (seed 0, one network per width) scored on benchmarks of $m=50$, $500$, and $5000$ items of ten test digits, nested; marks for the three benchmarks are offset sideways for legibility. (a)~Exact-match rates with 95\% Clopper--Pearson intervals; hollow downward triangles are zero counts, drawn at their one-sided 95\% upper bound $1-0.05^{1/m}$; the dashed line is the exact value $p^{10}$ over all sequences. (b)~Per-digit cross-entropy over the $10m$ digit slots of the same items, with 95\% $t$-intervals; the dashed line is its value on all 539 test digits.}\label{fig:emergence:items}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} In family 0 (\cref{fig:emergence:items}a), 50 items read zero at widths 1 and 2, bounding the rate only below 5.8\%, and one success at width 3; 500 items read zero only at width 1 (bound 0.6\%) and one success at width 2; 5,000 items read zero at width 1 (bound 0.06\%) and 15 successes at width 2. The exact value at width 1, $1.6\times10^{-7}$, lies more than three orders of magnitude below every bound.\sidenote{Drawn with replacement from the 539 test digits, the items are independent given the network, so the counts are exactly binomial; the 539 digits are themselves a sample, whose noise \cref{ch:seeds} measures.} Across the 20 families the apparent onset, the smallest width with a success, was width 3 in 13 families and width 4 in 7 on 50 items; widths 2, 3, and 4 in 8, 8, and 4 families on 500 items, and in 15, 4, and 1 families on 5,000 items. A hundredfold increase in items moved the onset by about one model, as \cref{prop:emergence:resolution}(iii) predicts: on the fitted law width 2 sits 1.9 scale units before the ten-digit midpoint and width 1 sits 3.0 units before it. Width 1 read zero in every family at every $m$; at its median exact value, $5.5\times10^{-7}$, a success with probability one half would take about 1.3 million items. The shares of zero counts agree with the binomial prediction, the average of $(1-p^{10})^m$ over the families: 0.60 against 0.65 at width 2 on 500 items, 0.25 against 0.33 on 5,000, 0.35 against 0.38 at width 3 on 50 items.
+
+The cross-entropy on the same 50 items (\cref{fig:emergence:items}b) is \pmval{1.78}{0.06} nats at width 1, \pmval{1.18}{0.17} at width 2 and \pmval{0.81}{0.09} at width 3 (95\% $t$-intervals over 500 digit slots): the trend is plain from the smallest network on, where exact match reads zero. Per-digit accuracy on the same slots is as informative there: 0.206 at width 1 and 0.540 at width 2 (95\% Clopper--Pearson intervals 0.171 to 0.244 and 0.495 to 0.584). At large widths the interval grows to about half the value, since the log loss of an accurate network is dominated by a few confident mistakes; there exact match is well measured. In family 0, exact match keeps the fraction $\emergenceeff_{10}(p)=6\times10^{-6}$ of the per-digit information at width 1, 0.02 at width 2, 0.11 at width 3, 0.43 at width 4, and 0.83 at width 12.
+
+Both labs concern transitions that a metric makes. A positive control asks whether the method recognizes one that it does not make.
+
+\begin{lab}{A transition that the metric does not make}{14-emergence-parity}\label{lab:emergence:parity}
+\labpart{Setup} Sparse parity after \textcite{BarakEtAl2022}: inputs of 50 random signs $\pm1$, label the product of the first three; one hidden layer of 256 ReLU units, SGD with learning rate 0.1 on fresh batches of 32, logistic loss, 12,000 steps; ten runs (seed $s$ for initialization and data). Every 100 steps, on 4,000 fixed test strings: the test loss, the test error, and a progress measure, the largest share of a hidden unit's squared input weights on the three relevant inputs, divided by the share $3/50$ of a unit that ignores them (at most $50/3$). The transition time $t^\star$ of a run is the first evaluation with error below 0.25. About 30 seconds.
+\labpart{Predict first} Will the test loss, a continuous metric, fall gradually while the error stays at one half? Does anything move during the plateau?
+\labpart{Look for} The loss on the plateau against $\ln2=0.693$, the width of its drop, and the progress measure before the drop.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},lplot,
+  width=0.5\linewidth,height=0.25\linewidth,xmin=-4000,xmax=3000,
+  xtick={-4000,-2000,0,2000},xticklabels={$-4000$,$-2000$,$0$,$2000$},minor x tick num=1,
+  xlabel={steps relative to the transition, $t-t^\star$}]
+\nextgroupplot[title={(a) test loss and test error},ymin=-0.03,ymax=0.78,ytick={0,0.25,0.5,0.693},
+  yticklabels={0,0.25,0.50,$\ln2$}]
+\pgfplotsinvokeforeach{0,...,9}{
+\addplot[inkblue!75,line width=0.5pt,no marks,restrict expr to domain={\thisrow{seed}}{#1:#1}]
+  table[x=rel,y=loss] {figures/data/14-emergence-parity-runs.dat};
+\addplot[rubric!75,line width=0.5pt,densely dashed,no marks,restrict expr to domain={\thisrow{seed}}{#1:#1}]
+  table[x=rel,y=err] {figures/data/14-emergence-parity-runs.dat};}
+\nextgroupplot[title={(b) the progress measure},ymode=log,log basis y=10,ymin=2,ymax=22,
+  ytick={2,3,5,10,16.667},yticklabels={2,3,5,10,$50/3$},minor y tick num=0]
+\addplot[reference] coordinates {(-4000,16.667) (3000,16.667)};
+\pgfplotsinvokeforeach{0,...,9}{
+\addplot[inkblue!75,line width=0.5pt,no marks,restrict expr to domain={\thisrow{seed}}{#1:#1}]
+  table[x=rel,y=conc] {figures/data/14-emergence-parity-runs.dat};}
+\end{groupplot}
+\end{tikzpicture}
+\caption{\Cref{lab:emergence:parity}: ten runs (seeds 0--9) of a network with 256 hidden units learning the parity of 3 of 50 input bits, each aligned at its transition time $t^\star$ (from 3,200 to 7,500 steps). (a)~Test loss in nats (solid) and test error (dashed) on 4,000 test strings. (b)~The largest share of a hidden unit's squared input weights on the three relevant inputs, relative to an even spread; logarithmic scale, maximum $50/3$ (dashed).}\label{fig:emergence:parity}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} In all ten runs the test loss stayed between 0.693 and 0.720 nats, near the value $\ln2$ of a constant prediction, and the error above 0.477, for 2,700 to 7,000 steps; then the loss fell from 0.68 to below 0.05 within 1,000 to 1,300 steps, and the error with it (\cref{fig:emergence:parity}a). The transition times range from 3,200 to 7,500 steps (median 5,000). The continuous metric jumps with the threshold one: the transition is genuine relative to the loss in the sense of \cref{def:emergence:genuine}, and the protocol below must call it so. It is not genuine relative to everything. The progress measure (\cref{fig:emergence:parity}b) started at 2.3 to 3.1, the largest of 256 random shares, and stood at 2.7 to 4.5 two thousand steps before $t^\star$ and at 4.6 to 8.6 one thousand steps before, while the loss was still between 0.698 and 0.707: the network was finding the three relevant inputs during the plateau, the hidden progress of \textcite{BarakEtAl2022}, which neither loss nor error could see.
+
+The miniature reproduced the post-mortem: exact match on long answers emerged where per-digit metrics moved smoothly, a law fitted to one metric predicted the other, and the zero readings that make a curve look emergent were limits of resolution. It differs from language models in one respect: its per-digit accuracy is itself steep ($\gamma\approx1.8$, the whole rise within one decade of $N$), so the lengths shift one steep curve rather than turning a gradual one into a steep one.
+
+\section{Protocol}\label{sec:emergence:protocol}
+
+\begin{protocol}{Before announcing an emergent ability}\label{prot:emergence:announce}
+\item Record for every item the model's output, the log-probability of the reference answer and, for multiple choice, the probability of every option, not only the score.
+\item Plot the headline metric beside a continuous one on the same axis of scale: the per-token log-likelihood of the answer, a proper score, or the margin of the correct option over the best wrong one.
+\item Give every point an interval; draw zero counts as upper bounds of about $3/m$ on a logarithmic axis, and state $m$ and the chance level.
+\item Fit a law to the continuous metric on the smaller models and predict the headline metric for the larger ones through its transformation (for exact match, \cref{prop:emergence:gumbel}); report how far the measured curve departs from the prediction.
+\item Place enough models across the rise: several per scale unit $1/\gamma$ of the fitted law, or intermediate checkpoints.
+\item Call a transition genuine only if the continuous metric itself departs from its law where the headline metric rises, beyond its measurement error; then look for a progress measure.
+\item State the result as a property of the metric (``exact match rises from below 0.6\% to 40\% between $N_1$ and $N_2$''), not as the appearance of an ability.
+\end{protocol}
+
+The protocol separates a rise that the metric makes from a change in the model; it does not predict genuine transitions in models not yet trained, and it never shows that an ability is absent, only that its rate is below a bound. It needs per-item probabilities; for a model that returns only text, sample each item repeatedly, as PassUntil does, at a cost of about $1/s$ samples per item at success rate $s$. A continuous metric is not valid because it is continuous: the likelihood of one reference answer penalizes correct answers phrased differently, and the likelihood of the correct option can rise with the wrong ones. Where the headline metric is the one users need, as for an arithmetic answer, the protocol makes its rise predictable, not unimportant; and the prompt and format of the evaluation are a second instrument, the subject of \cref{ch:instruments}.
+
+\begin{exercises}
+\item \consolidation (The Gumbel curve.) (a) For $\ell(N)=cN^{-\gamma}$, show that $\emergenceEM_L$ has its inflection point in $\ln N$ where $\emergenceEM_L=1/e$. (b) With the law fitted in \cref{lab:emergence:tokens} ($\gamma=1.80$, $c=6425$, $\ell_\infty=0.0279$), compute the midpoints and ceilings for $L=30$ and $L=100$. What does the floor $\ell_\infty$ do to long answers?\label{ex:emergence:gumbel}
+
+\item \consolidation\hard (Easy and hard tokens.) Suppose token $j$ of an answer is right with probability $\exp(-c_jN^{-\gamma_j})$, independently of the others. Show that $F(x)=\ln(-\ln\emergenceEM_L)$, as a function of $x=\ln N$, equals $\ln\sum_je^{\ln c_j-\gamma_jx}$, that it is convex, and that its slope tends to $-\min_j\gamma_j$ as $x\to\infty$ and to $-\max_j\gamma_j$ as $x\to-\infty$. Which tokens govern the largest models? Compare with the sub-scaling growth of \textcite{HuEtAl2024}. \hint{a log-sum-exp of affine functions is convex; its slope is a weighted average of the $-\gamma_j$.}\label{ex:emergence:hetero}
+
+\item \consolidation (Multiple choice as a threshold.) An item is graded correct when the margin $D$ of the correct option over the best wrong option is positive. (a) Suppose that across items $D\sim\cN(\mu(N),\sigma^2)$; show that the expected grade is $\Phi(\mu(N)/\sigma)$; with $\mu(N)=a\ln(N/N_0)$, find the interval of $\ln N$ over which it rises from 10\% to 90\%, and its limit as $\sigma\to0$. (b) Show that if the $K$ options' scores are exchangeable, as for a model that cannot discriminate, then $\Prob(D>0)=1/K$. Which feature of the normal model fails at chance?\label{ex:emergence:mc}
+
+\item \consolidation (Counting zeros.) (a) Compute the 95\% Clopper--Pearson intervals for $1/500$ and $15/5000$, and the one-sided bound for $0/m$ at $m=50$, $500$, and $5000$; compare with $3/m$. (b) What does a score of 0\% on GPT-3's 2,000 arithmetic problems establish, and on the 32 items of a BIG-bench task? (c) Show that the two-sided 95\% upper limit after zero successes is $1-0.025^{1/m}\approx3.7/m$.\label{ex:emergence:zeros}
+
+\item \consolidation (The price of exact match.) (a) Derive \eqref{eq:emergence:eff} again by the delta method, comparing the asymptotic variance of $(X/m)^{1/L}$ with that of the per-token proportion. (b) At $p=0.9$ and $L=10$, how many items scored by exact match carry the information of 100 items scored per token? At $p=0.99$?\label{ex:emergence:eff}
+
+\item \labwork (Longer answers.) Add $L=30$ to \script{14-emergence-tokens.py}. Predict from the fitted law, before running, the factor by which its midpoint moves relative to $L=10$ and its ceiling; then compare, and check that the rise from 10\% to 90\% of the ceiling spans the same factor in $N$.\label{ex:emergence:longer}
+
+\item \labwork (Dependent tokens.) In \script{14-emergence-items.py}, build each item from ten test digits of one randomly chosen class. Predict whether exact match will lie above or below $p^{10}$, and why, before running; then measure, and say what happens to the prediction of \cref{lab:emergence:tokens}. \hint{the mean of a product of indicators is the product of their means plus covariance terms; per-class accuracies differ.}\label{ex:emergence:dependent}
+
+\item \labwork (Longer parities.) Run \script{14-emergence-parity.py} with 40 and 60 input bits. Observe how the plateau lengthens, whether the loss ever falls gradually, and how long before $t^\star$ the progress measure leaves its starting range.\label{ex:emergence:parity}
+
+\item \design (An evaluation that could find a genuine transition.) A lab will train 12 models from $10^8$ to $10^{11}$ parameters on the same data and can afford $10^6$ model calls to evaluate a new reasoning task whose answers are about 20 tokens long. Design the evaluation: metrics, items, samples per item, where to add intermediate checkpoints, and the prediction to register before the largest models are scored. What result would you accept as a genuine transition?\label{ex:emergence:design1}
+
+\item \design (No log-probabilities.) A model is reachable only through an interface that returns sampled text, and a pass rate near $10^{-4}$ must be estimated to within a factor of two at the smallest of five sizes. Compare sampling a fixed number of answers per item with sampling until the first pass, in the expected number of calls. \hint{the number of samples until the first pass is geometric.}\label{ex:emergence:design2}
+
+\item \critique (Emergence at ten billion.) A paper scores five models of 0.1, 0.5, 2, 10, and 50 billion parameters on 100 items whose answers are about 30 tokens long, by exact match: 0, 0, 0, 11, and 46 correct. It concludes that the ability emerges abruptly near 10 billion parameters and could not have been predicted. What does the table establish, and what would you ask the authors for? (The description is invented.)\label{ex:emergence:critique1}
+
+\item \critique (Smooth, so predictable?) A study of a four-option benchmark reports that the log-probability of the correct option rises smoothly with scale and concludes that the benchmark shows no emergence. What measurement would test the conclusion, and what result would overturn it? (The description is invented.)\label{ex:emergence:critique2}
+
+\item \research (When is a transition genuine?) Open: a test, for five to ten models with per-item log-likelihoods, of one smooth law for a latent quantity against a change of slope or a jump, with controlled level and useful power; and an account of when such changes occur, through the quanta of \textcite{MichaudEtAl2023}, competing circuits as \textcite{HuEtAl2024} suggest, or thresholds in the pre-training loss \parencite{DuEtAl2024}. Also open: whether sharp transitions in training time, such as the induction bump, have counterparts across model size at fixed data.\label{ex:emergence:research}
+\end{exercises}
+
+\notesandrefs
+Wei et al.\ rooted their definition in an essay of \textcite{Anderson1972}, who argued that at each level of complexity properties appear that the laws of the level below do not predict, and took its wording, quantitative changes producing qualitative ones, from a 2022 essay by Jacob Steinhardt. In language models the observation is older than the word, in the arithmetic of GPT-3 \parencite{BrownEtAl2020} and the abrupt capabilities of \textcite{GanguliEtAl2022}; BIG-bench measured it task by task \parencite{SrivastavaEtAl2023}.
+
+The tools are older still. \Textcite{Stevens1946} classified scales of measurement by their admissible transformations; \textcite{Brier1950} proposed his score to verify probabilistic weather forecasts, and \textcite{GneitingRaftery2007} review proper scoring rules; exact binomial intervals are due to \textcite{ClopperPearson1934}, and the rule of three for zero counts is the subject of a short paper in medicine by \textcite{HanleyLippmanHand1983}. The Gumbel distribution is a limit law of extremes \parencite{Gumbel1958}; here it arises without a maximum, from the exponential of a power law.
+
+The case against abruptness was made by \textcite{SchaefferMirandaKoyejo2023} and the case for predictability with resolution by \textcite{HuEtAl2024}; the GPT-4 report used the same transformation to forecast a coding pass rate \parencite{OpenAI2023}, and \textcite{RuanMaddisonHashimoto2024} made emergent capabilities predictable through a measure of capability fitted across model families. The replies are \textcite{Wei2023Blog} and, with new experiments, \textcite{DuEtAl2024}. \Textcite{MichaudEtAl2023} proposed that a smooth power law in the loss sums many small abrupt steps, discrete skills learned in order of how often they are needed. Sharp transitions in training are documented for induction heads \parencite{OlssonEtAl2022}, grokking \parencite{PowerEtAl2022,NandaEtAl2023}, and sparse parities \parencite{BarakEtAl2022}.
+
+\paragraph{Translating the literature.} \Textcite{SchaefferMirandaKoyejo2023} write the per-token cross-entropy as $L_{CE}(N)=(N/c)^\alpha$ with $\alpha<0$: their $-\alpha$ is our $\gamma$ and their $c^{-\alpha}$ our $c$, with $\ell_\infty=0$; their ``Accuracy'' is our exact match $\emergenceEM_L$, their target length our $L$, and their resolution, set by the number of test data, our $1/m$. \Textcite{HuEtAl2024} write PU for the pass probability of one item, our $s$, and use $\alpha$ and $c$ as we use $\gamma$ and $c$, with $N$ the number of non-embedding parameters; their scaling-law, sub-scaling, and super-scaling growth (accelerated emergence) are a linear, convex, and concave $\ln(-\ln\mathrm{PU})$ in $\ln N$. \Textcite{WeiEtAl2022} plot against training compute $C$; within a family trained on a fixed number of tokens $C$ is proportional to $N$, so their curves are ours translated in the logarithm. The emergence score of Schaeffer et al.\ is BIG-bench's breakthroughness. \Textcite{DuEtAl2024} write $L$ for the pre-training loss, our $\Loss$, and $\eta$ for its threshold.
+
+\printchapterbib
+\end{refsection}

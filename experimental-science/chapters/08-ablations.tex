@@ -1,0 +1,400 @@
+% Chapter 8 of Deep Learning as an Experimental Science: ablations, interactions and the home-field advantage.
+\labchapter{Ablations}{Interactions and the home-field advantage}{A winning ticket trains well because of its original initialization.}{Frankle and Carbin (2019), for the networks in which they found winning tickets; received as a property of pruned networks in general}{Narrowed: the original initialization matters in small networks and at small learning rates; at the standard learning rates of deeper networks, only weights from early in training do.}{ch:ablations}
+\begin{refsection}[chapters/08-ablations.bib]
+
+% plot styles of this chapter: the sham arm in grey, and lines through the means of each arm
+\pgfplotsset{
+  ablations runC/.style={only marks,mark=diamond,mark size=1.4pt,color=black!45,mark options={line width=0.35pt,fill=white}},
+  ablations meanC/.style={only marks,mark=diamond*,mark size=2.0pt,color=black!65,mark options={fill=black!65,draw=white,line width=0.2pt}},
+  ablations ebarsC/.style={error bars/y dir=both,error bars/y explicit,
+    error bars/error bar style={black!65,line width=0.5pt},
+    error bars/error mark options={black!65,rotate=90,mark size=1.7pt,line width=0.5pt}},
+  ablations lineA/.style={inkblue,line width=0.8pt,no marks},
+  ablations lineB/.style={rubric,line width=0.8pt,no marks},
+  ablations lineC/.style={black!65,line width=0.8pt,no marks},
+}
+
+\begin{chaptersummary}
+In 2018 Frankle and Carbin found that iterative magnitude pruning uncovers sparse subnetworks which, reset to their original initial weights, train to the accuracy of the full network, while the same subnetworks with fresh initial weights do not: the winning tickets had won the initialization lottery. The ablation behind this conclusion ran at learning rates chosen for the tickets, and later work found its effect to depend on the learning rate: at the standard rates of deeper networks, reinitialized subnetworks did as well, and only weights rewound to early in training restored the advantage. The method treats an ablation as a factorial experiment. We prove that a leave-one-out ablation measures a main effect plus every interaction of the removed component, that a two-level factorial design estimates main effects with $(k+1)/2$ times less variance than one factor at a time, and that an ablation run at the full system's tuned hyperparameters overstates the re-tuned effect by exactly the ablated system's regret, a bias to which tuning on noisy scores adds its own. In the laboratory, the original initialization of a pruned network on the digits lowers its test error by 41 points at learning rate 0.02 and by 1.2 points at 0.2, two rates at which the dense network does equally well; with each arm at its own best rate, the effect is 0.9 points.
+\end{chaptersummary}
+
+\section{The claim: winning the initialization lottery}\label{sec:ablations:claim}
+
+Pruning a trained network is an old idea. Optimal Brain Damage removed the weights whose deletion an estimate of the loss's curvature predicted to matter least \parencite{LeCunDenkerSolla1990}, and \textcite{HanEtAl2015} removed the weights of smallest magnitude and retrained the rest, shrinking AlexNet from 61 to 6.7 million parameters without loss of accuracy. But, as they also reported, the pruned layers did worse when reinitialized and retrained than when they kept their trained weights. If a network can be that small after training, why can it not be trained small?
+
+Jonathan Frankle and Michael Carbin proposed an answer in a preprint of March 2018, published at ICLR the following year \parencite{FrankleCarbin2019}. Their procedure, \term{iterative magnitude pruning}\index{iterative magnitude pruning}, trains a network, removes a fixed fraction of the weights of smallest magnitude in each layer, resets the surviving weights to the values they had at initialization, and repeats; one-shot pruning removes the whole fraction after a single training. The surviving connections form a binary \term{mask}\index{mask} $m$ on the weights, and the subnetwork with mask $m$ and the original initial values is what they called a \term{winning ticket}\index{winning ticket} when it trains, in isolation and in at most the same number of iterations, to the test accuracy of the full network. The \term{lottery ticket hypothesis}\index{lottery ticket hypothesis} states that dense, randomly initialized networks contain such subnetworks.\sidenote{In the authors' metaphor a dense network holds many subnetworks, as a player holds many tickets, and its random initialization is the draw.} The decisive experiment was an ablation: keep the mask, draw new initial values from the same distribution, and train again.
+
+\begin{finding}[\textcite{FrankleCarbin2019}, Sections 2 and 3]\label{fd:ablations:tickets}
+For a fully connected network on MNIST (Lenet-300-100, 266,000 weights, trained with Adam), iteratively pruned subnetworks reset to their initial values were at least as accurate as the full network down to 3.6\% of its weights, and more accurate at intermediate sizes; the same masks with fresh initial values fell below the full network from 21\% of the weights on. At 21\%, the ticket reached its minimum validation loss 2.51 times faster than its reinitialized copy and was half a point more accurate. Convolutional networks on CIFAR-10 behaved alike, with winning tickets at 10--20\% of the weights or fewer. Points are means of five trials (fifteen for reinitialized copies), with the minimum and maximum shown.
+\end{finding}
+
+The authors' reading was in their abstract: the winning tickets had won the initialization lottery, their connections having initial weights that make training particularly effective. A conjecture, labeled as untested, went further: that stochastic gradient descent finds and trains a well-initialized subnetwork, and that large networks are easier to train because they hold more candidate tickets.
+
+The paper also reported where the pattern failed. For two deeper networks on CIFAR-10, VGG-19 and a residual network,\sidenote{The paper calls it Resnet-18; \textcite{FrankleEtAl2020} note that it is the 20-layer ResNet of He et al., and we call it ResNet-20.} trained with SGD and momentum at the standard learning rate of 0.1, iterative pruning found no winning tickets, and the pruned subnetworks did no better than their reinitialized copies. At 0.01 the familiar pattern returned, at accuracies below what the full network reached at 0.1. A linear warm-up of the learning rate made winning tickets appear for VGG-19 at rate 0.1, down to 1.5\% of the weights, and for ResNet-20 at rate 0.03. The limitations section says plainly that on these networks winning tickets were found only with warm-up, and leaves the reason to future work.
+
+\paragraph{Reception.} The paper shared the best-paper award of ICLR 2019, and a literature followed on how winning tickets are found, transferred and explained. The phrase that traveled was the lottery: a pruned network is trainable because of its original initial values. The qualification that came with the deeper networks, that this role of the initialization had been observed at learning rates chosen for it to appear, traveled less well.
+
+\paragraph{What the work got right.} The experiment had the controls that most pruning papers lacked \parencite{BlalockEtAl2020}: a reinitialized copy of every ticket, randomly sparse networks of the same size, and in the appendices a reinitialization drawn from the distribution of the ticket's own initial values (little better than a plain one) and pruning by initial magnitude (worse). The appendices report more than 3,000 runs of the MNIST network alone, every point is a mean over trials with its range, and the sensitivity to the learning rate was reported, not hidden. The effect is real where it was found, as the laboratory of this chapter confirms. And when \textcite{LiuEtAl2019} reported that reinitialized subnetworks of VGG-19 matched the full network, Frankle and Carbin replied in their final version that this held up to the 80\% pruning for which Liu and colleagues had then reported data, but that pruned further the original initialization mattered: an interaction with sparsity, recognized as one.
+
+\section{The experiment: one ablation at the ticket's learning rate}\label{sec:ablations:experiment}
+
+\begin{experiment}[Frankle and Carbin 2019, MNIST and CIFAR-10]
+\field{question}{Does a pruned subnetwork owe its trainability to its original initial values?}
+\field{units}{training runs of Lenet-300-100 on MNIST and of Conv-2, -4 and -6 on CIFAR-10}
+\field{treatment}{the initial values of the surviving weights: the original ones (ticket) or a fresh draw from the same distribution (reinitialized copy)}
+\field{levels}{fraction of weights remaining, from 100\% to below 1\%, by iterative or one-shot pruning}
+\field{tuned}{the learning rate (Adam) of each network, to make tickets match the full network at small sizes}
+\field{held fixed}{optimizer, learning rate, iterations, batch size and pruning rates, the same for both arms}
+\field{response}{iteration of minimum validation loss; test accuracy at that iteration}
+\field{replicates}{five pruning trials per point; three reinitializations of each ticket}
+\field{analysis}{means over trials, with minimum and maximum}
+\end{experiment}
+
+The record has two features that this chapter is about. The first is in the row \textsc{tuned}. The appendices choose the learning rate by three criteria: it should be good for the unpruned network; it should let the lottery-ticket experiment match the full network with as few weights as possible; and among such rates it should be on the slow side.\sidenote{The appendix gives the reason for the third criterion: a slower rate is more likely to train heavily pruned networks under a variety of conditions.} The second criterion selects the hyperparameter for the success of the treatment arm, and the reinitialized copies were then trained with the same hyperparameters: the ablation was measured on the ticket's home field.
+
+The second feature is in the rows \textsc{treatment} and \textsc{held fixed}. The design varies one factor, the initial values, at one level of everything else, and its result is a \emph{simple effect}: the effect of the initialization at that learning rate, optimizer, number of iterations and sparsity. Whether the effect belongs to the subnetwork or to the subnetwork together with these settings, a design with one level of each setting cannot say. For the deeper networks the authors did vary the learning rate, in effect running a two-by-two design of initialization by learning rate, and the effect of the initialization changed with the rate. That observation is an interaction, and the design that saw it was the right one; it was reported as a sensitivity of the procedure for finding tickets rather than as a limit on what the tickets showed.
+
+The design could show that at the hyperparameters chosen these masks trained better and faster with their original values than with new ones, by margins far beyond the trial-to-trial range. It could not show whether a reinitialized subnetwork given its own learning rate or more iterations would close the gap, or how the gap depends on the settings held fixed.
+
+\section{The post-mortem: the learning rate was a factor}\label{sec:ablations:postmortem}
+
+\paragraph{Rethinking the value of pruning.} \Textcite{LiuEtAl2019}, published at the same conference,\sidenote{The first arXiv version of October 2018 was substantially revised for the conference; we cite the published version.} found that for structured pruning methods, which remove whole channels, training the pruned architecture from a random initialization did as well as fine-tuning its inherited weights. In a section on the lottery ticket hypothesis they ran the ablation on VGG-16 and ResNet-50 on CIFAR-10, pruning the convolutional layers by magnitude, with SGD and momentum at two initial learning rates and five runs per point. Of the ways in which the two studies differed (network size, optimizer, learning rate), they identified the learning rate as the one that reconciled them.
+
+\begin{finding}[\textcite{LiuEtAl2019}, Section 6 and Table 9]\label{fd:ablations:liu}
+At initial learning rate 0.1, subnetworks with the original initial values and reinitialized ones reached the same accuracy within 0.2 points, at every pruning ratio from 20\% to 95\%. At 0.01 the original values helped (on VGG-16 pruned to 5\% of its convolutional weights, by 0.75 points), but at each pruning ratio every network trained at 0.01 was less accurate than its counterpart at 0.1, the original-initialization subnetworks included. For structured pruning, the original values did not help at either rate.
+\end{finding}
+
+They concluded that the winning ticket improves on a random initialization only for unstructured pruning at a small learning rate, which yields lower accuracy than the standard one, and suggested a reason: with small steps the trained weights stay close to their initial values, so pruning keeps the weights that started large. \Textcite{GaleElsenHooker2019}, in a preprint benchmarking sparsification at scale, repeated the ablation for a Transformer on WMT English--German and ResNet-50 on ImageNet and could not reproduce the effect; they attributed the difference to the complexity of the tasks and the scale of the models.\sidenote{With the preprint they released code, their best checkpoints and the results of every hyperparameter configuration they ran.}
+
+\paragraph{Stability and rewinding.} The original authors and two colleagues located the mechanism in the early phase of training \parencite{FrankleEtAl2020}. A network is \emph{stable to SGD noise} from a point in training if two copies trained on from there with different data orders end in minima joined by a straight line of low error (\cref{ch:instability}). Only the small MNIST network was stable from initialization; ResNet-20 became stable 3\% of the way through training, ResNet-50 on ImageNet after 20\%. At the sparsest levels studied, pruned subnetworks matched the full network when they were stable and not otherwise. Rewinding the surviving weights not to their initial values but to their values at an early step $k$, an idea first circulated in a preprint \parencite{FrankleEtAl2019}, produced matching subnetworks at the standard learning rate: for ResNet-20 and VGG-16 at iterations 500 and 1000 (0.8\% and 1.6\% of training), for ResNet-50 and Inception-v3 on ImageNet at epochs 5 and 6. Reinitialized and randomly pruned subnetworks matched at no rewinding point. The paper notes that the low-rate and warm-up variants had been selected by Frankle and Carbin specifically for the procedure to find matching subnetworks.
+
+\begin{table}[t]
+\centering\small\setlength{\tabcolsep}{3.6pt}
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+network (data) & learning rate & kept & full & ticket & reinit. & effect\\
+\midrule
+VGG-16 (CIFAR-10)$^a$ & 0.1 & 20\% & 93.76 & 93.74 & 93.72 & $+0.02$\\
+ & 0.01 & 20\% & 92.69 & 92.75 & 92.07 & $+0.68$\\
+ & 0.1 & 5\% & 93.76 & 93.18 & 93.05 & $+0.13$\\
+ & 0.01 & 5\% & 92.69 & 92.58 & 91.83 & $+0.75$\\
+\midrule
+Lenet-300-100 (MNIST)$^b$ & Adam, $1.2\times10^{-3}$ & 3.5\% & 98.3 & 98.2 & 97.5 & $+0.7$\\
+ResNet-20 (CIFAR-10)$^b$ & 0.1 & 16.8\% & 91.7 & 88.5 & 88.8 & $-0.3$\\
+ & 0.01 & 8.6\% & 88.8 & 89.0 & 84.7 & $+4.3$\\
+ & 0.03, warm-up & 8.6\% & 89.7 & 89.6 & 85.6 & $+4.0$\\
+VGG-16 (CIFAR-10)$^b$ & 0.1 & 1.5\% & 93.7 & 90.9 & 91.0 & $-0.1$\\
+ & 0.01 & 5.5\% & 91.7 & 91.6 & 90.2 & $+1.4$\\
+ & 0.1, warm-up & 1.5\% & 93.4 & 93.2 & 90.7 & $+2.5$\\
+ResNet-50 (ImageNet)$^b$ & 0.4, warm-up & 30\% & 76.1 & 73.7 & 73.4 & $+0.3$\\
+\bottomrule
+\end{tabular}
+\caption{The effect of the original initialization as reported. Test accuracy (\%) of the full network, of the pruned subnetwork with its original initial values (ticket) and with fresh ones; the effect is ticket minus reinitialized. ``Kept'' is the fraction of weights remaining. $^a$\textcite{LiuEtAl2019}, Table 9: one-shot pruning of the convolutional layers, means of five runs (standard deviations 0.07--0.25). $^b$\textcite{FrankleEtAl2020}, Tables 1 and 2: iterative pruning (one-shot for ResNet-50), at the sparsest level at which some rewinding point gives a matching subnetwork; means of three runs (standard deviations below 0.2).}
+\label{tab:ablations:literature}
+\end{table}
+
+\Cref{tab:ablations:literature} collects the numbers. Read as a whole it is a factorial experiment that nobody designed: the effect of the original initialization ranges from under one point to four points at small learning rates or with warm-up, and is within a few tenths of zero at the standard rates of the larger networks, whose full networks are also the most accurate.
+
+\paragraph{A sham for the mask.} Does a mask contribute which weights survive, or only how many survive in each layer? \Textcite{FrankleEtAl2021} answered with a sham ablation. For methods that prune at initialization, shuffling each layer's mask at random, keeping the number of weights per layer, maintained or improved accuracy, and reinitializing did not hurt either: the per-weight decisions could be replaced by a per-layer fraction. Magnitude pruning after training lost accuracy under both ablations. Shuffling within layers is the random baseline with the same layerwise proportions that \textcite{BlalockEtAl2020} recommended for every pruning paper; in their survey of 81 papers, a quarter compared with no other pruning method at all.
+
+\paragraph{What in the initialization?} \Textcite{ZhouEtAl2019} decomposed the original values: reinitializing, permuting the surviving values within each layer, or setting them to a constant all trained worse than the original values, and most of the loss disappeared when the new values kept the original signs. \Textcite{MaEtAl2021} traced the conflicting reports to the training recipe: winning tickets appeared at small learning rates or with too few epochs, whose dense networks are weaker and easier to match, and often not at a learning rate of 0.1 with full training. Their definition of a ticket requires that at some learning rate it beat the reinitialized subnetwork at every learning rate by a clear margin: the ablated arm gets its own best setting.
+
+\paragraph{The mechanism of the failure.} The claim generalized a simple effect measured at settings chosen so that the treatment would succeed. The effect of the initial values interacts with the learning rate and warm-up, the sparsity, the size of the network, the number of epochs and the point to which weights are rewound; the original experiments sat at corners of this space where the effect is large. Nothing in the original measurements was wrong; what did not survive is the step from \enquote{the initialization matters here} to \enquote{the initialization is why pruned networks train}.
+
+\begin{verdict}{narrowed}
+The original initial values do make a pruned subnetwork train better in small networks, and in deeper ones at small learning rates or with warm-up, as Frankle and Carbin reported. At the standard learning rates of deeper networks, reinitialized subnetworks match the original ones, and only weights rewound to an early point of training restore an advantage, which coincides with stability to the noise of SGD. The effect is an interaction of the initialization with the training recipe, and the ablation that established it ran at settings chosen for the ticket.
+\end{verdict}
+
+\section{The method: an ablation is a factorial experiment}\label{sec:ablations:factorial}
+
+An \term{ablation}\index{ablation} removes or replaces a component of a system and measures what changes. Consider a system with $k$ components: modules of an architecture, terms of a loss, steps of a training recipe, or, in the lottery-ticket experiment, the learned mask and the original initial values. Code the two levels of component $j$ as $x_j\in\{-1,+1\}$, with $+1$ the level of the full system, and write $\mu(x)$ for the expected outcome of a run at levels $x=(x_1,\dots,x_k)$: the mean of the run distribution of \cref{ch:seeds}, with everything else held fixed. A \term{leave-one-out ablation}\index{ablation!leave-one-out} runs the full system $\mathbf 1=(1,\dots,1)$ and, for each $j$, the system $\mathbf 1^{(j)}$ with component $j$ alone at $-1$. It is the \term{one-factor-at-a-time}\index{one-factor-at-a-time design} design of the older sciences, with the full system as its baseline. \Cref{ch:confounding} codes a sequence of changes the same way, and we use its notation: for a set $S$ of components, $c_S(x)=\prod_{j\in S}x_j$, with $c_\emptyset=1$.
+
+\begin{definition}[Factorial and simple effects]\label{def:ablations:effects}
+For nonempty $S$, the \term{effect}\index{factorial design!effect} of $S$ is
+\[
+\theta_S=2^{1-k}\sum_{x\in\{-1,1\}^k}c_S(x)\,\mu(x),
+\]
+the mean of $\mu$ over the $2^{k-1}$ level combinations with $c_S=+1$ minus its mean over those with $c_S=-1$: the \term{main effect}\index{main effect} $\theta_j$ of component $j$ when $S=\{j\}$, an \term{interaction}\index{interaction} when $S$ has two or more elements. For a setting $z$ of the components other than $j$, the \term{simple effect}\index{simple effect} of $j$ is $\delta_j(z)=\mu(x_j{=}1,z)-\mu(x_j{=}{-1},z)$, and its \emph{leave-one-out effect} is the simple effect at the full system, $\delta_j=\mu(\mathbf 1)-\mu(\mathbf 1^{(j)})$.
+\end{definition}
+
+A main effect averages the effect of a component over all settings of the others; a simple effect fixes them. The expansion of \cref{lem:confounding:expansion} relates the two: every cell mean is $\mu(x)=\bar\mu+\frac12\sum_{S\ne\emptyset}\theta_S\,c_S(x)$, with $\bar\mu$ the mean of the $2^k$ cell means, and every simple effect is $\delta_j(z)=\sum_{S\ni j}\theta_S\,c_{S\setminus\{j\}}(z)$.\sidenote{In the analysis of Boolean functions the $c_S$ are the parity, or Walsh, functions of the cube, and this expansion is the Fourier expansion of $\mu$.} At the full system every sign is $+1$, so
+\begin{equation}\label{eq:ablations:loo}
+\delta_j=\theta_j+\sum_{S\ni j,\ \abs S\ge2}\theta_S ,
+\end{equation}
+the main effect plus every interaction that involves $j$. Averaged over the settings $z$ of the other components, each sign $c_{S\setminus\{j\}}$ with $S\ne\{j\}$ averages to zero, and the simple effects average to the main effect.
+
+A row of an ablation table is therefore not \enquote{the contribution of component $j$} unless the interactions that involve $j$ vanish. When they do not, the rows can sum to more or less than the gain of the full system over the system with every component removed, and they change with the baseline. \Cref{ch:confounding} shows how attributions along a path of changes depend on its order through the same interaction terms, and how the Shapley value averages over orders. Here we compare designs.
+
+\begin{theorem}[Factorial against one at a time]\label{thm:ablations:ofat}
+Let the runs be independent, a run at levels $x$ having mean $\mu(x)$ and variance $\sigma^2>0$, and let $N$ runs be available.
+\begin{enumerate}
+\item In the full factorial design with $r\ge1$ runs at each of the $2^k$ level combinations, so that $N=r2^k$, the estimate $\hat\theta_S$, the mean of the runs with $c_S=+1$ minus the mean of the runs with $c_S=-1$, is unbiased for $\theta_S$ with variance $4\sigma^2/N$, and the $2^k-1$ estimates are uncorrelated.
+\item In the leave-one-out design with $r$ runs at $\mathbf 1$ and at each $\mathbf 1^{(j)}$, so that $N=r(k+1)$, the difference $\hat\delta_j$ of the two cell means is unbiased for $\delta_j$ with variance $2(k+1)\sigma^2/N$, and $\Corr(\hat\delta_i,\hat\delta_j)=1/2$ for $i\ne j$.
+\item Suppose further that $k\ge2$ and that a run at $x$ has outcome $\mu(x)+\varepsilon$, where the joint distribution of the errors does not depend on $\mu$. Then in the leave-one-out design no statistic is unbiased for an interaction $\theta_S$ for every $\mu$, and none is unbiased for a main effect $\theta_j$ for every $\mu$.
+\end{enumerate}
+Consequently, when the interactions vanish, both designs estimate the main effects, and the leave-one-out design needs $(k+1)/2$ times as many runs as the factorial design for the same variance.
+\end{theorem}
+
+\begin{proof}
+The plan is to compute the first two parts directly and to prove the third by exhibiting a change of the mean function that the leave-one-out design cannot see. If $k=1$, then the two designs coincide and the third part is vacuous, so the argument is needed only for $k\ge2$.
+
+\emph{Part (i).} Each of the two means in $\hat\theta_S$ averages $2^{k-1}$ cell means of $r$ runs each, so its expectation is the mean of $\mu$ over the corresponding level combinations, and $\E\hat\theta_S=\theta_S$ by \cref{def:ablations:effects}. The variance $4\sigma^2/N$ and the absence of correlation are \cref{thm:toolkit:factorial}, whose hypotheses, a full two-level design with independent runs of common variance, are those of this part.
+
+\emph{Part (ii).} The $k+1$ cell means are independent, each with variance $\sigma^2/r$ and with mean $\mu$ at its cell. Hence $\hat\delta_j$ is unbiased for $\delta_j$, and its variance is $2\sigma^2/r=2(k+1)\sigma^2/N$. For $i\ne j$, $\hat\delta_i$ and $\hat\delta_j$ share the cell mean at $\mathbf 1$ and nothing else, so their covariance is its variance $\sigma^2/r$, and the correlation is $(\sigma^2/r)/(2\sigma^2/r)=1/2$.
+
+\emph{Part (iii).} The design points $\mathbf 1$ and $\mathbf 1^{(j)}$ are the level combinations with at most one coordinate equal to $-1$. For a set $S$ with at least two elements let
+\[
+\psi_S(x)=\prod_{i\in S}\tfrac12(1-x_i),
+\]
+which equals $1$ when $x_i=-1$ for every $i\in S$ and $0$ otherwise, and so vanishes at every design point. Expanding the product gives $\psi_S=2^{-\abs S}\sum_{T\subseteq S}(-1)^{\abs T}c_T$. The signs $c_T$ are an orthogonal basis of the functions on the cube (proof of \cref{lem:confounding:expansion}), so the expansion of a function in them is unique, and comparing with \cref{lem:confounding:expansion} the effects of $\psi_S$ are $\theta_T=2^{1-\abs S}(-1)^{\abs T}$ for nonempty $T\subseteq S$ and zero for other $T$; in particular $\theta_S$ and, for $j\in S$, $\theta_j$ are nonzero. The mean functions $\mu$ and $\mu+\psi_S$ agree at every design point, so by the hypothesis on the errors every statistic has the same expectation under both, while $\theta_S$ and $\theta_j$, which are linear in the mean function, differ between them. No statistic is unbiased for either under both. For a main effect $\theta_j$, take $S=\{i,j\}$ with some $i\ne j$, which exists because $k\ge2$.
+
+\emph{The comparison.} If the interactions vanish, then $\delta_j=\theta_j$ by \eqref{eq:ablations:loo}, and the ratio of the variances in (ii) and (i) is $(k+1)/2$; since both variances are inversely proportional to $N$, this is the ratio of the run counts needed for equal variance.
+\end{proof}
+
+With three components the factorial design gives every main effect the precision of a leave-one-out design with twice the runs, with seven components four times, and it estimates every interaction as precisely: each of its runs serves every effect, while a leave-one-out run serves one comparison, and the shared baseline correlates the rows.
+
+Two remarks keep the theorem in proportion. First, the leave-one-out design is the efficient design for its own estimand. If the question is what the shipped system loses without component $j$, the estimand is $\delta_j$, which a factorial design estimates only as a difference of two of its $2^k$ cell means, with variance $2^{k+1}\sigma^2/N$, larger than $2(k+1)\sigma^2/N$ when $k\ge2$; and one factor at a time can be right when runs are few, effects large and the aim is to improve a system step by step \parencite{Daniel1973}. Second, the factorial design needs $2^k$ cells. A \term{fractional factorial}\index{factorial design!fractional} design runs a fraction of them, chosen so that main effects are confounded only with interactions believed small (\cref{ex:ablations:fractional}); with eight components, sixteen cells estimate all main effects clear of two-factor interactions \parencite{BoxHunterHunter2005}.
+
+\section{The method: the home-field advantage and the sham}\label{sec:ablations:homefield}
+
+The factorial argument assumes that the levels of every other variable are fixed in advance. In practice the hyperparameters of a system are tuned, and they are tuned for the full system. The ablated system then runs at hyperparameters that were chosen for a system it is not.
+
+\begin{definition}[Fixed and re-tuned effects]\label{def:ablations:retuned}
+Let $\cH$ be a finite set of hyperparameter settings, and let $f(h)$ and $g(h)$ be the expected test errors of the full system and of the ablated system trained with $h\in\cH$. Write $f^\star=\min_\cH f$ and $g^\star=\min_\cH g$. The \term{effect of the ablation at $h$}\index{ablation!fixed-hyperparameter effect} is $\Delta(h)=g(h)-f(h)$, the \term{re-tuned effect}\index{ablation!re-tuned effect} is $\Delta^\star=g^\star-f^\star$, and the \term{regrets}\index{regret} of the two systems at $h$ are $r_f(h)=f(h)-f^\star$ and $r_g(h)=g(h)-g^\star$.
+\end{definition}
+
+Errors are to be minimized, so a positive effect means that the component helps. The effect $\Delta(h)$ asks whether this recipe, at these settings, needs the component; $\Delta^\star$ asks whether the component improves the best that can be done with the search space $\cH$. The lottery ticket hypothesis asks the second question: a claim that a subnetwork trains well \emph{because} of its initial values is refuted by a reinitialized copy that trains as well with a learning rate of its own.
+
+\begin{proposition}[The home-field advantage]\label{prop:ablations:homefield}
+For every $h\in\cH$,
+\[
+\Delta(h)=\Delta^\star+r_g(h)-r_f(h).
+\]
+In particular, if $h^\star$ minimizes $f$, then $\Delta(h^\star)=\Delta^\star+r_g(h^\star)\ge\Delta^\star$, with equality if and only if $h^\star$ also minimizes $g$.
+\end{proposition}
+
+\begin{proof}
+Substituting $f(h)=f^\star+r_f(h)$ and $g(h)=g^\star+r_g(h)$ into $\Delta(h)=g(h)-f(h)$ gives the identity. At a minimizer $h^\star$ of $f$ the regret $r_f(h^\star)$ is zero, and $r_g(h^\star)\ge0$ because $g^\star$ is the minimum of $g$, with equality exactly when $g(h^\star)=g^\star$.
+\end{proof}
+
+The proposition is an identity, and its content is in what it makes visible. An ablation run at the full system's tuned hyperparameters overstates the re-tuned effect by the ablated system's regret, the \term{home-field advantage}\index{home-field advantage},\sidenote{The name is from sport, in which teams win more often at home; in an ablation table tuned for the full system, the ablated system always plays away.} and more seeds do not reduce it: it is a bias of the design, whose size is set by an interaction between the component and the hyperparameters. The identity also covers settings chosen by other rules. If the full system's error is flat over a range of settings, its regret is near zero over the whole range, and the measured effect is the re-tuned effect plus the ablated system's regret wherever in that range the experimenter happened to land. Choosing settings so that the treatment succeeds, as in \cref{sec:ablations:experiment}, is a rule of this kind.
+
+In practice $h^\star$ is chosen on noisy estimates, and a second bias joins the first.
+
+\begin{corollary}[Tuning on noisy scores]\label{cor:ablations:noisy}
+Let $\cH=\{h_1,\dots,h_K\}$, let $V_1,\dots,V_K$ be estimates of the full system's errors with finite means $\E V_i=f(h_i)$, let $\hat\imath$ be an index at which $V_{\hat\imath}=\min_iV_i$, chosen by a rule that depends only on $V_1,\dots,V_K$, and let $W$ be an estimate of the ablated system's error at $h_{\hat\imath}$ with finite mean and $\E[W\mid V_1,\dots,V_K]=g(h_{\hat\imath})$, as for the mean of fresh runs. Then the reported effect $D=W-V_{\hat\imath}$ satisfies
+\begin{equation}\label{eq:ablations:noisy}
+\E D=\Delta^\star+\bigl(\E\,g(h_{\hat\imath})-g^\star\bigr)+\bigl(f^\star-\E\min_iV_i\bigr),
+\end{equation}
+and both brackets are nonnegative. If the $V_i$ are independent and normal with common standard deviation $\tau$, and $f$ is constant on $\cH$, then the last bracket equals $\tau e_K$.
+\end{corollary}
+
+\begin{proof}
+The plan is to compute $\E D$ by conditioning on the estimates and then to add and subtract the two minima. By the tower property, $\E W=\E\,\E[W\mid V_1,\dots,V_K]=\E\,g(h_{\hat\imath})$, and $V_{\hat\imath}=\min_iV_i$, so
+\[
+\E D=\E\,g(h_{\hat\imath})-\E\min_iV_i=(g^\star-f^\star)+\bigl(\E\,g(h_{\hat\imath})-g^\star\bigr)+\bigl(f^\star-\E\min_iV_i\bigr),
+\]
+which is \eqref{eq:ablations:noisy}. The term $\E\,g(h_{\hat\imath})-g^\star$ is nonnegative because $g(h)\ge g^\star$ for every $h$. For the term $f^\star-\E\min_iV_i$, note that $\min_iV_i\le V_l$ for each $l$, so $\E\min_iV_i\le f(h_l)$ for each $l$, and therefore $\E\min_iV_i\le f^\star$. In the normal case with $f\equiv f^\star$, $V_i=f^\star+\tau Z_i$ with independent standard normal $Z_i$, and $\E\min_iZ_i=-e_K$ by \cref{prop:seeds:bestof}, so the last bracket is $\tau e_K$.
+\end{proof}
+
+The first bracket in \eqref{eq:ablations:noisy} is the expected home-field advantage at a randomly chosen $h$, the second the \term{selection bonus}\index{selection bonus} of the full system's reported score, the winner's curse of \cref{ch:seeds,ch:controls}. The bonus disappears if the full system is scored again with fresh runs at the chosen setting, the home-field term only if the ablated system is re-tuned with the same search. (If the ablated runs share seeds and test items with the runs that chose $h$, correlated noise can carry part of the selection over to $W$.) Re-tuning has a cost, and \cref{ch:budgets} shows that systems tuned with unequal budgets compare the budgets. A fair re-tuned ablation gives every ablated variant the search space and number of trials of the full system, at least over the hyperparameters that plausibly interact with the removed component: the learning rate and its schedule, the length of training, the regularization.
+
+\paragraph{The sham.} An ablation that replaces a component must say what the replacement keeps. \Cref{ch:controls} distinguished the placebo, an inert treatment, from the \term{sham}\index{sham ablation}, the whole procedure without its active step. For a pruning mask the active step is the selection of particular weights; the sham keeps the number of surviving weights in each layer and the values they start from, and destroys the selection by shuffling each layer's mask at random. It has a symmetry that saves an arm of the experiment.
+
+\begin{proposition}[A shuffled mask forgets the initialization]\label{prop:ablations:sham}
+Let the initial weights $\theta_0$ have independent, identically distributed entries within each layer, and let the data, including split and data order, be independent of $\theta_0$. Let $m$ be a mask that may depend on $\theta_0$ and on the data but keeps a fixed number of weights in each layer, and let $\pi$ permute the positions of each layer uniformly at random, independently of everything else. Then $(\pi(m),\,\theta_0,\,\text{data})$ has the same joint distribution as $(\pi(m),\,\theta_0',\,\text{data})$, where $\theta_0'$ is an independent copy of $\theta_0$. Consequently a run started from the shuffled mask with the original initial values has the same distribution of outcomes as one started from the shuffled mask with fresh initial values.
+\end{proposition}
+
+\begin{proof}
+Condition on $\theta_0$ and the data. Then $m$ is fixed, with its prescribed number $c_l$ of weights in each layer $l$, and a uniformly random permutation of a layer's positions carries its $c_l$ positions to a uniformly random set of $c_l$ positions. So, conditionally on $\theta_0$ and the data, $\pi(m)$ is uniform over the masks with the prescribed counts, a distribution that does not depend on the condition; hence $\pi(m)$ is independent of $(\theta_0,\text{data})$. With the independence of $\theta_0$ and the data, the three components are mutually independent. So are those of $(\pi(m),\theta_0',\text{data})$, because $\theta_0'$ is independent of $(\theta_0,\pi,\text{data})$, of which $\pi(m)$ and the data are functions; and $\theta_0'$ has the law of $\theta_0$, so the two triples have the same law. A training run is a function of the mask, the initial values and the data, which gives the last statement.
+\end{proof}
+
+The identical distribution of entries within a layer is what the usual initialization schemes provide; the fixed counts are what layerwise pruning at prescribed rates provides. With the shuffled mask as one level of a factor $M$ (learned mask $+1$, shuffled $-1$) and the initial values as a factor $I$ (original $+1$, fresh $-1$), \cref{prop:ablations:sham} says that $\mu(-1,+1)=\mu(-1,-1)$: the initialization does nothing under a shuffled mask.
+
+\begin{example}[An effect that exists only as an interaction]\label{exa:ablations:pure}
+In the two-by-two design $M\times I$, \cref{def:ablations:effects} and $\mu(-1,+1)=\mu(-1,-1)$ give
+\[
+\theta_I=\tfrac12\bigl[\mu(1,1)-\mu(1,-1)\bigr]=\theta_{MI},
+\]
+and the leave-one-out effect of the initialization, $\delta_I=\mu(1,1)-\mu(1,-1)$, is their sum, twice the main effect, as \eqref{eq:ablations:loo} requires. The original values have no effect of their own, only together with the weights that pruning selected, and how much of the ticket's advantage is due to its initialization and how much to its mask has no answer independent of the order of the questions.
+\end{example}
+
+\paragraph{The ablation table.} The reporting rules of \cref{ch:seeds,ch:aggregates} apply to an ablation table. Run every arm with the same seeds, splits and test items, so that the design is blocked by seed (\cref{sec:toolkit:design}), and estimate each effect from the per-seed contrasts, which removes the variation the arms share; with $n$ seeds a contrast's $t$-interval has $n-1$ degrees of freedom (\cref{thm:toolkit:tinterval}). Many rows are a family of comparisons (\cref{ch:aggregates}). And every row should say at which hyperparameters it was measured and whether the ablated system was re-tuned, because, by \cref{prop:ablations:homefield}, these are part of what the number means.\sidenote{\Textcite{LiptonSteinhardt2019} list the failure to identify the sources of empirical gains among the troubling trends of machine learning scholarship, and point to gains credited to architectures that came from hyperparameter tuning \parencite{MelisDyerBlunsom2018}. A re-tuned ablation is the experiment that separates the two.}
+
+\section{In the laboratory: tickets on the digits}\label{sec:ablations:lab}
+
+Both labs prune the same network: a two-layer perceptron of width 128 on the scikit-learn digits (26,122 parameters, 25,856 of them weights), trained with SGD and momentum 0.9, batch size 64, a cosine schedule and 30 epochs, on a split of 1,258 training and 539 test images. Iterative pruning follows Frankle and Carbin: seven rounds, each removing after training the smallest 40\% of the surviving weights of each hidden layer and the smallest 20\% of the output layer, and resetting the survivors to their initial values. The final mask keeps 229 of 8,192 weights in the first layer, 458 of 16,384 in the second and 268 of 1,280 in the output layer, 3.7\% of all weights; one-shot pruning keeps as many per layer, chosen from the trained dense network. The arms are the \emph{ticket} (the mask with the original initial values), the \emph{reinitialized} copy (the mask with a fresh draw from the same distribution) and the \emph{sham} (each layer's mask shuffled at random, with the original values).\sidenote{Within a seed, all arms share the split and the data order, and the ticket and the sham share the initial values: the blocking of \cref{sec:ablations:homefield}.} Compared with the original studies the network and data are much smaller, the optimizer is SGD with momentum rather than Adam, and the density is fixed by the number of rounds, for a reason the first lab shows.
+
+\begin{lab}{Tickets at two learning rates}{08-ablations-tickets}\label{lab:ablations:tickets}
+\labpart{Setup} For each of 20 seeds (split, initialization, data order) and each learning rate, 0.02 or 0.2, used for the dense training, every pruning round and the final training: the dense network, iterative and one-shot pruning, and the three arms of each, all with the same data order; the reinitialized copy and the sham also at 23\% and 9\% density. A $2\times2\times2$ factorial in initialization, learning rate and schedule, blocked by seed, with the sham as a control. 680 runs, about two minutes.
+\labpart{Predict first} The dense network reaches the same test error at both rates. By how much will the original initial values lower the error of the pruned network at each rate? Will the sham, which keeps the number of weights per layer, do better or worse than the reinitialized copy?
+\labpart{Look for} Whether the lines joining an arm's means are parallel; the training error of the reinitialized copies; the initialization's main effect next to its interaction with the learning rate.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=14mm},lplot,
+  width=0.5\linewidth,height=0.345\linewidth,xmode=log,ymode=log,log basis x=10,log basis y=10,
+  xmin=0.0105,xmax=0.38,ymin=1.4,ymax=100,minor tick num=0,
+  xtick={0.02,0.2},xticklabels={0.02,0.2},ytick={2,5,10,20,50,100},yticklabels={2,5,10,20,50,100},
+  xlabel={learning rate}]
+\nextgroupplot[title={(a) iterative pruning},ylabel={test error (\%)},
+  legend to name=leg:ablations:tickets,legend columns=4,
+  legend style={draw=none,fill=none,font=\footnotesize,/tikz/every even column/.append style={column sep=8pt}}]
+\addplot[reference] table[x=lr,y=dense] {figures/data/08-ablations-tickets-iter-means.dat};
+\addlegendentry{dense network}
+\addplot[ablations lineA,forget plot] table[x=xticket,y=ticket] {figures/data/08-ablations-tickets-iter-means.dat};
+\addplot[ablations lineB,forget plot] table[x=xreinit,y=reinit] {figures/data/08-ablations-tickets-iter-means.dat};
+\addplot[ablations lineC,forget plot] table[x=xsham,y=sham] {figures/data/08-ablations-tickets-iter-means.dat};
+\addplot[run,forget plot] table[x=xticket1,y=ticket1] {figures/data/08-ablations-tickets-iter.dat};
+\addplot[run,forget plot] table[x=xticket2,y=ticket2] {figures/data/08-ablations-tickets-iter.dat};
+\addplot[runB,forget plot] table[x=xreinit1,y=reinit1] {figures/data/08-ablations-tickets-iter.dat};
+\addplot[runB,forget plot] table[x=xreinit2,y=reinit2] {figures/data/08-ablations-tickets-iter.dat};
+\addplot[ablations runC,forget plot] table[x=xsham1,y=sham1] {figures/data/08-ablations-tickets-iter.dat};
+\addplot[ablations runC,forget plot] table[x=xsham2,y=sham2] {figures/data/08-ablations-tickets-iter.dat};
+\addplot[mean,ebars] table[x=xticket,y=ticket,y error=hticket] {figures/data/08-ablations-tickets-iter-means.dat};
+\addlegendentry{ticket}
+\addplot[meanB,ebarsB] table[x=xreinit,y=reinit,y error=hreinit] {figures/data/08-ablations-tickets-iter-means.dat};
+\addlegendentry{reinitialized}
+\addplot[ablations meanC,ablations ebarsC] table[x=xsham,y=sham,y error=hsham] {figures/data/08-ablations-tickets-iter-means.dat};
+\addlegendentry{sham (shuffled mask)}
+\nextgroupplot[title={(b) one-shot pruning}]
+\addplot[reference] table[x=lr,y=dense] {figures/data/08-ablations-tickets-oneshot-means.dat};
+\addplot[ablations lineA] table[x=xticket,y=ticket] {figures/data/08-ablations-tickets-oneshot-means.dat};
+\addplot[ablations lineB] table[x=xreinit,y=reinit] {figures/data/08-ablations-tickets-oneshot-means.dat};
+\addplot[ablations lineC] table[x=xsham,y=sham] {figures/data/08-ablations-tickets-oneshot-means.dat};
+\addplot[run] table[x=xticket1,y=ticket1] {figures/data/08-ablations-tickets-oneshot.dat};
+\addplot[run] table[x=xticket2,y=ticket2] {figures/data/08-ablations-tickets-oneshot.dat};
+\addplot[runB] table[x=xreinit1,y=reinit1] {figures/data/08-ablations-tickets-oneshot.dat};
+\addplot[runB] table[x=xreinit2,y=reinit2] {figures/data/08-ablations-tickets-oneshot.dat};
+\addplot[ablations runC] table[x=xsham1,y=sham1] {figures/data/08-ablations-tickets-oneshot.dat};
+\addplot[ablations runC] table[x=xsham2,y=sham2] {figures/data/08-ablations-tickets-oneshot.dat};
+\addplot[mean,ebars] table[x=xticket,y=ticket,y error=hticket] {figures/data/08-ablations-tickets-oneshot-means.dat};
+\addplot[meanB,ebarsB] table[x=xreinit,y=reinit,y error=hreinit] {figures/data/08-ablations-tickets-oneshot-means.dat};
+\addplot[ablations meanC,ablations ebarsC] table[x=xsham,y=sham,y error=hsham] {figures/data/08-ablations-tickets-oneshot-means.dat};
+\end{groupplot}
+\end{tikzpicture}\par\smallskip
+\pgfplotslegendfromname{leg:ablations:tickets}
+\caption{\Cref{lab:ablations:tickets}: a two-layer perceptron on the digits pruned to 3.7\% of its weights, (a)~iteratively and (b)~in one shot, at two learning rates; 20 seeds per cell (seeds 0--19). Hollow marks are single runs, spread sideways around each rate; filled marks are means with 95\% $t$-intervals, joined across the two rates for each arm; the dashed line joins the means of the dense network. Both axes are logarithmic.}
+\label{fig:ablations:tickets}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} The dense network reached the same test error at the two rates, \pmval{2.81}{0.22} at 0.02 and \pmval{2.85}{0.36} at 0.2 (means with 95\% $t$-intervals over 20 seeds). Pruned iteratively to 3.7\% of its weights, the ticket came within \pmval{1.60}{0.31} points of it at 0.02 and \pmval{0.63}{0.42} at 0.2, paired by seed: close, but not matching. The ablation gave two answers (\cref{fig:ablations:tickets}a). At 0.02 the reinitialized copies reached \pmval{45.2}{4.4}\% error against the ticket's \pmval{4.42}{0.38}\%, failing to fit even their training data (43\% training error, against 1.8\%); the effect, \pmval{40.7}{4.4} points, appeared for every seed. At 0.2 it was \pmval{1.24}{0.42} points, positive for 18 seeds of 20, with both arms fitting their training data. One-shot pruning repeated the pattern (\cref{fig:ablations:tickets}b): \pmval{59.0}{4.2} points at 0.02 and \pmval{0.58}{0.49} at 0.2. Only the ticket is nearly flat across the two rates; the lines are far from parallel. At milder sparsity the effect at 0.2 vanishes: \pmval{0.04}{0.32} points at 23\% of the weights and \pmval{0.45}{0.41} at 9\%, against 2.3 and 8.8 points at 0.02. This interaction with sparsity, the one Frankle and Carbin pointed out to Liu and colleagues, is why the labs prune to 3.7\%.
+
+In the factorial analysis, with each factor coded $+1$ at the ablated, larger or one-shot level and effects estimated from per-seed contrasts, the main effect of the initialization is \pmval{25.4}{1.4} points and its interaction with the learning rate \pmval{-24.5}{1.5}, almost as large; neither describes what an experimenter at either rate would see. The interactions with the schedule are smaller, $\theta_{IS}=\pmval{4.4}{1.6}$ and $\theta_{ILS}=\pmval{-4.7}{1.6}$, and the four leave-one-out effects, 40.7, 1.2, 59.0 and 0.6 points, are the main effect plus the signed interactions (\cref{lem:confounding:expansion}).
+
+Why does the learning rate matter so much? At the small rate the trained weights remember their initial values: the rank correlation between the magnitudes of the initial and trained weights of the dense network's first layer is 0.73 at 0.02 and 0.19 at 0.2. Pruning after training then nearly keeps the weights that started large, as \textcite{LiuEtAl2019} suggested; the ticket's initial weights are 1.31 times the root mean square of their layers, and 99\% keep their sign in training. A fresh draw is smaller, so sparse a network's signal is weak, and at a small rate 30 epochs may not suffice. We have not tested this account (\cref{ex:ablations:scale}).
+
+The sham was the worst arm at both rates: \pmval{12.9}{1.5}\% at 0.2, 8.2 points worse than the reinitialized copy, which shares its initial distribution but has the learned positions. The learned mask concentrates its weights: on average 142 to 146 of the 256 hidden units have both an incoming and an outgoing weight in the ticket, against 216 to 219 in the sham. Here the positions matter far more than the initial values, as \textcite{FrankleCarbin2019} found for their MNIST network and \textcite{FrankleEtAl2021} for magnitude pruning after training.
+
+\begin{lab}{The home-field advantage}{08-ablations-homefield}\label{lab:ablations:homefield}
+\labpart{Setup} For each of 20 seeds: iterative pruning at learning rate 0.1 as in \cref{lab:ablations:tickets}; then, with the final mask fixed, the ticket, the reinitialized copy, the sham and the dense network, each trained at ten learning rates from 0.01 to 0.5. Effects at each rate, re-tuned effects and regrets (\cref{def:ablations:retuned}); 10,000 simulated small studies that tune the ticket on three seeds and run the ablation on three others. 940 runs, about two and a half minutes.
+\labpart{Predict first} Will the arms have the same best learning rate? At the rate that is best for the ticket, will the measured effect of the initialization be larger or smaller than the re-tuned effect, and by how much?
+\labpart{Look for} The flat part of the ticket's curve and the slopes of the others over it; the identity of \cref{prop:ablations:homefield} in the printed table; the spread of the small studies' reported effects.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},lplot,
+  width=0.5\linewidth,height=0.345\linewidth,xmode=log,ymode=log,log basis x=10,log basis y=10,
+  xmin=0.0085,xmax=0.6,minor tick num=0,
+  xtick={0.01,0.02,0.05,0.1,0.2,0.5},xticklabels={0.01,0.02,0.05,0.1,0.2,0.5},
+  xlabel={learning rate of the final training}]
+\nextgroupplot[title={(a) test error of each arm},ylabel={test error (\%)},ymin=2,ymax=100,
+  ytick={2,5,10,20,50,100},yticklabels={2,5,10,20,50,100},
+  legend to name=leg:ablations:homefield,legend columns=4,
+  legend style={draw=none,fill=none,font=\footnotesize,/tikz/every even column/.append style={column sep=8pt}}]
+\addplot[reference,mark=*,mark size=0.9pt,mark options={solid,fill=black!55}] table[x=lr,y=dense] {figures/data/08-ablations-homefield-means.dat};
+\addlegendentry{dense network}
+\addplot[run,forget plot] table[x=x,y=ticket] {figures/data/08-ablations-homefield-runs.dat};
+\addplot[runB,forget plot] table[x=x,y=reinit] {figures/data/08-ablations-homefield-runs.dat};
+\addplot[ablations runC,forget plot] table[x=x,y=sham] {figures/data/08-ablations-homefield-runs.dat};
+\addplot[ablations lineA,forget plot] table[x=lr,y=ticket] {figures/data/08-ablations-homefield-means.dat};
+\addplot[ablations lineB,forget plot] table[x=lr,y=reinit] {figures/data/08-ablations-homefield-means.dat};
+\addplot[ablations lineC,forget plot] table[x=lr,y=sham] {figures/data/08-ablations-homefield-means.dat};
+\addplot[mean,ebars] table[x=lr,y=ticket,y error=hticket] {figures/data/08-ablations-homefield-means.dat};
+\addlegendentry{ticket}
+\addplot[meanB,ebarsB] table[x=lr,y=reinit,y error=hreinit] {figures/data/08-ablations-homefield-means.dat};
+\addlegendentry{reinitialized}
+\addplot[ablations meanC,ablations ebarsC] table[x=lr,y=sham,y error=hsham] {figures/data/08-ablations-homefield-means.dat};
+\addlegendentry{sham}
+\nextgroupplot[title={(b) effect of the ablation at each rate},ylabel={increase in test error (points)},
+  xmax=0.42,xtick={0.01,0.02,0.05,0.1,0.2},xticklabels={0.01,0.02,0.05,0.1,0.2},ymin=0.15,ymax=150,ytick={0.2,0.5,1,2,5,10,20,50,100},yticklabels={0.2,0.5,1,2,5,10,20,50,100}]
+\addplot[rubric,line width=0.7pt,densely dashed,no marks] table[x=lr,y=rreinit] {figures/data/08-ablations-homefield-effects.dat};
+\addplot[black!65,line width=0.7pt,densely dashed,no marks] table[x=lr,y=rsham] {figures/data/08-ablations-homefield-effects.dat};
+\addplot[ablations lineB] table[x=lr,y=dreinit] {figures/data/08-ablations-homefield-effects.dat};
+\addplot[ablations lineC] table[x=lr,y=dsham] {figures/data/08-ablations-homefield-effects.dat};
+\addplot[meanB,ebarsB] table[x=lr,y=dreinit,y error=hdreinit] {figures/data/08-ablations-homefield-effects.dat};
+\addplot[ablations meanC,ablations ebarsC] table[x=lr,y=dsham,y error=hdsham] {figures/data/08-ablations-homefield-effects.dat};
+\end{groupplot}
+\end{tikzpicture}\par\smallskip
+\pgfplotslegendfromname{leg:ablations:homefield}
+\caption{\Cref{lab:ablations:homefield}: masks found by iterative pruning at learning rate 0.1, then each arm trained at ten learning rates; 20 seeds (0--19). (a)~Test error: hollow marks are single runs, filled marks means with 95\% $t$-intervals; the dense network (dashed) diverges in some runs from 0.3 on. (b)~The effect of each ablation at each rate, ablated error minus ticket error paired by seed, with 95\% $t$-intervals, up to 0.3 (at higher rates the ticket itself begins to fail). Dashed lines: the re-tuned effects, each arm's best mean error minus the ticket's, 0.87 points for the reinitialized copy and 6.77 for the sham. By \cref{prop:ablations:homefield}, the height of a point above its line is the regret of the ablated arm at that rate minus the regret of the ticket.}
+\label{fig:ablations:homefield}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{What happened.} The arms did not share a best learning rate (\cref{fig:ablations:homefield}a). The ticket's error was nearly flat from 0.05 to 0.3, from 3.76\% at 0.05 to \pmval{3.47}{0.38}\% at its best rate, 0.2; the reinitialized copy was best at 0.3 (4.34\%) and the sham at 0.4 (10.24\%), both falling steeply over the ticket's flat range. The dense network, best at 0.15, diverged in 9 of 20 runs at 0.3. With each arm at its own best rate, the original initial values lower the error by 0.87 points (95\% bootstrap interval 0.50 to 1.28 over seeds), and the learned mask with its original values lowers it by 6.77 points (5.95 to 7.65) against the sham.
+
+At the ticket's best rate the measured effect of the initialization is \pmval{1.23}{0.44} points, the re-tuned 0.87 plus the reinitialized copy's regret there, 0.36: the home-field advantage of \cref{prop:ablations:homefield}, here within the noise. For the sham it is not: at 0.2 its regret is \pmval{2.32}{0.92} points, a third of the re-tuned effect. And the ticket's flat curve makes the choice of rate nearly arbitrary for the ticket and decisive for the ablation (\cref{fig:ablations:homefield}b). At 0.1, the rate at which the masks were found, the ticket's regret is \pmval{0.14}{0.33} points while the effect of the initialization is \pmval{1.77}{0.38}, twice the re-tuned value; at 0.05, where the ticket loses \pmval{0.29}{0.32}, it is \pmval{3.70}{0.45}, four times; at 0.02, where the dense network is within \pmval{0.33}{0.25} points of its best, 41.9 points.
+
+The simulated small studies show the corollary at work. Each chose the ticket's rate as the one with the lowest mean error over three seeds, as a paper with three seeds would, and ran the reinitialized copy at that rate with three other seeds; the chosen rate was 0.1, 0.2 or 0.3 in 89\% of them. The reported effect averaged 1.67 points, against the re-tuned 0.87: by \eqref{eq:ablations:noisy}, 0.17 of the excess is the selection bonus of the ticket's reported score and 0.63 the expected home-field advantage, and 37\% of the studies reported more than twice the re-tuned effect. For the sham the average was 12.8 points against a re-tuned 6.8, nearly all of the excess home-field advantage.
+
+The miniature reproduced the interaction of the post-mortem and its direction: the original initialization matters enormously at a small learning rate and little at a large one. It did not reproduce the end point: at 3.7\% density, with or without re-tuning, the original values were worth about a point at every rate. On this small network, as on Lenet in \cref{tab:ablations:literature}, the effect is narrowed but not gone.
+
+\section{Protocol}\label{sec:ablations:protocol}
+
+\begin{protocol}{Designing an ablation}\label{prot:ablations:design}
+\item Write down the estimand: what the shipped system loses without the component (a leave-one-out effect at fixed settings), or what the component adds to the best achievable (a re-tuned effect). They are different numbers.
+\item List the components and the hyperparameters that may interact with each. If interactions are plausible, use a two-level factorial or fractional factorial design rather than one factor at a time, and report interactions with intervals.
+\item Re-tune every ablated variant with the search space and budget of the full system, at least over the learning rate, its schedule and the length of training; report the fixed-setting and the re-tuned effects side by side.
+\item Choose settings on validation data and report test results from fresh runs at the chosen settings, never the scores of the runs that chose them.
+\item Add a sham that removes only the ingredient the claim is about, such as a shuffled mask or permuted values, and a positive control that must show an effect.
+\item Block on seeds: give every arm the same seeds, splits and test items, estimate effects from per-seed contrasts with $t$-intervals, show every run, and correct for multiplicity across the rows.
+\item Measure the effect at more than one level of the settings it may depend on (learning rate, scale, training length), or state those levels as part of the claim.
+\end{protocol}
+
+The protocol makes an ablation measure what it says it measures; it does not make a component's contribution well defined when interactions are strong, nor say how a component works, the subject of \cref{ch:mechanisms}. It is expensive: a full factorial design costs $2^k$ cells, and re-tuning multiplies the cost of every ablated arm by the size of the search. When that is out of reach, re-tune on a smaller model or a shorter schedule and say so, re-tune at least the learning rate, which interacts with almost everything, use a fractional design, and report at which hyperparameters every row was measured and for which arm they were tuned.
+
+\begin{exercises}
+\item \consolidation (Simple effects.) (a) Show that the leave-one-out effect $\delta_j(\mathbf 1)$ and the add-one effect $\delta_j(-\mathbf 1)$, measured at the baseline, differ by twice the sum of the interactions of even order that contain $j$. (b) Show that the sum of the $k$ leave-one-out effects equals the gain of the full system over the system with every component removed, $\mu(\mathbf 1)-\mu(-\mathbf 1)$, for every $\mu$ if $k=1$, and give a function with $k=2$ for which it does not. (c) Express the sum of the leave-one-out effects in terms of the $\theta_S$.\label{ex:ablations:simple}
+
+\item \consolidation (A better one-at-a-time design.) In the leave-one-out design, put $r_0$ runs at the full system and $r_1$ at each ablated system, with $r_0+kr_1=N$. Minimize $\Var\hat\delta_j$ over the allocation, show that the optimum has $r_0=\sqrt k\,r_1$ and variance $(1+\sqrt k)^2\sigma^2/N$, and compare with $4\sigma^2/N$ for $k=3$ and $k=8$. \hint{use $\sigma^2(1/r_0+1/r_1)$ and a Lagrange multiplier.}\label{ex:ablations:allocation}
+
+\item \consolidation\hard (Fractional factorials and aliasing.) Run the half of a $2^3$ design with $x_1x_2x_3=+1$ (four cells) and $r$ runs per cell. (a) Show that the contrast for $\theta_1$ estimates $\theta_1+\theta_{23}$, and find the other aliases. (b) Show that each contrast has variance $4\sigma^2/N$. (c) For four training tricks and eight cells, construct a design in which no two main effects are aliased, and list what it cannot separate. \hint{the defining relation $x_1x_2x_3=1$ gives $c_{\{1\}}=c_{\{2,3\}}$ on the design.}\label{ex:ablations:fractional}
+
+\item \consolidation (A quadratic home field.) On a logarithmic scale of learning rates $u=\log_{10}\eta$, let $f(u)=f^\star+a(u-u_f)^2$ and $g(u)=g^\star+b(u-u_g)^2$ with $a,b>0$. (a) Compute $\Delta(u_f)-\Delta^\star$. (b) If $u$ is chosen as $\hat u=u_f+\xi$ with $\E\xi=0$ and $\Var\xi=s^2$, independent of everything else, show that the expected home-field term of \cref{cor:ablations:noisy} is $b\bigl((u_f-u_g)^2+s^2\bigr)$. (c) Estimate $a$, $b$, $u_f$ and $u_g$ from the means printed by \script{08-ablations-homefield.py} near their minima.\label{ex:ablations:quadratic}
+
+\item \labwork (Rewinding.) In \script{08-ablations-tickets.py}, rewind the surviving weights not to their initial values but to their values after one epoch of the dense training, and give the reinitialized copy a fresh draw as before. Predict first how the effect at learning rate 0.2 changes, then observe it, and relate the result to \textcite{FrankleEtAl2020}.\label{ex:ablations:rewind}
+
+\item \labwork (Scale or values?) At learning rate 0.02 the reinitialized copies did not fit their training data. In \script{08-ablations-tickets.py} add two arms: the fresh draw rescaled in each layer to the root mean square of the ticket's initial weights, and the ticket's own initial values permuted at random among its surviving positions within each layer. Which part of the 41-point effect does each recover, and which hypothesis of the lab does that test?\label{ex:ablations:scale}
+
+\item \labwork (Longer training as re-tuning.) Every arm trains for 30 epochs. In \script{08-ablations-homefield.py}, train the reinitialized copy at learning rate 0.02 for 60 and 120 epochs. Is the 42-point effect on where training ends or on how fast it gets there? Which hyperparameters belong in the search of a re-tuned ablation?\label{ex:ablations:epochs}
+
+\item \design (Four tricks, 64 runs.) A training recipe adds four components to a baseline: label smoothing, a warm-up, an augmentation and weight averaging. You have 64 runs. Design an ablation that estimates every main effect and every two-factor interaction with intervals, decide whether to spend runs on re-tuning the learning rate, and say what you would report if the warm-up turned out to interact with the learning rate.\label{ex:ablations:design}
+
+\item \design (A sham for a data filter.) A learned filter removes low-quality training examples. Design its ablation for 40 runs: the sham, positive and negative controls, interacting factors and re-tuning.\label{ex:ablations:datafilter}
+
+\item \critique (An ablation table.) A table lists the full model at 81.4\% accuracy and four rows each removing one component, at 79.9, 80.6, 80.1 and 81.0\%; the text says the components contribute 1.5, 0.8, 1.3 and 0.4 points, 4.0 in all, while the full model beats its baseline by 3.1. Every number is one run at hyperparameters tuned for the full model. What can the table support, and what experiment would replace it?\label{ex:ablations:critique1}
+
+\item \critique (A ticket on its home field.) A study reports that a method for finding sparse subnetworks produces tickets that beat their reinitialized copies by four points, at the learning rate chosen to maximize the tickets' accuracy, and with three seeds. Using \cref{cor:ablations:noisy} and \cref{lab:ablations:homefield}, say what the four points may contain besides the effect of the initialization, and what you would ask the authors to run.\label{ex:ablations:critique2}
+
+\item \research (When is a contribution defined?) Under strong interactions, \enquote{the contribution of a component} depends on the baseline, the order of the ablations and the hyperparameters; the Shapley value of \cref{ch:confounding} averages over orders at fixed hyperparameters. Open: a definition of a component's contribution that is invariant to re-tuning, with a design that estimates it in fewer than $2^k$ cells when interactions are sparse; and how to choose the search space of a re-tuned ablation so that its conclusions do not depend on it.\label{ex:ablations:research}
+\end{exercises}
+
+\notesandrefs
+The factorial design is Fisher's. In a paper on field trials he wrote that no aphorism was repeated more often than that Nature should be asked one question at a time, and that this view was \enquote{wholly mistaken} \parencite[p.~511]{Fisher1926}; \textcite{Fisher1935} gave the full argument, that a factorial experiment answers several questions with the same runs and tests each over a range of conditions. \Textcite{BoxHunterHunter2005} and \textcite{Montgomery2017} teach factorial and fractional designs, \textcite{Czitrom1999} compares one-factor-at-a-time studies with designed experiments on industrial examples, and \textcite{Daniel1973} says when one-at-a-time plans are the better choice. \Cref{thm:ablations:ofat} is the classical efficiency comparison, with the full system as the baseline.
+
+The literature on pruning is older than deep learning \parencite{LeCunDenkerSolla1990} and has grown faster than its standards: \textcite{BlalockEtAl2020} found that results were rarely comparable across papers and proposed a checklist that includes the random baseline with layerwise proportions used as the sham here, and \textcite{GaleElsenHooker2019} found that simple magnitude pruning matched more complex methods at scale. The lottery ticket experiments continued after the papers discussed in this chapter, on what masks encode and on finding tickets cheaply; \textcite{MaEtAl2021} review the conflicting reports and propose a stricter definition of a ticket.
+
+That a baseline must be tuned as carefully as the method it is compared with is the lesson of \cref{ch:budgets}, of which \textcite{MelisDyerBlunsom2018} gave a famous instance; the sham is one of the controls of \cref{ch:controls}, and path attributions are in \cref{ch:confounding}.
+
+\paragraph{Translating the literature.} \Textcite{FrankleCarbin2019} write $P_m$ for the fraction of weights remaining, our density, and $f(x;m\odot\theta_0)$ for the ticket; their random reinitialization $m\odot\theta_0'$ is our reinitialized copy, and their ``random sparsity'' is a random mask of the same size. \Textcite{LiuEtAl2019} report a prune ratio, one minus our density, and call the reinitialized copy ``random init''. \Textcite{FrankleEtAl2020} call a subnetwork \emph{matching} when it reaches the full network's accuracy (within 0.2 points, in their summary across sparsities), and \emph{stable} when the error barrier between two of its runs is below 2\%; their rewinding to iteration $k$ replaces our initial values by the weights at step $k$. The \emph{shuffling} ablation of \textcite{FrankleEtAl2021} is our sham; the \emph{reshuffling} of \textcite{ZhouEtAl2019} permutes the initial values among the surviving positions instead, keeping the mask. In \textcite{MaEtAl2021}, LT and RR are our ticket and reinitialized copy, and their third condition asks for a positive re-tuned effect.
+
+\printchapterbib
+\end{refsection}
