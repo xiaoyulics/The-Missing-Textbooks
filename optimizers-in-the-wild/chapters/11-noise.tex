@@ -22,7 +22,7 @@ A data-parallel run averages the gradients of $B$ examples per step; the average
 For SGD, the \emph{linear scaling rule}: when the batch size is multiplied by $k$, multiply the learning rate by $k$. Goyal et al.\ trained ResNet-50 with the learning rate $0.1\cdot B/256$ for batch sizes up to $8192$, after a linear warmup over five epochs. For Adam, the \emph{square-root rule}: multiply the learning rate by $\sqrt k$, and $1-\beta_1$ and $1-\beta_2$ by $k$. Both are used up to a \emph{critical batch size}, beyond which larger batches save few steps, and batch sizes are chosen near it. Language models train on batches of millions of tokens, $3.2$ million for the largest GPT-3 model, often reached by increasing the batch size early in training.
 \end{practice}
 
-The linear rule is discussed by \textcite{Krizhevsky2014}, and \textcite{GoyalEtAl2017} made it into the recipe that trained ResNet-50 on ImageNet in an hour on $256$ GPUs. \Textcite{HofferHubaraSoudry2017} argued for a learning rate proportional to $\sqrt B$ for SGD, which keeps the covariance of the update fixed, \textcite{MalladiEtAl2022} derived the square-root rule for adaptive methods from stochastic differential equations, and \textcite{SmithEtAl2018} replaced a decay of the learning rate by an increase of the batch size.
+The linear rule is discussed by \textcite{Krizhevsky2014}; \textcite{GoyalEtAl2017} made it the recipe that trained ResNet-50 on ImageNet in an hour. \Textcite{HofferHubaraSoudry2017} argued for a learning rate proportional to $\sqrt B$ for SGD, which keeps the covariance of the update fixed, \textcite{MalladiEtAl2022} derived the square-root rule for adaptive methods from stochastic differential equations, and \textcite{SmithEtAl2018} replaced a decay of the learning rate by an increase of the batch size.
 
 \begin{observation}[Three regimes of data parallelism; \textcite{ShallueEtAl2019}]\label[observation]{obs:noise:regimes}
 With the learning rate and the other hyperparameters retuned for every batch size, the number of steps needed to reach a fixed out-of-sample error falls like $1/B$ at small batch sizes (\term{perfect scaling}\index{perfect scaling}), then more slowly, and finally not at all. The shape is the same across the image and text workloads studied; where perfect scaling ends differs widely between workloads and depends on the model, the data set and the optimizer.
@@ -103,7 +103,7 @@ Each mode relaxes geometrically from its initial loss to its share $F_i$ of the 
 \begin{fullwidth}
 \centering
 \begin{tikzpicture}
-\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=54mm,xmode=log,ymode=log,xmin=1,xmax=4000,ymin=0.02,ymax=5,xlabel={step $t$},ylabel={expected loss $\cR_t(\eta,B)$}]
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=49mm,xmode=log,ymode=log,xmin=1,xmax=4000,ymin=0.02,ymax=5,xlabel={step $t$},ylabel={expected loss $\cR_t(\eta,B)$}]
 \nextgroupplot[title={batch size $B=4$},legend style={at={(0.03,0.03)},anchor=south west,font=\scriptsize}]
 \addplot[theory3] table[x=t,y=a1] {figures/data/11-noise-curves.dat};
 \addplot[theory] table[x=t,y=a2] {figures/data/11-noise-curves.dat};
@@ -323,13 +323,11 @@ For the spiked models of \cref{fig:noise:precond} ($\kappa=100$, $k=10$, target 
 
 \section{Reading the theory}\label{sec:noise:reading}
 
-\paragraph{Loss curves.} In \cref{fig:noise:curves} at $B=4$, the step size $0.10$ has a floor of $0.047$ but is still above the target after $4000$ steps, $1.00$ levels off above it at $0.55$, and $0.26$ reaches it after about $2600$ steps. At $\eta=0.26$ the three batch sizes follow one curve until each meets its own floor: larger batches at a fixed step do not train faster, they train lower.
-
 \begin{figure}[t]
 \begin{fullwidth}
 \centering
 \begin{tikzpicture}
-\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=58mm,xmode=log,xmin=1,xmax=16384,xlabel={batch size $B$},xtick={1,10,100,1000,10000}]
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=52mm,xmode=log,xmin=1,xmax=16384,xlabel={batch size $B$},xtick={1,10,100,1000,10000}]
 \nextgroupplot[ymode=log,ymin=5,ymax=20000,ylabel={steps to target $T(B)$},legend style={at={(0.97,0.97)},anchor=north east,font=\scriptsize}]
 \addplot[theory] table[x=B,y=sgd] {figures/data/11-noise-steps.dat};
 \addplot[theory3] table[x=B,y=mom] {figures/data/11-noise-steps-mom.dat};
@@ -356,7 +354,7 @@ For the spiked models of \cref{fig:noise:precond} ($\kappa=100$, $k=10$, target 
 \label{fig:noise:steps}
 \end{figure}
 
-\paragraph{Steps against batch size.} \Cref{fig:noise:steps} is the theory's version of \cref{obs:noise:regimes}. For SGD the steps fall like $1/B$ up to $B\approx10$ and level off near $\noiseTmin=177$; the best step size grows like $\gamma^\star B$, reaches $1/S$ at $B=1/(\gamma^\star S)\approx15$, and creeps up to $1.98$, within one percent of $2/S$, so that in the curvature-limited regime the tuned learning rate sits at the edge of stability (\cref{ch:eos}). The critical batch size is $56$. Momentum with $\beta=0.9$ follows SGD at small batch sizes (\cref{prop:noise:momentum}) and levels off at $23$ steps, a critical batch size of $434$. Preconditioning by $H^{-1/2}$ lowers the small-batch line by the factor $2.95$ and the large-batch level to $10$ steps, a critical batch size of $339$. Measured by the batch size at which $T(B)=2\noiseTmin$ instead, the knee moves from $46$ to $190$, a factor of four rather than six.
+\paragraph{Steps against batch size.} In \cref{fig:noise:curves}, larger batches at a fixed step do not train faster, they train lower; the batch size pays only through a larger step. \Cref{fig:noise:steps} is the theory's version of \cref{obs:noise:regimes}. For SGD the steps fall like $1/B$ up to $B\approx10$ and level off near $\noiseTmin=177$; the best step size grows like $\gamma^\star B$, reaches $1/S$ at $B=1/(\gamma^\star S)\approx15$, and creeps up to $1.98$, within one percent of $2/S$, so that in the curvature-limited regime the tuned learning rate sits at the edge of stability (\cref{ch:eos}). The critical batch size is $56$. Momentum with $\beta=0.9$ follows SGD at small batch sizes (\cref{prop:noise:momentum}) and levels off at $23$ steps, a critical batch size of $434$. Preconditioning by $H^{-1/2}$ lowers the small-batch line by the factor $2.95$ and the large-batch level to $10$ steps, a critical batch size of $339$. Measured by the batch size at which $T(B)=2\noiseTmin$ instead, the knee moves from $46$ to $190$, a factor of four rather than six.
 
 \paragraph{The hyperbola.} If $T(B)=\noiseTmin+\noiseEmin/B$ held exactly, McCandlish et al.'s relation would follow. The exact $T(B)$ lies between $0.89$ and $1.04$ times this hyperbola for SGD and between $0.69$ and $1.00$ times it for $H^{-1/2}$, but the product $(T/\noiseTmin-1)(E/\noiseEmin-1)$ is a more sensitive test: it rises from $0.43$ as $B\to0$ to $3.5$ at $B=16384$ for SGD, and stays between $0.11$ and $0.25$ for $H^{-1/2}$. As $B\to0$ it tends to $E_1/\noiseTmin$, where $E(B)=\noiseEmin+E_1B+o(B)$, and the relation assumes $E_1=\noiseTmin$, which nothing in the model enforces. A least-squares fit of the hyperbola gives $\noiseBcrit\approx52$ (Exercise~\ref{ex:noise:simfit}).
 
@@ -365,7 +363,7 @@ For the spiked models of \cref{fig:noise:precond} ($\kappa=100$, $k=10$, target 
 \begin{figure}[t]
 \centering
 \begin{tikzpicture}
-\begin{axis}[wplot,height=0.55\linewidth,xmode=log,ymode=log,xmin=0.5,xmax=32768,ymin=0.8,ymax=30,xlabel={batch size $B$},ylabel={advantage $T(B)/T^{H^{1/2}}(B)$},xtick={1,10,100,1000,10000},ytick={1,2,5,10,20},yticklabels={1,2,5,10,20},legend style={at={(0.03,0.97)},anchor=north west,font=\scriptsize}]
+\begin{axis}[wplot,height=0.5\linewidth,xmode=log,ymode=log,xmin=0.5,xmax=32768,ymin=0.8,ymax=30,xlabel={batch size $B$},ylabel={advantage $T(B)/T^{H^{1/2}}(B)$},xtick={1,10,100,1000,10000},ytick={1,2,5,10,20},yticklabels={1,2,5,10,20},legend style={at={(0.03,0.97)},anchor=north west,font=\scriptsize}]
 \addplot[theory] table[x=B,y=harmonic] {figures/data/11-noise-precond.dat};
 \addplot[theory3] table[x=B,y=spike1] {figures/data/11-noise-precond.dat};
 \addplot[theory2] table[x=B,y=spike01] {figures/data/11-noise-precond.dat};
@@ -410,7 +408,7 @@ For a practitioner the theory gives the scaling rules a range of validity. The l
 The stability constraint is the threshold $2/S$ of \cref{ch:eos}, with momentum's region from \cref{ch:momentum}; the floor is where \cref{ch:schedules} starts, and the equilibrium of \cref{ch:decay} is another floor. The batch-size dependence of the advantage of preconditioning (\cref{thm:noise:precond,prop:noise:spiked}) is one of the explanations that \cref{ch:transformers} offers for why Adam beats SGD on transformers, and the square-root heuristic bears on the choice of $\beta_2$ in \cref{ch:adaptive}.
 
 \begin{exercises}
-\item \consolidation (Momentum's floor.) For one mode of the heavy ball with uncorrelated noise of variance $s^2$, derive the stationary $\E x^2=s^2(1+\beta)/((1-\beta)\eta h(2+2\beta-\eta h))$. With $\eta_{\mathrm e}=\eta/(1-\beta)$ fixed and $\eta_{\mathrm e}S<2$, show that the floor of \cref{prop:noise:momentum} decreases in $\beta$ and differs from SGD's floor at $\eta_{\mathrm e}$ by a relative amount at most $\eta_{\mathrm e}S/(2-\eta_{\mathrm e}S)$.\label{ex:noise:momfloor}
+\item \consolidation (Momentum's floor.) With $\eta_{\mathrm e}=\eta/(1-\beta)$ fixed and $\eta_{\mathrm e}S<2$, show that the floor of \cref{prop:noise:momentum} decreases in $\beta$ and differs from SGD's floor at $\eta_{\mathrm e}$ by a relative amount at most $\eta_{\mathrm e}S/(2-\eta_{\mathrm e}S)$.\label{ex:noise:momfloor}
 
 \item \consolidation (One mode.) Let $d=1$, with curvature $h$, noise $c$ and $r=\Delta_0/\eps>1$. (a) Show that $\noiseTmin=1$, at $\eta=1/h$, and that $T(B)=1$ if and only if $B>(1-1/r)c/(2h\eps)$. (b) Show that $\noiseEmin=\frac{c}{8h\eps}V_1(r)$ with $V_1(r)=\min_{x>\log r}x(1-e^{-x})/(1-re^{-x})$, and that $V_1(r)=\log r+\log\log r+O(1)$. (c) For $r=20$, where $V_1=5.69$, show that a batch size just above $(1-1/r)c/(2h\eps)$ reaches the target with about two thirds of $\noiseEmin$ examples, so $E\ge\noiseEmin$ can fail. (d) For $H=hI$, show that $\noiseBcrit=\noiseEmin$ is $V_1(r)/4$ times $\noiseBsimple$ at loss $\eps$. \hint{in (b), put $x=\log r+s$.}\label{ex:noise:onemode}
 

@@ -8,10 +8,14 @@ normalized methods do not. For each setting the script reports the drift rate of
 in units of the step size eta, over the second half of the run (T = 20000 steps, eta = 0.01,
 beta1 = 0.9), and the excess cross-entropy at the end (cross-entropy minus the entropy of q).
 
-Output: figures/data/10-spikes-drift.dat. Deterministic seeds; about 20 s on one core.
+Output: figures/data/10-spikes-drift.dat (a table; it supports Section 10.5 and an exercise, not a
+figure). Deterministic seeds; 20 to 45 s on one core.
 """
 import os
-import numpy as np
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")  # light on a shared machine
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np  # noqa: E402
 
 K = 1000
 T = 20000

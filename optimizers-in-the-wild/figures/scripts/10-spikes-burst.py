@@ -20,7 +20,10 @@ Outputs:
 Deterministic seeds; about 30 s on one core.
 """
 import os
-import numpy as np
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")  # light on a shared machine
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np  # noqa: E402
 
 B1 = 0.9
 EPS = 1e-8
