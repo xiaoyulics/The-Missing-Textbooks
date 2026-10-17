@@ -154,25 +154,34 @@ def averaged_steps(a, c, B):
 
 
 def lindecay_steps(a, c, B):
+    """Least T such that a linear decay eta_t = eta0 (1 - t/T) reaches the target at step T, for the
+    best eta0: a coarse grid of 16 peak step sizes, then 16 values around the best one."""
     lam = a * H
-    etas = 2.0 / lam.max() * np.exp(np.linspace(np.log(1e-4), np.log(0.999), 40))[:, None]
+    emax = 2.0 / lam.max()
 
-    def ok(T):
-        m = np.tile(TH0SQ, (etas.shape[0], 1))
+    def final_losses(T, etas):
+        m = np.tile(TH0SQ, (len(etas), 1))
+        E = np.asarray(etas)[:, None]
         for t in range(T):
-            e = etas * (1 - t / T)
+            e = E * (1 - t / T)
             m = (1 - e * lam) ** 2 * m + e ** 2 * (a ** 2 * c / B)
-        return np.min(0.5 * (m @ H)) <= EPS
-    lo, hi = 1, 2
-    while not ok(hi):
-        lo, hi = hi, 2 * hi
-    while hi - lo > 1:
-        mid = (lo + hi) // 2
-        if ok(mid):
-            hi = mid
-        else:
-            lo = mid
-    return hi
+        return 0.5 * (m @ H)
+
+    def least_T(etas, lo=1, hi=2):
+        while np.min(final_losses(hi, etas)) > EPS:
+            lo, hi = hi, 2 * hi
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if np.min(final_losses(mid, etas)) <= EPS:
+                hi = mid
+            else:
+                lo = mid
+        return hi
+    coarse = emax * np.exp(np.linspace(np.log(1e-4), np.log(0.999), 16))
+    T1 = least_T(coarse)
+    best = coarse[int(np.argmin(final_losses(T1, coarse)))]
+    fine = np.exp(np.linspace(np.log(best / 2), np.log(min(2 * best, 0.999 * emax)), 16))
+    return least_T(fine, lo=max(1, T1 // 2), hi=T1)
 
 
 def mc_steps(a, B, eta, R, Tmax, rng, opt="sgd", b2=0.999):
