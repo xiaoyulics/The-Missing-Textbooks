@@ -7,11 +7,13 @@ at learning rate 0.3 with plain SGD; seeds are shared across arms. The shift is 
 without normalization, after each linear layer) every unit's pre-activation a is replaced
 by s * a + m, where at every step each unit draws a shift mu ~ U(-0.5, 0.5) and a scale
 sigma ~ U(1, 1.25), and every example draws m ~ U(mu - 0.1, mu + 0.1) and s ~ N(sigma, 0.1^2).
-A dose d multiplies the four half-widths 0.5, 0.25, 0.1, 0.1; the batch-normalized network
+A dose d multiplies the four noise parameters n_mu = 0.5, n_sigma - 1 = 0.25, r_mu = 0.1 and
+r_sigma = 0.1 (Santurkar et al. do not say whether r_sigma is a variance or a standard
+deviation; we read it as a standard deviation); the batch-normalized network
 is also trained at doses 1/8, 1/2, 2 and 4 (8 seeds each). A fifth arm (20 seeds) uses
 batch normalization whose batch statistics are held constant in the backward pass: the
 forward pass, and hence the stability of the distributions, is that of batch
-normalization, but the gradient does not see the normalization.
+normalization, but the gradient treats the batch mean and variance as constants.
 
 For every run we record the training loss and test error every 50 steps (with batch
 statistics recomputed on the training set and the noise switched off) and three measures

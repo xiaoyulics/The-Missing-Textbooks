@@ -21,7 +21,8 @@ pairs per cell: the disagreement between a run and its one-ulp twin, divided by 
 disagreement between independent runs.
 
 Writes figures/data/02-instability-draws-*.dat and prints the numbers quoted in the
-chapter. Runtime: about three minutes.
+chapter. Runtime: about seven minutes on a shared laptop (431 s at a load average
+of about 6).
 """
 import os
 import sys

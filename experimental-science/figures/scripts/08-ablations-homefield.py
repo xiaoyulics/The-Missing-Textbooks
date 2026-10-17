@@ -32,7 +32,7 @@ Writes
   figures/data/08-ablations-homefield-means.dat   one row per learning rate: means and half-widths
   figures/data/08-ablations-homefield-effects.dat effects of the two ablations up to rate 0.3
 Prints every number quoted in the text.
-Run from the volume root:  python3 figures/scripts/08-ablations-homefield.py   (about 2.5 min)
+Run from the volume root:  python3 figures/scripts/08-ablations-homefield.py   (about 5 min)
 """
 import os, sys, time, math, copy
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

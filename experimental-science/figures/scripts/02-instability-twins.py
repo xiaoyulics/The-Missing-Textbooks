@@ -26,7 +26,7 @@ Part C (noisy regime) records when each base run has fitted half of its mislabel
 training examples.
 
 Writes figures/data/02-instability-twins-dist.dat, -sizes.dat, -memo.dat and prints the
-numbers quoted in the chapter. Runtime: about one minute.
+numbers quoted in the chapter. Runtime: about one minute on a shared laptop (66 s).
 """
 import os
 import sys

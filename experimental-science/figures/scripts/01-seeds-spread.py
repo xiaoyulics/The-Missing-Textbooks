@@ -12,7 +12,7 @@ Writes
                                             height for the dot plot, running mean and its
                                             95% t-interval (lo, hi) after this many runs
 Prints every number quoted in the text.
-Run from the volume root:  python3 figures/scripts/01-seeds-spread.py   (about 20 s)
+Run from the volume root:  python3 figures/scripts/01-seeds-spread.py   (about 15 s)
 """
 import os, sys, time, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

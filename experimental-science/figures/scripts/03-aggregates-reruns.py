@@ -200,7 +200,9 @@ def main():
 
     # run-noise SD predicted by the effective number of tasks, for method A
     sdA = SA.std(1, ddof=1)
-    fpc = (n - N_PER_PAPER) / (n - 1)          # finite-population correction of the bank
+    # finite-population correction of the bank: k of n runs drawn without replacement have a mean
+    # with variance (S^2 / k)(1 - k/n), where S^2 is the bank's sample variance (divisor n - 1)
+    fpc = (n - N_PER_PAPER) / n
     pred_mean = np.sqrt(np.sum(sdA**2) / N_PER_PAPER * fpc) / J
     order = np.argsort(SA.mean(1))
     mid2 = order[J // 2 - 1:J // 2 + 1]

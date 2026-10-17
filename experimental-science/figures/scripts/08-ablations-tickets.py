@@ -29,7 +29,7 @@ Writes
   figures/data/08-ablations-tickets-iter-means.dat     means and 95% t half-widths, iterative
   figures/data/08-ablations-tickets-oneshot-means.dat  the same, one shot
 Prints every number quoted in the text.
-Run from the volume root:  python3 figures/scripts/08-ablations-tickets.py   (about 2 min)
+Run from the volume root:  python3 figures/scripts/08-ablations-tickets.py   (about 3 min)
 """
 import os, sys, time, math, copy
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

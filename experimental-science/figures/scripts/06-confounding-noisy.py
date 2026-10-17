@@ -8,8 +8,8 @@ attributions along different orders disagree.
 
 Run from the volume root:  python3 figures/scripts/06-confounding-noisy.py
 Writes figures/data/06-confounding-noisy-{cells,simple,shapley,recipes}.dat and prints the
-numbers quoted in Chapter 6. Three to six minutes on two threads, depending on the load of
-the machine (three and a half to six CPU-minutes).
+numbers quoted in Chapter 6. Three to thirteen minutes on two threads, depending on the load
+of the machine (three and a half to eight CPU-minutes).
 """
 import os
 import importlib.util

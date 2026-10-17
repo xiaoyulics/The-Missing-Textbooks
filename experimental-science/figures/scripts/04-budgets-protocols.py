@@ -128,10 +128,15 @@ def main():
     for protocol in ("2017", "2019"):
         d = [100 * (a["mean"] - b["mean"]) for a, b in zip(out[(protocol, "adam")], out[(protocol, "momentum")])]
         m, hw = lk.t_interval(d)
-        wins = sum(x < 0 for x in d)
-        p_sign = stats.binomtest(wins, R, 0.5).pvalue
+        # A five-run mean moves in steps of 100/(5*1197) = 0.017 points; a smaller difference is a tie
+        # (the same number of test errors in both arms) blurred by float32 rounding of the accuracies.
+        tol = 1e-3
+        lower, higher = sum(x < -tol for x in d), sum(x > tol for x in d)
+        level = R - lower - higher
+        p_sign = stats.binomtest(lower, lower + higher, 0.5).pvalue if lower + higher else 1.0
         print(f"  protocol {protocol}: Adam - momentum = {m:+.2f} +- {hw:.2f} points (paired by split; "
-              f"median {np.median(d):+.2f}; Adam lower in {wins} of {R}, two-sided sign test p = {p_sign:.3f})")
+              f"median {np.median(d):+.2f}; Adam lower in {lower}, higher in {higher}, level in {level} of {R}; "
+              f"two-sided sign test on the untied splits p = {p_sign:.3f})")
     for key, reps in out.items():
         bad = [(r, 100 * e) for r, d in enumerate(reps) for e in d["fresh"] if e > 0.5]
         if bad:

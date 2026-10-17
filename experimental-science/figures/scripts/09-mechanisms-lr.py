@@ -8,7 +8,8 @@ mean training loss over twelve checkpoints, the final test error and the update-
 covariate shift of Lab 9.1. For the normalized network we also check two predictions of
 scale invariance on every step and every row w_j of a weight matrix that feeds a batch
 normalization: the bias before the normalization receives a zero gradient, and
-||w_j||^2 grows by exactly lr^2 ||grad w_j||^2 per step; and we report the effective
+||w_j||^2 grows by exactly lr^2 ||grad w_j||^2 per step (up to rounding and the eps that
+BatchNorm1d adds to the variance); and we report the effective
 learning rate lr / ||w_j||^2 at the end of training. Finally, the batch-normalization
 Jacobian identity is checked numerically, with the factor 1/m and with 1/sqrt(m).
 Writes figures/data/09-mechanisms-lr-*.dat. About three minutes with two threads.

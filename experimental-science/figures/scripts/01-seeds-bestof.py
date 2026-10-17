@@ -15,7 +15,7 @@ percentile bootstrap over runs (400 replicates).
 
 Writes figures/data/01-seeds-bestof-clean.dat and figures/data/01-seeds-bestof-noisy.dat
 Prints every number quoted in the text.
-Run from the volume root:  python3 figures/scripts/01-seeds-bestof.py   (about 70 s)
+Run from the volume root:  python3 figures/scripts/01-seeds-bestof.py   (under a minute)
 """
 import os, sys, time, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

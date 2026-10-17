@@ -9,12 +9,13 @@ parameters). Recipe: the old recipe of Chapter 1 (SGD with momentum 0.9, learnin
 Twenty blocks: in block b all four cells use split b and the seeds init = order = noise = b,
 so that contrasts are computed within a block (same training and test images) and their
 intervals are t-intervals over the 20 blocks. Both architectures are trained by the same
-loop, which reproduces labkit.run (checked at start-up for the MLP).
+loop, which reproduces labkit.run (checked at start-up for the MLP, with and without the
+shift augmentation, which both recipes leave off).
 
 Run from the volume root:  python3 figures/scripts/06-confounding-factorial.py
 Writes figures/data/06-confounding-factorial-{runs,means,credit}.dat and prints the numbers
-quoted in Chapter 6. Two to five minutes on two threads, depending on the load of the
-machine (about five CPU-minutes).
+quoted in Chapter 6. Four to eleven minutes on two threads, depending on the load of the
+machine (five to seven CPU-minutes).
 """
 import os, sys, time, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -77,6 +78,9 @@ def train(arch, cfg, data, init, order, noise):
     g_order = torch.Generator().manual_seed(60_000 + order)
     g_noise = torch.Generator().manual_seed(70_000 + noise)
     torch.manual_seed(80_000 + noise)
+    # shift augmentation (off in both recipes; Exercise "A third factor" turns it on): as in
+    # labkit.run, pixels shifted in from outside the frame take the per-pixel blank value
+    bg = Xtr.min(0).values if cfg.augment else None
     perm, pos = torch.randperm(n, generator=g_order), 0
     for step in range(total):
         if pos + bs > n:
@@ -85,7 +89,7 @@ def train(arch, cfg, data, init, order, noise):
         pos += bs
         xb, yb = Xtr[idx], ytr[idx]
         if cfg.augment:
-            xb = lk._augment(xb, g_noise)
+            xb = lk._augment(xb, g_noise, bg)
         for group in opt.param_groups:
             group["lr"] = cfg.lr * lk.lr_factor(cfg, step, total)
         loss = F.cross_entropy(model(xb), yb, label_smoothing=cfg.label_smoothing)
@@ -104,12 +108,14 @@ def tint(x):
 
 def main():
     t_start = time.time()
-    # the shared loop reproduces labkit.run exactly for the MLP
+    # the shared loop reproduces labkit.run exactly for the MLP, with and without augmentation
     d0 = lk.load(OLD, split=0)
-    a = lk.run(replace(OLD, epochs=2), init=0, order=0, data=d0)["test_err"]
-    b = train("mlp", replace(OLD, epochs=2), d0, 0, 0, 0)[0]
-    assert abs(a - b) < 1e-12, (a, b)
-    print(f"check: training loop matches labkit.run ({a:.6f})")
+    for aug in (False, True):
+        c = replace(OLD, epochs=2, augment=aug)
+        a = lk.run(c, init=0, order=0, data=d0)["test_err"]
+        b = train("mlp", c, d0, 0, 0, 0)[0]
+        assert abs(a - b) < 1e-12, (aug, a, b)
+        print(f"check: training loop matches labkit.run, augment={aug} ({a:.6f})")
     print("parameters:", {ar: lk.n_params(make_model(ar)) for ar in ARCHS},
           "MACs per image:", {ar: macs(ar) for ar in ARCHS},
           f"ratio {macs('cnn') / macs('mlp'):.1f}")

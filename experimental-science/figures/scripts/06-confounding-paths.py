@@ -18,8 +18,8 @@ labels replaced by random labels (Lab 6.3).
 
 Run from the volume root:  python3 figures/scripts/06-confounding-paths.py
 Writes figures/data/06-confounding-paths-{cells,simple,shapley,recipes}.dat and prints the
-numbers quoted in Chapter 6. Three to six minutes on two threads, depending on the load of
-the machine (five to six and a half CPU-minutes).
+numbers quoted in Chapter 6. Five to thirteen minutes on two threads, depending on the load
+of the machine (five to eight CPU-minutes).
 """
 import os, sys, time, math, itertools
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

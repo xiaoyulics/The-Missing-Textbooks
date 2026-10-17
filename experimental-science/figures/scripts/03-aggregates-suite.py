@@ -9,7 +9,7 @@ pixel noise, occluded rows, a test set shifted by one pixel). Every task gets th
 
 Scores. A run's test accuracy is normalized as
     score = (accuracy - chance) / (reference - chance),
-with chance 0.1 and, as reference, the test accuracy of a 1-nearest-neighbour classifier fitted
+with chance 0.1 and, as reference, the test accuracy of a 1-nearest-neighbor classifier fitted
 to the same training set: the miniature's analog of the human-normalized score, with the
 reference playing the human. Where the reference is weak (label noise), scores exceed 1.
 
@@ -26,7 +26,7 @@ replacement within each task, 5000 resamples), for the first 3 runs and for all 
 
 Run from the volume root:  python3 figures/scripts/03-aggregates-suite.py
 Writes figures/data/03-aggregates-runs.dat, -taskruns.dat, -tasks.dat, -agg.dat and prints the
-numbers quoted in the text. Runtime: two to three minutes on a laptop CPU with two threads.
+numbers quoted in the text. Runtime: two to four minutes on a laptop CPU with two threads.
 """
 import os
 import sys
@@ -119,7 +119,7 @@ def make_task(train_size=None, label_noise=0.0, pixel_noise=0.0, occlude=0, test
 
 
 def reference_accuracy(data):
-    """Test accuracy of the 1-nearest-neighbour classifier fitted to the training set."""
+    """Test accuracy of the 1-nearest-neighbor classifier fitted to the training set."""
     Xtr, ytr, Xte, yte = data
     return (ytr[torch.cdist(Xte, Xtr).argmin(1)] == yte).float().mean().item()
 
