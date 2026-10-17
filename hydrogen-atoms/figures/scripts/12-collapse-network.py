@@ -4,8 +4,8 @@ A ReLU network trained past zero training error on a synthetic Gaussian
 mixture: K = 4 classes, input dimension d = 32, class means drawn N(0, I_d/4)
 (seed 0), unit isotropic noise, n = 64 training examples per class, and 2000
 test examples.  Network 32 -> 256 -> 256 -> m = 32 -> K, ReLU, last layer with
-bias.  Full-batch gradient descent with momentum 0.9, step 0.05, weight decay
-5e-4 on all parameters, cross-entropy loss, 6000 steps (seed 0, CPU, 2 threads).
+bias.  Full-batch gradient descent with momentum 0.9, step 0.1, weight decay
+1e-3 on all parameters, cross-entropy loss, 20000 steps (seed 0, CPU, 2 threads).
 Writes figures/data/12-collapse-network.dat with the collapse metrics of the
 penultimate features h (training set unless marked test):
   step     iteration
@@ -36,7 +36,7 @@ body = torch.nn.Sequential(torch.nn.Linear(d, 256), torch.nn.ReLU(),
                            torch.nn.Linear(256, m), torch.nn.ReLU())
 head = torch.nn.Linear(m, K)
 params = list(body.parameters()) + list(head.parameters())
-opt = torch.optim.SGD(params, lr=0.05, momentum=0.9, weight_decay=5e-3)
+opt = torch.optim.SGD(params, lr=0.1, momentum=0.9, weight_decay=1e-3)
 
 
 def nc1(H, y):

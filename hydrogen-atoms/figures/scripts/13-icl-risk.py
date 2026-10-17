@@ -12,7 +12,7 @@ Curves (written to 13-icl-risk-theory.dat, excess risk per dimension,
   ols      minimum-norm least squares (Chapter 1 formula with E r^2 = d)
 Points (13-icl-risk-sim.dat): a single linear self-attention layer with all
 2(d+1)^2 parameters trained by Adam on fresh prompts, one model per N; its risk
-is estimated on 1.2*10^5 fresh prompts. Also the learned step size tr(Gamma)/d and
+is estimated on 10^5 fresh prompts. Also the learned step size tr(Gamma)/d and
 the size of the parts of the predictor that the theory says must vanish.
 
 Deterministic (seeded); about a minute and a half on a laptop CPU.
@@ -68,7 +68,7 @@ def lsa(WKQ, WPV, X, y, xq):
     return torch.einsum("i,bij,jk,bk->b", WPV[D], G, WKQ, zq)
 
 
-def train(N, g, steps=2000, B=1024):
+def train(N, g, steps=1500, B=1024):
     WKQ = (0.1 * torch.randn(D + 1, D + 1, generator=g)).requires_grad_()
     WPV = (0.1 * torch.randn(D + 1, D + 1, generator=g)).requires_grad_()
     opt = torch.optim.Adam([WKQ, WPV], lr=1e-2)
@@ -102,7 +102,7 @@ def main():
             even = (torch.linalg.norm(W11.T @ u1) + torch.linalg.norm(u2 * w21)).item()
             errs = []
             with torch.no_grad():
-                for _ in range(12):
+                for _ in range(10):
                     X, y, xq, yq = prompts(10000, N, g)
                     errs.append(((yq - lsa(WKQ, WPV, X, y, xq)) ** 2).numpy())
             e = np.concatenate(errs) - S2
