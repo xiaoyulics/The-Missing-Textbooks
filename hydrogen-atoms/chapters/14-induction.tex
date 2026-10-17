@@ -1,0 +1,413 @@
+% Chapter 14 of The Hydrogen Atoms of Deep Learning: induction heads and in-context Markov chains.
+\newcommand{\indcnt}{\nu}
+\newcommand{\indpb}{p^{\mathrm{B}}}
+\newcommand{\indAU}{A_{UU}}
+\newcommand{\indAX}{A_{UB}}
+\newcommand{\indAB}{A_{BB}}
+\newcommand{\indLU}{\Loss_{U}}
+\newcommand{\indDir}{\operatorname{Dir}}
+\newcommand{\indH}{\mathrm{H}}
+
+\casechapter{Induction Heads}{In-context Markov chains and a two-layer circuit}{Attention-only transformer on random Markov chains}{ch:induction}
+\begin{refsection}[chapters/14-induction.bib]
+
+\begin{chaptersummary}
+Small transformers trained on text acquire, in a short burst early in training, attention heads that complete the pattern $[A][B]\dots[A]\to[B]$, and their ability to use long contexts jumps at the same moment. We study the phenomenon on sequences drawn from a random Markov chain, a new chain for every sequence, so that next-token prediction can only be learned in context. The Bayes-optimal predictor is an add-$\kappa$ bigram estimator, and we prove that a two-layer attention-only circuit (a previous-token head, an induction head, and an attention sink that carries the prior) computes it with an error exponentially small in the attention scales. In a three-parameter caricature with linear attention we prove that gradient flow first learns the in-context unigram statistics, sits on a plateau, and leaves it after a time $\log(1/\alpha)/(2G)$ set by the initialization scale $\alpha$ and an explicit induction gain $G$; a trained softmax transformer shows the same plateau and the same logarithmic dependence. The model is silent on semantics, on heads that copy abstract patterns, and on why induction heads in language models coincide with other changes.
+\end{chaptersummary}
+
+\section{The phenomenon: a phase change in context use}\label{sec:induction:phenomenon}
+
+In December 2021 a group at Anthropic published a study of transformers stripped down to attention: no MLPs, no layer normalization, one to three layers \parencite{ElhageEtAl2021}. A one-layer model of this kind is a sum of terms that each read one earlier token, and it learns what the authors called skip-trigrams. Two-layer models did something new. Some heads in the second layer attended, from the current token $A$, to the position \emph{just after} an earlier occurrence of $A$, and copied the token found there: on a sequence $\dots[A][B]\dots[A]$ they predicted $[B]$. Elhage and coauthors named these \term{induction heads}\index{induction head}. Such a head cannot work alone. Its key at position $s$ must contain the token at position $s-1$, which a \term{previous-token head}\index{previous-token head} in the first layer writes there; the second head's keys read the first head's output, a mechanism they called \term{K-composition}\index{K-composition}.\sidenote{In their language a head is described by two low-rank matrices, $W_{QK}=W_Q^\top W_K$, which decides where to attend, and $W_{OV}=W_OW_V$, which decides what to copy. K-composition means that $W_{QK}$ of a later head reads a subspace written by $W_{OV}$ of an earlier one.}
+
+\Textcite{OlssonEtAl2022} followed the heads through training. They measured context use by an \term{in-context learning score}\index{in-context learning score}: the loss on the $500$th token of a $512$-token context minus the loss on the $50$th token, averaged over text. In models of many sizes, with and without MLPs, induction heads appear in a short window early in training, the score improves abruptly in the same window, and the training loss shows a visible bump there. They argued, from several lines of evidence, that induction heads may be the mechanism behind most in-context learning; the evidence is causal for small attention-only models, where removing the heads removes the effect, and correlational for large models with MLPs.
+
+\begin{observation}[\textcite{ElhageEtAl2021}; \textcite{OlssonEtAl2022}]\label[observation]{obs:induction:phase}
+In transformers with at least two layers trained on text, induction heads form during a short period early in training. During it the in-context learning score improves abruptly, and the training loss curve shows a bump. One-layer attention-only models do not form induction heads.
+\end{observation}
+
+The observation has been reproduced in controlled settings, which also show that it is fragile. \Textcite{ChanEtAl2022} trained transformers on sequences of image--label pairs and found that in-context learning emerges only when the training data are \emph{bursty}, with classes appearing in clusters within a sequence, and contain many rare classes; with a Zipfian class distribution in-context learning and learning in the weights coexist. \Textcite{SinghEtAl2023} found that in-context learning can be \emph{transient}: on such data it emerges and then fades as in-weights learning takes over, although the training loss keeps decreasing. \Textcite{Reddy2024} reduced an in-context classification task to a two-parameter model of an induction head, in which the abrupt transition comes from nested nonlinearities learned in sequence. \Textcite{SinghEtAl2024} dissected the formation of induction heads in a synthetic task and found that several subcircuits must form and interact before the head works.\sidenote{Their tool is a causal intervention on the training dynamics, modifying activations throughout training, rather than on the trained network.}
+
+The cleanest setting is the one we adopt. \Textcite{EdelmanEtAl2024} trained small transformers on sequences, each generated by its own random Markov chain, so that the next token can be predicted well only from the statistics of the current sequence. They observed training in stages: uniform predictions, then a plateau at a suboptimal strategy that uses only the in-context frequencies of single tokens, then a rapid jump to predictions that use the in-context frequencies of pairs, computed by what they called \emph{statistical induction heads}. They also gave evidence that the simpler unigram solution delays the bigram one.
+
+Three questions follow. \emph{What} should an induction head compute, statistically? \emph{How} does a two-layer network compute it, and why two layers? And \emph{why} does it form late and abruptly, after a plateau, rather than gradually from the start?
+
+\section{The model: Markov chains drawn afresh}\label{sec:induction:model}
+
+\paragraph{The data.} We study \term{in-context Markov chains}\index{Markov chain!in-context}. Tokens take values in $[K]=\{1,\dots,K\}$; we use $K$, the global symbol for a number of classes, because next-token prediction is a $K$-class problem. Fix a concentration $\kappa>0$.\sidenote{Papers on this task often write $\alpha$ for the Dirichlet parameter; we reserve $\alpha$ for the initialization scale, as everywhere in the book.} Each sequence is generated in three steps.
+
+\begin{assumption}[In-context Markov chains]\label[assumption]{ass:induction:data}
+(i) A transition matrix $P$ is drawn with independent rows $P_{i\cdot}\sim\indDir(\kappa\mathbf 1_K)$, $i\in[K]$. (ii) The first token $x_1$ is drawn from a law $\mu$ on $[K]$ that does not depend on $P$. (iii) Given $P$ and $x_1,\dots,x_s$, the next token is $x_{s+1}=j$ with probability $P_{x_sj}$.
+\end{assumption}
+
+Recall that the Dirichlet law $\indDir(\kappa_1,\dots,\kappa_K)$ on the simplex has density proportional to $\prod_jq_j^{\kappa_j-1}$ and mean $\kappa_j/\sum_l\kappa_l$. With probability one every entry of $P$ is positive, so $P$ has a unique stationary law $\pi=\pi(P)$, with $\pi P=\pi$. A model sees a context $x_{1:t}=(x_1,\dots,x_t)$ and outputs a probability vector $q_t\in\R^K$ for $x_{t+1}$; it is trained on the cross-entropy $\E[-\log q_t(x_{t+1})]$ averaged over the positions $t=1,\dots,N$ of contexts of length $N$. A fresh $P$ for every sequence makes all in-weights knowledge about transitions useless: averaged over $P$, every row is uniform.\sidenote{In the language of \cref{ch:icl}, the chain $P$ is the task and the context is its training set; the network must learn a learning algorithm.} The counts in the context are everything,
+\[
+  \indcnt_{ij}(t)=\#\{s<t:\ x_s=i,\ x_{s+1}=j\},\qquad \indcnt_i(t)=\sum_j\indcnt_{ij}(t),\qquad \indcnt_j^U(t)=\#\{s\le t:\ x_s=j\},
+\]
+the transition counts out of state $i$ and the unigram counts.
+
+\paragraph{The network.} We use an attention-only transformer with two layers, one head each, in which every layer writes its output to a fresh subspace of the residual stream, so that later layers can read each part separately.\sidenote{This ``disentangled'' form is used by \textcite{NichaniEtAl2024}; a standard transformer with a wide residual stream can embed it, by placing token, position and head outputs in orthogonal subspaces.} Position $s\ge1$ carries the one-hot vector $e_{x_s}\in\R^K$ of its token; an extra position $s=0$, the \term{attention sink}\index{attention sink}, carries $e_{x_0}\defeq0$. Layer~1 is a previous-token head of inverse temperature $\beta_1$: position $s\ge1$ attends to $s'\in\{0,\dots,s\}$ with weights
+\begin{equation}\label{eq:induction:layer1}
+  a^{(1)}_{ss'}=\frac{e^{\beta_1\ind\{s'=s-1\}}}{\sum_{r=0}^se^{\beta_1\ind\{r=s-1\}}},\qquad h_s=\sum_{s'=0}^sa^{(1)}_{ss'}\,e_{x_{s'}}\in\R^K .
+\end{equation}
+Its logits depend on positions only (one-hot positions and a shift matrix as $W_{QK}$), and its output $h_s$ is written next to $e_{x_s}$. Layer~2 is an induction head of inverse temperature $\beta_2$ with a sink. From the last position $t$ it attends to $s\in\{0,\dots,t\}$ with logits
+\begin{equation}\label{eq:induction:layer2}
+  \ell_0=\beta_2+\log(K\kappa),\qquad \ell_s=\beta_2\ip{e_{x_t},h_s}\quad(1\le s\le t),
+\end{equation}
+and weights $a^{(2)}_s=e^{\ell_s}/\sum_re^{\ell_r}$; the query reads the token at $t$ and the key reads the subspace written by layer~1, which is K-composition. Its values are $e_{x_s}$ for $s\ge1$ and the uniform vector $\frac1K\mathbf1_K$ for the sink, so the output
+\begin{equation}\label{eq:induction:output}
+  \hat y_t=a^{(2)}_0\,\tfrac1K\mathbf 1_K+\sum_{s=1}^ta^{(2)}_s\,e_{x_s}
+\end{equation}
+is a probability vector with positive entries, and the network predicts $q_t=\hat y_t$. Reading the output in this way, as a mixture of the values, replaces the unembedding and MLP of a real transformer, which would have to compute logarithms of the mixture; in the experiments of \cref{sec:induction:reading} the logits are $\gamma\log\hat y_t$ with a learned $\gamma$.
+
+\paragraph{The caricature for the dynamics.} Gradient flow on softmax attention is not solvable in closed form. For the dynamics we keep the composition and drop everything else: linear attention, square loss, three scalar parameters. Layer~1 has positional score $a\ind\{s'=s-1\}$, so that $h_s=a\,e_{x_{s-1}}$ (and $h_1=0$); layer~2 has score $c+b\ip{e_{x_t},h_s}$, values $e_{x_s}$, and normalization $1/t$. Its output is
+\begin{equation}\label{eq:induction:caricature}
+  \hat y_t=c\,\varphi_U+ab\,\varphi_B,\qquad \varphi_U=\frac1t\sum_{s=1}^te_{x_s},\qquad \varphi_B=\frac1t\sum_{s=2}^t\ind\{x_{s-1}=x_t\}\,e_{x_s},
+\end{equation}
+that is, $\varphi_U(j)=\indcnt^U_j(t)/t$ and $\varphi_B(j)=\indcnt_{x_tj}(t)/t$. The parameter $c$ is a unigram strength, $a$ the strength of the previous-token head, and $b$ that of the induction head; the bigram feature enters through the product $ab$ because it needs both layers. We train at one position $t=T$ on the square loss $\Loss(c,a,b)=\E\norm{\hat y_T-e_{x_{T+1}}}^2$ by gradient flow from $c=0$ and $a=b=\alpha$, with a small initialization scale $\alpha$.
+
+\begin{dictionary}
+random transition matrix $P$, fresh for each sequence & a document with its own statistics; patterns that recur within it\\
+transition counts $\indcnt_{ij}(t)$ & repeated bigrams in a context, $[A][B]\dots[A][B]$\\
+layer~1, logits $\beta_1\ind\{s'=s-1\}$ & a previous-token head\\
+layer~2, logits $\beta_2\ip{e_{x_t},h_s}$ & an induction head, K-composed with the previous-token head\\
+sink of logit $\beta_2+\log(K\kappa)$, value $\frac1K\mathbf1_K$ & an attention sink, here carrying the Dirichlet prior\\
+unigram strength $c$ & uniform attention over the context, the first thing learned\\
+product $ab$ of layer strengths & the induction circuit, useful only when both layers are in place\\
+induction gain $G$ & how much the context's bigram statistics improve on its unigram statistics\\
+\end{dictionary}
+
+\paragraph{What was thrown away.} Semantics, MLPs, layer normalization, multiple heads, learned embeddings, and every in-weights regularity: the data are designed so that only in-context statistics help. The circuit model fixes the form of both heads and leaves two scales; the caricature fixes the form of the heads and leaves three scalars, linear attention and a square loss. These are the right first simplifications because the phenomenon is a fact about \emph{composition} (a computation that needs two heads, one feeding the other) and about \emph{statistics} (what an optimal predictor should do with a context), and both survive them.
+
+\paragraph{What one had to notice.} That an induction head is a statistical estimator: copying the token after an earlier match, averaged over all matches, is counting bigrams. That a sequence model trained on a mixture of tasks predicts with the posterior of the task, so that the right benchmark is a Bayes predictor. And that a product of two small strengths is a saddle, the object of \cref{ch:deeplinear}, so that composition alone predicts a plateau whose length grows like the logarithm of the inverse initialization.
+
+\section{The solution: what an induction head computes}\label{sec:induction:circuit}
+
+\subsection{The Bayes predictor}
+
+The \term{Bayes predictor}\index{Bayes predictor} of the next token is its conditional law given the context.
+
+\begin{theorem}[Bayes-optimal next-token prediction]\label{thm:induction:bayes}
+Under \cref{ass:induction:data}, for every $t\ge1$ and every context $x_{1:t}$ of positive probability, the rows of $P$ are conditionally independent given $x_{1:t}$, with $P_{i\cdot}\sim\indDir(\kappa\mathbf1_K+\indcnt_{i\cdot}(t))$, and
+\begin{equation}\label{eq:induction:bayes}
+  \Pr(x_{t+1}=j\mid x_{1:t})=\indpb_t(j)\defeq\frac{\indcnt_{x_tj}(t)+\kappa}{\indcnt_{x_t}(t)+K\kappa}\qquad\text{for every }j\in[K].
+\end{equation}
+Every predictor $q_t$, a function of $x_{1:t}$ with values in the simplex, satisfies $\E[-\log q_t(x_{t+1})]\ge\E[-\log\indpb_t(x_{t+1})]$, with equality if and only if $q_t=\indpb_t$ almost surely.
+\end{theorem}
+
+\begin{proof}
+The plan is to write the joint density of $P$ and the context, recognize a product of Dirichlet densities, and take the posterior mean. Let $Z=\Gamma(\kappa)^K/\Gamma(K\kappa)$ be the normalizing constant of $\indDir(\kappa\mathbf1_K)$. By \cref{ass:induction:data}, the joint density of $P$ and $x_{1:t}$ is
+\[
+  \mu(x_1)\prod_{s=1}^{t-1}P_{x_sx_{s+1}}\prod_{i=1}^K\frac1Z\prod_{j=1}^KP_{ij}^{\kappa-1}=\frac{\mu(x_1)}{Z^K}\prod_{i=1}^K\prod_{j=1}^KP_{ij}^{\kappa+\indcnt_{ij}(t)-1},
+\]
+because the product over $s$ contains the factor $P_{ij}$ exactly $\indcnt_{ij}(t)$ times. Here we used (ii): the law of $x_1$ does not involve $P$. As a function of $P$, the right side is a product over rows of unnormalized $\indDir(\kappa\mathbf1_K+\indcnt_{i\cdot}(t))$ densities, which proves the first claim. By (iii), $\Pr(x_{t+1}=j\mid x_{1:t},P)=P_{x_tj}$, so $\Pr(x_{t+1}=j\mid x_{1:t})=\E[P_{x_tj}\mid x_{1:t}]$, the mean of the $j$th coordinate of $\indDir(\kappa\mathbf1_K+\indcnt_{x_t\cdot}(t))$, which is \eqref{eq:induction:bayes}.
+
+For the second claim, condition on $x_{1:t}$. The difference of the conditional cross-entropies of $q_t$ and $\indpb_t$ is $\sum_j\indpb_t(j)\log(\indpb_t(j)/q_t(j))$, the Kullback--Leibler divergence of $q_t$ from $\indpb_t$, which is nonnegative and vanishes only when $q_t=\indpb_t$ (Gibbs' inequality). Take expectations.
+\end{proof}
+
+Two cases deserve a word. At $t=1$, and whenever the current token has not been seen before position $t$, all counts out of $x_t$ vanish and the prediction is uniform. Hypothesis (ii) is used only in the first display; if the first token is drawn from the stationary law $\pi(P)$, the formula fails, because the first token then carries information about $P$ (\cref{ex:induction:stationary}). The estimator \eqref{eq:induction:bayes} adds $\kappa$ pseudo-counts to each transition: $\kappa=1$ is Laplace's rule of succession and $\kappa=\frac12$ the estimator of \textcite{KrichevskyTrofimov1981}.\sidenote{Laplace derived his rule for two outcomes: after $s$ successes in $n$ trials, the probability of a success next is $(s+1)/(n+2)$ under a uniform prior. Krichevsky and Trofimov showed that $\kappa=\frac12$ is nearly minimax for the cumulative log loss of universal coding.}
+
+Two cruder predictors serve as baselines: the \emph{uniform} predictor $\frac1K\mathbf1_K$, with loss $\log K$ at every position, and the \emph{unigram} predictors $(\indcnt^U_j(t)+\kappa')/(t+K\kappa')$, which use the frequencies of single tokens in the context but not the current token. For long contexts their losses have simple limits. Write $\indH(q)=-\sum_jq_j\log q_j$ for entropy.
+
+\begin{proposition}[Long-context losses]\label[proposition]{prop:induction:limits}
+Under \cref{ass:induction:data}, as $t\to\infty$, the expected loss of $\indpb_t$ converges to the mean entropy rate $\indH_B=\E\sum_i\pi_i\indH(P_{i\cdot})$, and that of the unigram predictor, for every fixed $\kappa'>0$, to the mean stationary entropy $\indH_U=\E\,\indH(\pi)$. Moreover $\indH_B\le\indH_U\le\log K$.
+\end{proposition}
+
+\begin{proofsketch}
+Fix $P$; its entries are positive, so the chain is ergodic, and by the ergodic theorem $\indcnt^U_j(t)/t\to\pi_j$ and $\indcnt_{ij}(t)/t\to\pi_iP_{ij}$ almost surely. Hence $\indpb_t(j)\to P_{x_tj}$ and the unigram predictor tends to $\pi$, uniformly over the next token. The law of $(x_t,x_{t+1})$ given $P$ converges to $\pi_iP_{ij}$. The losses are bounded by $\log((t+K\kappa)/\kappa)$, which grows too slowly to matter after a truncation argument, and the limits follow by dominated convergence; we omit the routine details. For the inequalities: $\indH(\pi)=\indH(\sum_i\pi_iP_{i\cdot})\ge\sum_i\pi_i\indH(P_{i\cdot})$ by concavity of entropy and stationarity, and $\indH(\pi)\le\log K$.
+\end{proofsketch}
+
+For $K=2$ the rows are $(1-u,u)$ and $(w,1-w)$ with $u,w$ independent uniform, and the three limits are $\log2=0.693$, $\indH_U=0.564$ and $\indH_B=0.481$ (two-dimensional quadrature, \cref{ex:induction:k2}). For $K=3$, Monte Carlo over $2\times10^5$ matrices gives $\log3=1.099$, $\indH_U=0.979$ and $\indH_B=0.819$. These are the three levels at which training will pause.
+
+\subsection{A two-layer circuit}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=9mm,y=10mm,>={Stealth[length=2mm]}]
+  \tikzset{tok/.style={draw=sea,fill=seafoam,line width=0.5pt,minimum width=7mm,minimum height=6mm,inner sep=0pt,font=\small},
+           snk/.style={draw=sandline,fill=sand,line width=0.5pt,minimum width=7mm,minimum height=6mm,inner sep=0pt,font=\small}}
+  \node[snk] (s0) at (0,0) {$\varnothing$};
+  \foreach \i/\t in {1/C,2/A,3/B,4/C,5/A,6/C,7/A,8/B,9/A}{\node[tok] (x\i) at (\i,0) {$\t$};}
+  \node[font=\scriptsize,text=muted] at (0,-0.55) {sink};
+  \foreach \i in {1,...,9}{\node[font=\scriptsize,text=muted] at (\i,-0.55) {$\i$};}
+  \foreach \i/\j in {2/3,5/6,7/8}{\draw[->,muted,line width=0.5pt] (x\i.north) to[bend left=50] (x\j.north);}
+  \node[font=\scriptsize,text=muted,anchor=west] at (9.5,0.55) {layer 1: copy $x_{s-1}$ to $s$};
+  \foreach \j in {3,6,8}{\draw[->,sea,line width=0.8pt] (x9.south) to[bend left=28] (x\j.south);}
+  \draw[->,sandline!55!black,line width=0.8pt] (x9.south) to[bend left=22] (s0.south);
+  \node[font=\scriptsize,text=sea,anchor=west] at (9.5,-0.55) {layer 2: from $t$ to every $s$};
+  \node[font=\scriptsize,text=sea,anchor=west] at (9.5,-0.95) {with $x_{s-1}=x_t$};
+\end{tikzpicture}
+\caption{The circuit of \cref{thm:induction:circuit} on the context $CABCACABA$, with $t=9$ and $x_t=A$. Layer~1 writes $x_{s-1}$ at each position $s$ (three of the arrows drawn). Layer~2 attends from position $9$ to the positions $3,6,8$ that follow an earlier $A$, whose tokens are $B,C,B$, and to the sink. With $\kappa=1$ and $K=3$ the output is $\bigl(\frac{0+1}{3+3},\frac{2+1}{3+3},\frac{1+1}{3+3}\bigr)$ for $(A,B,C)$, the Bayes predictor.}\label{fig:induction:circuit}
+\end{figure}
+
+The network \eqref{eq:induction:layer1}--\eqref{eq:induction:output} computes $\indpb_t$ in the limit of large inverse temperatures (\cref{fig:induction:circuit}). We need one fact about softmax.
+
+\begin{lemma}[Softmax is Lipschitz in ratio]\label[lemma]{lem:induction:softmax}
+Let $\ell,\ell'$ be real vectors indexed by the same finite set, with $\abs{\ell_s-\ell'_s}\le\eps$ for every $s$, and let $w$ and $w'$ be their softmax weights. Then $e^{-2\eps}\le w_s/w'_s\le e^{2\eps}$ for every $s$.
+\end{lemma}
+
+\begin{proof}
+Write $w_s/w'_s=e^{\ell_s-\ell'_s}\cdot\sum_re^{\ell'_r}/\sum_re^{\ell_r}$. The first factor lies in $[e^{-\eps},e^{\eps}]$, and so does the second, because each term $e^{\ell_r}$ lies between $e^{-\eps}e^{\ell'_r}$ and $e^{\eps}e^{\ell'_r}$.
+\end{proof}
+
+\begin{theorem}[A two-layer circuit computes the Bayes predictor]\label{thm:induction:circuit}
+Let $\kappa,\beta_1,\beta_2>0$. For every $t\ge1$, every sequence $x_1,\dots,x_t\in[K]$, and every $j\in[K]$, the output \eqref{eq:induction:output} satisfies
+\begin{equation}\label{eq:induction:circuit}
+  \abs{\log\hat y_t(j)-\log\indpb_t(j)}\le2\beta_2te^{-\beta_1}+\frac{t}{\kappa}e^{-\beta_2} .
+\end{equation}
+In particular, if $0<\eps<\min\{1,2t/\kappa\}$, $\beta_2=\log(2t/(\kappa\eps))$ and $\beta_1=\log(4\beta_2t/\eps)$, then the cross-entropy of $\hat y_t$ exceeds that of the Bayes predictor by at most $\eps$, for every data distribution.
+\end{theorem}
+
+\begin{proof}
+The plan is to compare the network with an ideal one whose first layer is exact, using \cref{lem:induction:softmax}, and then to compare the ideal network at finite $\beta_2$ with its limit. Write $i=x_t$ and set $\ind\{x_0=i\}\defeq0$ for the sink.
+
+\emph{Layer 1.} For $s\ge1$ the softmax \eqref{eq:induction:layer1} puts weight $e^{\beta_1}/(e^{\beta_1}+s)$ on $s-1$, so the remaining weight is $\delta_s=s/(e^{\beta_1}+s)\le te^{-\beta_1}$. Since $\ip{e_i,e_{x_{s'}}}=\ind\{x_{s'}=i\}\in\{0,1\}$,
+\[
+  \ip{e_i,h_s}=(1-\delta_s)\ind\{x_{s-1}=i\}+\sum_{s'\ne s-1}a^{(1)}_{ss'}\ind\{x_{s'}=i\}\in\bigl[(1-\delta_s)\ind\{x_{s-1}=i\},\,(1-\delta_s)\ind\{x_{s-1}=i\}+\delta_s\bigr],
+\]
+so $\abs{\ip{e_i,h_s}-\ind\{x_{s-1}=i\}}\le\delta_s\le te^{-\beta_1}$.
+
+\emph{An ideal second layer.} Let $\ell^*_0=\ell_0$ and $\ell^*_s=\beta_2\ind\{x_{s-1}=i\}$ for $1\le s\le t$, and let $w$ be their softmax weights. By the bound on layer~1, $\abs{\ell_s-\ell^*_s}\le\beta_2te^{-\beta_1}$ for every $s$, so by \cref{lem:induction:softmax} each weight $a^{(2)}_s$ lies within a factor $e^{\pm2\beta_2te^{-\beta_1}}$ of $w_s$. The values in \eqref{eq:induction:output} have nonnegative coordinates, so the same factor bounds $\hat y_t(j)$ against $\tilde y(j)\defeq w_0/K+\sum_{s\ge1}w_s\ind\{x_s=j\}$:
+\begin{equation}\label{eq:induction:step1}
+  \abs{\log\hat y_t(j)-\log\tilde y(j)}\le2\beta_2te^{-\beta_1}.
+\end{equation}
+
+\emph{The ideal network against the Bayes predictor.} The positions $s\in\{2,\dots,t\}$ with $x_{s-1}=i$ are exactly the ends of the transitions out of $i$ within $x_{1:t}$: there are $\indcnt_i(t)$ of them, and $\indcnt_{ij}(t)$ of them carry the token $j$. Each has unnormalized weight $e^{\beta_2}$; the sink has $K\kappa e^{\beta_2}$; the other $m=t-\indcnt_i(t)$ positions have weight $1$, and $r_j\in[0,m]$ of them carry $j$. Hence
+\[
+  \tilde y(j)=\frac{e^{\beta_2}(\indcnt_{ij}(t)+\kappa)+r_j}{e^{\beta_2}(\indcnt_i(t)+K\kappa)+m} .
+\]
+Dividing by $\indpb_t(j)=(\indcnt_{ij}(t)+\kappa)/(\indcnt_i(t)+K\kappa)$ and using $0\le r_j\le m\le t$, $\indcnt_{ij}(t)+\kappa\ge\kappa$ and $\indcnt_i(t)+K\kappa\ge\kappa$,
+\[
+  \Bigl(1+\frac t\kappa e^{-\beta_2}\Bigr)^{-1}\le\frac{\tilde y(j)}{\indpb_t(j)}\le1+\frac t\kappa e^{-\beta_2},
+\]
+and $\log(1+u)\le u$ gives $\abs{\log\tilde y(j)-\log\indpb_t(j)}\le te^{-\beta_2}/\kappa$. Together with \eqref{eq:induction:step1} this proves \eqref{eq:induction:circuit}.
+
+\emph{The choice of scales.} With the stated $\beta_2$ the second term of \eqref{eq:induction:circuit} is $\eps/2$, and with the stated $\beta_1$ the first is $\eps/2$. The cross-entropies of $\hat y_t$ and $\indpb_t$ are expectations of $-\log\hat y_t(x_{t+1})$ and $-\log\indpb_t(x_{t+1})$, whose difference is at most $\eps$ pointwise.
+\end{proof}
+
+The bound holds sequence by sequence: the circuit is an exact algorithm for the add-$\kappa$ bigram estimator, and the Markov assumption is needed only to make that estimator optimal. We checked \eqref{eq:induction:circuit} on $300$ random sequences and scales; the observed error never exceeded $0.65$ times the bound. Three features of the construction will matter later. The \emph{sink} carries the prior: its logit offset $\log(K\kappa)$ adds $\kappa$ pseudo-counts to every transition, and without it the circuit outputs the empirical bigram distribution, whose cross-entropy is infinite whenever a transition is unseen (\cref{ex:induction:nosink}). When the current token has not occurred before, every non-sink logit is near $0$ against $\beta_2+\log(K\kappa)$ at the sink, and the output is nearly uniform, as the Bayes predictor requires. And when $\beta_2=0$ the second layer ignores the first and returns a mixture of the in-context unigram frequencies and the uniform vector: an untrained induction head is a unigram head.\sidenote{The same remark explains the first stage of training in \cref{fig:induction:transformer}: uniform attention is already a unigram estimator, and only its readout must be learned.}
+
+Why two layers? The key at position $s$ must depend on $x_{s-1}$, information that sits at another position, and in a one-layer transformer keys are computed from one position's embedding alone. \Textcite{SanfordEtAl2024} make this precise: by a communication-complexity argument, a one-layer transformer that solves an induction task must be much larger than a two-layer one. Higher-order chains need more composition: \textcite{RajaramanEtAl2024} show that attention-only transformers with $O(\log k)$ layers represent the in-context conditional distribution of $k$th-order Markov sources, and that layer normalization brings this to a constant number of layers.
+
+\section{The solution: why the circuit forms late}\label{sec:induction:dynamics}
+
+We now turn to the caricature \eqref{eq:induction:caricature}. Its loss depends on $(a,b)$ only through the product $v=ab$, and it is a quadratic in $(c,v)$.
+
+\begin{lemma}[The loss is quadratic in $(c,ab)$]\label[lemma]{lem:induction:quadratic}
+Let $\indAU=\E\norm{\varphi_U}^2$, $\indAX=\E\ip{\varphi_U,\varphi_B}$, $\indAB=\E\norm{\varphi_B}^2$, $g_U=\E\ip{\varphi_U,e_{x_{T+1}}}$ and $g_B=\E\ip{\varphi_B,e_{x_{T+1}}}$, at the training position $T$. Then
+\[
+  \Loss(c,a,b)=1-2g_Uc-2g_Bv+\indAU c^2+2\indAX cv+\indAB v^2,\qquad v=ab .
+\]
+The moments satisfy $\indAX\ge0$, $g_U>0$, and $\indAU\indAB\ge\indAX^2$ with $\indAU,\indAB>0$.
+\end{lemma}
+
+\begin{proof}
+Expand $\norm{c\varphi_U+v\varphi_B-e_{x_{T+1}}}^2$ and use $\norm{e_{x_{T+1}}}^2=1$. The features have nonnegative coordinates, so $\indAX\ge0$; the inequality is Cauchy--Schwarz in $L^2$. Finally $g_U>0$ and $\indAU>0$ because $\varphi_U\ne0$, and $\indAB>0$ because $\varphi_B\ne0$ with positive probability.
+\end{proof}
+
+The gradient flow $\dot c=-\partial_c\Loss$, $\dot a=-\partial_a\Loss$, $\dot b=-\partial_b\Loss$ reads
+\begin{equation}\label{eq:induction:flow}
+  \dot c=2\bigl(g_U-\indAU c-\indAX v\bigr),\qquad \dot a=b\,R,\qquad \dot b=a\,R,\qquad R=2\bigl(g_B-\indAX c-\indAB v\bigr).
+\end{equation}
+At the origin of the $(a,b)$ plane the gradients in $a$ and $b$ vanish, while that in $c$ is $-2g_U\ne0$: the unigram direction is learned at once, and the induction directions sit at a saddle, the saddle of a product $ab$ met in \cref{ch:deeplinear}.\sidenote{There the product of the two layers of a linear network multiplies a singular value of the data; here the product of two attention strengths multiplies a feature of the context. With $a(0)\ne b(0)$ the conserved quantity $a^2-b^2$ plays the role of the balancedness of \cref{ch:deeplinear} (\cref{ex:induction:unbalanced}).} On the unigram manifold $v=0$ the loss is minimized at $c^\star=g_U/\indAU$, with value $\indLU=1-g_U^2/\indAU$. The rate at which the induction circuit grows there is governed by the \term{induction gain}\index{induction gain}\index{plateau}
+\begin{equation}\label{eq:induction:gain}
+  G\defeq g_B-\indAX c^\star=-\tfrac12\,\partial_v\Loss(c^\star,0),
+\end{equation}
+the correlation of the bigram feature with the target that the unigram feature does not already explain. If $G>0$ and $\indAU\indAB>\indAX^2$, the quadratic has the unique minimizer
+\[
+  v^{\star\star}=\frac{\indAU G}{\indAU\indAB-\indAX^2}>0,\qquad c^{\star\star}=\frac{g_U\indAB-g_B\indAX}{\indAU\indAB-\indAX^2},\qquad \indLU-\Loss^{\star\star}=\frac{\indAU G^2}{\indAU\indAB-\indAX^2}.
+\]
+
+\begin{lemma}[Long-context moments]\label[lemma]{lem:induction:longcontext}
+Under \cref{ass:induction:data}, as $T\to\infty$, $\indAU$ and $g_U$ both converge to $\E\norm{\pi}^2$, so that $c^\star\to1$, and
+\[
+  \indAX\to\E\sum_i\pi_i^2\ip{\pi,P_{i\cdot}},\qquad \indAB\to\E\sum_i\pi_i^3\norm{P_{i\cdot}}^2,\qquad G\to\E\sum_i\pi_i^2\ip{P_{i\cdot}-\pi,P_{i\cdot}} .
+\]
+\end{lemma}
+
+\begin{proofsketch}
+By the ergodic theorem, $\varphi_U\to\pi$ and $\frac1T\indcnt_{i\cdot}(T)\to\pi_iP_{i\cdot}$ almost surely given $P$, so $\varphi_B=\sum_i\ind\{x_T=i\}\frac1T\indcnt_{i\cdot}(T)$ is $\pi_{x_T}P_{x_T\cdot}+o(1)$. The law of $(x_T,x_{T+1})$ given $P$ tends to $\pi_iP_{ij}$, and all features are bounded by $1$, so bounded convergence gives the limits; for instance $g_U\to\E\sum_{i}\pi_i\ip{\pi,P_{i\cdot}}=\E\norm\pi^2$ by stationarity, $\sum_i\pi_iP_{i\cdot}=\pi$.
+\end{proofsketch}
+
+In the long-context limit the plateau predictor is $\hat y=\varphi_U$, the in-context unigram frequencies, and $G=\E\sum_i\pi_i^2\ip{P_{i\cdot}-\pi,P_{i\cdot}}$ measures how far the rows of the chain are from its stationary law. If all rows are equal, the tokens are independent, $G=0$, and there is nothing for an induction head to learn. For $\kappa=1$ Monte Carlo gives $G=0.034$ for $K=2$, $0.037$ for $K=3$ and $0.030$ for $K=4$, against $\indAU=0.61$, $0.41$ and $0.30$: the unigram direction is learned about ten times faster than the induction circuit grows.
+
+\begin{theorem}[Unigram plateau and escape time]\label{thm:induction:escape}
+Assume the conclusions of \cref{lem:induction:quadratic}, $\indAU\indAB>\indAX^2$, and $G>0$. Run \eqref{eq:induction:flow} from $c(0)=0$ and $a(0)=b(0)=\alpha>0$. Let
+\[
+  \eta_0=\min\Bigl\{\frac G{2\indAB},\ \frac{G\indAU}{4\indAX^2}\Bigr\}
+\]
+(the second term is $+\infty$ if $\indAX=0$), fix $\eta\in(0,\eta_0]$ with $\alpha^2<\eta$, and let $\tau_\eta=\inf\{t\ge0:\ v(t)\ge\eta\}$. Then:
+\begin{enumerate}
+\item \emph{(The plateau.)} For $0\le t\le\tau_\eta$, $\abs{c(t)-c^\star(1-e^{-2\indAU t})}\le\indAX\eta/\indAU$ and $\abs{\Loss(t)-\indLU}\le2\indAU{c^\star}^2e^{-4\indAU t}+4g_B\eta$.
+\item \emph{(The escape time.)} $\tau_\eta$ is finite, and
+\[
+  \frac{\log(\eta/\alpha^2)-2\indAX c^\star/\indAU}{4\bigl(G+\indAX^2\eta/\indAU\bigr)}\le\tau_\eta\le\frac{\log(\eta/\alpha^2)}{4\bigl(G-\indAB\eta\bigr)} .
+\]
+\item \emph{(Convergence.)} If moreover $2\indAU{c^\star}^2e^{-4\indAU\tau_\eta}<G\eta$, which holds for every small enough $\alpha$ by (ii), then $(c,a,b)\to(c^{\star\star},\sqrt{v^{\star\star}},\sqrt{v^{\star\star}})$ and $\Loss(t)\to\Loss^{\star\star}<\indLU$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to reduce the flow to two scalar equations, solve the linear one for $c$ in terms of $v$, and then integrate the growth rate of $v$ between two comparison bounds. Write $A=\indAU$, $B=\indAX$, $C=\indAB$ for brevity.
+
+\emph{Reduction.} The flow \eqref{eq:induction:flow} has polynomial right side, so a solution exists on a maximal interval. Along it $\Loss$ is nonincreasing, since $\frac{\mathrm d}{\mathrm dt}\Loss=-\norm{\nabla\Loss}^2$. The difference $a-b$ satisfies $\frac{\mathrm d}{\mathrm dt}(a-b)=-R\,(a-b)$ and vanishes at $t=0$, so $a=b$ for all $t$, and $v=a^2$. The quadratic form of \cref{lem:induction:quadratic} is positive definite because $AC>B^2$, so $\Loss$ tends to infinity as $\abs c+v\to\infty$; since $\Loss$ is nonincreasing, $c$ and $a$ stay bounded and the solution exists for all $t\ge0$. Finally $\dot a=aR$ gives $a(t)=\alpha\exp\int_0^tR>0$ and
+\begin{equation}\label{eq:induction:vgrowth}
+  v(t)=\alpha^2\exp\Bigl(\int_0^t2R(s)\,\mathrm ds\Bigr),\qquad 2R=4\bigl(g_B-Bc-Cv\bigr).
+\end{equation}
+\emph{The unigram coordinate.} The equation for $c$ is linear with source $-2Bv$. Variation of constants, with $c(0)=0$ and $g_U=Ac^\star$, gives
+\begin{equation}\label{eq:induction:cformula}
+  c(t)=c^\star\bigl(1-e^{-2At}\bigr)-2B\int_0^te^{-2A(t-s)}v(s)\,\mathrm ds .
+\end{equation}
+For $t\le\tau_\eta$ we have $0<v\le\eta$, so the integral term lies between $0$ and $2B\eta\int_0^\infty e^{-2As}\mathrm ds=B\eta/A$. This is the first claim of (i), and it gives in particular
+\begin{equation}\label{eq:induction:cbounds}
+  c^\star\bigl(1-e^{-2At}\bigr)-\frac{B\eta}A\le c(t)\le c^\star\qquad(0\le t\le\tau_\eta).
+\end{equation}
+\emph{Upper bound on $\tau_\eta$.} For $t<\tau_\eta$, \eqref{eq:induction:cbounds} and $v<\eta$ give $2R\ge4(g_B-Bc^\star-C\eta)=4(G-C\eta)$, and $G-C\eta\ge G/2>0$ because $\eta\le G/(2C)$. By \eqref{eq:induction:vgrowth}, $v(t)\ge\alpha^2e^{4(G-C\eta)t}$ for $t<\tau_\eta$. The right side reaches $\eta$ at the time on the right of (ii), so $\tau_\eta$ is finite and at most that time.
+
+\emph{Lower bound on $\tau_\eta$.} For $t\le\tau_\eta$, drop the term $-Cv\le0$ and use the lower bound of \eqref{eq:induction:cbounds}:
+\[
+  2R\le4\bigl(g_B-Bc\bigr)\le4\Bigl(G+Bc^\star e^{-2At}+\frac{B^2\eta}A\Bigr).
+\]
+Integrating from $0$ to $\tau_\eta$, with $\int_0^\infty4Bc^\star e^{-2As}\mathrm ds=2Bc^\star/A$, \eqref{eq:induction:vgrowth} at $t=\tau_\eta$, where $v=\eta$ by continuity, gives $\log(\eta/\alpha^2)\le4(G+B^2\eta/A)\tau_\eta+2Bc^\star/A$, which is the left inequality of (ii).
+
+\emph{The loss on the plateau.} Completing the square in $c$ and then expanding in $v$,
+\begin{equation}\label{eq:induction:lossdecomp}
+  \Loss=\indLU+A(c-c^\star)^2-2v\bigl(g_B-Bc\bigr)+Cv^2 .
+\end{equation}
+For $t\le\tau_\eta$, \eqref{eq:induction:cbounds} gives $\abs{c-c^\star}\le c^\star e^{-2At}+B\eta/A$, hence $A(c-c^\star)^2\le2A{c^\star}^2e^{-4At}+2B^2\eta^2/A$, and $0\le g_B-Bc\le g_B+B^2\eta/A$. With $v\le\eta$, $C\eta\le G/2$, $4B^2\eta/A\le G$ (both from $\eta\le\eta_0$) and $G\le g_B$,
+\[
+  \abs{\Loss-\indLU}\le2A{c^\star}^2e^{-4At}+2g_B\eta+\eta^2\Bigl(\frac{4B^2}A+C\Bigr)\le2A{c^\star}^2e^{-4At}+2g_B\eta+\tfrac32G\eta,
+\]
+which is at most the bound in (i).
+
+\emph{Convergence.} At $t=\tau_\eta$ we have $v=\eta$ and, by \eqref{eq:induction:cbounds}, $g_B-Bc\ge G$; so \eqref{eq:induction:lossdecomp} and the estimates of the previous step give
+\[
+  \Loss(\tau_\eta)-\indLU\le2A{c^\star}^2e^{-4A\tau_\eta}+\frac{2B^2\eta^2}A-2G\eta+C\eta^2\le2A{c^\star}^2e^{-4A\tau_\eta}-G\eta<0
+\]
+under the hypothesis of (iii). Since $\int_0^\infty\norm{\nabla\Loss}^2\mathrm dt=\Loss(0)-\lim_t\Loss(t)<\infty$ and $\norm{\nabla\Loss}^2$ has a bounded time derivative on the bounded trajectory, $\nabla\Loss\to0$ along the flow. Every limit point is therefore a critical point with $\Loss\le\Loss(\tau_\eta)<\indLU$ and $a=b\ge0$. A critical point with $a=b$ has $\partial_c\Loss=0$ and either $a=0$ or $\partial_v\Loss=0$. If $a=0$, then $v=0$, $c=c^\star$, and $\Loss=\indLU$, which is excluded. Otherwise $(c,v)$ is the unique minimizer $(c^{\star\star},v^{\star\star})$ of the quadratic, and $a=b=\sqrt{v^{\star\star}}$. The limit point is unique, so the flow converges to it.
+\end{proof}
+
+\begin{corollary}[Logarithmic escape]\label[corollary]{cor:induction:log}
+Under the hypotheses of \cref{thm:induction:escape}, for every fixed $\eta\in(0,\eta_0]$,
+\[
+  \frac1{2(G+\indAX^2\eta/\indAU)}\le\liminf_{\alpha\to0}\frac{\tau_\eta}{\log(1/\alpha)}\le\limsup_{\alpha\to0}\frac{\tau_\eta}{\log(1/\alpha)}\le\frac1{2(G-\indAB\eta)} .
+\]
+\end{corollary}
+
+\begin{proof}
+Divide the bounds of (ii) by $\log(1/\alpha)$, note $\log(\eta/\alpha^2)/\log(1/\alpha)\to2$, and let $\alpha\to0$.
+\end{proof}
+
+The plateau thus lasts $\log(1/\alpha)/(2G)$, up to a factor $1+O(\eta)$ and an additive constant, while the unigram coordinate settles in time $O(1/\indAU)$. The escape is the logistic escape of \cref{ch:deeplinear}: two factors that each need the other grow together as $v\propto e^{4Gt}$ while small, the composite strength $v$ at rate $4G$, until the quadratic term $\indAB v^2$ stops them. The induction gain $G$ plays the role of a singular value of the input--output correlation, and the unigram feature the role of a mode that has already been learned and must be projected out of the bigram signal; this projection is the competition that \textcite{EdelmanEtAl2024} observed.
+
+\paragraph{Rigorous results for softmax models.} \Textcite{NichaniEtAl2024} analyze gradient descent on a simplified two-layer transformer for in-context learning of a latent causal structure; they show that the first attention layer learns the causal graph because the gradient of its attention matrix reflects mutual information between tokens, and for Markov chains the trained network implements an induction head. \Textcite{BiettiEtAl2023} study a two-layer transformer on data mixing global bigrams with context-specific ones, describe weight matrices as associative memories, and show that global bigrams are learned quickly and the induction head more slowly, with theoretical insight into how gradient steps build these memories. Neither result gives the plateau length as a function of the initialization; that is the piece our caricature supplies, at the cost of linear attention.
+
+\section{Reading the solution}\label{sec:induction:reading}
+
+The model makes five quantitative predictions. (i) Loss levels: a trained network should pass through the uniform level $\log K$, then the unigram level, then the Bayes level of \cref{thm:induction:bayes}, whose long-context values are $1.099$, $0.979$ and $0.819$ for $K=3$, $\kappa=1$. (ii) The Bayes predictor is computable by two heads and a sink, with error $O(\beta_2te^{-\beta_1}+te^{-\beta_2}/\kappa)$, so a two-layer network can reach the Bayes level exactly. (iii) After the unigram coordinate settles, the loss sits at $\indLU$ for a time $\log(1/\alpha)/(2G)$: each factor $10$ in the initialization adds $\log(10)/(2G)$ to the plateau, and the drop from it is a logistic curve of rate $4G$. (iv) Weaker rows mean longer plateaus: $G$ falls as $\kappa$ grows, like $(K-1)^2/(K^3(K\kappa+1))$ for large $\kappa$ (\cref{ex:induction:kappa}); for $K=3$ and $\kappa=\frac14,\frac12,1,2,4$ Monte Carlo gives $G=0.070$, $0.055$, $0.037$, $0.021$ and $0.0115$. (v) Even the Bayes predictor learns slowly from a finite context. The add-$\kappa$ estimator of one row from $n$ transitions has expected excess loss $(K-1)/(2n)$ to leading order; with $n\approx\pi_it$ transitions out of state $i$ and the current state distributed as $\pi$, the excess loss at position $t$ is
+\begin{equation}\label{eq:induction:excess}
+  \E\bigl[-\log\indpb_t(x_{t+1})\bigr]-\indH_B\approx\sum_i\pi_i\frac{K-1}{2\pi_it}=\frac{K(K-1)}{2t},
+\end{equation}
+a heuristic that Monte Carlo confirms slowly ($0.048$, $0.027$ and $0.0141$ at $t=50,100,200$ for $K=3$, against $0.060$, $0.030$ and $0.015$). This is why the Bayes level averaged over a short context lies well above $\indH_B$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},hplot,width=0.475\linewidth,height=0.37\linewidth]
+\nextgroupplot[ymode=log,xmin=0,xmax=200,ymin=1e-6,ymax=1,xlabel={time $t$},ylabel={$\Loss(t)-\Loss^{\star\star}$},
+  ytick={1e-6,1e-4,1e-2,1},legend style={at={(0.97,0.97)},anchor=north east}]
+\addplot[theory] table[x=t,y=ode] {figures/data/14-induction-caricature-curve.dat};
+\addplot[simulation,mark repeat=4] table[x=sgdt,y=sgd] {figures/data/14-induction-caricature-curve.dat};
+\addplot[guide] coordinates {(0,0.03136) (200,0.03136)};
+\legend{gradient flow,SGD,$\indLU-\Loss^{\star\star}$}
+\nextgroupplot[xmin=0.8,xmax=5.2,ymin=0,ymax=180,xlabel={$\log_{10}(1/\alpha)$},ylabel={escape time},
+  legend style={at={(0.03,0.97)},anchor=north west}]
+\addplot[theory] table[x=log10inv,y=ode] {figures/data/14-induction-caricature-escape.dat};
+\addplot[simulation] table[x=log10inv,y=sgdmean] {figures/data/14-induction-caricature-escape.dat};
+\addplot[guide] table[x=log10inv,y=asym] {figures/data/14-induction-caricature-escape.dat};
+\legend{gradient flow,SGD (mean of 5),$\log(1/\alpha)/(2G)$}
+\end{groupplot}
+\end{tikzpicture}
+\caption{The caricature \eqref{eq:induction:caricature} with $K=3$, $\kappa=1$, uniform first token and training position $T=24$. The moments are computed on a pool of $4\times10^5$ sequences (seed $0$): $\indAU=0.433$, $\indAX=0.185$, $\indAB=0.115$, $g_U=0.410$, $g_B=0.209$, hence $c^\star=0.947$, $G=0.0337$, $\indLU=0.6116$ and $\Loss^{\star\star}=0.5802$. Curves: the gradient flow \eqref{eq:induction:flow}, integrated numerically. Points: minibatch SGD on $(c,a,b)$ with batches of $256$ sequences from the pool and step $0.05$, plotted against time $0.05\times$step. Left: excess loss for $\alpha=10^{-3}$; after the unigram coordinate settles ($t\approx5$) the loss stays on the plateau until $t\approx70$ and then drops logistically; the SGD points level off near $10^{-5}$, the noise floor of the step size. Right: the time at which $v=ab$ reaches $v^{\star\star}/2$; flow and SGD (five seeds, spread below $1.2$) agree, and both are parallel to $\log(1/\alpha)/(2G)$, with slope $34.2$ per decade.}\label{fig:induction:caricature}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:induction:caricature} tests (iii). The plateau is flat to four digits, at the value $\indLU$ predicted from the moments, and its length grows by $34.2$ time units per decade of $\alpha$, the slope $\log(100)/(4G)$ of \cref{cor:induction:log}; the curves sit about $5$ units below the asymptote, the additive constant of (ii). The bounds of (ii) bracket the flow: at $\eta=\eta_0=0.107$ and $\alpha=10^{-3}$ they give $64\le\tau_\eta\le135$, and the flow takes $81$. The second drop is small, $\indLU-\Loss^{\star\star}=0.031$ against the first drop $0.39$: the square loss of the caricature rewards the bigram feature less than cross-entropy does, and only the time scale, not the size of the gain, should be compared with experiments.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,xmin=0,xmax=3000,ymin=0.935,ymax=1.105,xlabel={SGD step},ylabel={validation loss},
+  legend style={at={(0.97,0.97)},anchor=north east},legend cell align=left]
+\addplot[sea,line width=1.0pt] table[x=step,y=l1] {figures/data/14-induction-transformer.dat};
+\addplot[seadeep,line width=1.0pt,dashed] table[x=step,y=l2] {figures/data/14-induction-transformer.dat};
+\addplot[sandline!55!black,line width=1.0pt] table[x=step,y=l3] {figures/data/14-induction-transformer.dat};
+\addplot[guide] table[x=step,y=uniform] {figures/data/14-induction-transformer.dat};
+\addplot[guide] table[x=step,y=unigram] {figures/data/14-induction-transformer.dat};
+\addplot[guide] table[x=step,y=bigram] {figures/data/14-induction-transformer.dat};
+\legend{init $10^{-1}$,init $10^{-2}$,init $10^{-3}$}
+\node[font=\scriptsize,text=muted,anchor=south east] at (axis cs:2980,1.0986) {uniform, $\log3$};
+\node[font=\scriptsize,text=muted,anchor=south east] at (axis cs:2980,1.0322) {best add-$\kappa'$ unigram};
+\node[font=\scriptsize,text=muted,anchor=south east] at (axis cs:2980,0.9465) {Bayes, \cref{thm:induction:bayes}};
+\end{axis}
+\end{tikzpicture}
+\caption{A softmax transformer on in-context Markov chains ($K=3$, $\kappa=1$, context $N=32$, loss averaged over positions, validation set of $4000$ sequences, seed $0$). Layer~1: one head with learned relative-position logits and value matrix; layer~2: one head with a learned bilinear score on (token, layer-1 output) and a sink with learned logit; logits $\gamma\log\hat y_t$ with learned $\gamma$; all weights initialized as the stated scale times a standard Gaussian, $\gamma$ and the sink logit at $0$. Plain SGD, learning rate $1$, batches of $64$ fresh sequences. Dashed lines: the three levels, computed on the validation set. The loss crosses the midpoint between the unigram and Bayes levels at steps $680$, $1200$ and $1740$, and ends at $0.952$; the previous-token weight $a^{(1)}_{t,t-1}$ ends near $0.9$.}\label{fig:induction:transformer}
+\end{figure}
+
+\Cref{fig:induction:transformer} tests (i) and the qualitative content of (iii) on a softmax network that can represent the circuit of \cref{thm:induction:circuit}. The three stages appear: the readout $\gamma$, whose gradient is of order one, turns the uniform attention into a unigram estimator within about $300$ steps; the loss then sits at $1.029$, slightly below the best add-$\kappa'$ unigram estimator because the readout can also sharpen it; and it then drops to within $0.006$ of the Bayes level. The plateau grows by about $530$ steps per decade of initialization, linearly in $\log(1/\alpha)$ as \cref{cor:induction:log} predicts. The slope itself is not predicted: the softmax network has more than two factors in its induction path (relative-position logits, a value matrix, a bilinear score and the readout), cross-entropy instead of square loss, and stochastic gradients. With the previous-token head frozen in place the plateau disappears, and the loss crosses the midpoint by step $60$ (\cref{ex:induction:freeze}), which confirms that composition causes the delay.
+
+\section{What the model gets wrong}\label{sec:induction:wrong}
+
+\paragraph{What was thrown away.} \emph{The data} are designed so that in-context statistics are the only signal: a fresh chain per sequence, a symmetric prior, no vocabulary structure, no semantics. Real text mixes in-context and in-weights regularities, and their competition is a large part of the phenomenon. \emph{The circuit} is fixed by hand, with one head per layer and the positional pattern of a previous-token head built in; real induction heads match on fuzzy, learned features and copy through learned subspaces. \emph{The caricature} keeps one scalar per layer, linear attention and a square loss; it captures the saddle created by composition and nothing else. In particular it does not explain why gradient descent finds the \emph{previous-token} pattern among all positional patterns, a symmetry-breaking question that \textcite{NichaniEtAl2024} answer with mutual information and that our three-parameter ansatz assumes away. \emph{The readout} of our experiments is a logarithm of the attention output, which spares the network the MLP a real transformer needs to turn mixtures of one-hot vectors into calibrated logits.
+
+\paragraph{Where it breaks.} \emph{Language models do more at the phase change.} \Textcite{OlssonEtAl2022} note that the formation of induction heads coincides with other changes in the network, and for large models with MLPs their evidence that induction heads cause in-context learning is correlational. The abrupt improvement in context use is therefore not cleanly attributable to a two-head circuit. \emph{In-context learning in large models goes beyond copying.} \Textcite{ToddEtAl2024} find a small set of heads whose outputs, averaged over demonstrations, form \emph{function vectors} that trigger a task even in zero-shot contexts; \textcite{HendelEtAl2023} find that in-context learning compresses the demonstrations into a single \emph{task vector}. These are abstractions of a task, not counts of repeated tokens. \emph{Data control whether the head forms at all.} \Textcite{ChanEtAl2022} show that in-context learning requires bursty data with many rare classes, and \textcite{SinghEtAl2023} that it can disappear with further training as in-weights learning takes over; in our model $G=0$ for data without in-context structure (\cref{ex:induction:iid}), which captures the first finding, but nothing in it can capture the second, because in-weights knowledge is useless by construction. \emph{One layer gets stuck.} \Textcite{MakkuvaEtAl2024} (unrefereed in the version we cite) characterize the loss landscape of single-layer transformers on Markov data and find bad local minima that depend on the data and the architecture; our caricature has no local minima at all, only a saddle. \emph{The plateau is not always one plateau.} \Textcite{SinghEtAl2024} find that induction-head formation depends on several interacting subcircuits, and \textcite{Reddy2024} that the abrupt transition comes from a sequence of nested nonlinearities; the caricature, with one product of two strengths, has a single escape.
+
+\paragraph{Fine structure.} \emph{Rigorous dynamics.} \Textcite{NichaniEtAl2024} prove that gradient descent on a simplified two-layer transformer learns latent causal graphs, and induction heads for Markov chains, and \textcite{BiettiEtAl2023} explain the order in which global and in-context bigrams are learned through associative memories. \emph{Higher-order chains.} For $k$th-order Markov sources the Bayes predictor counts $(k+1)$-grams; \textcite{EdelmanEtAl2024} extend their experiments to such sources, \textcite{AkyurekEtAl2024} find ``$n$-gram heads'', higher-order induction heads, in transformers trained on in-context language learning tasks, and \textcite{RajaramanEtAl2024} show that depth logarithmic in $k$ suffices, and constant depth with layer normalization. \emph{Lower bounds.} \Textcite{SanfordEtAl2024} prove that one-layer transformers need much larger size than two-layer ones for induction tasks. \emph{Attention sinks.} \Textcite{XiaoEtAl2024} found that language models put large attention on the first tokens regardless of content and that keeping these ``sinks'' stabilizes streaming inference; in our circuit a sink has a statistical role, carrying the prior. Open: a theorem for the softmax network of \cref{fig:induction:transformer} that predicts the slope of the plateau length against $\log(1/\alpha)$, and an account of how the unigram stage, which our proof treats as fast, changes the escape when it is not.
+
+\section{Model card}\label{sec:induction:card}
+
+\modelcard{Induction heads form abruptly after a plateau, and context use jumps at the same time.}{Sequences from a random Markov chain with $\indDir(\kappa\mathbf1_K)$ rows, fresh per sequence; a two-layer attention-only circuit with a sink; for the dynamics, linear attention with three scalar strengths $c$, $a$, $b$.}{Bayes predictor $(\indcnt_{x_tj}+\kappa)/(\indcnt_{x_t}+K\kappa)$; a two-layer circuit computes it with error $O(\beta_2te^{-\beta_1}+te^{-\beta_2}/\kappa)$; gradient flow learns the unigram first and escapes the induction saddle at time $\log(1/\alpha)/(2G)$.}{Plateaus at $\log K$, $\indH_U$ and $\indH_B$; plateau length linear in $\log(1/\alpha)$; $G$ and escape rate set by the spread of the rows, $G\sim(K-1)^2/(K^3(K\kappa+1))$ as $\kappa\to\infty$.}{No semantics or in-weights competition; no transience; language-model phase changes involve more than one circuit; function and task vectors; bad local minima of one-layer models.}{Causal-structure dynamics; associative memories; $n$-gram heads and higher-order chains; depth lower bounds; attention sinks.}
+
+The chapter closes the book's thread on escape from saddles. The escape time $\log(1/\alpha)/(2G)$ is that of a deep linear network (\cref{ch:deeplinear}), with $G$ in the role of a singular value; it is a cousin of the search phase of single-index models (\cref{ch:singleindex}), of the plateaus of the committee machine (\cref{ch:committee}), where the student must break a symmetry, and of the hidden progress of sparse parities (\cref{ch:parity}). As in grokking (\cref{ch:grokking}), a circuit can be written down exactly and the hard part is the dynamics. The comparison with \cref{ch:icl} is instructive: there, linear attention on regression tasks implements one step of gradient descent with a single layer; here, the in-context task is discrete and the optimal algorithm needs two composed heads, which is where the plateau comes from. The question whether such plateaus add up to the smooth loss curves of large models is taken up in \cref{ch:scaling}.
+
+\begin{exercises}
+\item \consolidation (When the first token knows the chain.) (a) Redo \cref{thm:induction:bayes} with rows $P_{i\cdot}\sim\indDir(\kappa_{i1},\dots,\kappa_{iK})$ and show $\Pr(x_{t+1}=j\mid x_{1:t})=(\indcnt_{x_tj}+\kappa_{x_tj})/(\indcnt_{x_t}+\sum_l\kappa_{x_tl})$. (b) Let $K=2$, $\kappa=1$, and draw $x_1$ from the stationary law $\pi(P)$. Show that $\Pr(x_2=x_1\mid x_1)=2\E[w(1-u)/(u+w)]$ with $u,w$ independent uniform on $[0,1]$, and evaluate it numerically (about $0.591$), while \eqref{eq:induction:bayes} gives $\frac12$. Explain which step of the proof fails. \label{ex:induction:stationary}
+
+\item \consolidation (Three levels for two states.) For $K=2$ and $\kappa=1$, write the stationary law and the entropy rate of $P=\bigl(\begin{smallmatrix}1-u&u\\w&1-w\end{smallmatrix}\bigr)$, and compute $\indH_U=\E\,\indH(\pi)$ and $\indH_B$ by two-dimensional quadrature. You should find $0.564$ and $0.481$. Show that $\indH_B<\indH_U$ unless $u+w=1$, and interpret $u+w=1$. \label{ex:induction:k2}
+
+\item \consolidation (The $1/t$ excess.) Let $n$ draws from $q\in\R^K$, with all $q_j>0$, give counts $n_j$, and let $\hat q_j=(n_j+\kappa)/(n+K\kappa)$. Show that $\E\,\mathrm{KL}(q\,\|\,\hat q)=(K-1)/(2n)+O(n^{-2})$ by expanding $\log\hat q_j$ to second order around $q_j$. Derive \eqref{eq:induction:excess}, and compare with the Monte Carlo values in \cref{sec:induction:reading}. \label{ex:induction:excess}
+
+\item \consolidation (The quadratic.) (a) Verify the formulas for $v^{\star\star}$, $c^{\star\star}$ and $\indLU-\Loss^{\star\star}$ after \eqref{eq:induction:gain}. (b) Check them against the moments in the caption of \cref{fig:induction:caricature}. (c) Show that $c^\star-c^{\star\star}=\indAX G/(\indAU\indAB-\indAX^2)$: once the induction circuit is on, the unigram strength decreases. \label{ex:induction:quadratic}
+
+\item \consolidation (Without a sink.) Remove the sink from the circuit, so that layer~2 attends only to $s\in\{1,\dots,t\}$. (a) Show that as $\beta_1,\beta_2\to\infty$ the output tends to the empirical distribution $\indcnt_{x_tj}/\indcnt_{x_t}$ when $\indcnt_{x_t}>0$, and to the in-context unigram frequencies when $\indcnt_{x_t}=0$. (b) Show that the expected cross-entropy at position $t\ge3$ tends to $+\infty$ as $\beta_1,\beta_2\to\infty$, and that for fixed large $\beta_1$ it grows linearly in $\beta_2$. \label{ex:induction:nosink}
+
+\item \variation (Second-order chains.) Let $x_{s+1}$ depend on $(x_{s-1},x_s)$ through a random $K^2\times K$ matrix with $\indDir(\kappa\mathbf1_K)$ rows. (a) Derive the Bayes predictor. (b) Build a two-layer circuit with two heads in layer~1, writing $x_{s-1}$ and $x_{s-2}$ into two subspaces, and a layer-2 head whose logit is $\beta_2(\ip{e_{x_t},h_s}+\ip{e_{x_{t-1}},h'_s}-1)$, and prove the analogue of \cref{thm:induction:circuit}. (c) What does the analogue of the caricature predict about the order in which unigram, bigram and trigram statistics are learned? \label{ex:induction:trigram}
+
+\item \variation (Unbalanced initialization.) Start the caricature from $a(0)=\alpha$, $b(0)=0$. (a) Show that $a^2-b^2$ is conserved and that $\dot v=\sqrt{\alpha^4+4v^2}\,R$. (b) Show that $v$ first grows linearly and then exponentially at rate $4G$, and that the escape time is still $\log(1/\alpha)/(2G)+O(1)$ as $\alpha\to0$. Compare with the unbalanced deep linear networks of \cref{ch:deeplinear}. \label{ex:induction:unbalanced}
+
+\item \variation\hard (No in-context structure.) Suppose all rows of $P$ are equal to one random vector $\pi\sim\indDir(\kappa\mathbf1_K)$, so that tokens are independent given $\pi$. (a) Show that in the long-context limit $G=0$. (b) Assume $G\le0$ and $\indAU\indAB>\indAX^2$. Using \eqref{eq:induction:vgrowth} and \eqref{eq:induction:cformula}, show that $v(t)\le\alpha^2e^{2\indAX c^\star/\indAU}$ for all $t$, and that the flow converges to $(c^\star,0,0)$: the induction circuit never forms. \hint{at a time when $v$ reaches its running maximum $V$, bound $c^\star-c\le c^\star e^{-2\indAU t}+\indAX V/\indAU$ and use $\indAX^2<\indAU\indAB$ to show that $\frac{\mathrm d}{\mathrm dt}\log v\le4\indAX c^\star e^{-2\indAU t}$ there.} Relate this to the role of burstiness in \textcite{ChanEtAl2022}. \label{ex:induction:iid}
+
+\item \variation\hard (The induction gain for nearly uniform rows.) Write $P_{i\cdot}=\frac1K\mathbf1_K+\Delta_i$. (a) Show that $\pi=\frac1K\mathbf1_K+\frac1K\sum_i\Delta_i+O(\norm\Delta^2)$. (b) Using \cref{lem:induction:longcontext}, show that $G=\frac{K-1}{K^2}\E\norm{\Delta_1}^2+O(\E\norm\Delta^3)$, and with $\E\norm{\Delta_1}^2=(K-1)/(K(K\kappa+1))$ conclude $G\sim(K-1)^2/(K^3(K\kappa+1))$ as $\kappa\to\infty$. (c) Compare with the Monte Carlo values $0.021$ and $0.0115$ for $K=3$, $\kappa=2,4$. \hint{the terms of first order in $\Delta$ cancel because $\ip{\Delta_i,\mathbf1_K}=0$.} \label{ex:induction:kappa}
+
+\item \simulation (Composition causes the delay.) In the script of \cref{fig:induction:transformer}, at initialization $10^{-2}$, (a) freeze layer~1 as a previous-token head (relative-position logit $6$ at offset $1$ and $0$ elsewhere, value matrix $I_K$). The reader should observe that the loss crosses the midpoint between the unigram and Bayes levels by step $60$ instead of $1200$: with one factor fixed, the induction path loses its saddle. (b) Remove the sink. The reader should observe that the loss stalls near $0.98$ and fluctuates, because unseen transitions receive near-zero probability (\cref{ex:induction:nosink}). \label{ex:induction:freeze}
+
+\item \simulation (Plateau length and the prior.) Run the script of \cref{fig:induction:caricature} with $\kappa\in\{\frac12,1,2\}$ and measure the slope of the escape time against $\log_{10}(1/\alpha)$. The reader should find slopes close to $\log(100)/(4G(\kappa))$ with $G$ computed from the pool moments at $T=24$, increasing with $\kappa$ roughly as $1/G\propto K\kappa+1$ for large $\kappa$. \label{ex:induction:kappasim}
+
+\item \simulation (The Bayes level is reached.) Train the transformer of \cref{fig:induction:transformer} for $10^4$ steps and record the learned sink logit $\sigma$ and the layer-2 score of a matching position. \Cref{thm:induction:circuit} predicts that their difference approaches $\log(K\kappa)=\log3$ when the circuit is sharp. Report how close the trained network comes, and why the readout $\gamma$, which is not part of the theorem, can absorb part of the discrepancy. \label{ex:induction:sink}
+
+\item \research (Dynamics of softmax induction heads.) Prove a version of \cref{thm:induction:escape} for the softmax network of \cref{fig:induction:transformer}, from a small Gaussian initialization: identify the unigram plateau, show that its length is $\Theta(\log(1/\alpha))$, and compute the constant. \Textcite{NichaniEtAl2024} and \textcite{BiettiEtAl2023} analyze related models with staged training or a few gradient steps; a theorem that predicts the plateau length of a trained softmax network is open. \label{ex:induction:research}
+
+\item \research (Stages for higher-order chains.) For $k$th-order chains, do transformers learn the $1$-gram, $2$-gram, \dots, $(k+1)$-gram statistics in successive stages with their own plateaus, and are the plateau lengths predicted by a caricature with $k$ composed strengths? \Textcite{EdelmanEtAl2024} and \textcite{AkyurekEtAl2024} study such sources experimentally; a quantitative theory of the stage lengths is open. \label{ex:induction:stages}
+\end{exercises}
+
+\notesandrefs
+Induction heads were named by \textcite{ElhageEtAl2021}, in a study of attention-only transformers that introduced the residual-stream view, the $W_{QK}$ and $W_{OV}$ circuits and K-composition; \textcite{OlssonEtAl2022} connected their formation to an abrupt improvement of in-context learning. Both appeared in the Transformer Circuits Thread, and the second also on arXiv. The data-dependence of in-context learning is from \textcite{ChanEtAl2022} and \textcite{SinghEtAl2023}, and mechanistic studies of formation from \textcite{Reddy2024} and \textcite{SinghEtAl2024}.
+
+The in-context Markov chain task is that of \textcite{EdelmanEtAl2024}, who observed the uniform, unigram and bigram stages, studied the effect of the prior over chains, and extended the task to $n$-grams; \textcite{NichaniEtAl2024} and \textcite{BiettiEtAl2023} proved results on gradient dynamics for related tasks, and \textcite{MakkuvaEtAl2024} and \textcite{RajaramanEtAl2024} studied the loss landscape and the depth needed for Markov data. \Cref{thm:induction:bayes} is classical Dirichlet--multinomial conjugacy, and the add-$\frac12$ estimator and its $\frac{K-1}2\log n$ redundancy go back to \textcite{KrichevskyTrofimov1981}. The construction of \cref{thm:induction:circuit} follows the circuits of \textcite{ElhageEtAl2021} and \textcite{EdelmanEtAl2024}; the sink that carries the prior and the explicit error bound are, as far as we know, new here, as is the caricature with its escape theorem, which transfers the analysis of \cref{ch:deeplinear} to a composition of attention layers.
+
+\Textcite{SanfordEtAl2024} (unrefereed) prove the separation between one and two layers by communication complexity. \Textcite{XiaoEtAl2024} introduced the term attention sink for the first tokens that absorb attention in language models. Function vectors and task vectors \parencite{ToddEtAl2024,HendelEtAl2023} were found independently and posted to arXiv simultaneously in October 2023.
+
+\paragraph{Translating the literature.} \Textcite{ElhageEtAl2021} write $W_{QK}^h=W_Q^{h\top}W_K^h$ and $W_{OV}^h=W_O^hW_V^h$ for the circuits of head $h$; in our circuit layer~1 has $W_{QK}=\beta_1\times$(the shift on one-hot positions) and $W_{OV}$ copying the token into a fresh subspace, and layer~2 has $W_{QK}=\beta_2\times$(the identity from the token subspace of the query to the layer-1 subspace of the key) and $W_{OV}$ copying the token. Their pattern $[A][B]\dots[A]\to[B]$ is our $x_{s-1}=x_t=A$, $x_s=B$. Papers on in-context Markov chains commonly write $k$ for our number of states $K$ and $\alpha$ for the Dirichlet parameter that we call $\kappa$; the ``statistical induction head'' of \textcite{EdelmanEtAl2024} is our layer~2, and their unigram and bigram strategies are our unigram predictors and $\indpb_t$. \Textcite{OlssonEtAl2022} measure context use by the loss difference between tokens $500$ and $50$, which for the Bayes predictor of our setting is about $\frac{K(K-1)}2(\frac1{50}-\frac1{500})$ by \eqref{eq:induction:excess}. \Textcite{NichaniEtAl2024} call our disentangled layout a disentangled transformer. Our $\alpha$ is the initialization scale of \cref{ch:deeplinear}, and our $G$ plays the role of its singular value $s$.
+
+\printchapterbib
+\end{refsection}
