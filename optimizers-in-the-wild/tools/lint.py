@@ -76,7 +76,7 @@ def main(path):
             bad = [e for e in stack if e in NO_SIDENOTE_ENVS]
             if bad or in_display:
                 warnings.append((no, "sidenote-placement", "margin note inside " + (bad[-1] if bad else "display")))
-        if "\\footnote" in line:
+        if re.search(r"\\footnote(?![A-Za-z])", line):
             warnings.append((no, "footnote", "use \\sidenote, never \\footnote"))
         prose = prose_only(line)
         low = prose.lower()
