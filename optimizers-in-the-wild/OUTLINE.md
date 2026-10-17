@@ -89,8 +89,7 @@ Each chapter starts with `\casechapter{Title}{Subtitle}{Tag}{ch:key}` using exac
 table (write $\ell_\infty$ as `$\ell_\infty$`, $\mu$P as `$\mu$P`, $\beta_2$ as `$\beta_2$`). The appendix
 uses `\casechapter{A Toolkit}{Duality, matrices, recurrences and online learning}{}{ch:toolkit}`. The
 companion volume is cited in prose as "volume 2 of this series, *The Hydrogen Atoms of Deep Learning*,
-Chapter 15" (no `\cref`; add a bib entry `HydrogenAtoms2026` if you cite it formally:
-`@book{HydrogenAtoms2026, title={The Hydrogen Atoms of Deep Learning: Solvable Models and What They Get Wrong}, author={{Claude (Opus 5.5)} and Li, Xiaoyu}, series={The Missing Textbooks}, volume={2}, year={2026}, note={In preparation}}`).
+Chapter 15" (no `\cref` and no bib entry).
 
 ### Fixed appendix labels (chapters may cite these; the appendix must define exactly these)
 

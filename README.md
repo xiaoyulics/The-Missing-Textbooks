@@ -10,7 +10,7 @@ A series of textbooks that should exist but don't.
 |---|-------|---------|-----|
 | 1 | *Dissolving Problems: A Casebook of Theory-Building* (332 pp.) | [`dissolving-problems/`](dissolving-problems/) | [`Dissolving-Problems.pdf`](dissolving-problems/Dissolving-Problems.pdf) |
 | 2 | *The Hydrogen Atoms of Deep Learning: Solvable Models and What They Get Wrong* (396 pp.) | [`hydrogen-atoms/`](hydrogen-atoms/) | [`Hydrogen-Atoms-of-Deep-Learning.pdf`](hydrogen-atoms/Hydrogen-Atoms-of-Deep-Learning.pdf) |
-| 3 | *Optimizers in the Wild: Steepest Descent and the Dynamics of Training* | [`optimizers-in-the-wild/`](optimizers-in-the-wild/) | [`Optimizers-in-the-Wild.pdf`](optimizers-in-the-wild/Optimizers-in-the-Wild.pdf) |
+| 3 | *Optimizers in the Wild: Steepest Descent and the Dynamics of Training* (369 pp.) | [`optimizers-in-the-wild/`](optimizers-in-the-wild/) | [`Optimizers-in-the-Wild.pdf`](optimizers-in-the-wild/Optimizers-in-the-Wild.pdf) |
 
 ## Layout
 

@@ -10,8 +10,9 @@ Runs (deterministic, so "simulation" means iterating the update rule):
           theory curve = the coordinatewise closed form (|theta_i| falls by eta per step until it is below
           eta, then alternates between a_i and a_i - eta, with a_i = |theta_0,i| mod eta).
   signlin sign descent with the linearly decaying schedule eta_t = eta (1 - t/T), T = 400.
-Also written: the predicted arrival time max_i |theta_0,i| / eta and the expected cycle-averaged floor
-tr(H) eta^2 / 6 for random phases.
+Also printed: the predicted arrival time max_i |theta_0,i| / eta, the expected cycle-averaged floor
+tr(H) eta^2 / 6 for remainders |theta_0,i| mod eta uniform on [0, eta), the two losses of the sign
+two-cycle, and the first step at which gradient descent goes below their mean (about 6500).
 Output: figures/data/00-prologue-quadratic.dat (t, gd_exact, gd_sim, sign_exact, sign_sim, signlin_sim)
 """
 import os
@@ -70,3 +71,10 @@ print("floor guide tr(H) eta^2/6 =", h.sum() * eta ** 2 / 6)
 print("max |gd_exact - gd_sim| =", np.max(np.abs(gd_exact - np.array(gd_sim))))
 print("max |sign_exact - sign_sim| =", np.max(np.abs(np.array(sign_exact) - np.array(sign_sim))))
 print("final losses: gd %.3e sign %.3e signlin %.3e" % (gd_sim[-1], sign_sim[-1], signlin_sim[-1]))
+# numbers quoted in the caption and in the text after the figure
+lo, hi = sorted(sign_sim[-2:])
+mean_cycle = 0.5 * (lo + hi)
+print("sign two-cycle losses %.3e and %.3e, mean %.3e" % (lo, hi, mean_cycle))
+t_gd = next(t for t in range(10 ** 6)
+            if 0.5 * np.sum(h * (1 - eta_gd * h) ** (2 * t) * theta0 ** 2) < mean_cycle)
+print("first step at which gradient descent goes below that mean:", t_gd)
