@@ -19,9 +19,9 @@ Five configurations, each swept over a grid of base learning rates eta spaced by
             eta * lmo_{rms->rms}(G) = -eta * sqrt(fan_out/fan_in) * polar(G) of its minibatch gradient G
             (exact polar factor, computed from the rank-B factorization of G; Muon without momentum),
             initialization as in the muP configurations.
-All configurations coincide in initialization at the base width n0 = 64 except for W3 under SP, and
-all learning-rate grids use the same initial weights and the same data stream for every eta (common
-random numbers), with seed 0.
+At the base width n0 = 64 the SP and muP versions of each optimizer coincide (same initial weights,
+same per-layer learning rates). Every learning rate of a grid uses the same initial weights and the
+same data stream (common random numbers), with seed 0.
 
 Outputs (whitespace-separated, header row):
   figures/data/04-modular-transfer-curves.dat  column log2lr, then one column per configuration and
@@ -30,7 +30,9 @@ Outputs (whitespace-separated, header row):
   figures/data/04-modular-transfer-optima.dat  one row per width: for each configuration the log2 of
       the optimal base learning rate (vertex of the parabola through the best grid point and its two
       neighbors in (log2 eta, log loss); the grid point itself if a neighbor is missing), the log2 of
-      the largest stable grid learning rate (columns <cfg>stable), the optimum relative to width 64
+      the largest grid learning rate below the first run that overflowed (columns <cfg>stable; Adam
+      runs with too large a rate stop learning without overflowing, so for Adam and for the spectral
+      steps this column is the top of the grid), the optimum relative to width 64
       (columns <cfg>rel), and the largest stable rate of sgd_sp relative to width 64.
 Runs in about a minute on two CPU threads (longer on a loaded machine).
 """

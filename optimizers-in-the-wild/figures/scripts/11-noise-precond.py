@@ -12,7 +12,7 @@ theoretical step size, smoothed by a centred moving average over 2% of the predi
 crossing of the target located by linear interpolation. Bulk modes of the spiked models are
 simulated by 500 representative modes, each standing for m/500 identical modes.
 Writes figures/data/11-noise-precond.dat (theory), 11-noise-precond-mc.dat (simulation) and
-11-noise-precond-lim.dat (the small-batch and large-batch limits).
+11-noise-precond-lim.dat (the small-batch and large-batch limits, as two short segments).
 Runtime: about 60 s on one CPU core. Deterministic seed.
 """
 import os
@@ -151,5 +151,6 @@ if __name__ == "__main__":
         f.write("B " + " ".join(names) + "\n")
         f.write("0.5 " + " ".join(f"{lims[n][0]:.5f}" for n in names) + "\n")
         f.write("1.5 " + " ".join(f"{lims[n][0]:.5f}" for n in names) + "\n")
+        f.write("nan " + " ".join("nan" for n in names) + "\n")   # break the line between the two limits
         f.write("12000 " + " ".join(f"{lims[n][1]:.5f}" for n in names) + "\n")
         f.write("32768 " + " ".join(f"{lims[n][1]:.5f}" for n in names) + "\n")

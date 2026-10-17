@@ -2,7 +2,7 @@
 
 Loss L(W) = 1/2 tr((W - W*) A (W - W*)^T) on 128 x 128 matrices (the layer loss (1/2n)||WX - Y||_F^2 with
 Y = W* X and A = X X^T / n). Inputs: A = Q diag(a) Q^T with a_i = i^(-1/2), i = 1..128, so the stable rank of
-the inputs is tr A / a_1 = 20.9. Start: W_0 = 0, with W* = -U diag(e) Q^T, e_i = i^(-beta), so the error is
+the inputs is tr A / a_1 = 21.2. Start: W_0 = 0, with W* = -U diag(e) Q^T, e_i = i^(-beta), so the error is
 aligned with the eigenbasis of A ("aligned case"); beta controls how concentrated the error is on the stiff
 directions. Q and U are Haar-random orthogonal matrices (seed 11).
 
