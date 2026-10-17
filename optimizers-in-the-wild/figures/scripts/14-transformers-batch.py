@@ -7,7 +7,7 @@ Adam at small batch.  Initialization theta_0 = 1 (all coordinates), target: expe
 of the initial loss.  Steps to target T(B): least t such that some constant eta in (0, 2/max a_i h_i)
 reaches the target at step t.
 
-Theory (exact recursions; eta optimized on a grid of 400 log-spaced values below the stability limit):
+Theory (exact recursions; eta optimized on a grid of 400 log-spaced values below the stability limit, then refined locally):
   sgd, pre              T(B) for p = 0 and p = 1/2, noise c = h, last iterate
   sgdsmall, presmall    small-batch asymptotes n_a(eps)/B (Theorem batch (ii))
   sgdbig, prebig        large-batch limits T_a(infinity) (Theorem batch (i))
@@ -49,8 +49,18 @@ def etas_for(a):
     return emax * np.exp(np.linspace(np.log(1e-5), np.log(0.9999), NETA))
 
 
-def last_iterate_steps(a, c, B, etas=None):
-    """Least t with E L_t <= EPS over the eta grid (exact formula); returns (T, eta)."""
+def last_iterate_steps(a, c, B, etas=None, refine=True):
+    """Least t with E L_t <= EPS over the eta grid (exact formula); returns (T, eta).
+    With refine=True the best grid value is refined on 400 points within a factor 1.03 of it,
+    which gives the optimum over all constant step sizes to within one step."""
+    if refine and etas is None:
+        T0, e0 = last_iterate_steps(a, c, B, refine=False)
+        if e0 is None:
+            return T0, e0
+        emax = 2.0 / np.max(a * H)
+        local = np.linspace(e0 / 1.03, min(e0 * 1.03, 0.99999 * emax), 400)
+        T1, e1 = last_iterate_steps(a, c, B, etas=local, refine=False)
+        return (T1, e1) if T1 <= T0 else (T0, e0)
     etas = etas_for(a) if etas is None else etas
     lam = a * H
     best = (np.inf, None)
