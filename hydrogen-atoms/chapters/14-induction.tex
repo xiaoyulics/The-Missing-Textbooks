@@ -40,9 +40,10 @@ Three questions follow. \emph{What} should an induction head compute, statistica
 \end{assumption}
 
 Recall that the Dirichlet law $\indDir(\kappa_1,\dots,\kappa_K)$ on the simplex has density proportional to $\prod_jq_j^{\kappa_j-1}$ and mean $\kappa_j/\sum_l\kappa_l$. With probability one every entry of $P$ is positive, so $P$ has a unique stationary law $\pi=\pi(P)$, with $\pi P=\pi$. A model sees a context $x_{1:t}=(x_1,\dots,x_t)$ and outputs a probability vector $q_t\in\R^K$ for $x_{t+1}$; it is trained on the cross-entropy $\E[-\log q_t(x_{t+1})]$ averaged over the positions $t=1,\dots,N$ of contexts of length $N$. A fresh $P$ for every sequence makes all in-weights knowledge about transitions useless: averaged over $P$, every row is uniform.\sidenote{In the language of \cref{ch:icl}, the chain $P$ is the task and the context is its training set; the network must learn a learning algorithm.} The counts in the context are everything,
-\[
-  \indcnt_{ij}(t)=\#\{s<t:\ x_s=i,\ x_{s+1}=j\},\qquad \indcnt_i(t)=\sum_j\indcnt_{ij}(t),\qquad \indcnt_j^U(t)=\#\{s\le t:\ x_s=j\},
-\]
+\begin{gather*}
+  \indcnt_{ij}(t)=\#\{s<t:\ x_s=i,\ x_{s+1}=j\},\qquad \indcnt_i(t)=\sum_j\indcnt_{ij}(t),\\
+  \indcnt_j^U(t)=\#\{s\le t:\ x_s=j\},
+\end{gather*}
 the transition counts out of state $i$ and the unigram counts.
 
 \paragraph{The network.} We use an attention-only transformer with two layers, one head each, in which every layer writes its output to a fresh subspace of the residual stream, so that later layers can read each part separately.\sidenote{This ``disentangled'' form is used by \textcite{NichaniEtAl2024}; a standard transformer with a wide residual stream can embed it, by placing token, position and head outputs in orthogonal subspaces.} Position $s\ge1$ carries the one-hot vector $e_{x_s}\in\R^K$ of its token; an extra position $s=0$, the \term{attention sink}\index{attention sink}, carries $e_{x_0}\defeq0$. Layer~1 is a previous-token head of inverse temperature $\beta_1$: position $s\ge1$ attends to $s'\in\{0,\dots,s\}$ with weights
@@ -127,16 +128,15 @@ For $K=2$ the rows are $(1-u,u)$ and $(w,1-w)$ with $u,w$ independent uniform, a
            snk/.style={draw=sandline,fill=sand,line width=0.5pt,minimum width=7mm,minimum height=6mm,inner sep=0pt,font=\small}}
   \node[snk] (s0) at (0,0) {$\varnothing$};
   \foreach \i/\t in {1/C,2/A,3/B,4/C,5/A,6/C,7/A,8/B,9/A}{\node[tok] (x\i) at (\i,0) {$\t$};}
-  \node[font=\scriptsize,text=muted] at (0,-0.55) {sink};
-  \foreach \i in {1,...,9}{\node[font=\scriptsize,text=muted] at (\i,-0.55) {$\i$};}
-  \foreach \i/\j in {2/3,5/6,7/8}{\draw[->,muted,line width=0.5pt] (x\i.north) to[bend left=50] (x\j.north);}
-  \node[font=\scriptsize,text=muted,anchor=west] at (9.5,0.55) {layer 1: copy $x_{s-1}$ to $s$};
-  \foreach \j in {3,6,8}{\draw[->,sea,line width=0.8pt] (x9.south) to[bend left=28] (x\j.south);}
-  \draw[->,sandline!55!black,line width=0.8pt] (x9.south) to[bend left=22] (s0.south);
-  \node[font=\scriptsize,text=sea,anchor=west] at (9.5,-0.55) {layer 2: from $t$ to every $s$};
-  \node[font=\scriptsize,text=sea,anchor=west] at (9.5,-0.95) {with $x_{s-1}=x_t$};
+  \node[font=\scriptsize,text=muted] at (0,0.5) {sink};
+  \foreach \i in {1,...,9}{\node[font=\scriptsize,text=muted] at (\i,0.5) {$\i$};}
+  \foreach \i/\j in {2/3,5/6,7/8}{\draw[->,muted,line width=0.5pt] (x\i.south east) to[bend right=70] (x\j.south west);}
+  \foreach \j in {3,6,8}{\draw[->,sea,line width=0.8pt] (9,-0.32) to[bend left=30] (\j,-0.32);}
+  \draw[->,sandline!55!black,line width=0.8pt] (9,-0.32) to[bend left=25] (0,-0.32);
+  \node[font=\scriptsize,text=muted,anchor=west] at (-0.4,-1.75) {grey: layer 1 copies $x_{s-1}$ to position $s$;};
+  \node[font=\scriptsize,text=sea,anchor=west] at (4.3,-1.75) {blue: layer 2 attends from $t$ to $s$ with $x_{s-1}=x_t$};
 \end{tikzpicture}
-\caption{The circuit of \cref{thm:induction:circuit} on the context $CABCACABA$, with $t=9$ and $x_t=A$. Layer~1 writes $x_{s-1}$ at each position $s$ (three of the arrows drawn). Layer~2 attends from position $9$ to the positions $3,6,8$ that follow an earlier $A$, whose tokens are $B,C,B$, and to the sink. With $\kappa=1$ and $K=3$ the output is $\bigl(\frac{0+1}{3+3},\frac{2+1}{3+3},\frac{1+1}{3+3}\bigr)$ for $(A,B,C)$, the Bayes predictor.}\label{fig:induction:circuit}
+\caption{The circuit of \cref{thm:induction:circuit} on the context $CABCACABA$, with $t=9$ and $x_t=A$. Layer~1 writes $x_{s-1}$ at each position $s$ (three of the grey arrows drawn). Layer~2 attends from position $9$ to the positions $3,6,8$ that follow an earlier $A$, whose tokens are $B,C,B$, and to the sink. With $\kappa=1$ and $K=3$ the output is $\bigl(\frac{0+1}{3+3},\frac{2+1}{3+3},\frac{1+1}{3+3}\bigr)$ for $(A,B,C)$, the Bayes predictor.}\label{fig:induction:circuit}
 \end{figure}
 
 The network \eqref{eq:induction:layer1}--\eqref{eq:induction:output} computes $\indpb_t$ in the limit of large inverse temperatures (\cref{fig:induction:circuit}). We need one fact about softmax.
@@ -161,9 +161,10 @@ In particular, if $0<\eps<\min\{1,2t/\kappa\}$, $\beta_2=\log(2t/(\kappa\eps))$ 
 The plan is to compare the network with an ideal one whose first layer is exact, using \cref{lem:induction:softmax}, and then to compare the ideal network at finite $\beta_2$ with its limit. Write $i=x_t$ and set $\ind\{x_0=i\}\defeq0$ for the sink.
 
 \emph{Layer 1.} For $s\ge1$ the softmax \eqref{eq:induction:layer1} puts weight $e^{\beta_1}/(e^{\beta_1}+s)$ on $s-1$, so the remaining weight is $\delta_s=s/(e^{\beta_1}+s)\le te^{-\beta_1}$. Since $\ip{e_i,e_{x_{s'}}}=\ind\{x_{s'}=i\}\in\{0,1\}$,
-\[
-  \ip{e_i,h_s}=(1-\delta_s)\ind\{x_{s-1}=i\}+\sum_{s'\ne s-1}a^{(1)}_{ss'}\ind\{x_{s'}=i\}\in\bigl[(1-\delta_s)\ind\{x_{s-1}=i\},\,(1-\delta_s)\ind\{x_{s-1}=i\}+\delta_s\bigr],
-\]
+\begin{align*}
+  \ip{e_i,h_s}&=(1-\delta_s)\ind\{x_{s-1}=i\}+\sum_{s'\ne s-1}a^{(1)}_{ss'}\ind\{x_{s'}=i\}\\
+  &\in\bigl[(1-\delta_s)\ind\{x_{s-1}=i\},\,(1-\delta_s)\ind\{x_{s-1}=i\}+\delta_s\bigr],
+\end{align*}
 so $\abs{\ip{e_i,h_s}-\ind\{x_{s-1}=i\}}\le\delta_s\le te^{-\beta_1}$.
 
 \emph{An ideal second layer.} Let $\ell^*_0=\ell_0$ and $\ell^*_s=\beta_2\ind\{x_{s-1}=i\}$ for $1\le s\le t$, and let $w$ be their softmax weights. By the bound on layer~1, $\abs{\ell_s-\ell^*_s}\le\beta_2te^{-\beta_1}$ for every $s$, so by \cref{lem:induction:softmax} each weight $a^{(2)}_s$ lies within a factor $e^{\pm2\beta_2te^{-\beta_1}}$ of $w_s$. The values in \eqref{eq:induction:output} have nonnegative coordinates, so the same factor bounds $\hat y_t(j)$ against $\tilde y(j)\defeq w_0/K+\sum_{s\ge1}w_s\ind\{x_s=j\}$:
@@ -206,7 +207,10 @@ Expand $\norm{c\varphi_U+v\varphi_B-e_{x_{T+1}}}^2$ and use $\norm{e_{x_{T+1}}}^
 
 The gradient flow $\dot c=-\partial_c\Loss$, $\dot a=-\partial_a\Loss$, $\dot b=-\partial_b\Loss$ reads
 \begin{equation}\label{eq:induction:flow}
-  \dot c=2\bigl(g_U-\indAU c-\indAX v\bigr),\qquad \dot a=b\,R,\qquad \dot b=a\,R,\qquad R=2\bigl(g_B-\indAX c-\indAB v\bigr).
+  \begin{aligned}
+  \dot c&=2\bigl(g_U-\indAU c-\indAX v\bigr),\qquad \dot a=b\,R,\qquad \dot b=a\,R,\\
+  R&=2\bigl(g_B-\indAX c-\indAB v\bigr).
+  \end{aligned}
 \end{equation}
 At the origin of the $(a,b)$ plane the gradients in $a$ and $b$ vanish, while that in $c$ is $-2g_U\ne0$: the unigram direction is learned at once, and the induction directions sit at a saddle, the saddle of a product $ab$ met in \cref{ch:deeplinear}.\sidenote{There the product of the two layers of a linear network multiplies a singular value of the data; here the product of two attention strengths multiplies a feature of the context. With $a(0)\ne b(0)$ the conserved quantity $a^2-b^2$ plays the role of the balancedness of \cref{ch:deeplinear} (\cref{ex:induction:unbalanced}).} On the unigram manifold $v=0$ the loss is minimized at $c^\star=g_U/\indAU$, with value $\indLU=1-g_U^2/\indAU$. The rate at which the induction circuit grows there is governed by the \term{induction gain}\index{induction gain}\index{plateau}
 \begin{equation}\label{eq:induction:gain}
@@ -214,14 +218,16 @@ At the origin of the $(a,b)$ plane the gradients in $a$ and $b$ vanish, while th
 \end{equation}
 the correlation of the bigram feature with the target that the unigram feature does not already explain. If $G>0$ and $\indAU\indAB>\indAX^2$, the quadratic has the unique minimizer
 \[
-  v^{\star\star}=\frac{\indAU G}{\indAU\indAB-\indAX^2}>0,\qquad c^{\star\star}=\frac{g_U\indAB-g_B\indAX}{\indAU\indAB-\indAX^2},\qquad \indLU-\Loss^{\star\star}=\frac{\indAU G^2}{\indAU\indAB-\indAX^2}.
+  v^{\star\star}=\frac{\indAU G}{\indAU\indAB-\indAX^2}>0,\qquad c^{\star\star}=\frac{g_U\indAB-g_B\indAX}{\indAU\indAB-\indAX^2},
 \]
+with value $\Loss^{\star\star}$ below the plateau by $\indLU-\Loss^{\star\star}=\indAU G^2/(\indAU\indAB-\indAX^2)$.
 
 \begin{lemma}[Long-context moments]\label[lemma]{lem:induction:longcontext}
 Under \cref{ass:induction:data}, as $T\to\infty$, $\indAU$ and $g_U$ both converge to $\E\norm{\pi}^2$, so that $c^\star\to1$, and
-\[
-  \indAX\to\E\sum_i\pi_i^2\ip{\pi,P_{i\cdot}},\qquad \indAB\to\E\sum_i\pi_i^3\norm{P_{i\cdot}}^2,\qquad G\to\E\sum_i\pi_i^2\ip{P_{i\cdot}-\pi,P_{i\cdot}} .
-\]
+\begin{gather*}
+  \indAX\to\E\sum_i\pi_i^2\ip{\pi,P_{i\cdot}},\qquad \indAB\to\E\sum_i\pi_i^3\norm{P_{i\cdot}}^2,\\
+  G\to\E\sum_i\pi_i^2\ip{P_{i\cdot}-\pi,P_{i\cdot}} .
+\end{gather*}
 \end{lemma}
 
 \begin{proofsketch}
@@ -288,9 +294,10 @@ under the hypothesis of (iii). Since $\int_0^\infty\norm{\nabla\Loss}^2\mathrm d
 
 \begin{corollary}[Logarithmic escape]\label[corollary]{cor:induction:log}
 Under the hypotheses of \cref{thm:induction:escape}, for every fixed $\eta\in(0,\eta_0]$,
-\[
-  \frac1{2(G+\indAX^2\eta/\indAU)}\le\liminf_{\alpha\to0}\frac{\tau_\eta}{\log(1/\alpha)}\le\limsup_{\alpha\to0}\frac{\tau_\eta}{\log(1/\alpha)}\le\frac1{2(G-\indAB\eta)} .
-\]
+\begin{gather*}
+  \frac1{2(G+\indAX^2\eta/\indAU)}\le\liminf_{\alpha\to0}\frac{\tau_\eta}{\log(1/\alpha)},\\
+  \limsup_{\alpha\to0}\frac{\tau_\eta}{\log(1/\alpha)}\le\frac1{2(G-\indAB\eta)} .
+\end{gather*}
 \end{corollary}
 
 \begin{proof}
@@ -337,8 +344,8 @@ a heuristic that Monte Carlo confirms slowly ($0.048$, $0.027$ and $0.0141$ at $
 \begin{figure}[t]
 \centering
 \begin{tikzpicture}
-\begin{axis}[hplot,xmin=0,xmax=3000,ymin=0.935,ymax=1.105,xlabel={SGD step},ylabel={validation loss},
-  legend style={at={(0.97,0.97)},anchor=north east},legend cell align=left]
+\begin{axis}[hplot,xmin=0,xmax=3000,ymin=0.935,ymax=1.118,xlabel={SGD step},ylabel={validation loss},
+  legend style={at={(0.97,0.2)},anchor=south east},legend cell align=left]
 \addplot[sea,line width=1.0pt] table[x=step,y=l1] {figures/data/14-induction-transformer.dat};
 \addplot[seadeep,line width=1.0pt,dashed] table[x=step,y=l2] {figures/data/14-induction-transformer.dat};
 \addplot[sandline!55!black,line width=1.0pt] table[x=step,y=l3] {figures/data/14-induction-transformer.dat};
@@ -346,9 +353,9 @@ a heuristic that Monte Carlo confirms slowly ($0.048$, $0.027$ and $0.0141$ at $
 \addplot[guide] table[x=step,y=unigram] {figures/data/14-induction-transformer.dat};
 \addplot[guide] table[x=step,y=bigram] {figures/data/14-induction-transformer.dat};
 \legend{init $10^{-1}$,init $10^{-2}$,init $10^{-3}$}
-\node[font=\scriptsize,text=muted,anchor=south east] at (axis cs:2980,1.0986) {uniform, $\log3$};
-\node[font=\scriptsize,text=muted,anchor=south east] at (axis cs:2980,1.0322) {best add-$\kappa'$ unigram};
-\node[font=\scriptsize,text=muted,anchor=south east] at (axis cs:2980,0.9465) {Bayes, \cref{thm:induction:bayes}};
+\node[font=\scriptsize,text=muted,anchor=south west] at (axis cs:1500,1.0986) {uniform, $\log3$};
+\node[font=\scriptsize,text=muted,anchor=south west] at (axis cs:1900,1.0322) {best add-$\kappa'$ unigram};
+\node[font=\scriptsize,text=muted,anchor=north east] at (axis cs:2980,0.9465) {Bayes, \cref{thm:induction:bayes}};
 \end{axis}
 \end{tikzpicture}
 \caption{A softmax transformer on in-context Markov chains ($K=3$, $\kappa=1$, context $N=32$, loss averaged over positions, validation set of $4000$ sequences, seed $0$). Layer~1: one head with learned relative-position logits and value matrix; layer~2: one head with a learned bilinear score on (token, layer-1 output) and a sink with learned logit; logits $\gamma\log\hat y_t$ with learned $\gamma$; all weights initialized as the stated scale times a standard Gaussian, $\gamma$ and the sink logit at $0$. Plain SGD, learning rate $1$, batches of $64$ fresh sequences. Dashed lines: the three levels, computed on the validation set. The loss crosses the midpoint between the unigram and Bayes levels at steps $680$, $1200$ and $1740$, and ends at $0.952$; the previous-token weight $a^{(1)}_{t,t-1}$ ends near $0.9$.}\label{fig:induction:transformer}
@@ -360,7 +367,7 @@ a heuristic that Monte Carlo confirms slowly ($0.048$, $0.027$ and $0.0141$ at $
 
 \paragraph{What was thrown away.} \emph{The data} are designed so that in-context statistics are the only signal: a fresh chain per sequence, a symmetric prior, no vocabulary structure, no semantics. Real text mixes in-context and in-weights regularities, and their competition is a large part of the phenomenon. \emph{The circuit} is fixed by hand, with one head per layer and the positional pattern of a previous-token head built in; real induction heads match on fuzzy, learned features and copy through learned subspaces. \emph{The caricature} keeps one scalar per layer, linear attention and a square loss; it captures the saddle created by composition and nothing else. In particular it does not explain why gradient descent finds the \emph{previous-token} pattern among all positional patterns, a symmetry-breaking question that \textcite{NichaniEtAl2024} answer with mutual information and that our three-parameter ansatz assumes away. \emph{The readout} of our experiments is a logarithm of the attention output, which spares the network the MLP a real transformer needs to turn mixtures of one-hot vectors into calibrated logits.
 
-\paragraph{Where it breaks.} \emph{Language models do more at the phase change.} \Textcite{OlssonEtAl2022} note that the formation of induction heads coincides with other changes in the network, and for large models with MLPs their evidence that induction heads cause in-context learning is correlational. The abrupt improvement in context use is therefore not cleanly attributable to a two-head circuit. \emph{In-context learning in large models goes beyond copying.} \Textcite{ToddEtAl2024} find a small set of heads whose outputs, averaged over demonstrations, form \emph{function vectors} that trigger a task even in zero-shot contexts; \textcite{HendelEtAl2023} find that in-context learning compresses the demonstrations into a single \emph{task vector}. These are abstractions of a task, not counts of repeated tokens. \emph{Data control whether the head forms at all.} \Textcite{ChanEtAl2022} show that in-context learning requires bursty data with many rare classes, and \textcite{SinghEtAl2023} that it can disappear with further training as in-weights learning takes over; in our model $G=0$ for data without in-context structure (\cref{ex:induction:iid}), which captures the first finding, but nothing in it can capture the second, because in-weights knowledge is useless by construction. \emph{One layer gets stuck.} \Textcite{MakkuvaEtAl2024} (unrefereed in the version we cite) characterize the loss landscape of single-layer transformers on Markov data and find bad local minima that depend on the data and the architecture; our caricature has no local minima at all, only a saddle. \emph{The plateau is not always one plateau.} \Textcite{SinghEtAl2024} find that induction-head formation depends on several interacting subcircuits, and \textcite{Reddy2024} that the abrupt transition comes from a sequence of nested nonlinearities; the caricature, with one product of two strengths, has a single escape.
+\paragraph{Where it breaks.} \emph{Language models may do more at the phase change.} For large models with MLPs the evidence of \textcite{OlssonEtAl2022} that induction heads cause in-context learning is correlational: the heads and the jump in context use appear in the same window of training, but other mechanisms may form in that window too, and the abrupt improvement is not cleanly attributable to a two-head circuit. \emph{In-context learning in large models goes beyond copying.} \Textcite{ToddEtAl2024} find a small set of heads whose outputs, averaged over demonstrations, form \emph{function vectors} that trigger a task even in zero-shot contexts; \textcite{HendelEtAl2023} find that in-context learning compresses the demonstrations into a single \emph{task vector}. These are abstractions of a task, not counts of repeated tokens. \emph{Data control whether the head forms at all.} \Textcite{ChanEtAl2022} show that in-context learning requires bursty data with many rare classes, and \textcite{SinghEtAl2023} that it can disappear with further training as in-weights learning takes over; in our model $G=0$ for data without in-context structure (\cref{ex:induction:iid}), which captures the first finding, but nothing in it can capture the second, because in-weights knowledge is useless by construction. \emph{One layer gets stuck.} \Textcite{MakkuvaEtAl2024} (unrefereed in the version we cite) characterize the loss landscape of single-layer transformers on Markov data and find bad local minima that depend on the data and the architecture; our caricature has no local minima at all, only a saddle. \emph{The plateau is not always one plateau.} \Textcite{SinghEtAl2024} find that induction-head formation depends on several interacting subcircuits, and \textcite{Reddy2024} that the abrupt transition comes from a sequence of nested nonlinearities; the caricature, with one product of two strengths, has a single escape.
 
 \paragraph{Fine structure.} \emph{Rigorous dynamics.} \Textcite{NichaniEtAl2024} prove that gradient descent on a simplified two-layer transformer learns latent causal graphs, and induction heads for Markov chains, and \textcite{BiettiEtAl2023} explain the order in which global and in-context bigrams are learned through associative memories. \emph{Higher-order chains.} For $k$th-order Markov sources the Bayes predictor counts $(k+1)$-grams; \textcite{EdelmanEtAl2024} extend their experiments to such sources, \textcite{AkyurekEtAl2024} find ``$n$-gram heads'', higher-order induction heads, in transformers trained on in-context language learning tasks, and \textcite{RajaramanEtAl2024} show that depth logarithmic in $k$ suffices, and constant depth with layer normalization. \emph{Lower bounds.} \Textcite{SanfordEtAl2024} prove that one-layer transformers need much larger size than two-layer ones for induction tasks. \emph{Attention sinks.} \Textcite{XiaoEtAl2024} found that language models put large attention on the first tokens regardless of content and that keeping these ``sinks'' stabilizes streaming inference; in our circuit a sink has a statistical role, carrying the prior. Open: a theorem for the softmax network of \cref{fig:induction:transformer} that predicts the slope of the plateau length against $\log(1/\alpha)$, and an account of how the unigram stage, which our proof treats as fast, changes the escape when it is not.
 
