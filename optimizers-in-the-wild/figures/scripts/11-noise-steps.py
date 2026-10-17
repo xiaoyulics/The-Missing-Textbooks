@@ -4,7 +4,8 @@ Steps to a target loss against the batch size in the noisy quadratic model, at t
 step size: SGD, heavy-ball momentum (beta = 0.9) and SGD preconditioned by H^{-1/2}.
 Curves: exact expected-loss formulas (thm:noise:nqm, closed form for SGD and preconditioned SGD,
 exact second-moment recursion for momentum), minimized over the step size. Points: the first step at
-which the average loss of R independent runs, at the step size chosen by the theory, is below the
+which the average loss of R independent runs (R = 64 for B <= 32, 256 above), at the step size chosen
+by the theory and smoothed by a centred moving average over 2% of the predicted time, is below the
 target. Also writes the optimal step sizes and the two limits of thm:noise:critical.
 
 Model: d = 1000, h_i = 1/i, Sigma = H, theta_0 = (1,...,1), target 5% of the initial loss.
