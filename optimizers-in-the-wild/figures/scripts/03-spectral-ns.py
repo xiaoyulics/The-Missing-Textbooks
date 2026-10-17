@@ -17,7 +17,8 @@ Simulation (points): six test matrices of size 64 x 128 with prescribed singular
 singular vectors (seed 3), iterated in bfloat16 exactly as in Muon's code (cast to bfloat16, divide by the
 Frobenius norm + 1e-7, then A = X X^T, B = b A + c A A, X = a X + B X), for k = 1..5 steps. The point plotted for
 the singular pair (u_i, v_i) of G is u_i^T X_k v_i. The same iteration in float64 is also run, and its maximal
-deviation from the curves is printed (it is of order 1e-7, the size of the 1e-7 in the normalization).
+deviation from the curves is printed: at most 3e-7 for the cubic and Muon, and up to 3e-5 for Polar Express, whose
+steep compositions near s = 1 amplify the 1e-7 in the normalization (without that term the deviation is below 1e-13).
 
 Output: figures/data/03-spectral-ns-curves.dat (s, cub1..cub5, muon1..muon5, pe1..pe5)
         figures/data/03-spectral-ns-points.dat (s, the same columns, bfloat16 measurements)
