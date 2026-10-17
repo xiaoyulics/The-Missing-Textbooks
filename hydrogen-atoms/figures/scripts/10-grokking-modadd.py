@@ -51,7 +51,7 @@ def fourier_stats():
     j = E.argmax(1)
     conc = 2 * E.max(1) / tot                      # share of energy at +-zeta
     r = np.arange(m)
-    defect = np.angle(Fu[r, j + 1]) + np.angle(Fup[r, j + 1]) - np.angle(Fv[r, j + 1])
+    defect = np.angle(Fv[r, j + 1]) - np.angle(Fu[r, j + 1]) - np.angle(Fup[r, j + 1])
     defect = (defect + np.pi) % (2 * np.pi) - np.pi  # chi - phi - psi, in (-pi, pi]
     norms = np.sqrt((u ** 2).sum(1) + (up ** 2).sum(1) + (v ** 2).sum(1))
     spec = E.sum(0) / E.sum()

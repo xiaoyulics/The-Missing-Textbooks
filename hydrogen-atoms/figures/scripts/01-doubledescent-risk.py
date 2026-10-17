@@ -14,6 +14,8 @@ figures/data/01-doubledescent-risk-mc.dat (a grid of p, with standard errors).
 Deterministic (seeded); runs in well under a minute on a laptop CPU.
 """
 import os
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")   # small matrices: threads only add overhead
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +26,7 @@ D = 100                 # number of features of the truth in panel (b)
 TRIALS = 4000
 
 def exact_excess(n, p, head2, noise2):
-    """E||w_hat - w_star||^2 for min-norm least squares (Theorem 1.4)."""
+    """E||w_hat - w_star||^2 for min-norm least squares (the exact-risk theorem of the chapter)."""
     if p <= n - 2:
         return noise2 * p / (n - p - 1)
     if p >= n + 2:

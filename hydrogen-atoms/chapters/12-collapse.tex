@@ -1,0 +1,465 @@
+% Chapter 12 of The Hydrogen Atoms of Deep Learning: neural collapse.
+\newcommand{\collapseone}{\mathbf 1}
+\newcommand{\collapseYt}{\widetilde Y}
+\newcommand{\collapseHb}{\bar H}
+\newcommand{\collapsenuc}[1]{\norm{#1}_*}
+
+\casechapter{Neural Collapse}{The geometry of the last layer}{Unconstrained features}{ch:collapse}
+\begin{refsection}[chapters/12-collapse.bib]
+
+\begin{chaptersummary}
+Train a deep classifier long past zero training error and its last layer becomes rigid: the features of each class shrink to their mean, the $K$ class means spread out into a regular simplex, the classifier vectors line up with the means, and the network classifies by the nearest class mean. The hydrogen atom of this neural collapse treats the last-layer features as free variables, constrained only in size. We prove that every global minimizer of the cross-entropy with norm constraints is a simplex, solve the weight-decay and square-loss versions in closed form, find a transition at a single dimensionless strength $\kappa=K\sqrt{n\lambda_W\lambda_H}$ of the regularization, and show that the max-margin problem reached by unregularized gradient descent has the same solution. The model explains the geometry and predicts how it breaks under class imbalance; it is silent on test data, on depth, and on whether collapse is good for anything.
+\end{chaptersummary}
+
+\section{The phenomenon: four regularities at the end of training}\label{sec:collapse:phenomenon}
+
+\Cref{ch:margin} followed a linear classifier on fixed features into the regime past zero training error, where the cross-entropy keeps falling and the weights keep growing. In a network the features below the last layer keep moving as well. What do they converge to?
+
+\Textcite{PapyanHanDonoho2020} measured it. They trained networks from three families (VGG, ResNet and DenseNet) on seven image classification data sets (MNIST, FashionMNIST, CIFAR10, CIFAR100, SVHN, STL10 and ImageNet), by stochastic gradient descent, far into what they called the \term{terminal phase of training}\index{terminal phase of training}: the epochs after the training error first reaches zero. Throughout that phase they recorded the penultimate-layer features $h\in\R^m$ of the training examples and the last-layer weights. Write $K$ for the number of classes, $h_{k,i}$ for the features of the $i$th training example of class $k$, $\bar h_k$ for the mean of class $k$, $h_G$ for the global mean, and $w_k$ for the $k$th row of the last weight matrix $W\in\R^{K\times m}$, so that the logits of an input with features $h$ are $Wh+b$.
+
+\begin{observation}[\textcite{PapyanHanDonoho2020}]\label[observation]{obs:collapse:nc}
+During the terminal phase of training, with the cross-entropy loss and weight decay, four quantities tend toward zero together:
+\begin{description}
+\item[(NC1) variability collapse:] the within-class scatter, relative to the between-class scatter of the means;
+\item[(NC2) convergence to a simplex:] the spread of the norms $\norm{\bar h_k-h_G}$, and the deviation of every cosine between two centered means from $-1/(K-1)$;
+\item[(NC3) self-duality:] the distance between $W/\norm W_F$ and the matrix of centered means, normalized the same way;
+\item[(NC4) nearest class center:] the fraction of training points on which the network's prediction differs from the class of the nearest mean.
+\end{description}
+\end{observation}
+
+The name \term{neural collapse}\index{neural collapse} covers all four. NC1 is measured by $\tr(\Sigma_W\Sigma_B^+)/K$, with $\Sigma_W$ the average within-class covariance, $\Sigma_B$ the covariance of the class means and $\Sigma_B^+$ its pseudo-inverse. NC2 says that the centered means become the vertices of a regular simplex centered at the origin, the most spread-out configuration of $K$ points of equal norm; NC3 says that the classifier is that same simplex, rescaled; NC4 follows from the other three (\cref{ex:collapse:ncc}). \Textcite{PapyanHanDonoho2020} argued that the collapsed geometry brings benefits in generalization, robustness and interpretability, and their paper started a literature: \textcite{HanPapyanDonoho2022} reported the same four regularities for networks trained with the square loss, across three networks and five data sets, and \textcite{HeSu2023} found a regularity one level down, a \term{law of equi-separation}\index{law of equi-separation}: in a trained network each layer improves a measure of class separation by roughly the same factor, so that collapse builds up geometrically with depth.\sidenote{\textcite{RangamaniEtAl2023} report a related ``intermediate neural collapse'': the within-class covariance, relative to the between-class one, decreases with depth.}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[scale=1.1,font=\small]
+\pgfmathsetseed{7}
+\foreach \a/\c in {90/sea,210/seadeep,330/sandline!55!black}{
+  \foreach \j in {1,...,24}{
+    \pgfmathsetmacro{\rx}{0.42*rand}\pgfmathsetmacro{\ry}{0.42*rand}
+    \fill[\c,opacity=0.7] ({1.55*cos(\a)+\rx},{1.55*sin(\a)+\ry}) circle (1.1pt);}
+  \foreach \j in {1,...,14}{
+    \pgfmathsetmacro{\rx}{0.06*rand}\pgfmathsetmacro{\ry}{0.06*rand}
+    \fill[\c] ({4.9+1.55*cos(\a)+\rx},{1.55*sin(\a)+\ry}) circle (1.1pt);}
+  \draw[->,\c,line width=0.8pt] (4.9,0) -- ({4.9+1.05*cos(\a)},{1.05*sin(\a)});
+}
+\draw[muted,densely dashed] ({4.9+1.55*cos(90)},{1.55*sin(90)}) -- ({4.9+1.55*cos(210)},{1.55*sin(210)}) -- ({4.9+1.55*cos(330)},{1.55*sin(330)}) -- cycle;
+\fill[ink] (0,0) circle (0.9pt); \fill[ink] (4.9,0) circle (0.9pt);
+\node[anchor=north] at (0,-1.25) {early in training};
+\node[anchor=north] at (4.9,-1.25) {terminal phase};
+\node[anchor=west,text=sea] at ({4.9+0.12},0.75) {$w_1$};
+\node[anchor=west] at ({4.9+1.55*cos(90)+0.15},{1.55*sin(90)}) {$\bar h_1$};
+\end{tikzpicture}
+\caption{Neural collapse for $K=3$ classes, drawn in the plane of the class means. Left: the penultimate features of the training examples (dots, one color per class) form clouds. Right: in the terminal phase the clouds shrink to their means (NC1), the means form an equilateral triangle centered at the global mean, which is the simplex of NC2, and the classifier vectors $w_k$ (arrows) point at the means (NC3).}\label{fig:collapse:cartoon}
+\end{figure}
+
+The status of \cref{obs:collapse:nc} is good on training data and weaker elsewhere. On the training set the four metrics decrease steadily in a wide range of architectures and data sets, but they do not reach zero in finite time, and how close they get depends on the training time, the weight decay and the learning-rate schedule. In a small experiment of our own (\cref{fig:collapse:network}) NC1 fell by a factor of thirty and then stalled. On test data collapse is much weaker \parencite{HuiBelkinNakkiran2022}, and NC2 needs at least $K-1$ feature dimensions, so it cannot hold literally when the classes outnumber the dimensions, as they do for the vocabulary of a language model (\cref{sec:collapse:wrong}).
+
+The regularity is still striking. A network has millions of parameters and its features are produced by a long nonlinear computation, yet at the end of training the last layer settles into the most symmetric configuration available, the same for every architecture. Why a simplex? And why does the classifier copy it?
+
+\section{The model: free features of bounded size}\label{sec:collapse:model}
+
+The data are $K\ge2$ classes with $n$ training examples each; deviating from the global convention, $n$ counts the examples per class, so the training set has $Kn$ points. The model keeps only the last layer. The classifier is $W\in\R^{K\times m}$ with rows $w_1,\dots,w_K$, and the features are $Kn$ vectors $h_{k,i}\in\R^m$, collected as the columns of $H\in\R^{m\times Kn}$. The features are \emph{free variables}: they are optimized directly, as if the network below the last layer could produce whatever features it likes. This is the \term{unconstrained features model}\index{unconstrained features model}, introduced under that name by \textcite{MixonParshallPi2020} and as the \term{layer-peeled model}\index{layer-peeled model} by \textcite{FangEtAl2021}. The loss of an example with logits $z\in\R^K$ and class $k$ is the cross-entropy
+\[
+  \ell(z,k)=\log\sum_{j=1}^Ke^{z_j-z_k},
+\]
+and the training loss is $\Lhat(W,H)=\frac1{Kn}\sum_{k=1}^K\sum_{i=1}^n\ell(Wh_{k,i},k)$, without a bias; adding one changes nothing in the main theorem (\cref{ex:collapse:bias}). Write $\bar w=\frac1K\sum_kw_k$ for the mean classifier and $\bar h_k=\frac1n\sum_ih_{k,i}$ for the class means.
+
+The loss alone has no minimizer: scaling up $W$ and $H$ in a separating configuration drives it to zero. Something must bound the size, and the literature uses three devices, each a stand-in for a feature of real training.
+
+\begin{assumption}[Size of the last layer]\label[assumption]{ass:collapse:size}
+One of the following holds.
+\begin{enumerate}
+\item (Norm constraints.) For given $E_W,E_H>0$, the parameters satisfy $\frac1K\norm W_F^2\le E_W$ and $\frac1{Kn}\norm H_F^2\le E_H$.
+\item (Weight decay.) The objective is $\Lhat(W,H)+\frac{\lambda_W}2\norm W_F^2+\frac{\lambda_H}2\norm H_F^2$ with $\lambda_W,\lambda_H>0$.
+\item (Margins.) No regularization; the object of study is the direction of $(W,H)$ along gradient descent, as in \cref{ch:margin}.
+\end{enumerate}
+\end{assumption}
+
+Norm constraints are the cleanest for proofs; weight decay is what practice uses, on all layers, and a penalty on the features stands in for the penalty on the layers that produce them; and without regularization the margin story of \cref{ch:margin} applies, because the logits $Wh$ are homogeneous of degree two in $(W,H)$. All three give the same geometry.
+
+\begin{dictionary}
+classifier $W$, rows $w_k$ & last weight matrix\\
+free features $h_{k,i}\in\R^m$ & penultimate-layer activations of the training examples\\
+bound on $\norm H_F$ & weight decay on all the layers that produce the features\\
+$m\ge K-1$ & penultimate width at least the number of classes minus one\\
+class means $\bar h_k$, $h_{k,i}=\bar h_k$ & NC1\\
+simplex equiangular tight frame & NC2\\
+$w_k\propto\bar h_k$ & NC3\\
+global minimizer, or max-margin direction & the end of the terminal phase of training\\
+regularization strength $\kappa=K\sqrt{n\lambda_W\lambda_H}$ & weight decay times the square root of the data per class\\
+\end{dictionary}
+
+\paragraph{What was thrown away.} Everything that makes the features depend on the inputs. The model assumes that the network can realize every configuration of last-layer features at a cost that depends only on their norms. Gone too are the test set, the layers below the last, the optimizer, the bias, and every asymmetry between classes. Expressiveness is the right assumption to make first, because a network that drives the training error to zero has already shown that it can place its features almost where it likes; and the question of \cref{obs:collapse:nc} is about the training features only.
+
+\paragraph{What one had to notice.} That NC3 and NC4 make the last layer look like the solution of an optimization problem in which the features and the classifier play symmetric roles; and that a problem with that much symmetry should have a symmetric ground state. The problem is invariant under every rotation $Q\in O(m)$ acting on both sides, $(W,H)\mapsto(WQ^\top,QH)$, and under every relabeling of the classes. The simplex is the configuration of $K$ points that relabelings map to itself by rotations. Its minimizers will form a single orbit of the rotation group: the permutation symmetry is preserved, and the rotational symmetry is broken, as in a ferromagnet below its Curie point, where the magnetization picks a direction.
+
+\section{The solution: the simplex is the ground state}\label{sec:collapse:solution}
+
+We first describe the simplex and the property that makes it optimal.
+
+\begin{definition}[Simplex equiangular tight frame]\label[definition]{def:collapse:etf}
+Vectors $v_1,\dots,v_K\in\R^m$ form a \term{simplex equiangular tight frame}\index{simplex equiangular tight frame} of squared norm $r>0$ if
+\[
+  \ip{v_j,v_k}=r\Bigl(\delta_{jk}-\frac{1-\delta_{jk}}{K-1}\Bigr)\qquad\text{for all }j,k ,
+\]
+that is, if their Gram matrix is $\frac{rK}{K-1}(I_K-\frac1K\collapseone_K\collapseone_K^\top)$.
+\end{definition}
+
+The Gram matrix is $\frac{rK}{K-1}$ times the orthogonal projection onto the complement of $\collapseone_K$, so it is positive semidefinite of rank $K-1$, and a simplex equiangular tight frame exists in $\R^m$ if and only if $m\ge K-1$. The vectors sum to zero, because $\norm{\sum_kv_k}^2=\collapseone^\top G\collapseone=0$ for the Gram matrix $G$, and every two frames with the same $r$ differ by a rotation of $\R^m$. For $K=2$ the frame is a pair of antipodal points, for $K=3$ an equilateral triangle, for $K=4$ a regular tetrahedron. ``Tight frame'' refers to $\sum_kv_kv_k^\top$ being a multiple of the projection onto the span of the $v_k$; ``equiangular'' to the equal angles.\sidenote{Equiangular tight frames are a classical subject in frame theory and coding, where they solve packing problems for lines and points on spheres \parencite{StrohmerHeath2003}.}
+
+\begin{lemma}[The simplex is the best code]\label[lemma]{lem:collapse:simplex}
+Let $u_1,\dots,u_K$ be unit vectors in $\R^m$ with $K\ge2$. Then
+\[
+  \max_{j\ne k}\ip{u_j,u_k}\ge-\frac1{K-1},
+\]
+with equality if and only if $u_1,\dots,u_K$ form a simplex equiangular tight frame of squared norm $1$.
+\end{lemma}
+
+\begin{proof}
+Write $\beta=\max_{j\ne k}\ip{u_j,u_k}$. Expanding a square,
+\[
+  0\le\Bigl\|\sum_ku_k\Bigr\|^2=K+\sum_{j\ne k}\ip{u_j,u_k}\le K+K(K-1)\beta ,
+\]
+which gives the inequality. Equality holds if and only if both steps are equalities: every $\ip{u_j,u_k}$ with $j\ne k$ equals $\beta=-1/(K-1)$, which is the definition of the frame, and then $\sum_ku_k=0$ holds automatically.
+\end{proof}
+
+Among $K$ points on a sphere, the simplex makes the largest pairwise correlation as small as possible, and therefore the smallest pairwise distance as large as possible. That is already the shape of the answer. What remains is to show that the loss and the classifier force the features onto a sphere and push them apart, and this is the job of one inequality.
+
+\begin{lemma}[Alignment]\label[lemma]{lem:collapse:align}
+For every $W\in\R^{K\times m}$ and $H\in\R^{m\times Kn}$,
+\begin{equation}\label{eq:collapse:align}
+  \frac1{Kn}\sum_{k,i}\ip{w_k-\bar w,h_{k,i}}\le\Bigl(\frac1K\norm W_F^2\Bigr)^{1/2}\Bigl(\frac1{Kn}\norm H_F^2\Bigr)^{1/2}.
+\end{equation}
+If equality holds and the left side is positive, then $\bar w=0$, $h_{k,i}=\bar h_k$ for all $k$ and $i$, and $w_k=c\,\bar h_k$ for all $k$, with $c=\sqrt n\norm W_F/\norm H_F>0$.
+\end{lemma}
+
+\begin{proof}
+The plan is to average over the examples of each class, apply the Cauchy--Schwarz inequality in $\R^{K\times m}$, and then drop two nonnegative terms. Averaging over $i$ turns the left side of \eqref{eq:collapse:align} into $\frac1K\sum_k\ip{w_k-\bar w,\bar h_k}$, and the Cauchy--Schwarz inequality bounds this by
+\[
+  \Bigl(\frac1K\sum_k\norm{w_k-\bar w}^2\Bigr)^{1/2}\Bigl(\frac1K\sum_k\norm{\bar h_k}^2\Bigr)^{1/2}.
+\]
+Two variance identities finish the proof:
+\[
+  \sum_k\norm{w_k-\bar w}^2=\norm W_F^2-K\norm{\bar w}^2,\qquad
+  \norm{\bar h_k}^2=\frac1n\sum_i\norm{h_{k,i}}^2-\frac1n\sum_i\norm{h_{k,i}-\bar h_k}^2 .
+\]
+Suppose now that equality holds in \eqref{eq:collapse:align} with a positive left side. Then both dropped terms vanish, so $\bar w=0$ and $h_{k,i}=\bar h_k$, and equality holds in the Cauchy--Schwarz inequality with a positive inner product, so $w_k-\bar w=c\,\bar h_k$ for a constant $c>0$. With $\bar w=0$ this reads $w_k=c\,\bar h_k$, and then $\norm W_F^2=c^2\sum_k\norm{\bar h_k}^2=c^2\norm H_F^2/n$ determines $c$.
+\end{proof}
+
+The left side of \eqref{eq:collapse:align} is the average over examples of the gap between the mean logit and the logit of the correct class, with the sign reversed. The lemma says that this average gap is at most the product of the root-mean-square sizes of the classifier and the features, and that it can reach that bound only in a configuration that already satisfies NC1 and NC3. The theorem adds NC2.
+
+\begin{theorem}[Neural collapse under norm constraints]\label{thm:collapse:main}
+Let $K\ge2$, $m\ge K-1$, and $E_W,E_H>0$, and minimize $\Lhat(W,H)$ subject to $\frac1K\norm W_F^2\le E_W$ and $\frac1{Kn}\norm H_F^2\le E_H$. The minimum value is
+\begin{equation}\label{eq:collapse:minval}
+  \Lhat^\star=\log\Bigl(1+(K-1)\exp\Bigl(-\frac K{K-1}\sqrt{E_WE_H}\Bigr)\Bigr),
+\end{equation}
+and $(W,H)$ is a minimizer if and only if
+\begin{enumerate}
+\item (NC1) $h_{k,i}=\bar h_k$ for all $k$ and $i$;
+\item (NC2) $\bar h_1,\dots,\bar h_K$ form a simplex equiangular tight frame of squared norm $E_H$;
+\item (NC3) $w_k=\sqrt{E_W/E_H}\,\bar h_k$ for all $k$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to bound the loss below in three steps, by the arithmetic--geometric mean inequality inside each example, by Jensen's inequality across examples, and by \cref{lem:collapse:align}, and then to read off the configuration from the cases of equality. Fix a feasible $(W,H)$ and write $z^{k,i}=Wh_{k,i}$ for the logits of example $(k,i)$.
+
+\emph{Step 1: within an example.} The $K-1$ numbers $e^{z_j-z_k}$ with $j\ne k$ have geometric mean $\exp\bigl(\frac1{K-1}\sum_{j\ne k}(z_j-z_k)\bigr)$, and $\frac1{K-1}\sum_{j\ne k}(z_j-z_k)=\frac K{K-1}(\bar z-z_k)$ with $\bar z=\frac1K\sum_jz_j$. Put $\psi(u)=\log(1+(K-1)e^u)$. The arithmetic--geometric mean inequality gives
+\[
+  \ell(z^{k,i},k)=\log\Bigl(1+\sum_{j\ne k}e^{z^{k,i}_j-z^{k,i}_k}\Bigr)\ge\psi(u_{k,i}),\qquad u_{k,i}=\frac K{K-1}\ip{\bar w-w_k,h_{k,i}},
+\]
+because $\bar z-z_k=\ip{\bar w-w_k,h_{k,i}}$ and $\log(1+x)$ is increasing.
+
+\emph{Step 2: across examples.} The function $\psi$ is strictly convex and strictly increasing, since $\psi'(u)=(K-1)e^u/(1+(K-1)e^u)$ is positive and strictly increasing. By Jensen's inequality, $\Lhat(W,H)\ge\psi(\bar u)$ with $\bar u=\frac1{Kn}\sum_{k,i}u_{k,i}$.
+
+\emph{Step 3: the alignment bound.} By \cref{lem:collapse:align} and the constraints, $\bar u\ge-\frac K{K-1}\sqrt{E_WE_H}$, and since $\psi$ is increasing, $\Lhat(W,H)\ge\psi(-\frac K{K-1}\sqrt{E_WE_H})$, which is the right side of \eqref{eq:collapse:minval}.
+
+\emph{Attainment.} Let $(W,H)$ satisfy (i)--(iii); such configurations exist because $m\ge K-1$, and they are feasible with equality. Put $c=\sqrt{E_W/E_H}$. For $j\ne k$, $z^{k,i}_j-z^{k,i}_k=c(\ip{\bar h_j,\bar h_k}-\norm{\bar h_k}^2)=-cE_H\frac K{K-1}=-\frac K{K-1}\sqrt{E_WE_H}$, so every example has loss equal to the right side of \eqref{eq:collapse:minval}. This proves \eqref{eq:collapse:minval} and that (i)--(iii) describe minimizers.
+
+\emph{Equality.} Conversely, let $(W,H)$ be a minimizer, so that all three steps hold with equality. In Step 3, since $\psi$ is strictly increasing, the left side of \eqref{eq:collapse:align} equals $\sqrt{E_WE_H}$, which is positive and at least the right side of \eqref{eq:collapse:align} by the constraints. So equality holds in \cref{lem:collapse:align} and in both constraints: $\bar w=0$, NC1 holds, and $w_k=c\bar h_k$ with $c=\sqrt n\norm W_F/\norm H_F=\sqrt{E_W/E_H}$, which is NC3. In Step 2, strict convexity forces all $u_{k,i}$ to be equal; here $u_{k,i}=-\frac K{K-1}c\norm{\bar h_k}^2$, so all the means have the same squared norm $r$. In Step 1, equality in the arithmetic--geometric mean inequality forces the numbers $z_j-z_k=c(\ip{\bar h_j,\bar h_k}-r)$, $j\ne k$, to be equal for each $k$, so $\ip{\bar h_j,\bar h_k}=\beta_k$ for all $j\ne k$; by symmetry of the inner product $\beta_k=\beta_j$, so all the off-diagonal inner products equal one number $\beta$. Finally $\sum_k\bar h_k=K\bar w/c=0$, and
+\[
+  0=\Bigl\|\sum_k\bar h_k\Bigr\|^2=Kr+K(K-1)\beta
+\]
+gives $\beta=-r/(K-1)$. The constraint on $H$ holds with equality and $h_{k,i}=\bar h_k$, so $r=\frac1K\sum_k\norm{\bar h_k}^2=E_H$, which is NC2.
+\end{proof}
+
+The proof follows \textcite{FangEtAl2021} and \textcite{LuSteinerberger2022} in outline, with the equality cases made explicit; \textcite{GrafEtAl2021} proved a version with spherical constraints at about the same time. Each inequality produces one collapse property: the variance identity for the features gives NC1, the Cauchy--Schwarz step gives NC3, Jensen's inequality across examples gives the means equal norms, and the arithmetic--geometric mean inequality inside each example gives them equal angles, which completes NC2. The minimizer is unique up to rotations of $\R^m$, the orbit predicted in \cref{sec:collapse:model}, and every logit gap of every example equals $\frac K{K-1}\sqrt{E_WE_H}$: the configuration of \cref{lem:collapse:simplex}.
+
+\paragraph{Weight decay.} The penalized problem reduces to the constrained one at the norms the minimizer chooses, and the choice of norms is a problem in one variable. Write
+\[
+  \kappa=K\sqrt{n\lambda_W\lambda_H},\qquad\rho(W,H)=\Bigl(\frac1K\norm W_F^2\cdot\frac1{Kn}\norm H_F^2\Bigr)^{1/2}=\frac{\norm W_F\norm H_F}{K\sqrt n}.
+\]
+The number $\kappa$ is the only combination of $\lambda_W$, $\lambda_H$ and $n$ that matters, and $\rho$ is the root-mean-square size of the logits that the last layer can produce.
+
+\begin{corollary}[Neural collapse under weight decay]\label[corollary]{cor:collapse:wd}
+Let $K\ge2$, $m\ge K-1$ and $\lambda_W,\lambda_H>0$, and minimize $F(W,H)=\Lhat(W,H)+\frac{\lambda_W}2\norm W_F^2+\frac{\lambda_H}2\norm H_F^2$.
+\begin{enumerate}
+\item If $\kappa\ge1$, the unique minimizer is $W=0$, $H=0$.
+\item If $\kappa<1$, the minimizers are exactly the configurations of \cref{thm:collapse:main} with $\lambda_W\norm W_F^2=\lambda_H\norm H_F^2$ and
+\begin{equation}\label{eq:collapse:rhostar}
+  \rho=\rho^\star=\frac{K-1}K\log\Bigl(1+\frac{K(1-\kappa)}\kappa\Bigr).
+\end{equation}
+At every minimizer the training loss is $\log\frac K{K-(K-1)\kappa}$, and every training example is assigned probability $1-\frac{K-1}K\kappa$ to its class.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+The plan is to bound $F$ below by a convex function $g$ of $\rho$ alone, using \cref{thm:collapse:main} for the loss and the arithmetic--geometric mean inequality for the penalty, and then to minimize $g$. Put
+\[
+  g(\rho)=\psi\Bigl(-\frac K{K-1}\rho\Bigr)+\kappa\rho,\qquad\rho\ge0,
+\]
+with $\psi$ as in the proof of \cref{thm:collapse:main}. A minimizer of $F$ exists, because $F$ is continuous and $F(W,H)\ge\frac{\lambda_W}2\norm W_F^2+\frac{\lambda_H}2\norm H_F^2$ tends to infinity with $(W,H)$.
+
+\emph{The lower bound.} Fix $(W,H)$ and set $E_W=\frac1K\norm W_F^2$, $E_H=\frac1{Kn}\norm H_F^2$, so that $\rho=\sqrt{E_WE_H}$. If $\rho>0$, then $(W,H)$ is feasible for \cref{thm:collapse:main} with these budgets, and $\Lhat(W,H)\ge\psi(-\frac K{K-1}\rho)$. If $\rho=0$, then $W=0$ or $H=0$, all logits vanish, and $\Lhat=\log K=\psi(0)$. For the penalty, the arithmetic--geometric mean inequality gives
+\[
+  \frac{\lambda_W}2\norm W_F^2+\frac{\lambda_H}2\norm H_F^2=\frac K2\bigl(\lambda_WE_W+n\lambda_HE_H\bigr)\ge K\sqrt{n\lambda_W\lambda_HE_WE_H}=\kappa\rho ,
+\]
+with equality if and only if $\lambda_WE_W=n\lambda_HE_H$, that is, $\lambda_W\norm W_F^2=\lambda_H\norm H_F^2$. Hence $F(W,H)\ge g(\rho(W,H))$.
+
+\emph{The function $g$.} It is strictly convex, as a strictly convex function of a linear function plus a linear function. Its derivative is $g'(\rho)=\kappa-\frac K{K-1}\psi'(-\frac K{K-1}\rho)$, and $\psi'(0)=\frac{K-1}K$ gives $g'(0)=\kappa-1$. If $\kappa\ge1$, then $g'\ge g'(0)\ge0$ on $[0,\infty)$, and $g$ is uniquely minimized at $\rho=0$. If $\kappa<1$, then $g'(0)<0$ and $g'(\rho)\to\kappa>0$ as $\rho\to\infty$, so $g$ is uniquely minimized at the root of $g'$. With $s=\frac K{K-1}\rho$ the equation $g'=0$ reads $Ke^{-s}=\kappa\bigl(1+(K-1)e^{-s}\bigr)$, so $e^{-s}=\kappa/(K-(K-1)\kappa)$, which is \eqref{eq:collapse:rhostar}.
+
+\emph{Minimizers.} The bound $F\ge g(\rho)\ge\min g$ is attained: for $\kappa\ge1$ by $(0,0)$, and for $\kappa<1$ by a configuration of \cref{thm:collapse:main} with $\rho=\rho^\star$ and balanced norms, which exists because $m\ge K-1$. So $\min F=\min g$, and $(W,H)$ is a minimizer if and only if $\rho(W,H)$ minimizes $g$ and both inequalities of the lower bound are equalities. For $\kappa\ge1$ this means $\rho=0$ and $\lambda_W\norm W_F^2=\lambda_H\norm H_F^2$, so $W=0$ and $H=0$. For $\kappa<1$ it means $\rho=\rho^\star>0$, balanced norms, and $\Lhat(W,H)$ equal to the minimum of \cref{thm:collapse:main} at the budgets $E_W,E_H$, which by that theorem holds exactly for the configurations it describes. The loss is then $\psi(-s)=\log\bigl(1+(K-1)e^{-s}\bigr)=\log\frac K{K-(K-1)\kappa}$, and each example's probability of its class is $1/(1+(K-1)e^{-s})=1-\frac{K-1}K\kappa$.
+\end{proof}
+
+\paragraph{The square loss.} \Textcite{HanPapyanDonoho2022} found neural collapse with the square loss, and in the unconstrained features model the square loss can be solved in closed form. Let $Y\in\R^{K\times Kn}$ be the matrix of one-hot labels, whose column $(k,i)$ is $e_k$, and add an unpenalized bias $b\in\R^K$:
+\begin{equation}\label{eq:collapse:mse}
+  F_{\mathrm{sq}}(W,H,b)=\frac1{2Kn}\bigl\|WH+b\collapseone_{Kn}^\top-Y\bigr\|_F^2+\frac{\lambda_W}2\norm W_F^2+\frac{\lambda_H}2\norm H_F^2 .
+\end{equation}
+We use the nuclear norm $\collapsenuc Z$, the sum of the singular values of $Z$, and two facts about it: it is the dual of the operator norm, $\collapsenuc Z=\max\{\ip{G,Z}:\norm G_{\op}\le1\}$ with $\ip{G,Z}=\tr(G^\top Z)$; and consequently $\collapsenuc{WX}\le\norm W_F\norm X_F$, because $\ip{G,WX}=\ip{W^\top G,X}\le\norm{W^\top G}_F\norm X_F\le\norm W_F\norm G_{\op}\norm X_F$.
+
+\begin{proposition}[Square loss: closed form]\label[proposition]{prop:collapse:mse}
+Let $K\ge2$, $m\ge K-1$ and $\lambda_W,\lambda_H>0$, and let $\kappa=K\sqrt{n\lambda_W\lambda_H}$.
+\begin{enumerate}
+\item If $\kappa\ge1$, the unique minimizer of \eqref{eq:collapse:mse} is $W=0$, $H=0$, $b=\frac1K\collapseone_K$.
+\item If $\kappa<1$, every minimizer satisfies NC1, $\sum_k\bar h_k=0$, $w_k=\frac\kappa{K\lambda_W}\bar h_k$ (NC3), $b=\frac1K\collapseone_K$, and
+\[
+  W\bar h_k+b=(1-\kappa)e_k+\frac\kappa K\collapseone_K\qquad\text{for every }k ,
+\]
+so that the means form a simplex equiangular tight frame (NC2) and the correct-class output is $1-\frac{K-1}K\kappa$. The minimum value is $\frac{K-1}{2K}\kappa(2-\kappa)$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to eliminate the bias, to bound $F_{\mathrm{sq}}$ below by a convex function of $Z=WH$, to solve that convex problem with a dual certificate, and then to read off the configuration from the stationarity conditions. Put $\mu=\sqrt{\lambda_W\lambda_H}$, let $P=I_{Kn}-\frac1{Kn}\collapseone\collapseone^\top$ be the projection that centers the columns, and let $\collapseYt=YP$, whose column $(k,i)$ is $e_k-\frac1K\collapseone_K$.
+
+\emph{The bias.} For fixed $A=WH-Y$, the minimum of $\norm{A+b\collapseone^\top}_F^2$ over $b$ is $\norm{AP}_F^2$, attained only at $b=-\frac1{Kn}A\collapseone$, and $AP=WHP-\collapseYt$.
+
+\emph{The lower bound.} By the arithmetic--geometric mean inequality, $\norm{HP}_F\le\norm H_F$, and the second fact about the nuclear norm,
+\begin{equation}\label{eq:collapse:pen}
+  \frac{\lambda_W}2\norm W_F^2+\frac{\lambda_H}2\norm H_F^2\ge\mu\norm W_F\norm H_F\ge\mu\norm W_F\norm{HP}_F\ge\mu\collapsenuc{WHP}.
+\end{equation}
+Hence $F_{\mathrm{sq}}(W,H,b)\ge\Phi(WHP)$ with $\Phi(Z)=\frac1{2Kn}\norm{Z-\collapseYt}_F^2+\mu\collapsenuc Z$.
+
+\emph{The convex problem.} Let $Q=\collapseYt/\sqrt n$. A direct count gives $QQ^\top=I_K-\frac1K\collapseone\collapseone^\top$, an orthogonal projection of rank $K-1$, so all the nonzero singular values of $Q$ equal $1$: $\norm Q_{\op}=1$ and $\collapsenuc Q=\ip{Q,Q}=K-1$. Let $G=Q/\max(1,\kappa)$, so that $\norm G_{\op}\le1$ and $\collapsenuc Z\ge\ip{G,Z}$ for every $Z$. Completing the square,
+\[
+  \Phi(Z)\ge\frac1{2Kn}\bigl\|Z-\collapseYt+Kn\mu G\bigr\|_F^2+\mathrm{const},
+\]
+a strictly convex function of $Z$ minimized only at $Z_0=\collapseYt-Kn\mu G=\sqrt n\bigl(1-\kappa/\max(1,\kappa)\bigr)Q$, because $Kn\mu=\sqrt n\kappa$. At $Z_0$ the bound is an equality: $Z_0$ is a nonnegative multiple of $Q$, so $\collapsenuc{Z_0}=\ip{G,Z_0}$ when $\kappa<1$, and $Z_0=0$ when $\kappa\ge1$. So $Z_0$ is the unique minimizer of $\Phi$, with $Z_0=\sqrt n(1-\kappa)Q=(1-\kappa)\collapseYt$ if $\kappa<1$ and $Z_0=0$ otherwise.
+
+\emph{Minimizers.} A minimizer of $F_{\mathrm{sq}}$ exists by coercivity in $(W,H)$ and by the formula for the optimal bias. The configurations described below attain $\Phi(Z_0)$ (\cref{ex:collapse:mseattain}), so $\min F_{\mathrm{sq}}=\Phi(Z_0)$ and every minimizer has $WHP=Z_0$, equality throughout \eqref{eq:collapse:pen}, and the optimal bias. If $\kappa\ge1$, equality in \eqref{eq:collapse:pen} with $\collapsenuc{Z_0}=0$ forces $W=0$ and $H=0$, and then $b=\frac1K\collapseone$; this is part (i). If $\kappa<1$, the residual is
+\[
+  R=WH+b\collapseone^\top-Y=WHP-\collapseYt=-\kappa\collapseYt .
+\]
+The objective is differentiable, so at a minimizer its gradients in $H$ and $W$ vanish:
+\[
+  \frac1{Kn}W^\top R+\lambda_HH=0,\qquad\frac1{Kn}RH^\top+\lambda_WW=0 .
+\]
+The first gives $h_{k,i}=\frac\kappa{Kn\lambda_H}W^\top(e_k-\frac1K\collapseone)=\frac\kappa{Kn\lambda_H}(w_k-\bar w)$, which depends only on $k$ (NC1) and sums to zero over $k$. The second, with $\sum_{k,i}h_{k,i}=0$, gives $W=\frac\kappa{Kn\lambda_W}\sum_{k,i}(e_k-\frac1K\collapseone)h_{k,i}^\top=\frac\kappa{K\lambda_W}\sum_ke_k\bar h_k^\top$, which is NC3. Since the features are centered, the optimal bias is $b=\frac1K\collapseone-\frac1{Kn}WH\collapseone=\frac1K\collapseone$, and the column of $WH=WHP=Z_0$ for class $k$ is $(1-\kappa)(e_k-\frac1K\collapseone)$; adding $b$ gives the displayed logits. Reading the $j$th entry with NC3, $\frac\kappa{K\lambda_W}\ip{\bar h_j,\bar h_k}=(1-\kappa)(\delta_{jk}-\frac1K)$, so the Gram matrix of the means is a positive multiple of $I_K-\frac1K\collapseone\collapseone^\top$, which is NC2. The minimum value is $\Phi(Z_0)=\frac{\kappa^2}{2Kn}\norm{\collapseYt}_F^2+\mu(1-\kappa)\sqrt n(K-1)=\frac{K-1}{2K}\kappa(2-\kappa)$, using $\norm{\collapseYt}_F^2=n(K-1)$ and $\mu\sqrt n=\kappa/K$.
+\end{proof}
+
+The bias matters. Without it the target is $Y$ itself, whose $K$ singular values all equal $\sqrt n$, and the same argument gives class means that are orthogonal rather than a simplex, and needs $m\ge K$ (\cref{ex:collapse:nobias}). The cross-entropy needs no bias, because the softmax ignores a common shift of the logits.
+
+\section{The solution: margins, landscapes, and imbalance}\label{sec:collapse:dynamics}
+
+Practice does not minimize a constrained problem; it runs gradient descent, often with little weight decay. Three questions remain: where gradient descent goes without regularization, whether it can get stuck, and what happens when the classes are not balanced.
+
+\paragraph{The margin problem.} Without regularization the logits $Wh$ are homogeneous of degree two in $\theta=(W,H)$, and the cross-entropy has the exponential tail of \cref{ch:margin} in every logit gap. By the results described in that chapter for homogeneous models, once the training loss is small the direction of $\theta$ along gradient flow is governed by the max-margin problem
+\begin{equation}\label{eq:collapse:margin}
+  \min\ \frac12\bigl(\norm W_F^2+\norm H_F^2\bigr)\quad\text{subject to}\quad\ip{w_k-w_j,h_{k,i}}\ge1\ \ \text{for all }k,i,\ j\ne k .
+\end{equation}
+
+\begin{theorem}[The max-margin solution is neural collapse]\label{thm:collapse:margin}
+Let $K\ge2$ and $m\ge K-1$. The minimum value of \eqref{eq:collapse:margin} is $\sqrt n(K-1)$, and $(W,H)$ is a minimizer if and only if NC1 holds, the means form a simplex equiangular tight frame of squared norm $\frac{K-1}{K\sqrt n}$, and $w_k=\sqrt n\,\bar h_k$ for every $k$.
+\end{theorem}
+
+\begin{proof}
+The plan is to average the constraints into a single inequality for the left side of \eqref{eq:collapse:align}, and then to apply \cref{lem:collapse:align}. Let $(W,H)$ be feasible. Summing the constraints of example $(k,i)$ over $j\ne k$ gives $\ip{Kw_k-K\bar w,h_{k,i}}\ge K-1$, that is,
+\begin{equation}\label{eq:collapse:sumconstr}
+  \ip{w_k-\bar w,h_{k,i}}\ge\frac{K-1}K\qquad\text{for every }(k,i).
+\end{equation}
+Averaging over the $Kn$ examples and applying \cref{lem:collapse:align}, $\frac{K-1}K\le\frac{\norm W_F\norm H_F}{K\sqrt n}$, so $\norm W_F\norm H_F\ge\sqrt n(K-1)$, and
+\[
+  \frac12\bigl(\norm W_F^2+\norm H_F^2\bigr)\ge\norm W_F\norm H_F\ge\sqrt n(K-1).
+\]
+Now let $(W,H)$ attain the bound. Then $\norm W_F=\norm H_F$, equality holds in \cref{lem:collapse:align} with a positive left side, and every inequality \eqref{eq:collapse:sumconstr} is an equality. The lemma gives $\bar w=0$, NC1, and $w_k=c\bar h_k$ with $c=\sqrt n\norm W_F/\norm H_F=\sqrt n$. Equality in \eqref{eq:collapse:sumconstr} means that the $K-1$ constraints of each example, each at least $1$, sum to $K-1$, so each equals $1$: $c(\norm{\bar h_k}^2-\ip{\bar h_j,\bar h_k})=1$ for all $j\ne k$. Exchanging $j$ and $k$ shows that all the means have the same squared norm $r$, and then all the off-diagonal inner products equal $r-1/c$. As in the proof of \cref{thm:collapse:main}, $\sum_k\bar h_k=0$ forces $r-1/c=-r/(K-1)$, so $r=\frac{K-1}{Kc}=\frac{K-1}{K\sqrt n}$. Conversely, a configuration of this form exists because $m\ge K-1$; every constraint is active, since $\sqrt n(\norm{\bar h_k}^2-\ip{\bar h_j,\bar h_k})=\sqrt n\,r\frac K{K-1}=1$; and $\norm H_F^2=nKr=\sqrt n(K-1)=\norm W_F^2$, so its value is $\sqrt n(K-1)$.
+\end{proof}
+
+\Cref{thm:collapse:margin} identifies the global minimizers of \eqref{eq:collapse:margin}. The problem is not convex, and the theory of \cref{ch:margin} for homogeneous models gives convergence to its Karush--Kuhn--Tucker points, not to its minimizers. For the unconstrained features model, the landscape closes this gap.
+
+\begin{theorem}[Benign landscapes; stated with a sketch]\label{thm:collapse:landscape}
+\begin{enumerate}
+\item \parencite{JiEtAl2022} For the cross-entropy without regularization, gradient flow on $(W,H)$ converges in direction to Karush--Kuhn--Tucker points of \eqref{eq:collapse:margin}, and the unregularized loss has a benign landscape: its critical points that are not global minimizers are strict saddles, in a sense they make precise.
+\item \parencite{ZhuEtAl2021} For the cross-entropy with weight decay on $W$, $H$ and a bias, and with a feature dimension large enough relative to $K$, every critical point is either a global minimizer, which is neural collapse, or a strict saddle, at which the Hessian has a negative eigenvalue.
+\item \parencite{ZhouEtAl2022} The same holds for the square loss with weight decay in the unconstrained features model.
+\end{enumerate}
+\end{theorem}
+
+\begin{proofsketch}
+We describe a mechanism common to parts (ii) and (iii), and omit the case analysis, for which we refer to the three papers. The objective depends on $W$ and $H$ through $Z=WH$ and through the penalty, and by \eqref{eq:collapse:pen} and its equality case (\cref{ex:collapse:mseattain}), minimizing the penalty over factorizations of a fixed $Z$ gives $\mu\collapsenuc Z$. So the problem in $(W,H)$ is a factorized form of the convex problem $\min_Z\Lhat(Z)+\mu\collapsenuc Z$. A critical point of the factorized problem that is not a global minimizer either has an unbalanced factorization or a product $Z$ that is not optimal for the convex problem; when $m$ exceeds the rank of the optimal $Z$, there is room in $\R^m$ to move $W$ and $H$ in a new direction along which the objective decreases to second order, which is the negative curvature. For part (i), the convergence to Karush--Kuhn--Tucker points is the homogeneous-model theory of \textcite{LyuLi2020} described in \cref{ch:margin}, and \textcite{JiEtAl2022} analyze the landscape of the unregularized loss directly.
+\end{proofsketch}
+
+Strict saddles do not attract gradient descent from random initialization, so the theorem predicts that gradient methods find neural collapse in the model, and they do: in all our runs of \cref{fig:collapse:phase}, quasi-Newton descent from random starting points reached the predicted minimum to six digits.
+
+\paragraph{Imbalanced classes.} Suppose now that $K_A$ majority classes have $n_A$ examples each and $K_B\ge2$ minority classes have $n_B$ each, with imbalance ratio $R=n_A/n_B$, $K=K_A+K_B$, and loss averaged over all examples. Following \textcite{FangEtAl2021}, constrain $\frac1K\sum_k\norm{w_k}^2\le E_W$ and $\frac1K\sum_k\frac1{n_k}\sum_i\norm{h_{k,i}}^2\le E_H$, where $n_k$ is the size of class $k$. Imbalance breaks the permutation symmetry, and with it the simplex. \Textcite{FangEtAl2021} proved that it breaks in a definite way.
+
+\begin{theorem}[Minority collapse; \textcite{FangEtAl2021}; stated with a sketch]\label{thm:collapse:minority}
+Let $m\ge K$. With $K_A,K_B,E_W,E_H$ fixed, let $(W^R,H^R)$ be a minimizer of the imbalanced problem for each $R$. Then $\lim_{R\to\infty}(w^R_k-w^R_{k'})=0$ for every two minority classes $k$ and $k'$.
+\end{theorem}
+
+The minority classifiers become identical, so that the network cannot tell the minority classes apart, however their features are arranged. The key step is an averaging lemma.
+
+\begin{lemma}[Averaging the minority classifiers]\label[lemma]{lem:collapse:average}
+Fix the features and the majority classifiers, and replace each minority classifier $w_j$, $j\in B$, by their mean $\bar w_B=\frac1{K_B}\sum_{j\in B}w_j$. Then the loss of every majority example does not increase, and $\sum_{j\in B}\norm{w_j}^2$ strictly decreases unless the $w_j$, $j\in B$, are already equal.
+\end{lemma}
+
+\begin{proof}
+Let $(k,i)$ be an example of a majority class, with logits $z=Wh_{k,i}$. Its loss is
+\[
+  \ell(z,k)=\log\Bigl(\sum_{j\notin B}e^{z_j}+\sum_{j\in B}e^{\ip{w_j,h_{k,i}}}\Bigr)-z_k ,
+\]
+an increasing function of the sum over $B$, and the averaging changes nothing else. By convexity of the exponential, $\sum_{j\in B}e^{\ip{w_j,h}}\ge K_Be^{\ip{\bar w_B,h}}$, which is the value after averaging. The norm statement is strict convexity of $\norm\cdot^2$: $\sum_{j\in B}\norm{w_j}^2=K_B\norm{\bar w_B}^2+\sum_{j\in B}\norm{w_j-\bar w_B}^2$.
+\end{proof}
+
+\begin{heuristic}[Why the minority classifiers merge]
+Take $K_A=K_B=2$ for definiteness. The minority examples carry a fraction $1/(1+R)$ of the loss, so as $R\to\infty$ the problem tends to that of minimizing the majority loss alone. In that limit the minority features cost budget and earn nothing, so they shrink to zero, and the minority classifiers matter only through the logits they give to majority examples, which they should make as small as possible. By \cref{lem:collapse:average}, merging the two minority classifiers into their mean never hurts the majority examples and frees classifier budget, which can be spent on the majority margins; so at the limiting optimum the two minority classifiers coincide, both pointing away from the majority means. What this argument does not show is that the freed budget strictly lowers the loss at every limiting optimum; \textcite{FangEtAl2021} give the full proof.
+\end{heuristic}
+
+The numerical solutions of \cref{fig:collapse:minority} show something stronger than the limit: the two minority classifiers become exactly equal at a finite imbalance ratio, which grows quickly with the budget. With the square loss and no bias the threshold can be computed: a class whose size $n_k$ satisfies $n_k\le N^2\lambda_W\lambda_H$, where $N$ is the total number of examples, gets the classifier $w_k=0$ and zero features, so all such minority classes collapse to the same point (\cref{ex:collapse:imbalance}).
+
+\section{Reading the solution}\label{sec:collapse:reading}
+
+The solution makes four predictions about the last layer of a classifier trained to convergence.
+
+\emph{The geometry is universal.} With norm constraints, weight decay, or no regularization at all (in the max-margin limit), with the cross-entropy or with the square loss and a bias, the class means form a simplex, the classifier copies it, and the features collapse. Only the scale depends on the details.
+
+\emph{A transition at $\kappa=1$.} \Cref{cor:collapse:wd} and \cref{prop:collapse:mse} have the same threshold. For $\kappa=K\sqrt{n\lambda_W\lambda_H}\ge1$ the regularization wins and the last layer is zero; for $\kappa<1$ it is a simplex whose scale grows as $\kappa$ decreases. Near the threshold both orders of the transition can be read off: $\rho^\star\approx(K-1)(1-\kappa)$ for the cross-entropy and $\rho=\frac{K-1}K(1-\kappa)$ for the square loss, and since $\rho$ is a product of two norms, $\norm W_F$ and $\norm H_F$ vanish like $(1-\kappa)^{1/2}$: a continuous transition with the mean-field exponent $\frac12$ of Landau theory.\sidenote{In Landau's theory of a continuous transition the order parameter vanishes like the square root of the distance to the critical point; here $\norm W_F^2\propto\rho$ plays the role of the squared order parameter.} With two or more linear layers on top of the features the transition becomes discontinuous (\cref{ex:collapse:deep}).
+
+\emph{The confidence is set by $\kappa$ alone.} The probability that the cross-entropy solution assigns to the correct class and the correct-class output of the square-loss solution are the same number, $1-\frac{K-1}K\kappa$. Small weight decay gives confident training predictions, and the training loss of the cross-entropy solution, $\log\frac K{K-(K-1)\kappa}\approx\frac{K-1}K\kappa$ for small $\kappa$, is proportional to $\kappa$.
+
+\emph{Logits grow like $\log(1/\lambda)$.} As $\kappa\to0$, $\rho^\star=\frac{K-1}K\log\frac1\kappa+O(1)$: the logits grow logarithmically in the inverse weight decay. This is the regularized counterpart of the $\log t$ growth of \cref{ch:margin}, where time plays the role of $1/\lambda$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},hplot,width=0.46\linewidth,height=0.33\linewidth,
+  xmin=0,xmax=1.4,xlabel={$\kappa=K\sqrt{n\lambda_W\lambda_H}$}]
+\nextgroupplot[ymin=0,ymax=3,ylabel={$\rho=\norm W_F\norm H_F/(K\sqrt n)$},legend style={at={(0.97,0.97)},anchor=north east}]
+\addplot[theory] table[x=kappa,y=rhoce] {figures/data/12-collapse-phase-theory.dat};
+\addplot[theory2] table[x=kappa,y=rhomse] {figures/data/12-collapse-phase-theory.dat};
+\addplot[simulation] table[x=kappa,y=rhoce] {figures/data/12-collapse-phase-sim.dat};
+\addplot[simulation2] table[x=kappa,y=rhomse] {figures/data/12-collapse-phase-sim.dat};
+\legend{cross-entropy \eqref{eq:collapse:rhostar},square loss,cross-entropy (opt.),square loss (opt.)}
+\nextgroupplot[ymin=0,ymax=1.05,ylabel={correct-class probability or output},legend style={at={(0.97,0.97)},anchor=north east}]
+\addplot[theory] table[x=kappa,y=p] {figures/data/12-collapse-phase-theory.dat};
+\addplot[simulation] table[x=kappa,y=pce] {figures/data/12-collapse-phase-sim.dat};
+\addplot[simulation2] table[x=kappa,y=pmse] {figures/data/12-collapse-phase-sim.dat};
+\addplot[guide] coordinates {(1,0) (1,1.05)};
+\legend{$1-\frac{K-1}K\kappa$,cross-entropy,square loss}
+\end{groupplot}
+\end{tikzpicture}
+\caption{The transition at $\kappa=1$ in the unconstrained features model with weight decay, $K=4$, $n=5$, $m=6$, $\lambda_W=\lambda_H$. Curves: \cref{cor:collapse:wd} for the cross-entropy and \cref{prop:collapse:mse} for the square loss with a bias. Points: the regularized objective minimized numerically by L-BFGS from three random initializations (seeds $0,1,2$), keeping the best. Left: the scale $\rho$ of the last layer. Right: the probability of the correct class (cross-entropy) and the correct-class output (square loss), which the theory predicts to be equal.}\label{fig:collapse:phase}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:collapse:phase} tests the first three predictions. The points are numerical minimizers of the regularized objectives from random initializations, and they fall on the curves to the precision of the optimizer: at $\kappa\in\{0.1,0.5,0.9,0.95\}$ the discrepancy in $\rho$ is below $10^{-7}$ for both losses, the squared within-class scatter is at most about $10^{-13}$ of the squared size of the means, and the cosines between the centered means are within $10^{-6}$ of $-\frac13$. For $\kappa>1$ the optimizer returns $W=0$, $H=0$, as \cref{cor:collapse:wd} and \cref{prop:collapse:mse} predict. In the left panel the cross-entropy scale diverges logarithmically as $\kappa\to0$, while the square-loss scale saturates at $\frac{K-1}K$, where the outputs equal their targets. The model is exactly solvable, and a figure of this kind tests the algebra and the landscape (the optimizer was never trapped), not the model's relevance to networks.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,xmode=log,ymode=log,xmin=1,xmax=20000,ymin=0.04,ymax=3,
+  xlabel={gradient step},ylabel={collapse metric},legend style={at={(0.97,0.97)},anchor=north east,font=\scriptsize},legend columns=2]
+\addplot[sea,line width=0.9pt,mark=*,mark size=1.2pt] table[x=step,y=nc1] {figures/data/12-collapse-network.dat};
+\addplot[sea,line width=0.9pt,densely dashed,mark=o,mark size=1.2pt] table[x=step,y=nc1test] {figures/data/12-collapse-network.dat};
+\addplot[seadeep,line width=0.9pt,mark=square*,mark size=1.1pt] table[x=step,y=nc2] {figures/data/12-collapse-network.dat};
+\addplot[sandline!55!black,line width=0.9pt,mark=triangle*,mark size=1.4pt] table[x=step,y=nc3] {figures/data/12-collapse-network.dat};
+\addplot[muted,line width=0.5pt,densely dotted] coordinates {(35,0.04) (35,3)};
+\legend{NC1 train,NC1 test,NC2,NC3}
+\end{axis}
+\end{tikzpicture}
+\caption{Collapse metrics of a ReLU network $32\to256\to256\to32\to4$ trained by full-batch gradient descent (step $0.1$, momentum $0.9$, weight decay $10^{-3}$ on all parameters, cross-entropy, seed $0$) on a Gaussian mixture with $K=4$ classes in $\R^{32}$ (class means $\cN(0,\frac14I)$, unit noise, $64$ training examples per class). NC1 is $\tr(\Sigma_W\Sigma_B^+)/K$ on the training and on $2000$ test examples; NC2 is the Frobenius distance between the normalized Gram matrix of the centered means and that of a simplex; NC3 is the distance between $W/\norm W_F$ and the centered means normalized the same way. The training error reaches zero near step $35$ (dotted line). The unconstrained features model predicts that all the metrics tend to zero.}\label{fig:collapse:network}
+\end{figure}
+
+\Cref{fig:collapse:network} turns to a network. The training error reaches zero near step $35$; at that point NC1 has fallen from $2.3$ to $0.2$, mostly as a by-product of learning to classify. In the terminal phase the metrics decrease again, slowly: NC2 from $0.35$ to $0.09$ and NC3 from $0.32$ to $0.08$ over the next twenty thousand steps, and NC4 is exactly zero throughout. The prediction of the model is that they tend to zero. They do not, within our budget: NC1 stalls near $0.08$ after step $2000$, and the test NC1 stalls near $0.21$, more than twice the training value; the test error wanders between $7.5\%$ and $8.7\%$ during the terminal phase, ending near its highest value. The geometry of the model is the direction in which the network moves; the network stops short of it.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,xmode=log,xmin=1,xmax=1000,ymin=-0.45,ymax=1.5,ytick={-0.5,0,0.5,1},
+  xlabel={imbalance ratio $R=n_A/n_B$},ylabel={$\cos\angle(w_3,w_4)$},legend columns=3,legend style={at={(0.5,0.97)},anchor=north,font=\scriptsize}]
+\addplot[guide] coordinates {(1,-0.3333) (1000,-0.3333)};
+\addplot[guide] coordinates {(1,1) (1000,1)};
+\addplot[sea,line width=0.9pt,mark=*,mark size=1.5pt] table[x=R,y=cosE1] {figures/data/12-collapse-minority.dat};
+\addplot[seadeep,line width=0.9pt,mark=square*,mark size=1.4pt] table[x=R,y=cosE3] {figures/data/12-collapse-minority.dat};
+\addplot[sandline!55!black,line width=0.9pt,mark=triangle*,mark size=1.6pt] table[x=R,y=cosE10] {figures/data/12-collapse-minority.dat};
+\legend{,,$E_W=E_H=1$,$E_W=E_H=3$,$E_W=E_H=10$}
+\end{axis}
+\end{tikzpicture}
+\caption{Minority collapse in the norm-constrained model with $K_A=2$ majority and $K_B=2$ minority classes, $m=4$: the cosine between the two minority classifiers at the numerical optimum (SLSQP from four random starts, seeds $0$ to $3$, best kept) against the imbalance ratio. At $R=1$ the classifiers form a simplex (cosine $-\frac13$, lower dashed line); as $R$ grows they merge (cosine $1$, upper dashed line), at a ratio that grows quickly with the budget.}\label{fig:collapse:minority}
+\end{figure}
+
+\Cref{fig:collapse:minority} shows \cref{thm:collapse:minority} at work. With budget $E_W=E_H=1$ the two minority classifiers are identical from $R\approx5$ on; with budget $3$, from $R\approx300$; with budget $10$ their cosine has only risen from $-0.33$ to $-0.17$ at $R=1000$. A larger budget means a smaller effective regularization, and the merging is a consequence of the regularization: with a small budget the classifier norm is precious, and the minority classes are not worth it.
+
+\section{What the model gets wrong}\label{sec:collapse:wrong}
+
+\paragraph{What was thrown away.} \emph{The inputs.} The features are free, so the model cannot distinguish a training set that is easy to collapse from one that is hard, and it cannot predict how fast collapse happens or whether it happens at all for a network of given width and depth. \emph{The test set.} With no population, there is nothing to say about the features of unseen examples, which is where collapse would matter for generalization. \emph{The layers below.} A penalty on $\norm H_F$ replaces the weight decay on all the layers that produce the features; the replacement is exact for no architecture. \emph{Balance and room.} The simplex needs equal class sizes and $m\ge K-1$; both fail in common settings. \emph{The optimizer.} The theorems concern minimizers and limits; the time scale of collapse is absent.
+
+\paragraph{Where it breaks.} \emph{Test features do not collapse.} \Textcite{HuiBelkinNakkiran2022}, in an unrefereed preprint, separate collapse on training data, which they find, from collapse on test data, which they find much weaker, and conclude that neural collapse is primarily an optimization phenomenon whose relation to generalization is unclear; in \cref{fig:collapse:network} the test NC1 stalls at more than twice the training value. \emph{Collapse can hurt transfer.} \Textcite{KornblithEtAl2021} compared nine training objectives on ImageNet and found that those producing more class separation in the penultimate layer gave higher accuracy but frozen features that transferred worse; \textcite{HuiBelkinNakkiran2022} report that training longer can likewise hurt transfer, while \textcite{GalantiGyorgyHutter2022} argue that collapse helps few-shot learning on new classes. The model, which knows only the training classes, can decide neither. \emph{Depth changes the optimum.} With several free layers between the features and the classifier, a deep unconstrained features model, the global optimum exhibits neural collapse layer after layer for binary classification \parencite{SukenikMondelliLampert2023}; but beyond two layers or two classes, solutions of lower rank have lower cost, because a product of penalized layers favors low rank \parencite{SukenikLampertMondelli2024}. \Cref{ex:collapse:deep} shows the mechanism: depth makes the penalty concave in the singular values. \emph{More classes than dimensions.} The classes of a language model are tokens, and the vocabulary exceeds the embedding dimension, so no simplex fits: the geometry is frustrated, as for many charges on a sphere. \Textcite{JiangEtAl2024} show that the minimizers of a spherically constrained model then maximize the smallest one-versus-rest margin, under conditions on $m$ and $K$; \textcite{WuPapyan2024} find that in causal language models, where the vocabulary is also imbalanced and training lasts a few epochs, collapse properties develop with scale and are linked to generalization; and \textcite{ZhaoEtAl2024} argue, with experiments on synthetic and small real data sets, that next-token prediction drives the logits toward a sparse-plus-low-rank structure in which contexts with the same set of possible successors collapse once projected onto a suitable subspace. \emph{Imbalance.} For moderate imbalance the geometry is not a simplex: \textcite{ThrampoulidisEtAl2022} characterize it, for vanishing regularization, by the singular value decomposition of a simplex-encoded label matrix, and find that ridge regularization matters for the minority classes, as the dependence on the budget in \cref{fig:collapse:minority} suggests.
+
+\paragraph{Fine structure.} \Textcite{TirerBruna2022} show that for the regularized square loss the minimizers of the model can have a more delicate structure than for the cross-entropy, and extend their results to a model with a layer of weights and a ReLU below the free features. \Textcite{JacotEtAl2025} remove the free features: for networks ending in at least two linear layers, trained with weight decay and with a wide first layer, they prove approximate collapse at solutions with low training error, balanced linear layers and well-conditioned features, and give conditions under which gradient descent with weight decay finds such solutions. For dynamics, \textcite{HanPapyanDonoho2022} observe that the classifier stays close to the least-squares classifier of the current features, and analyze a renormalized gradient flow on the resulting central path, which predicts collapse. \Textcite{EWojtowytsch2022} explain the simplex through toy models of very expressive networks, and \textcite{HeSu2023} and \textcite{RangamaniEtAl2023} document partial collapse that builds up with depth. \emph{Open:} the rate of collapse in a network of given architecture; a model with data in which test features collapse partially; and the geometry that gradient descent selects when $K>m+1$.
+
+\section{Model card}\label{sec:collapse:card}
+
+\modelcard{In the terminal phase of training, last-layer features collapse to their class means (NC1), the means form a simplex equiangular tight frame (NC2), the classifier aligns with them (NC3), and prediction becomes nearest class center (NC4).}{Unconstrained features: free $h_{k,i}\in\R^m$, classifier $W$, $K$ balanced classes, $m\ge K-1$; cross-entropy or square loss with norm constraints, weight decay, or no regularization (max-margin limit).}{Every minimizer is neural collapse, with closed-form scale; a transition at $\kappa=K\sqrt{n\lambda_W\lambda_H}=1$; the max-margin problem has the same solution; benign landscapes (sketched); minority collapse under imbalance (sketched).}{The simplex geometry; correct-class confidence $1-\frac{K-1}K\kappa$; logits growing like $\log(1/\kappa)$; minority classifiers merging at large imbalance, at a threshold that grows with the budget.}{Silent on test data and transfer; partial collapse in networks; deeper free models prefer lower rank; no simplex when $K>m+1$ (language models); the geometry under moderate imbalance is not a simplex.}{Deep and extended unconstrained features models; generalized neural collapse; SELI geometry; central-path dynamics; collapse in end-to-end training of wide networks.}
+
+The chapter ends the thread on implicit bias that starts in \cref{ch:diagonal} and runs through \cref{ch:margin}. In \cref{ch:margin} the features were fixed and gradient descent found the max-margin classifier; here the features are free as well, the margin problem \eqref{eq:collapse:margin} is solved over both, and the solution is the simplex: the max-margin attractor of a model that is homogeneous of degree two. The Fourier features of \cref{ch:grokking} are another solution of a margin problem for a homogeneous network, found the same way, by symmetry. The superposition of \cref{ch:superposition} is the opposite regime: there more features must be stored than there are dimensions, and the geometry is a compromise; here there is room, and the geometry is perfect.
+
+The unconstrained features model is a mean-field theory: it replaces the layers below by a single effective cost on the features, and it gets the symmetry of the ground state right while missing the test set and the finite training time.
+
+\begin{exercises}
+\item \consolidation (The simplex.) Let $U\in\R^{m\times K}$ have orthonormal columns, $m\ge K$, and put $M=\sqrt{\frac{rK}{K-1}}\,U(I_K-\frac1K\collapseone\collapseone^\top)$. (a) Show that the columns of $M$ form a simplex equiangular tight frame of squared norm $r$. (b) Show that $MM^\top$ is $\frac{rK}{K-1}$ times an orthogonal projection of rank $K-1$, which is the tight-frame property. (c) For $m=K-1$, construct a frame explicitly by projecting the standard basis vectors of $\R^K$ onto the hyperplane orthogonal to $\collapseone_K$ and choosing an orthonormal basis of that hyperplane. \label{ex:collapse:etf}
+
+\item \consolidation (NC4 from NC1--NC3.) Suppose that the training features satisfy NC1--NC3 with means of equal norm centered at the origin and zero bias. Show that $\argmax_k\ip{w_k,h}=\argmin_k\norm{h-\bar h_k}$ for every $h\in\R^m$. Show by an example with $K=2$ that the conclusion fails if the means have unequal norms. \label{ex:collapse:ncc}
+
+\item \consolidation (A bias does not help.) Add a bias $b\in\R^K$ to the logits in \cref{thm:collapse:main}, unconstrained. Show that the lower bound of the proof still holds, because $\frac1{Kn}\sum_{k,i}(\bar b-b_k)=0$ for balanced classes, and deduce that the minimum value is unchanged and that at every minimizer $b$ is a multiple of $\collapseone_K$. \label{ex:collapse:bias}
+
+\item \consolidation (Checking \cref{cor:collapse:wd}.) (a) Show that at a minimizer with $\kappa<1$, $\norm W_F^2=K\rho^\star\sqrt{n\lambda_H/\lambda_W}$ and $\norm H_F^2=K\rho^\star\sqrt{n\lambda_W/\lambda_H}$. (b) Show that $\rho^\star=(K-1)(1-\kappa)+O((1-\kappa)^2)$ as $\kappa\uparrow1$ and $\rho^\star=\frac{K-1}K\log\frac1\kappa+\frac{K-1}K\log K+o(1)$ as $\kappa\to0$. \label{ex:collapse:wdcheck}
+
+\item \consolidation (Attaining the square-loss bound.) Let $\kappa<1$. Take a simplex frame $\bar h_1,\dots,\bar h_K$ of squared norm $r$, put $h_{k,i}=\bar h_k$, $w_k=c\,\bar h_k$ and $b=\frac1K\collapseone$. (a) Find $c$ and $r$ such that $\lambda_W\norm W_F^2=\lambda_H\norm H_F^2$ and $WH=(1-\kappa)\collapseYt$. (b) Show that then $\norm W_F\norm H_F=\collapsenuc{WH}$, so that every inequality in \eqref{eq:collapse:pen} is an equality and $F_{\mathrm{sq}}=\Phi(Z_0)$. \label{ex:collapse:mseattain}
+
+\item \variation (The square loss without a bias.) Drop $b$ from \eqref{eq:collapse:mse} and assume $m\ge K$. Show that the unique minimizer of the analogue of $\Phi$ is $(1-\kappa)_+Y$, and that for $\kappa<1$ every minimizer has collapsed features whose means are orthogonal with equal norms: an orthogonal frame, not a simplex. What does NC4 look like for this geometry? \label{ex:collapse:nobias}
+
+\item \variation (Minority collapse, exactly solvable.) In the square loss without a bias, let class $k$ have $n_k$ examples, $N=\sum_kn_k$, and minimize $\frac1{2N}\norm{WH-Y}_F^2+\frac{\lambda_W}2\norm W_F^2+\frac{\lambda_H}2\norm H_F^2$ with $m\ge K$. (a) Show that $YY^\top=\diag(n_1,\dots,n_K)$ and that the analogue of $\Phi$ is minimized by $Z_0=\sum_k(1-N\mu/\sqrt{n_k})_+e_k\collapseone_{(k)}^\top$, where $\collapseone_{(k)}$ is the indicator of the examples of class $k$ and $\mu=\sqrt{\lambda_W\lambda_H}$. \hint{the singular value decomposition of $Y$ is explicit, and the dual certificate of \cref{prop:collapse:mse} is replaced by a different multiple of each singular pair.} (b) Show that a class with $n_k\le N^2\lambda_W\lambda_H$ has $w_k=0$ and $h_{k,i}=0$ at every minimizer, so that all such classes become indistinguishable. (c) With $n=(20,20,3)$ and $\lambda_W=\lambda_H=\sqrt8/43$, check that the correct-class output is $0.3675$ for the two large classes and $0$ for the small one. \label{ex:collapse:imbalance}
+
+\item \variation\harder (Depth makes the transition discontinuous.) Replace $WH$ in \eqref{eq:collapse:mse} by $W_2W_1H$ with $W_1\in\R^{m\times m}$, penalize $\frac\lambda2(\norm{W_2}_F^2+\norm{W_1}_F^2+\norm H_F^2)$, and you may use the fact that the minimum of $\frac13(\norm A_F^2+\norm B_F^2+\norm C_F^2)$ over factorizations $Z=ABC$ with large enough inner dimensions is $\sum_i\sigma_i(Z)^{2/3}$. (a) Assuming that the optimal $Z$ shares its singular vectors with $\collapseYt$, reduce the problem to minimizing $(t-1)^2+at^{2/3}$ over $t\ge0$ for each nonzero singular value $\sqrt nt$ of $Z$, with $a=3\lambda Kn^{1/3}$. (b) Show that the minimizer jumps from $t=\frac12$ to $t=0$ at $a_c=\frac32\cdot2^{-1/3}$. (c) Compare with the continuous transition of \cref{prop:collapse:mse}, and relate to \textcite{SukenikLampertMondelli2024}. \hint{at the jump, the value at the nonzero critical point equals the value $1$ at $t=0$, and the critical point satisfies $a=3(1-t)t^{1/3}$.}\label{ex:collapse:deep}
+
+\item \simulation (Collapse in the model under gradient descent.) Run gradient descent with step $0.5$ on the unregularized cross-entropy of the unconstrained features model with $K=4$, $n=5$, $m=6$, from small random initialization ($\cN(0,0.1^2)$ entries, seed $0$) for $2\times10^5$ steps. Record the within-class scatter $\sum_{k,i}\norm{h_{k,i}-\bar h_k}^2/\sum_k\norm{\bar h_k}^2$, the largest deviation of the cosines between centered means from $-\frac13$, and the normalized margin $\min_{k,i,j\ne k}\ip{w_k-w_j,h_{k,i}}/\bigl(\frac12(\norm W_F^2+\norm H_F^2)\bigr)$. The reader should observe that all three quantities converge slowly: after $2\times10^5$ steps the normalized margin is still about $3\%$ below the value $1/(\sqrt n(K-1))=0.1491$ of \cref{thm:collapse:margin}, and the scatter and the cosine deviation are still about $0.03$ and $0.05$, falling by a quarter to a third per decade of steps. Explain the slowness with the logarithmic rate of directional convergence for exponentially tailed losses in \cref{ch:margin}. \label{ex:collapse:gdsim}
+
+\item \simulation (Thresholds of minority collapse.) With the script of \cref{fig:collapse:minority}, locate the smallest ratio $R$ at which the two minority classifiers coincide, for $E_W=E_H\in\{0.5,1,2,3\}$, and plot it on a logarithmic scale. The reader should find thresholds near $R=2$, $4$, $30$ and $300$, growing roughly exponentially in $E$ over this range. Explain qualitatively why a larger budget delays the merging. \label{ex:collapse:threshold}
+
+\item \research (Dynamics of collapse.) In a network trained past zero error, NC1 decreases slowly and may stall (\cref{fig:collapse:network}). Find a solvable model with data, for example a two-layer network on a Gaussian mixture, in which the rate of decrease of NC1 and its limiting value can be computed. \Textcite{HanPapyanDonoho2022} and \textcite{JiEtAl2022} analyze dynamics with free features; a model in which the features are produced from inputs is open, beyond the results of \textcite{JacotEtAl2025}. \label{ex:collapse:dynamics}
+
+\item \research (More classes than dimensions.) For $K>m+1$ the minimizers of \cref{thm:collapse:main} are no longer simplices. Characterize them, for example for $m=2$ and all $K$, where a regular $K$-gon is the natural guess, and decide when gradient descent finds them. \Textcite{LuSteinerberger2022} study the limit of many points, and \textcite{JiangEtAl2024} prove one-versus-rest margin maximization under conditions; a general description is open. \label{ex:collapse:many}
+\end{exercises}
+
+\notesandrefs
+Neural collapse was named and measured by \textcite{PapyanHanDonoho2020}, whose paper appeared on arXiv in August 2020 and in PNAS that October; \textcite{HanPapyanDonoho2022} extended it to the square loss, an ICLR 2022 outstanding paper, and introduced the central path. The unconstrained features model appeared within months in several groups: \textcite{MixonParshallPi2020} gave it its name and studied its loss landscape; \textcite{LuSteinerberger2022} solved the cross-entropy on the sphere and studied the limit of many classes; \textcite{EWojtowytsch2022} proved simplex symmetry in toy models of expressive networks; \textcite{FangEtAl2021} introduced the layer-peeled model, proved \cref{thm:collapse:main} in their formulation, and discovered minority collapse; and \textcite{GrafEtAl2021} proved that both the cross-entropy and the supervised contrastive loss are minimized by simplex configurations. \Textcite{ZhuEtAl2021} proved the benign landscape with weight decay and used it to fix the last layer to a simplex in practice, saving memory; \textcite{ZhouEtAl2022} did the same for the square loss; and \textcite{JiEtAl2022} connected the unregularized model to the margin theory of \cref{ch:margin}. \Textcite{Kothapalli2023} reviews this literature.
+
+We isolated the alignment inequality of \cref{lem:collapse:align} because \cref{thm:collapse:main}, \cref{cor:collapse:wd} and \cref{thm:collapse:margin} all reduce to it. The closed form of \cref{cor:collapse:wd} in the single parameter $\kappa$, the dual-certificate proof of \cref{prop:collapse:mse}, and the confidence $1-\frac{K-1}K\kappa$ shared by both losses are our own presentation; we have not found them stated in this form.
+
+Equiangular tight frames, and the bound of \cref{lem:collapse:simplex}, belong to frame theory and coding \parencite{StrohmerHeath2003}; the margin view of collapse comes from \textcite{SoudryEtAl2018} and \textcite{LyuLi2020}, through \textcite{JiEtAl2022}. Language models have made the regime $K>m+1$ the practically important one.
+
+\paragraph{Translating the literature.} \Textcite{PapyanHanDonoho2020} write $C$ for our number of classes $K$, $N$ for our examples per class $n$, $p$ for our feature dimension $m$, $\boldsymbol h_{i,c}$ for our $h_{c,i}$, $\boldsymbol\mu_c$ and $\boldsymbol\mu_G$ for our $\bar h_c$ and $h_G$, and $\Sigma_W$, $\Sigma_B$ as we do; their NC1 metric is $\tr(\Sigma_W\Sigma_B^\dagger)/C$, our $\tr(\Sigma_W\Sigma_B^+)/K$. \Textcite{FangEtAl2021} write $p$ for our feature dimension $m$ and use $K$, $n_k$, $\boldsymbol h_{k,i}$ and the budgets $E_W$, $E_H$ as we do, write the classifier as $\boldsymbol W=[\boldsymbol w_1,\dots,\boldsymbol w_K]^\top$, and denote the majority and minority counts by $K_A$, $K_B$ and the sizes by $n_A$, $n_B$, with ratio $R=n_A/n_B$. \Textcite{ZhuEtAl2021} and \textcite{ZhouEtAl2022} write $d$ for our feature dimension $m$ (we keep $d$ for the input dimension), $\boldsymbol H\in\R^{d\times N}$ with $N=nK$ as we do, and $\lambda_{\boldsymbol W},\lambda_{\boldsymbol H},\lambda_{\boldsymbol b}$ for the weight decays; our $\kappa$ is not used there, and their thresholds can be rewritten in terms of it. Several papers, including \textcite{FangEtAl2021}, call the configuration of \cref{def:collapse:etf} a simplex ETF and normalize it with $\sqrt{K/(K-1)}$ as in \cref{ex:collapse:etf}.
+
+\printchapterbib
+\end{refsection}

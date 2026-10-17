@@ -1,0 +1,419 @@
+% Chapter 9 of The Hydrogen Atoms of Deep Learning: sparse parities and the limits of gradient methods.
+\newcommand{\parityMaj}{\operatorname{Maj}}
+
+\casechapter{Hidden Progress}{Sparse parities and the limits of gradient methods}{Sparse parity on the hypercube}{ch:parity}
+\begin{refsection}[chapters/09-parity.bib]
+
+\begin{chaptersummary}
+Networks trained by stochastic gradient descent on a sparse parity, the product of $k$ unknown coordinates of a uniformly random sign vector, show no improvement in loss or error for a long time and then learn abruptly, while measurements of the weights reveal progress during the flat stretch. The model of this chapter is the parity itself, learned by one neuron with the activation $z\mapsto z^k$. Its correlation with the target is exactly $k!$ times the product of the $k$ relevant weights, so the population gradient is supported on the relevant coordinates; we prove that one gradient step estimated from about $d^{k-1}\log d$ samples finds them, that every statistical-query algorithm needs a number of queries times an inverse squared tolerance of order $d^k$, and that the population flow spends a time of order $d^{(k-2)/2}$ on a loss plateau while the logarithm of the relevant weights grows steadily from the start. The model is wrong about how networks actually find the coordinates: with random initialization the progress sits in a few lucky neurons, and natural tasks offer low-degree footholds that parities deny.
+\end{chaptersummary}
+
+\section{The phenomenon: abrupt learning with steady progress}\label{sec:parity:phenomenon}
+
+Parity is the oldest hard case of neural network theory. \Textcite{MinskyPapert1969} showed that a perceptron that combines predicates on a bounded number of inputs cannot compute the parity of all its inputs; the parity of $n$ bits needs predicates of order $n$.\sidenote{Their \emph{order} of a perceptron is the largest number of inputs that one of its predicates reads.} Modern networks represent parities without difficulty: a single hidden layer of $k+1$ rectified linear units computes the parity of $k$ given bits (\cref{cor:parity:network}). The difficulty that remains is learning: when the $k$ bits are unknown, nothing in the data points to them until they have been found.
+
+Fix a dimension $d$ and an unknown set $S\subseteq[d]=\{1,\dots,d\}$ of size $k$. Inputs are uniform on the cube $\{-1,1\}^d$, and the label is the \term{sparse parity}\index{sparse parity}
+\[
+  y=\chi_S(x)=\prod_{i\in S}x_i .
+\]
+Statistically the problem is easy: there are $\binom dk$ candidate sets, so about $k\log d$ samples identify $S$ by exhaustive search, and Gaussian elimination\index{Gaussian elimination} over the field with two elements solves it in polynomial time from about $d$ samples.\sidenote{Write $x_i=(-1)^{z_i}$ with $z_i\in\{0,1\}$; then $\chi_S(x)=(-1)^{\sum_{i\in S}z_i}$, and each sample is a linear equation modulo $2$ for the indicator vector of $S$. About $d$ random equations determine it.} Neither algorithm resembles gradient descent. For a gradient method the task is hard for a reason that the Fourier--Walsh expansion makes precise (\cref{thm:toolkit:fourier-cube}): the label $\chi_S$ is orthogonal to every function of the input that does not depend on all $k$ coordinates of $S$, and in particular to every polynomial of degree less than $k$. No statistic of degree below $k$ sees the target.
+
+\begin{observation}[\textcite{BarakEtAl2022}]\label[observation]{obs:parity:hidden}
+Train a network by stochastic gradient descent on fresh samples of a $k$-sparse parity of $d$ bits. Across a range of architectures and initializations, the loss and the error stay at their chance values for a long stretch of training and then fall abruptly; on small instances the number of iterations before the drop grows like $d^{O(k)}$, close to the statistical-query lower bound of \cref{thm:parity:sq} below. During the flat stretch the training makes continual progress that the loss and the error do not show: the authors argue that SGD amplifies the sparse solution gradually, through a Fourier gap in the population gradient, rather than stumbling on it by chance.
+\end{observation}
+
+\Cref{fig:parity:mlp} reproduces the observation at a size that runs in a minute. A two-layer network of $256$ rectified linear units, with standard Gaussian initialization, learns $x_1x_2x_3$ in dimension $d=50$ by plain SGD on the hinge loss. In each of four runs the test error sits at $\frac12$ for between $12{,}000$ and $25{,}000$ steps and then falls to zero within about $3{,}000$ steps. The progress measure in the right panel, the largest share of a neuron's squared input weight carried by the three relevant coordinates, starts at a value set by the luck of the initialization and begins to grow several thousand steps before the drop, in every run.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=1.45cm},hplot,width=0.51\linewidth,height=0.47\linewidth,
+  xlabel={SGD step$/1000$},xmin=0,xmax=32]
+\nextgroupplot[ymin=-0.02,ymax=0.6,ylabel={test error}]
+\pgfplotsinvokeforeach{0,...,3}{\addplot[theory,line width=0.8pt] table[x expr=\thisrow{step}/1000,y=err#1] {figures/data/09-parity-mlp.dat};}
+\nextgroupplot[ymode=log,ymin=0.15,ymax=1.2,ylabel={largest share on $S$},ytick={0.2,0.3,0.5,1},yticklabels={$0.2$,$0.3$,$0.5$,$1$}]
+\pgfplotsinvokeforeach{0,...,3}{\addplot[theory3,line width=0.8pt] table[x expr=\thisrow{step}/1000,y=prog#1] {figures/data/09-parity-mlp.dat};}
+\end{groupplot}
+\end{tikzpicture}
+\caption{Four runs of SGD for a two-layer ReLU network of width $256$ on the parity $x_1x_2x_3$ of $d=50$ uniform bits: hinge loss, step size $0.02$, fresh minibatches of $32$ samples, Gaussian initialization, all layers trained (seeds $0$ to $3$). Left: error on $4000$ test points. Right: the progress measure $\max_j\sum_{i\in S}W_{ji}^2/\norm{W_j}^2$ over the hidden units $j$, on a logarithmic scale; a unit with no preference has share $k/d=0.06$.}\label{fig:parity:mlp}
+\end{figure}
+
+How firm is the observation? The flat-then-sudden curve is easy to reproduce, and it was seen long before the name: \textcite{ShalevShwartzShamirShammah2017} used parities as their first example of a failure of gradient-based learning, arguing that when the gradient carries little information about the target, training by gradients cannot succeed. The scaling $d^{O(k)}$ is measured only on small instances, and the exponent depends on architecture and hyperparameters. The statement about hidden progress depends on the measure: the share of the best neuron in \cref{fig:parity:mlp} grows during the last third of the plateau, not from the first step, while averages over all neurons barely move until the drop.
+
+The observation matters beyond parities because it is the cleanest instance of an \term{emergent}\index{emergence} capability: a skill that is absent for a long time and then present. \Textcite{WeiEtAl2022} catalogued abilities of large language models that appear abruptly as models are scaled, and \textcite{SchaefferMirandaKoyejo2023} argued that many such jumps are produced by the choice of metric, nonlinear or discontinuous metrics turning smooth progress into apparent jumps. Parities sit between these positions: the loss is flat for a real reason, yet a different measurement sees continuous progress. The questions for the model are therefore three. How much signal does a gradient carry about $S$? How many samples, or how much computation, must every gradient method spend? And what progresses while the loss stands still?\index{hidden progress}
+
+\section{The model: one monomial neuron on the cube}\label{sec:parity:model}
+
+We use the Fourier--Walsh expansion of \cref{thm:toolkit:fourier-cube}: every $f\colon\{-1,1\}^d\to\R$ is $\sum_{T\subseteq[d]}\hat f(T)\chi_T$ with $\hat f(T)=\E[f(x)\chi_T(x)]$, and $\E f(x)^2=\sum_T\hat f(T)^2$. Throughout, $x$ is uniform on $\{-1,1\}^d$.
+
+\begin{definition}[The sparse parity model]\label[definition]{def:parity:model}
+Let $1\le k\le d$ and let $S\subseteq[d]$ with $\abs S=k$. Inputs are $x\sim\Unif\{-1,1\}^d$ and labels are $y=\chi_S(x)$. The \term{monomial neuron}\index{monomial neuron} with weight $w\in\R^d$ predicts $\ip{w,x}^k$ and pays the correlation loss $-y\ip{w,x}^k$. Its population correlation and loss are
+\begin{equation}\label{eq:parity:Psi}
+  \Psi(w)=\E\bigl[\chi_S(x)\ip{w,x}^k\bigr],\qquad \Loss(w)=-\Psi(w).
+\end{equation}
+For a two-layer network $f(x;\theta)=\sum_{j=1}^ma_j\phi(\ip{w_j,x}+b_j)$ the correlation is $\E[yf(x;\theta)]$.
+\end{definition}
+
+The activation $z\mapsto z^k$ is chosen because it is the lowest-degree neuron that can see the target at all: a polynomial of degree less than $k$ in $x$ is orthogonal to $\chi_S$, so a neuron with a polynomial activation of degree less than $k$ has $\Psi\equiv0$ and receives no gradient. The correlation loss replaces the hinge and square losses of practice for the same reason as in \cref{ch:singleindex}: it makes the population landscape an explicit polynomial, and the square loss $(y-f)^2$ equals twice the correlation loss plus terms that do not involve the label. On the sphere $\norm w=1$, where we study the dynamics, the neuron is the Boolean counterpart of the single-index student of \cref{ch:singleindex} with information exponent $k$; the difference is that the target depends on $k$ coordinates rather than one direction, and that the cube, unlike the Gaussian, is not rotationally invariant, so the coordinates themselves are the natural basis.
+
+Three algorithms will be studied, in increasing realism. First, \emph{statistical-query algorithms}, the abstraction of every method that learns only from averages over the data, including gradient descent with estimated gradients; this gives the lower bound. Second, \emph{one gradient step} from the symmetric initialization $w_0\propto\mathbf 1_d$, estimated from $n$ samples, followed by a small readout; this gives a matching upper bound. Third, the \emph{population gradient flow} on the sphere from a small start, and its noisy version online SGD; this gives the plateau and the hidden progress.
+
+Each simplification has a reason. Uniform inputs make the characters orthonormal and independent of $S$, so that all $\binom dk$ targets look alike to every algorithm, which is the source of the lower bound.\sidenote{Uniformity is what makes the $\binom dk$ targets an orthonormal family; under a biased product distribution the characters are no longer orthogonal, and \cref{ex:parity:biased} shows how much this helps.} Exact parity labels remove every low-degree correlation: the target has Fourier weight only at the single set $S$. The monomial activation makes the correlation of one neuron with the target an explicit polynomial, \cref{lem:parity:monomial} below. The symmetric initialization $w_0\propto\mathbf 1_d$ removes the luck of a random start, so that what remains is the deterministic signal. What a reader would have had to notice to invent the model is that the population gradient of a neuron is itself a Fourier coefficient: by the chain rule, $\partial_{w_i}\E[y\phi(\ip{w,x})]=\E[\chi_{S\triangle\{i\}}(x)\,\phi'(\ip{w,x})]$, the Fourier coefficient of $\phi'(\ip{w,x})$ at the set $S$ with $i$ removed or added. The question of how much a gradient knows becomes a question about the Fourier spectrum of one function, a theme that \cref{ch:grokking} develops on the group $\Z_p$.
+
+\begin{dictionary}
+the set $S$, $\abs S=k$ & the relevant features of the input\\
+parity $\chi_S$ & a target with no low-degree footprint: every statistic of degree $<k$ is blind to it\\
+monomial neuron $\ip{w,x}^k$ & one hidden unit; its degree is the lowest that can see the target\\
+correlation $\Psi(w)$ & minus the loss; the network's agreement with the labels\\
+weights $w_i$, $i\in S$ & the progress measure: how much the unit attends to the relevant inputs\\
+effective overlap $\rho$ & the alignment of the unit with the target, on a scale where the loss is $1-\rho^k$\\
+symmetric start $w_0\propto\mathbf 1_d$ & an initialization with no luck in it\\
+statistical query of tolerance $\tau$ & an average over a minibatch of about $\tau^{-2}$ samples\\
+loss plateau, $\rho$ near $0$ & the long flat stretch of \cref{fig:parity:mlp}\\
+growth of $\log\rho$ during the plateau & hidden progress\\
+\end{dictionary}
+
+\section{The solution: what a gradient can see}\label{sec:parity:signal}
+
+Everything rests on one computation, which says that the correlation of a monomial neuron with a parity counts the ways to match the factors of the monomial with the coordinates of $S$.
+
+\begin{lemma}[Monomials against characters]\label[lemma]{lem:parity:monomial}
+Let $T\subseteq[d]$, let $j\ge0$ be an integer with $j\le\abs T$, and let $w\in\R^d$. Then
+\[
+  \E\bigl[\chi_T(x)\ip{w,x}^j\bigr]=\begin{cases}j!\prod_{i\in T}w_i,&\abs T=j,\\0,&\abs T>j.\end{cases}
+\]
+\end{lemma}
+
+\begin{proof}
+Expand the power: $\ip{w,x}^j=\sum w_{i_1}\cdots w_{i_j}\,x_{i_1}\cdots x_{i_j}$, the sum over all sequences $(i_1,\dots,i_j)$ in $[d]^j$. Because $x_i^2=1$, the product $\chi_T(x)x_{i_1}\cdots x_{i_j}$ equals $\chi_U(x)$, where $U$ is the set of indices that occur an odd number of times in the list made of the elements of $T$ and of $i_1,\dots,i_j$; and $\E\chi_U(x)=1$ if $U=\emptyset$ and $0$ otherwise, by \cref{thm:toolkit:fourier-cube}. So a sequence contributes only if every element of $T$ occurs in it an odd number of times, and every other index an even number of times. Such a sequence has at least $\abs T$ terms. If $\abs T>j$, no sequence qualifies and the expectation is $0$. If $\abs T=j$, every element of $T$ occurs exactly once and nothing else occurs, so the qualifying sequences are the $j!$ orderings of $T$, each contributing $\prod_{i\in T}w_i$.
+\end{proof}
+
+\begin{theorem}[The exact signal of a monomial neuron]\label{thm:parity:signal}
+For every $w\in\R^d$,
+\[
+  \Psi(w)=k!\prod_{i\in S}w_i,\qquad \partial_{w_i}\Psi(w)=\begin{cases}k!\prod_{j\in S\setminus\{i\}}w_j,&i\in S,\\0,&i\notin S.\end{cases}
+\]
+In particular, at the symmetric start $w_0=d^{-1/2}\mathbf 1_d$ the population gradient equals $k!\,d^{-(k-1)/2}$ on every coordinate of $S$ and exactly $0$ on every other coordinate.
+\end{theorem}
+
+\begin{proof}
+The formula for $\Psi$ is \cref{lem:parity:monomial} with $T=S$ and $j=k$. Differentiating the product gives the gradient. For the second statement differentiate under the expectation, which is a finite sum: $\partial_{w_i}\Psi(w)=k\,\E[\chi_S(x)x_i\ip{w,x}^{k-1}]=k\,\E[\chi_{S\triangle\{i\}}(x)\ip{w,x}^{k-1}]$, where $\triangle$ is the symmetric difference. For $i\notin S$ the set $S\triangle\{i\}=S\cup\{i\}$ has $k+1>k-1$ elements, so \cref{lem:parity:monomial} gives $0$; for $i\in S$ it has $k-1$ elements and gives $k\,(k-1)!\prod_{j\in S\setminus\{i\}}w_j$, consistent with the first formula. At $w_0$ every product of $k-1$ coordinates is $d^{-(k-1)/2}$.
+\end{proof}
+
+Two features of the theorem drive the rest of the chapter. The gradient off $S$ vanishes identically, not only at $w_0$: in the population, the irrelevant weights of a monomial neuron never move. And the gradient on $S$ is small, of order $d^{-(k-1)/2}$ at a start of unit norm, because it is a product of $k-1$ small weights. The first feature says that the population gradient identifies $S$ perfectly; the second says that a sample estimate of it is drowned in noise unless the sample is large. Before quantifying the second, we check that the first is not an artifact of the monomial.
+
+\begin{proposition}[The Fourier gap of a ReLU neuron]\label[proposition]{prop:parity:gap}
+Let $d$ be odd, let $k$ be even with $2\le k<d$, and let $\alpha>0$. The correlation $\Phi(w)=\E[\chi_S(x)\relu(\ip{w,x})]$ is differentiable at $w=\alpha\mathbf 1_d$, and its partial derivative there is $\frac12\widehat{\parityMaj}_d(S\setminus\{i\})$ for $i\in S$ and $\frac12\widehat{\parityMaj}_d(S\cup\{i\})$ for $i\notin S$, where $\parityMaj_d(x)=\sgn(x_1+\dots+x_d)$. These numbers have opposite signs, and the ratio of their absolute values, off $S$ to on $S$, is exactly $(k-1)/(d-k)$. For odd $k$ both vanish.
+\end{proposition}
+
+\begin{proof}
+Since $d$ is odd, $\ip{\alpha\mathbf 1_d,x}=\alpha(x_1+\dots+x_d)$ is never $0$, so near $\alpha\mathbf 1_d$ each of the finitely many terms of the expectation is a linear function of $w$, and $\partial_{w_i}\Phi(\alpha\mathbf 1_d)=\E[\chi_S(x)x_i\ind\{\ip{\mathbf 1_d,x}>0\}]$. Write $\ind\{\ip{\mathbf 1_d,x}>0\}=\frac12(1+\parityMaj_d(x))$; the set $S\triangle\{i\}$ is not empty, so the constant contributes nothing and the derivative is $\frac12\widehat{\parityMaj}_d(S\triangle\{i\})$. For the values we use the formula for the Fourier coefficients of majority \parencite[Chapter~5]{ODonnell2014}: they vanish on sets of even size, and on a set of odd size $j$,
+\[
+  \widehat{\parityMaj}_d(T)=(-1)^{(j-1)/2}\,\frac{\binom{(d-1)/2}{(j-1)/2}}{\binom{d-1}{j-1}}\cdot\frac{2}{2^d}\binom{d-1}{(d-1)/2}.
+\]
+For odd $k$ the sets $S\setminus\{i\}$ and $S\cup\{i\}$ have even sizes, so both derivatives vanish. For even $k$ the sizes are $k-1$ and $k+1$, consecutive odd numbers, so the signs differ. With $\nu=(d-1)/2$, the ratio of absolute values is
+\[
+  \frac{\binom{\nu}{k/2}}{\binom{\nu}{k/2-1}}\cdot\frac{\binom{d-1}{k-2}}{\binom{d-1}{k}}
+  =\frac{\nu-k/2+1}{k/2}\cdot\frac{k(k-1)}{(d-k+1)(d-k)}=\frac{k-1}{d-k},
+\]
+because $\nu-k/2+1=(d-k+1)/2$.\qedhere
+\end{proof}
+
+The ReLU neuron at a symmetric start therefore also separates $S$ from its complement, but with a finite \term{Fourier gap}\index{Fourier gap}\index{majority function}: its gradient off $S$ is smaller by the factor $(k-1)/(d-k)$, not zero. By Stirling's formula the coefficient at level $k-1$ is of order $d^{-(k-1)/2}$, the same order as the monomial's signal. The gradient of a ReLU neuron, read as a Fourier coefficient of the threshold function $\ind\{\ip{w,x}>0\}$, is the mechanism behind \textcite{BarakEtAl2022}'s explanation of hidden progress; the parity of $k$ and the bias matter, since for odd $k$ the weights of a symmetric unit without bias receive no signal at all (\cref{ex:parity:majority}).\sidenote{The bias does receive signal for odd $k$: its derivative is $\frac12\widehat{\parityMaj}_d(S)$, nonzero because $\abs S$ is odd. A symmetric unit learns that the parity is correlated with its threshold, not which coordinates matter.}
+
+\subsection{The statistical-query lower bound}\label{sec:parity:sq}
+
+A gradient estimated from data is a list of averages. The model of computation that keeps only this feature is due to \textcite{Kearns1998}.
+
+\begin{definition}[Statistical queries]\label[definition]{def:parity:sq}
+A \term{statistical query}\index{statistical query} is a function $q\colon\{-1,1\}^d\times\{-1,1\}\to\R$ with $\E[q(x,1)^2]\le1$ and $\E[q(x,-1)^2]\le1$; every $q$ with values in $[-1,1]$ qualifies. An \emph{oracle of tolerance} $\tau>0$ for the target $\chi_S$ answers each query with some number $v$ satisfying $\abs{v-\E q(x,\chi_S(x))}\le\tau$. A \emph{statistical-query learner} chooses its queries one at a time, each depending on the previous answers and on internal randomness, and finally outputs a set $\hat S$.
+\end{definition}
+
+An average of $q(x_s,y_s)$ over a minibatch of $b$ fresh samples is within about $b^{-1/2}$ of $\E q(x,y)$; a query of tolerance $\tau$ is the idealization of a minibatch of size $\tau^{-2}$, with the sampling error replaced by an adversarial one.
+
+\begin{theorem}[Statistical-query lower bound for sparse parities]\label{thm:parity:sq}
+Let $1\le k\le d$, $M=\binom dk$, and $0<\tau\le1$, and let $S$ be uniformly random among the subsets of $[d]$ of size $k$, independent of the learner's internal randomness. There is an oracle of tolerance $\tau$ such that every statistical-query learner that makes at most $Q$ queries outputs $\hat S=S$ with probability at most
+\[
+  \frac{Q\tau^{-2}+1}{M}.
+\]
+In particular, a learner that identifies every $S$ with certainty against every oracle of tolerance $\tau$ makes at least $(M-1)\tau^2$ queries.
+\end{theorem}
+
+\begin{proof}
+The plan is to let the oracle answer every query by its label-independent part, which is correct for all but a few targets, and to count the targets for which it is not. For a query $q$ put
+\[
+  q_0(x)=\tfrac12\bigl(q(x,1)+q(x,-1)\bigr),\qquad q_1(x)=\tfrac12\bigl(q(x,1)-q(x,-1)\bigr).
+\]
+Since $\chi_S(x)\in\{-1,1\}$, checking the two cases gives $q(x,\chi_S(x))=q_0(x)+\chi_S(x)q_1(x)$, and therefore
+\[
+  \E q(x,\chi_S(x))=\E q_0(x)+\hat q_1(S).
+\]
+\emph{The oracle.} Given the target $S$ and a query $q$, the oracle answers $\E q_0(x)$ if $\abs{\hat q_1(S)}\le\tau$, and the exact value $\E q(x,\chi_S(x))$ otherwise. In both cases the answer is within $\tau$ of the truth.
+
+\emph{Few targets are exposed by one query.} Let $B(q)$ be the set of sets $T$ of size $k$ with $\abs{\hat q_1(T)}>\tau$. Parseval's identity (\cref{thm:toolkit:fourier-cube}) and the inequality $(a-b)^2\le2a^2+2b^2$ give
+\[
+  \abs{B(q)}\,\tau^2\le\sum_{T}\hat q_1(T)^2=\E q_1(x)^2\le\tfrac12\bigl(\E q(x,1)^2+\E q(x,-1)^2\bigr)\le1,
+\]
+so $\abs{B(q)}\le\tau^{-2}$.
+
+\emph{Counting.} Fix the learner's internal randomness. Run the learner against the responder that answers $\E q_0(x)$ to every query $q$; this responder ignores $S$, so the run produces queries $q^{(1)},\dots,q^{(Q')}$ with $Q'\le Q$ and an output $\hat S_0$ that do not depend on $S$. Let $B=B(q^{(1)})\cup\dots\cup B(q^{(Q')})$, a set of at most $Q\tau^{-2}$ targets. If $S\notin B$, the oracle for $S$ gives the same answer as the responder at each of these queries, so by induction on the number of queries the learner, facing the oracle, asks the same queries and outputs $\hat S_0$. Hence $\hat S=S$ forces $S\in B$ or $S=\hat S_0$, an event of probability at most $(\abs B+1)/M\le(Q\tau^{-2}+1)/M$ for uniformly random $S$. Averaging over the internal randomness proves the bound. A learner that succeeds with certainty has $1\le(Q\tau^{-2}+1)/M$, which is the last statement.
+\end{proof}
+
+The argument goes back to the beginnings of the model: Kearns observed that parities cannot be learned\index{statistical query!lower bound} from statistical queries in polynomial time, and \textcite{BlumEtAl1994} turned the counting of pairwise orthogonal functions into a characterization of weak statistical-query learning by what is now called the statistical-query dimension.\sidenote{For the class of all $2^d$ parities the counting gives $Q\tau^{-2}\gtrsim2^d$; restricting to sets of size $k$ replaces $2^d$ by $\binom dk$.} The same counting bounds learners that only need a weak hypothesis (\cref{ex:parity:weak}).
+
+\begin{remark}[Gradient methods are statistical algorithms]\label[remark]{rem:parity:gd}
+For a model $f(x;\theta)$ with $p$ parameters, the population gradient of the correlation loss has coordinates $-\E[y\,\partial_{\theta_j}f(x;\theta)]$, and each is a statistical query after division by $B_j=(\E[\partial_{\theta_j}f(x;\theta)^2])^{1/2}$; for the square loss the gradient differs by $\E[f\,\partial_{\theta_j}f]$, which does not involve the label. So $t$ steps of gradient descent whose gradient coordinates are accurate to $\tau B_j$ are a statistical-query algorithm with $Q=tp$ queries, and if the errors are adversarial, \cref{thm:parity:sq} requires $tp\,\tau^{-2}\gtrsim\binom dk$. With $\tau\approx b^{-1/2}$ for minibatches of size $b$, this reads $tpb\gtrsim\binom dk$: the total computation of a gradient method, parameters times samples, is at least of order $d^k/k!$. This translation is a heuristic, not a theorem about SGD, because sampling errors are random rather than adversarial. The difference can be decisive: \textcite{AbbeSandon2020} showed that SGD with small batches on suitably constructed networks can emulate every polynomial-time learning algorithm, including those for parities that no statistical-query algorithm matches, and proved that this power disappears when gradients are averaged over large batches.
+\end{remark}
+
+\section{The solution: one step, and a plateau with progress}\label{sec:parity:upper}
+
+We now show that a single gradient step meets the lower bound up to a constant and a logarithm. The noise of the empirical gradient is controlled by the moments of a sum of independent signs.
+
+\begin{lemma}[Moments of a sum of signs]\label[lemma]{lem:parity:moments}
+Let $s=x_1+\dots+x_d$. For every integer $j\ge1$, $\E s^{2j}\le(2j-1)!!\,d^j$, where $(2j-1)!!=1\cdot3\cdots(2j-1)$.
+\end{lemma}
+
+\begin{proof}
+Expanding, $\E s^{2j}$ is the number of sequences $(i_1,\dots,i_{2j})\in[d]^{2j}$ in which every index occurs an even number of times, because the expectation of a product of signs is $1$ for such sequences and $0$ for the others. Each such sequence arises from at least one pair of a perfect matching of the $2j$ positions and an assignment of one index to each of the $j$ matched pairs: match the occurrences of each index among themselves. There are $(2j-1)!!$ perfect matchings and $d^j$ assignments, which bounds the number of sequences.
+\end{proof}
+
+The bound is the corresponding Gaussian moment; for $j=2$ the exact value is $\E s^4=3d^2-2d$. Write the empirical gradient of the correlation at the start $w_0=\mathbf 1_d$, scaled for convenience (the gradient is homogeneous of degree $k-1$ in $w$, so the scale of the start does not matter):
+\begin{equation}\label{eq:parity:Ghat}
+  \hat G_i=\frac1n\sum_{s=1}^nZ_i(x_s),\qquad Z_i(x)=k\,\chi_S(x)\,\ip{\mathbf 1_d,x}^{k-1}x_i,\qquad i\in[d].
+\end{equation}
+
+\begin{theorem}[One gradient step finds the support]\label{thm:parity:onestep}
+Let $2\le k\le d$ and $0<\delta<1$, and let $x_1,\dots,x_n$ be independent and uniform on $\{-1,1\}^d$ with labels $\chi_S(x_s)$. If
+\[
+  n\ge C_k\,d^{k-1}\log\frac{2d}\delta,\qquad C_k=\frac{8k\bigl(k\,(2k-3)!!+k!/3\bigr)}{(k!)^2},
+\]
+then with probability at least $1-\delta$ every $i\in S$ has $\hat G_i>k!/2$ and every $i\notin S$ has $\hat G_i<k!/2$. In particular the $k$ largest coordinates of the empirical gradient are exactly the coordinates of $S$.
+\end{theorem}
+
+\begin{proof}
+The plan is to apply Bernstein's inequality to each coordinate and a union bound over the $d$ coordinates. Fix $i$. By \cref{thm:parity:signal} with $w=\mathbf 1_d$, $\E Z_i=\partial_{w_i}\Psi(\mathbf 1_d)$ equals $k!$ for $i\in S$ and $0$ for $i\notin S$. Three bounds on $Z_i$ are needed.
+\begin{itemize}
+\item \emph{Range.} $\abs{\ip{\mathbf 1_d,x}}\le d$, so $\abs{Z_i}\le kd^{k-1}$; also $k!=k\,(k-1)!\le kd^{k-1}$ because $k\le d$. Hence $\abs{Z_i-\E Z_i}\le2kd^{k-1}$.
+\item \emph{Variance.} Since $\chi_S^2=x_i^2=1$, \cref{lem:parity:moments} with $j=k-1\ge1$ gives $\Var Z_i\le\E Z_i^2=k^2\,\E\ip{\mathbf 1_d,x}^{2k-2}\le k^2(2k-3)!!\,d^{k-1}$.
+\item \emph{Deviation.} Bernstein's inequality (\cref{thm:toolkit:bernstein}) for the $n$ independent centered variables $Z_i(x_s)-\E Z_i$, with $c=2kd^{k-1}$, $v=nk^2(2k-3)!!\,d^{k-1}$, and threshold $nk!/2$, gives
+\[
+  \Pr\Bigl(\abs{\hat G_i-\E Z_i}\ge\frac{k!}2\Bigr)\le2\exp\Bigl(-\frac{n^2(k!)^2/4}{2\bigl(v+c\,nk!/6\bigr)}\Bigr),
+\]
+and inserting $v$ and $c$, the exponent equals $-n(k!)^2/\bigl(8d^{k-1}(k^2(2k-3)!!+k\,k!/3)\bigr)=-n/(C_kd^{k-1})$.
+\end{itemize}
+By the hypothesis on $n$, the right side is at most $\delta/d$. By the union bound, with probability at least $1-\delta$ every coordinate satisfies $\abs{\hat G_i-\E Z_i}<k!/2$, which is the claim.
+\end{proof}
+
+For $k=3$ the constant is $C_3=22/3\approx7.3$.\sidenote{The constant is not optimized. Bernstein's inequality is used because the range of $Z_i$ and its standard deviation times $\sqrt n$ are of the same order $d^{k-1}$ at the sample size of the theorem; Chebyshev's inequality would cost a factor $d$.} The theorem uses a nonlinear step after the gradient, a threshold or a choice of the $k$ largest coordinates. A plain gradient step followed by a linear readout would need more samples: the noise of about $(d^{k-1}/n)^{1/2}$ on each of the $d-k$ irrelevant coordinates adds up, in $\ip{w_1,x}$, to a perturbation of order $(d^k/n)^{1/2}$, so about $d^k$ samples would be needed for the noise to be small compared with the signal (\cref{ex:parity:linear}). With the support found, a small second layer finishes the job.
+
+\begin{corollary}[A network that computes the parity]\label[corollary]{cor:parity:network}
+Let $\hat S\subseteq[d]$ have $k$ elements and $s(x)=\sum_{i\in\hat S}x_i$. Then for every $x\in\{-1,1\}^d$,
+\[
+  \chi_{\hat S}(x)=(-1)^k\Bigl[\relu\bigl(s(x)+k+1\bigr)+\sum_{j=1}^k(-1)^j\,4j\,\relu\bigl(s(x)+k+1-2j\bigr)\Bigr],
+\]
+a network of $k+1$ ReLU units with input weights $\mathbf 1_{\hat S}$. Consequently, under the hypotheses of \cref{thm:parity:onestep}, one gradient step at $w_0=\mathbf 1_d$, the choice of the $k$ largest coordinates, and this readout output a network equal to $\chi_S$ with probability at least $1-\delta$.
+\end{corollary}
+
+\begin{proof}
+The value $s(x)$ lies in $\{-k+2i:0\le i\le k\}$, and at $s=-k+2i$ the parity is $(-1)^{k-i}$, since $i$ coordinates equal $+1$ and $k-i$ equal $-1$. Put $c_0=1$ and $c_j=(-1)^j4j$ for $j\ge1$. At $s=-k+2i$ the unit $\relu(s+k+1-2j)$ equals $2(i-j)+1$ for $j\le i$ and $0$ for $j>i$, so the bracket equals $A_i=\sum_{j=0}^ic_j\,(2(i-j)+1)$, and we must show $A_i=(-1)^i$. The partial sums of the coefficients are $P_i=\sum_{j=0}^ic_j=1+4\sum_{j=1}^i(-1)^jj=(-1)^i(2i+1)$, as one checks separately for even and odd $i$. Hence, for $i\ge1$,
+\[
+  A_i-A_{i-1}=2P_{i-1}+c_i=2(-1)^{i-1}(2i-1)+(-1)^i4i=2(-1)^i,
+\]
+and since $A_0=1$, $A_i=1+2\sum_{l=1}^i(-1)^l=(-1)^i$. The last statement combines this identity with \cref{thm:parity:onestep}.
+\end{proof}
+
+\paragraph{How close to the limit?} Read the $d$ coordinates of the empirical gradient as statistical queries. Normalized to unit second moment, the query for coordinate $i$ is $q_i(x,y)=y\,k\ip{\mathbf 1_d,x}^{k-1}x_i/\beta$ with $\beta^2=k^2(2k-3)!!\,d^{k-1}$, its expectation is $k!/\beta$ on $S$ and $0$ off $S$, and answers of every tolerance below $k!/(2\beta)$ suffice to find $S$. So the one-step algorithm is a statistical-query algorithm with $Q=d$ and, as $\tau$ approaches $k!/(2\beta)$,
+\[
+  Q\tau^{-2}\to\frac{4k^2(2k-3)!!}{(k!)^2}\,d^k=\frac{4k\,(2k-3)!!}{(k-1)!}\cdot\frac{d^k}{k!},
+\]
+while \cref{thm:parity:sq} requires $Q\tau^{-2}\ge\binom dk-1\approx d^k/k!$. The algorithm is within the factor $4k(2k-3)!!/(k-1)!$ of the lower bound, $18$ for $k=3$, and its $n\approx d^{k-1}\log d$ samples times $d$ coordinates is the computation $d^k\log d$. This is the precise sense in which gradient methods can learn parities ``near the computational limit'': the limit is a product of samples and queries, and a single step on the right neuron saturates it.
+
+\subsection{The plateau and the hidden progress}\label{sec:parity:hidden}
+
+The one-step algorithm compresses the search into one large average. Training by small steps spreads it over time, and the loss curve acquires a plateau\index{plateau}. We study the population flow of the monomial neuron on the unit sphere, where the loss is bounded. Two constants recur:
+\begin{equation}\label{eq:parity:constants}
+  c_k=\max_{\norm w=1}\Psi(w)=\frac{k!}{k^{k/2}},\qquad\kappa_k=k\,c_k .
+\end{equation}
+The maximum is attained when $w_i^2=1/k$ on $S$ and $w_i=0$ off $S$, by the inequality of arithmetic and geometric means: $\prod_{i\in S}w_i^2\le(\frac1k\sum_{i\in S}w_i^2)^k\le k^{-k}$. For $\Psi(w)>0$ define the \term{effective overlap}\index{effective overlap}
+\[
+  \rho(w)=\bigl(\Psi(w)/c_k\bigr)^{1/k}\in(0,1],
+\]
+the overlap with $\mathbf 1_S/\sqrt k$ of the vector with equal weights on $S$ that has the same correlation as $w$. In these units the normalized loss $(\Loss(w)-\min\Loss)/(0-\min\Loss)$ is $1-\rho^k$, so the loss sees $\rho^k$ while the weights carry $\rho$. A weight vector is \emph{balanced} if $\abs{w_i}$ is the same for all $i\in S$. The symmetric start $w_0=d^{-1/2}\mathbf 1_d$ is balanced, with $\rho_0=\sqrt{k/d}$; a uniformly random start has $\Psi(w_0)>0$ with probability $\frac12$, and then $\rho_0$ is of order $d^{-1/2}$.
+
+\begin{theorem}[Hidden progress of the population flow]\label{thm:parity:hidden}
+Let $k\ge3$ and $w_0\in\Sph^{d-1}$ with $\Psi(w_0)>0$, and let $w(t)$ solve the spherical gradient flow of the correlation,
+\begin{equation}\label{eq:parity:flow}
+  \dot w=\nabla\Psi(w)-\ip{w,\nabla\Psi(w)}\,w,\qquad w(0)=w_0 .
+\end{equation}
+\begin{enumerate}
+\item[\textup{(a)}] The solution exists for all $t\ge0$ and stays on the sphere, $\Psi(w(t))$ is nondecreasing, and
+\[
+  \frac{\dd}{\dd t}w_i^2=2\Psi\,(1-kw_i^2)\quad(i\in S),\qquad\frac{\dd}{\dd t}w_i^2=-2k\Psi\,w_i^2\quad(i\notin S).
+\]
+\item[\textup{(b)}] The effective overlap satisfies
+\begin{equation}\label{eq:parity:rhoineq}
+  \dot\rho\ge\kappa_k\,\rho^{k-1}(1-\rho^2),
+\end{equation}
+with equality at all times if $w_0$ is balanced.
+\item[\textup{(c)}] Let $t_a$ be the first time with $\rho\ge a$. If $\rho_0\le a<b\le\frac12$, then
+\[
+  t_b-t_a\le\frac{4\,a^{2-k}}{3(k-2)\kappa_k},
+\]
+and if $w_0$ is balanced, then also $t_b-t_a\ge(a^{2-k}-b^{2-k})/((k-2)\kappa_k)$.
+\item[\textup{(d)}] On $[0,t_{1/2}]$ the logarithm of the effective overlap grows at least linearly, $\frac{\dd}{\dd t}\log\rho\ge\frac34\kappa_k\rho_0^{k-2}$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to compute the evolution of each squared weight, to derive from it a closed differential inequality for $\Psi$, and to integrate that inequality. Write $g=\nabla\Psi$. By \cref{thm:parity:signal}, $g_i=\Psi/w_i$ for $i\in S$ whenever $\Psi\ne0$, and $g_i=0$ for $i\notin S$; and since $\Psi$ is homogeneous of degree $k$, Euler's identity gives $\ip{w,g}=k\Psi$.
+
+\emph{(a)} Read the right side of \eqref{eq:parity:flow} as a polynomial vector field on $\R^d$. Along its solutions $q=\norm w^2-1$ satisfies $\dot q=2\ip{w,g}(1-\norm w^2)=-2k\Psi q$, a linear equation, so $q$ stays $0$: the solution stays on the compact sphere and therefore exists for all time. On the sphere, $\dot\Psi=\ip{g,\dot w}=\norm g^2-\ip{w,g}^2\ge0$ by the Cauchy--Schwarz inequality, so $\Psi\ge\Psi(w_0)>0$ for all $t$, and no weight in $S$ vanishes. For $i\in S$, $\frac{\dd}{\dd t}w_i^2=2w_i(g_i-k\Psi w_i)=2\Psi(1-kw_i^2)$; for $i\notin S$, $\frac{\dd}{\dd t}w_i^2=-2k\Psi w_i^2$.
+
+\emph{(b)} By (a) and the formula for $g$,
+\[
+  \dot\Psi=\norm g^2-\ip{w,g}^2=\Psi^2\sum_{i\in S}w_i^{-2}-k^2\Psi^2 .
+\]
+The inequality of arithmetic and geometric means bounds the sum below: $\sum_{i\in S}w_i^{-2}\ge k\bigl(\prod_{i\in S}w_i^{-2}\bigr)^{1/k}=k\,(k!/\Psi)^{2/k}$, using $\prod_{i\in S}w_i^2=(\Psi/k!)^2$. Substitute $\Psi=c_k\rho^k$, so that $\dot\Psi=kc_k\rho^{k-1}\dot\rho$, and use $(k!)^{2/k}c_k^{-2/k}=k$:
+\[
+  kc_k\rho^{k-1}\dot\rho\ge k\,(k!)^{2/k}(c_k\rho^k)^{2-2/k}-k^2c_k^2\rho^{2k}=k^2c_k^2\rho^{2k-2}(1-\rho^2).
+\]
+Dividing by $kc_k\rho^{k-1}>0$ gives \eqref{eq:parity:rhoineq}. Equality holds in the inequality of means exactly when all $w_i^2$, $i\in S$, are equal. By (a), $\frac{\dd}{\dd t}(w_i^2-w_j^2)=-2k\Psi(w_i^2-w_j^2)$ for $i,j\in S$, a linear equation, so a balanced start stays balanced and \eqref{eq:parity:rhoineq} is then an equality.
+
+\emph{(c)} Let $h(s)=\kappa_ks^{k-1}(1-s^2)$, which is positive on $(0,1)$. By (b), $\rho$ is nondecreasing, and it is strictly increasing while $\rho<1$. Put $H(r)=\int_a^r\dd s/h(s)$. Suppose first that $t_a$ is finite, which holds for $a=\rho_0$ since then $t_a=0$. On $[t_a,t_b]$ the chain rule and (b) give $\frac{\dd}{\dd t}H(\rho(t))=\dot\rho/h(\rho)\ge1$, so $H(\rho(t))\ge t-t_a$ there; since $H(\rho(t))<H(b)$ for $t<t_b$, the time $t_b$ is finite and $t_b-t_a\le H(b)$. Applied with $a=\rho_0$, this shows that $t_c$ is finite for every $c<1$, so the supposition holds for every $a$. On $[a,b]\subseteq(0,\frac12]$ we have $1-s^2\ge\frac34$, hence
+\[
+  H(b)\le\frac4{3\kappa_k}\int_a^bs^{1-k}\,\dd s\le\frac{4\,a^{2-k}}{3(k-2)\kappa_k}.
+\]
+For a balanced start $\frac{\dd}{\dd t}H(\rho(t))=1$, so $t_b-t_a=H(b)\ge\kappa_k^{-1}\int_a^bs^{1-k}\dd s=(a^{2-k}-b^{2-k})/((k-2)\kappa_k)$, using $1-s^2\le1$.
+
+\emph{(d)} By (b), $\frac{\dd}{\dd t}\log\rho=\dot\rho/\rho\ge\kappa_k\rho^{k-2}(1-\rho^2)$, and on $[0,t_{1/2}]$ we have $\rho\ge\rho_0$ and $1-\rho^2\ge\frac34$.
+\end{proof}
+
+The theorem is the Boolean version of the search phase of \cref{ch:singleindex}: for a balanced start, $\rho$ obeys exactly the equation $\dot r=(1-r^2)\Psi'(r)$ of that chapter with $\Psi(r)=c_kr^k$. It adds two things. An unbalanced start is never slower than a balanced one with the same correlation, and the imbalance between the relevant weights decays; the irrelevant weights decay at the rate $2k\Psi\ge2k\Psi(w_0)$, so the neuron forgets the coordinates outside $S$ exponentially fast once the correlation is positive. Without the sphere, (a) becomes the statement that $w_i^2-w_j^2$ is conserved for $i,j\in S$, the balancedness of the deep linear networks of \cref{ch:deeplinear}: the monomial neuron on a parity is a depth-$k$ product of scalars (\cref{ex:parity:unconstrained}).
+
+\begin{corollary}[Plateau and drop]\label[corollary]{cor:parity:plateau}
+Let $k\ge3$, let $w_0=d^{-1/2}\mathbf 1_d$, and let $0<\eps<2^{-k}$ with $\eps^{1/k}>\rho_0=\sqrt{k/d}$. The normalized loss $1-\rho^k$ stays above $1-\eps$ until the time
+\[
+  t_{\eps^{1/k}}\ge\frac{(d/k)^{(k-2)/2}-\eps^{-(k-2)/k}}{(k-2)\kappa_k},
+\]
+and it reaches $1-2^{-k}$ at most $\frac{4}{3(k-2)\kappa_k}\eps^{-(k-2)/k}$ later, a time that does not depend on $d$. During the plateau $[0,t_{\eps^{1/k}}]$ the effective overlap grows by the factor $\eps^{1/k}\sqrt{d/k}$.
+\end{corollary}
+
+\begin{proof}
+Apply \cref{thm:parity:hidden}(c) twice: with $a=\rho_0$ and $b=\eps^{1/k}$ for the lower bound, using $t_{\rho_0}=0$ and $\rho_0^{2-k}=(d/k)^{(k-2)/2}$; and with $a=\eps^{1/k}$ and $b=\frac12$ for the upper bound. The last statement is the definition of $t_{\eps^{1/k}}$.
+\end{proof}
+
+As $d\to\infty$ with $k$ and $\eps$ fixed, the plateau lasts a time of order $d^{(k-2)/2}$ and the drop a time of order one: the loss curve becomes a step. Yet nothing abrupt happens to the weights. The relevant weights are proportional to $\rho$, and by (d) the logarithm of $\rho$ climbs at a rate bounded below from the first instant; most of the climb in $\log\rho$, a fraction $1-O(1/\log d)$ of it, happens while the loss is within $\eps$ of its initial value. The loss is flat because it sees $\rho^k$, the $k$th power of a quantity that grows steadily. This is the mechanism of \textcite{SchaefferMirandaKoyejo2023} in miniature: a nonlinear readout of continuous progress produces a jump.
+
+\begin{heuristic}[Online SGD needs about $d^{k-1}$ samples]
+Replace the population gradient by the gradient of one fresh sample, $G_t=-y_t\,k\ip{w_t,x_t}^{k-1}P_{w_t}^\perp x_t$ with $P_w^\perp=I_d-ww^\top$, and renormalize after each step, as in \cref{ch:singleindex}. For a unit vector $w$, $\ip{w,x}$ has bounded moments by \cref{thm:toolkit:bonami}, so the component of $G_t$ along $\mathbf 1_S/\sqrt k$ has variance of order one and $\norm{G_t}^2$ has mean of order $d$. These are the two noise terms of the step-size heuristic of \cref{ch:singleindex}, with the same orders, and the drift is the right side of \eqref{eq:parity:rhoineq}. The heuristic of that chapter then applies verbatim: the step size must be of order $d^{-k/2}$ to keep the noise below the drift at $\rho\approx d^{-1/2}$, and the number of samples is the escape time $d^{(k-2)/2}$ divided by the step, of order $d^{k-1}$. This matches the one-step count of \cref{thm:parity:onestep} up to the logarithm: spreading the average over many small steps costs no extra samples.
+\end{heuristic}
+
+\section{Reading the solution}\label{sec:parity:reading}
+
+The solution has three numbers. The \emph{signal}: the population gradient at a start of unit norm is $k!\,d^{-(k-1)/2}$ on $S$ and zero elsewhere, while each coordinate of a single-sample gradient has standard deviation of order $d^0$ in the same units; one sample therefore carries a signal-to-noise ratio of order $d^{-(k-1)/2}$ per coordinate. The \emph{sample size}: averaging $n$ samples multiplies the ratio by $\sqrt n$, and finding the largest of $d$ coordinates needs a ratio of order $\sqrt{\log d}$, hence $n\asymp d^{k-1}\log d$. The \emph{product}: $d$ queries at this precision cost $d^k\log d$, against the lower bound $\binom dk$ of \cref{thm:parity:sq}. Kernel methods, which cannot adapt to $S$, pay instead with the number of features needed to represent all degree-$k$ monomials, also of order $d^k$ (\cref{ch:lazy}); the gain of gradient training over kernels is in memory, not in computation.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,xmin=0,xmax=4.1,ymin=0,ymax=1.02,xlabel={$n/(d^2\ln d)$},ylabel={$\Pr(\text{top-}3\text{ coordinates}=S)$},legend pos=south east]
+\addplot[theory] table[x=a,y=th16] {figures/data/09-parity-onestep.dat};
+\addplot[theory2] table[x=a,y=th32] {figures/data/09-parity-onestep.dat};
+\addplot[theory3] table[x=a,y=th64] {figures/data/09-parity-onestep.dat};
+\addplot[simulation2,mark=triangle*] table[x=a,y=sim16] {figures/data/09-parity-onestep.dat};
+\addplot[simulation2] table[x=a,y=sim32] {figures/data/09-parity-onestep.dat};
+\addplot[simulation] table[x=a,y=sim64] {figures/data/09-parity-onestep.dat};
+\legend{Gaussian limit $d=16$,Gaussian limit $d=32$,Gaussian limit $d=64$,simulation $d=16$,simulation $d=32$,simulation $d=64$}
+\end{axis}
+\end{tikzpicture}
+\caption{One gradient step of the monomial neuron $\ip{w,x}^3$ at $w_0=\mathbf 1_d$ on the parity $x_1x_2x_3$: the probability that the three largest coordinates of the empirical gradient \eqref{eq:parity:Ghat} are the relevant ones, against the number of samples in units of $d^2\ln d$. Points: $300$ independent data sets for each $(d,n)$ (seed $20261017$). Curves: the central-limit prediction, a Gaussian vector with the exact mean and covariance of $\hat G$, estimated with $20{,}000$ draws. \Cref{thm:parity:onestep} guarantees success probability $1-\delta$ from $n=7.3\,d^2\ln(2d/\delta)$.}\label{fig:parity:onestep}
+\end{figure}
+
+\Cref{fig:parity:onestep} tests the sample size. The points are simulations of the one-step algorithm for $k=3$ and $d=16$, $32$, and $64$; the curves are the Gaussian approximation with the exact mean and covariance of $\hat G$, which uses the exact moments $\E\ip{\mathbf 1_d,x}^4=3d^2-2d$ and $\E[\ip{\mathbf 1_d,x}^4x_1x_2]=12d-16$. The two agree to within about two Monte Carlo standard errors (one standard error is about $0.03$), and the curves for the three dimensions are close when $n$ is measured in units of $d^2\ln d$, as the signal-to-noise count predicts. That count also gives the location: the largest of $d-k$ roughly independent centered Gaussians with standard deviation $\sigma=(k^2(2k-3)!!\,d^{k-1}/n)^{1/2}$ is about $\sigma\sqrt{2\ln d}$, and the smallest relevant coordinate is about $k!$, so success becomes likely near $n\approx2k^2(2k-3)!!\,d^{k-1}\ln d/(k!)^2$, which is $1.5\,d^2\ln d$ for $k=3$. The simulated success probability crosses $\frac12$ between about $1.2$ (for $d=16$) and $1.7$ (for $d=64$) in these units. The guarantee of \cref{thm:parity:onestep} at $\delta=0.05$ and $d=64$ asks for about $14\,d^2\ln d$ samples, four times the $3.5\,d^2\ln d$ at which the simulations succeed about $95\%$ of the time. Most of the factor comes from asking every coordinate to stay within $k!/2$ of its mean, half the gap, which costs a factor $4$ in the variance term; the range term of Bernstein's inequality adds about $20\%$ for $k=3$, and $\ln(2d/\delta)$ exceeds $\ln d$.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=1.45cm},hplot,width=0.51\linewidth,height=0.47\linewidth,
+  xlabel={samples$/d^2$},xmin=0,xmax=4.5]
+\nextgroupplot[ymode=log,ymin=0.08,ymax=1.2,ylabel={effective overlap $\rho$},ytick={0.125,0.25,0.5,1},
+  yticklabels={$\frac18$,$\frac14$,$\frac12$,$1$}]
+\pgfplotsinvokeforeach{1,...,8}{\addplot[muted!70,line width=0.35pt] table[x=tau,y=r#1] {figures/data/09-parity-neuron.dat};}
+\addplot[theory] table[x=tau,y=ode] {figures/data/09-parity-neuron.dat};
+\nextgroupplot[ymin=0,ymax=1.05,ylabel={normalized loss $1-\rho^3$}]
+\pgfplotsinvokeforeach{1,...,8}{\addplot[muted!70,line width=0.35pt] table[x=tau,y=l#1] {figures/data/09-parity-neuron.dat};}
+\addplot[theory] table[x=tau,y=lode] {figures/data/09-parity-neuron.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Eight runs of spherical online SGD for the monomial neuron $\ip{w,x}^3$ on the parity $x_1x_2x_3$ in dimension $d=256$, from the symmetric start $w_0=d^{-1/2}\mathbf 1_d$, with step size $\eta=0.05\,d^{-3/2}$ and one fresh sample per step (grey; seed $11$), and the population flow of \cref{thm:parity:hidden}, $\dot\rho=\eta\kappa_3\rho^2(1-\rho^2)$ per step (curve). Left: the effective overlap $\rho=(\Psi(w)/c_3)^{1/3}$, on a logarithmic scale. Right: the normalized population loss $1-\rho^3$.}\label{fig:parity:neuron}
+\end{figure}
+
+\Cref{fig:parity:neuron} tests the plateau. On the logarithmic scale of the left panel the effective overlap rises from the first step, along the population curve, while the loss in the right panel stays above $0.99$ until $\rho$ has doubled from its start $\rho_0=\sqrt{3/256}\approx0.108$; on the flow this takes $61\%$ of the time to reach $\rho=\frac12$, and the fraction tends to $1$ as $d$ grows. The prediction $t_{1/2}=\kappa_3^{-1}\bigl(\rho_0^{-1}-2+\operatorname{artanh}\frac12-\operatorname{artanh}\rho_0\bigr)$ (\cref{ex:parity:escape}) gives $2.77\,d^2$ samples at this step size, with no fitted constant. The SGD runs reach $\rho=\frac12$ between $0.99$ and $1.51$ times the prediction, with median $1.14$: the noise delays the escape slightly at this step size, as in \cref{ch:singleindex}, and the delay shrinks at smaller steps (\cref{ex:parity:stepsize}). After the escape every run descends in a short, nearly deterministic time.
+
+Placed side by side, \cref{fig:parity:mlp,fig:parity:neuron} show what the model explains and what it does not. The plateau, its abrupt end, and the steady growth of a weight-based measure underneath a flat loss appear in both. But in the network the progress measure is flat for the first half of the plateau and grows only in the best few neurons, and the length of the plateau varies by a factor of two between seeds. Both features come from the random initialization, which the symmetric start of the model removes.
+
+\section{What the model gets wrong}\label{sec:parity:wrong}
+
+\paragraph{What was thrown away.}
+Uniform inputs, which make every target look like every other and every character orthogonal to every other; a real input distribution is neither uniform nor a product. Exact parity labels, with all Fourier weight on one set of size $k$ and none below; natural targets have weight spread over many degrees. The monomial activation, chosen so that one neuron's correlation is an exact product; a ReLU unit has the finite Fourier gap of \cref{prop:parity:gap} and, for odd $k$ without bias, no gap at all. The symmetric initialization, which removes luck; with a random start the progress of \cref{fig:parity:mlp} concentrates in the neurons whose initial weights happen to favor $S$. Population dynamics or a single large step, which removes the interaction between noise and the slow escape; only a heuristic connects the theorems to online SGD. One neuron, so that width plays no role. And the correlation loss, which is unbounded below off the sphere.
+
+\paragraph{Where it breaks.}
+\emph{Natural tasks have footholds.} A parity is hard because it has no low-degree component, and this is the exception. \Textcite{AbbeEtAl2021} define the staircase property, under which each high-degree Fourier coefficient is reachable from lower-degree ones along a nested chain, and show that such functions are learned in polynomial time by layerwise training of suitable networks, with experiments showing that ResNets trained by SGD learn them too; \textcite{AbbeBoixAdseraMisiakiewicz2022} prove that a merged-staircase property is necessary and nearly sufficient for two-layer networks in the mean-field regime to learn sparse functions with a number of samples of order $d$. For such targets there is no long plateau before every step, and the lower bound of \cref{thm:parity:sq} does not apply. \emph{Non-uniform inputs.} Under a product distribution with $\E x_i=\mu\ne0$, the parity correlates with single coordinates, $\E[\chi_S(x)x_i]=\mu^{k-1}$ for $i\in S$ against $\mu^{k+1}$ for $i\notin S$, and a linear statistic finds $S$ from a number of samples that grows only logarithmically in $d$ (\cref{ex:parity:biased}). \Textcite{CornacchiaMossel2023} turn this into a model of curriculum learning, showing that drawing the training samples from two or more product distributions, rather than from the uniform one alone, substantially lowers the computational cost of learning $k$-parities by SGD, and \textcite{DanielyMalach2020} use non-uniform input distributions to separate two-layer networks trained by gradient descent from linear methods. \emph{Luck, width, and sparsity.} \Textcite{EdelmanEtAl2023} study the trade-offs between data, computation, width, and the luck of the initialization for offline sparse parity learning; they find that wide networks and sparse initialization improve sample efficiency, and they describe width as parallel search for neurons whose initialization is close to $S$. The symmetric model has no luck in it and cannot express these trade-offs. \emph{Statistical queries are not the end.} \Cref{rem:parity:gd} lists the gap between adversarial and random errors: SGD on specially built networks can emulate Gaussian elimination \parencite{AbbeSandon2020}. With label noise, on the other hand, parity learning is believed to be hard for every algorithm, and the best general algorithms, such as that of \textcite{BlumKalaiWasserman2003}, which runs in polynomial time when the parity depends on the first $O(\log d\log\log d)$ bits, are far from gradient methods. \emph{Architecture.} For transformers, \textcite{HahnRofin2024} argue that functions whose output is sensitive to many input bits, parity foremost, occupy isolated regions of parameter space, which biases training toward low-sensitivity functions; and \textcite{KimSuzuki2025} prove that a one-layer transformer learns parity in a single gradient update when trained with intermediate parities as supervision and teacher forcing, while without intermediate supervision finite-precision gradient methods need many iterations. Chain of thought turns one parity of degree $k$ into $k-1$ parities of degree two; the statistical-query cost of \cref{thm:parity:sq} applies to each link, not to the chain.
+
+\paragraph{Fine structure.}
+The successors repair one omission at a time. For two-layer networks, \textcite{BarakEtAl2022} prove that a network of width $2^{\Theta(k)}$, trained by SGD with batch size $d^{O(k)}$, learns $k$-sparse parities to error $\eps$ in $2^{O(k)}\poly(1/\eps)$ iterations, using the Fourier gap of the population gradient. \Textcite{KouEtAl2024} show that sign SGD on a two-layer network with $2^{\Theta(k)}$ neurons solves $k$-sparse parity with $\tilde O(d^{k-1})$ samples, matching the statistical-query lower bound in the sense of the product computed above. For $k=2$, the XOR problem, \textcite{Glasgow2024} proves that minibatch SGD on a two-layer ReLU network with logistic loss reaches small error with $d\polylog(d)$ samples, after a signal-finding phase in which neurons evolve independently, the random-start analogue of our hidden progress. Mean-field Langevin dynamics achieves a sample complexity in which $k$ is decoupled from the exponent of $d$ \parencite{SuzukiEtAl2023}. For sparse targets that combine monomials of several degrees, the leap complexity of \textcite{AbbeBoixAdseraMisiakiewicz2023} predicts a sequence of plateaus, one for each new set of coordinates, with lengths set by the size of the leap; this is the multi-index form of \cref{thm:parity:hidden} and the Boolean counterpart of \cref{ch:singleindex}. Open are sharp lower bounds for plain SGD on standard networks beyond the statistical-query heuristic, and a description of hidden progress from a random start: which quantity, computed from the weights at a given time, predicts when the drop will come.
+
+\section{Model card}\label{sec:parity:card}
+
+\modelcard{Loss and error flat for a long time, then an abrupt drop, with progress in the weights during the plateau; training time growing like $d^{O(k)}$ for $k$-sparse parities.}
+{$x\sim\Unif\{-1,1\}^d$, $y=\chi_S(x)$ with $\abs S=k$; one neuron $\ip{w,x}^k$ on the correlation loss; statistical queries, one gradient step from $w_0\propto\mathbf 1_d$, and the spherical population flow.}
+{$\Psi(w)=k!\prod_{i\in S}w_i$, gradient supported on $S$ (proved); every statistical-query learner needs $Q\tau^{-2}\ge\binom dk-1$ (proved); one step with $O(d^{k-1}\log(d/\delta))$ samples finds $S$ and $k+1$ ReLUs finish (proved); $\dot\rho\ge\kappa_k\rho^{k-1}(1-\rho^2)$ with equality for balanced starts (proved).}
+{Sample size $d^{k-1}\log d$ for one step, about $1.5\,d^2\ln d$ at $k=3$; computation $d^k$; plateau of length $d^{(k-2)/2}$ and drop of length $O(1)$; steady growth of $\log\rho$ under a flat loss.}
+{No luck: random starts concentrate progress in few neurons; no low-degree structure, which natural tasks have; uniform inputs; statistical queries can be beaten by SGD on special networks; architecture-specific effects for transformers.}
+{Staircase and leap complexity; biased inputs and curricula; width, sparsity, and luck; sign SGD matching the SQ bound; chain of thought.}
+
+This chapter is the Boolean partner of \cref{ch:singleindex}. There a single direction hides behind a link whose low Hermite coefficients vanish, here $k$ coordinates hide behind a character whose low-degree Fourier coefficients vanish; the information exponent becomes the degree $k$, the Hermite basis becomes the characters, and the escape equations coincide for balanced starts. Both chapters belong to the thread of escapes from small initialization that starts with the logistic escape of \cref{ch:deeplinear}: without the sphere, the monomial neuron is a depth-$k$ product of scalars whose relevant weights stay balanced, and the plateau of length $d^{(k-2)/2}$ is the higher-order saddle that also produces the plateaus of the committee machine (\cref{ch:committee}) and the sudden formation of induction heads (\cref{ch:induction}).
+
+The statistical-query argument is Fourier analysis on the group $\{-1,1\}^d$; \cref{ch:grokking} uses Fourier analysis on $\Z_p$ to describe what a network computes after an equally abrupt transition, and its progress measures play the role of $\log\rho$ here. Against \cref{ch:lazy}, the chapter gives a second separation between feature learning and kernels: both pay about $d^k$ in computation, but a gradient method stores $d$ weights where a kernel method stores $d^k$ features.
+
+\begin{exercises}
+\item \consolidation (Sums of signs.) (a) Compute $\E s^4=3d^2-2d$ for $s=x_1+\dots+x_d$, and check \cref{lem:parity:moments} for $j=2$. (b) Show that $\E[s^4x_1x_2]=12d-16$, and conclude that two coordinates of the empirical gradient \eqref{eq:parity:Ghat} for $k=3$ have correlation of order $1/d$.\label{ex:parity:moments}
+
+\item \consolidation (Majority.) (a) Verify $\parityMaj_3(x)=\frac12(x_1+x_2+x_3)-\frac12x_1x_2x_3$. (b) For $d=5$ and $k=2$, compute the partial derivatives of \cref{prop:parity:gap} directly from the $32$ points of the cube and check the ratio $(k-1)/(d-k)=\frac13$. (c) For odd $k\ge3$, show that the weights of the symmetric unit $\relu(\alpha\ip{\mathbf 1_d,x}+b)$ with $b=0$ receive zero population gradient, while its bias receives $\frac12\widehat{\parityMaj}_d(S)\ne0$.\label{ex:parity:majority}
+
+\item \consolidation (Fewer units.) Show that $k$ ReLU units with input weights $\mathbf 1_S$ and an output bias suffice to compute $\chi_S$. \hint{interpolate the values $(-1)^{k-i}$ at $s=-k+2i$ by a zigzag with breakpoints at the interior nodes, and write the affine part with the unit $\relu(s+k)$.}\label{ex:parity:fewer}
+
+\item \consolidation (Weak learners.) A weak learner outputs a function $h\colon\{-1,1\}^d\to[-1,1]$ and succeeds if $\E[h(x)\chi_S(x)]\ge\gamma$. Adapt the proof of \cref{thm:parity:sq} to show that for uniformly random $S$ the success probability is at most $(Q\tau^{-2}+\gamma^{-2})/\binom dk$.\label{ex:parity:weak}
+
+\item \consolidation (The escape time for $k=3$.) For a balanced start with $\rho_0<\frac12$, solve \eqref{eq:parity:rhoineq} with equality and show $t_{1/2}=\kappa_3^{-1}\bigl(\rho_0^{-1}-2+\operatorname{artanh}\frac12-\operatorname{artanh}\rho_0\bigr)$. Evaluate it for $d=256$ and $\rho_0=\sqrt{3/d}$, and check the value $2.77\,d^2$ samples quoted in \cref{sec:parity:reading} for $\eta=0.05\,d^{-3/2}$.\label{ex:parity:escape}
+
+\item \variation (Without the sphere.) Let $\dot w=\nabla\Psi(w)$ on $\R^d$. (a) Show that $w_i^2-w_j^2$ is conserved for $i,j\in S$ and that $w_i$ is constant for $i\notin S$. (b) For $w_i(0)=u_0>0$ on $S$ and $k\ge3$, show that $u(t)=\bigl(u_0^{2-k}-(k-2)k!\,t\bigr)^{-1/(k-2)}$, which blows up at $t^\star=u_0^{2-k}/((k-2)k!)$, and that the correlation $k!u^k$ stays below $\eps$ until a time $t^\star-O(\eps^{-(k-2)/k})$. (c) For $k=2$ show exponential growth, and compare with the logistic escape of \cref{ch:deeplinear}.\label{ex:parity:unconstrained}
+
+\item \variation (Biased inputs.) Let the coordinates of $x\in\{-1,1\}^d$ be independent with $\E x_i=\mu\in(0,1)$. (a) Show $\E[\chi_S(x)x_i]=\mu^{k-1}$ for $i\in S$ and $\mu^{k+1}$ for $i\notin S$. (b) Using Hoeffding's inequality (\cref{thm:toolkit:hoeffding}), show that the $k$ largest coordinates of $\frac1n\sum_sy_sx_s$ are $S$ with probability at least $1-\delta$ once $n\ge8\log(2d/\delta)/(\mu^{2k-2}(1-\mu^2)^2)$. Why does \cref{thm:parity:sq} not apply?\label{ex:parity:biased}
+
+\item \variation (Label noise.) Flip each label independently with probability $p<\frac12$. Show that every correlation in this chapter is multiplied by $1-2p$, that the sample size of \cref{thm:parity:onestep} grows by the factor $(1-2p)^{-2}$ up to the change in the range term, and that the statistical-query bound keeps its form with $\tau$ replaced by $\tau/(1-2p)$.\label{ex:parity:noise}
+
+\item \variation (Gaussian inputs.) Let $x\sim\cN(0,I_d)$ and $y=\prod_{i\in S}x_i$. Use Isserlis' theorem to show that $\E[y\ip{w,x}^k]=k!\prod_{i\in S}w_i$ and that the gradient vanishes off $S$, as on the cube, and that $\E\ip{\mathbf 1_d,x}^{2k-2}=(2k-3)!!\,d^{k-1}$ exactly. Which conclusions of the chapter survive, and how does the target relate to the multi-index models of \cref{ch:singleindex}?\label{ex:parity:gauss}
+
+\item \variation\hard (A plain step.) Let $w_1=\hat G$ be the empirical gradient \eqref{eq:parity:Ghat} itself, used without thresholding, and let $f(x)=\ip{w_1,x}/k!$. Show that $\E[(f(x)-s_S(x))^2]$, where $s_S=\sum_{i\in S}x_i$, is of order $d^k/n$, so that a readout of $f$ by a few ReLU units needs about $d^k$ samples, a factor $d/\log d$ more than \cref{thm:parity:onestep}. \hint{write $\hat G=k!\,\mathbf 1_S+\xi$; for a fresh input $x$, independent of the data, $\E\ip{\xi,x}^2=\E\norm\xi^2$, and each $\E\xi_i^2$ is the variance bound in the proof of \cref{thm:parity:onestep} divided by $n$.}\label{ex:parity:linear}
+
+\item \simulation (One step for $k=4$.) Repeat the simulation of \cref{fig:parity:onestep} for $k=4$ and $d=12$, $16$, $24$, with $n=a\,d^3\ln d$ and $100$ data sets per point. You should observe a success probability near $\frac12$ for $a$ between $0.5$ and $0.8$, larger for larger $d$,, and above $0.9$ at $a=1.6$, close to the prediction $a\approx2k^2(2k-3)!!/(k!)^2=0.83$ of \cref{sec:parity:reading}.\label{ex:parity:k4}
+
+\item \simulation (Step size and random starts.) (a) Rerun the simulation of \cref{fig:parity:neuron} with $\eta=c\,d^{-3/2}$ for $c=0.02$ and $c=0.1$. You should observe a median escape time within about $15\%$ of the population prediction for $c=0.02$, and a wider spread for $c=0.1$, from about $0.7$ to $1.7$ times the prediction, with the median delayed by about $20\%$; relate this to the noise at the start, as in \cref{ch:singleindex}. (b) Integrate the population flow \eqref{eq:parity:flow} for $d=50$, $k=3$ from several uniformly random starts with $\Psi(w_0)>0$. You should find that $\rho(t)$ always stays above the balanced solution with the same $\rho_0$, as \cref{thm:parity:hidden}(b) asserts, and that the time to $\rho=\frac12$ is shorter than the balanced one, typically by a factor between $0.5$ and $0.95$, and by more for starts with very small $\rho_0$.\label{ex:parity:stepsize}
+
+\item \research (Lower bounds for plain SGD.) Prove that online SGD on a two-layer ReLU network of polynomial width with Gaussian initialization needs at least $d^{k-1-o(1)}$ samples to learn a $k$-sparse parity, for every step size. \Cref{thm:parity:sq} gives this only for adversarial gradient errors, and \textcite{AbbeSandon2020} show that random errors can be exploited by specially constructed networks; whether standard architectures can exploit them is open as far as we know.\label{ex:parity:sgdlower}
+
+\item \research (A progress measure from a random start.) In the setting of \cref{fig:parity:mlp}, find a quantity computed from the weights at time $t$ that predicts the step of the drop with an error that shrinks as $d$ grows, from early in the plateau. The largest share of a neuron on $S$ moves only late; candidates include products of the relevant weights of each neuron, the analogue of $\Psi$, and the population Fourier gap of each neuron. No such predictor with guarantees is known to us.\label{ex:parity:measure}
+\end{exercises}
+
+\notesandrefs
+Parities entered the theory of neural networks with \textcite{MinskyPapert1969}, whose limitations of bounded-order perceptrons included the parity of all inputs. The statistical-query model was introduced by Kearns in 1993; the journal version \parencite{Kearns1998} shows that statistical-query algorithms tolerate random classification noise and that parities cannot be learned from statistical queries in polynomial time. \Textcite{BlumEtAl1994} characterized weak statistical-query learning through Fourier analysis by the number of nearly orthogonal functions in a class, and \textcite{BlumKalaiWasserman2003} gave a noise-tolerant algorithm for parities on $O(\log d\log\log d)$ bits that no statistical-query algorithm matches, separating the two models. The Fourier analysis used here is in \textcite{ODonnell2014}, including the Fourier coefficients of majority.
+
+\Textcite{ShalevShwartzShamirShammah2017} put parities at the head of their list of failures of gradient-based learning, and \textcite{AbbeSandon2020} delineated what SGD can and cannot do beyond statistical queries. \Textcite{DanielyMalach2020} proved that gradient descent on two-layer networks learns sparse parities under distributions where linear methods fail. The phenomenon of this chapter, abrupt learning with hidden progress near the statistical-query limit, is the subject of \textcite{BarakEtAl2022}; its follow-up on data, compute, width, and luck is \textcite{EdelmanEtAl2023}, and the matching upper bound for sign SGD is \textcite{KouEtAl2024}. The monomial neuron, the one-step theorem, and the comparison argument for the spherical flow are presented here in the form that makes every constant explicit; the doubling-epoch analysis of online SGD that would turn the heuristic of \cref{sec:parity:hidden} into a theorem is the one carried out for single-index models in \cref{ch:singleindex}, following \textcite{BenArousGheissariJagannath2021}.\sidenote{The equality case of \cref{thm:parity:hidden}(b) is exactly the population equation of \cref{ch:singleindex} with $\Psi(r)=c_kr^k$, so the proof of the online SGD theorem there transfers to balanced starts once the noise bounds are redone on the cube.}
+
+For structure that rescues gradient methods see the staircase papers \parencite{AbbeEtAl2021,AbbeBoixAdseraMisiakiewicz2022}, the leap complexity \parencite{AbbeBoixAdseraMisiakiewicz2023}, and curricula with biased inputs \parencite{CornacchiaMossel2023}. For the debate on emergence see \textcite{WeiEtAl2022} and \textcite{SchaefferMirandaKoyejo2023}; for transformers, \textcite{HahnRofin2024} and \textcite{KimSuzuki2025}.
+
+\paragraph{Translating the literature.}
+\Textcite{BarakEtAl2022} write $n$ for our dimension $d$, keep $k$ for the sparsity and $S$ for the support, and call the task the $(n,k)$-sparse parity; their labels are in $\{\pm1\}$, as ours. \Textcite{Kearns1998} pairs a query with its tolerance $\tau$, as we do, but his original formulation takes labels and query values in $\{0,1\}$, and later work mostly uses queries with values in $[-1,1]$; the decomposition $q=q_0+yq_1$ in the proof of \cref{thm:parity:sq} is the $\{\pm1\}$ form of the split into a label-independent and a correlational part. \Textcite{ODonnell2014} writes $n$ for our $d$, $\chi_S$ and $\hat f(S)$ as we do, and $\mathrm{Maj}_n$ for our $\parityMaj_d$. \Textcite{KouEtAl2024} write $d$ for the dimension and $k$ for the sparsity, as we do. Our effective overlap $\rho$ is the overlap $r$ of \cref{ch:singleindex} for balanced weights, and our $c_k$ is the coefficient of $r^k$ in that chapter's $\Psi$.
+
+\printchapterbib
+\end{refsection}

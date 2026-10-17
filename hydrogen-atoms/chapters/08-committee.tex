@@ -1,0 +1,464 @@
+% Chapter 8 of The Hydrogen Atoms of Deep Learning: the soft committee machine and the ODE method.
+\newcommand{\committeeM}{\mathsf{M}}
+\newcommand{\committeeOm}{\bar\omega}
+\newcommand{\committeelu}{\lambda_{\mathrm u}}
+
+\casechapter{Plateaus and Specialization}{The committee machine and the ODE method}{Soft committee machine, teacher and student}{ch:committee}
+\begin{refsection}[chapters/08-committee.bib]
+
+\begin{chaptersummary}
+A network with a few hidden units, trained online from small weights on a target computed by a network of the same form, often learns in two steps: the error drops to an intermediate value, stays there while the hidden units are interchangeable copies of one another, and drops again when they specialize. The soft committee machine, a sum of $\erf$ units learning from a teacher of the same kind on Gaussian inputs, reproduces this. We prove that as the dimension grows the overlaps between student and teacher weights follow a deterministic system of ordinary differential equations, with closed-form coefficients and a term of order $\eta^2$ that comes from the gradient noise. From it we derive a learning-rate threshold $\pi\sqrt{5/3}$ for a single unit, and, for $K$ students and $K$ orthonormal teachers, an exact symmetric fixed point with an explicit unstable eigenvalue, which gives a plateau whose length grows like $\log d$. The model is silent about why real networks seldom show such plateaus: structured data, overparameterization, preconditioned gradients, and large steps all change the picture, and the plateau's length is set by fluctuations that the limiting equations leave out.
+\end{chaptersummary}
+
+\section{The phenomenon: redundant units and a sudden division of labor}\label{sec:committee:phenomenon}
+
+A hidden layer has a symmetry that a single neuron lacks. Permuting the hidden units of a two-layer network, together with their outgoing weights, does not change the function it computes, so every function the network can represent is represented many times, and the loss landscape repeats itself under the permutation group. Points fixed by a permutation, where two units carry the same weights, are special: the gradient there respects the symmetry, so two identical units receive identical updates and stay identical. Small random initializations drive the network toward such points, because at the start every unit sees roughly the same average target and moves the same way.
+
+The consequence shows up in training curves as a plateau that has nothing to do with a search for a hidden direction. The chapter on single-index models (\cref{ch:singleindex}) produced plateaus because the target was invisible to low-degree statistics; here every hidden unit sees its signal at once, and the delay comes instead from the need to break a symmetry. Physicists who analyzed online learning in small sigmoidal networks during the 1990s called the redundant stretch the \term{symmetric phase}\index{symmetric phase} and the end of it \term{specialization}\index{specialization}.
+
+\begin{observation}[\textcite{SaadSolla1995b}; \textcite{BiehlRieglerWohler1996}; \textcite{FukumizuAmari2000}]\label[observation]{obs:committee:plateau}
+Train a two-layer network with a few sigmoidal hidden units, by online gradient descent from small random weights, on inputs with independent coordinates and labels produced by a network of the same form. The error falls quickly to an intermediate value and then stays nearly constant for a long stretch, during which the hidden units have nearly the same incoming weights, each a blend of all the teacher's units. The stretch ends with a second drop, in which the units differentiate and each aligns with one teacher unit. With several teacher units the dynamics can pass through several such plateaus in a cascade. The plateaus are associated with critical points at which units are duplicated, which exist for every target, loss, and activation function.
+\end{observation}
+
+The evidence is of an unusual kind. The first two sources combine an exact theory, the one this chapter develops, with simulations of the stochastic algorithm; the third is a structural statement about the loss landscape: critical points of a network with fewer hidden units reappear in a larger network as lines of critical points, along which training can stall \parencite{FukumizuAmari2000}.\sidenote{Fukumizu and Amari show that such a line can contain local minima as well as saddles, and that the conclusion does not depend on the target, the loss, or the activation, only on the hierarchical structure of the model.} Plateaus of this kind were a recognized problem of backpropagation: \textcite{Amari1998} suggested that the natural gradient would make it less serious. In current practice they are seldom seen, a gap that \textcite{YoshidaOkada2019} trace in part to the input statistics. \Cref{sec:committee:wrong} returns to the reasons.
+
+The question the model answers: what sets the level of the plateau, why does it last as long as it does, and what in the dynamics decides when it ends?
+
+\section{The model: the soft committee machine}\label{sec:committee:model}
+
+Write $g(z)=\erf(z/\sqrt2)=2\Pr(\cN(0,1)\le z)-1$.\sidenote{So $g$ is the Gaussian distribution function rescaled to $(-1,1)$, the probit counterpart of $\tanh$.} This is an odd sigmoid with values in $(-1,1)$, and
+\begin{equation}\label{eq:committee:gprime}
+  g'(z)=\sqrt{\tfrac2\pi}\,e^{-z^2/2},\qquad g''(z)=-z\,g'(z).
+\end{equation}
+Every derivative of $g$ is a polynomial times $e^{-z^2/2}$, so all derivatives are bounded.
+
+\begin{definition}[Soft committee machine, teacher and student]\label[definition]{def:committee:model}
+Let $d\ge m+m_\star$. A \term{teacher}\index{teacher--student setup} has weights $w_{\star1},\dots,w_{\star m_\star}\in\R^d$ with Gram matrix $T=(\ip{w_{\star k},w_{\star k'}})$, and a \term{student} has weights $W=(w_1,\dots,w_m)$. For an input $x\sim\cN(0,I_d)$ put $z_j=\ip{w_j,x}$ and $z_{\star k}=\ip{w_{\star k},x}$; the label and the prediction are
+\[
+  y=\sum_{k=1}^{m_\star}g(z_{\star k}),\qquad f(x;W)=\sum_{j=1}^mg(z_j),
+\]
+and the population loss is $\Loss(W)=\frac12\E\bigl(y-f(x;W)\bigr)^2$. Online SGD with step size $\eta/d$ draws a fresh input $x^s$ at step $s=0,1,2,\dots$ and updates
+\begin{equation}\label{eq:committee:sgd}
+  w_j^{s+1}=w_j^s+\frac\eta d\,\delta_j^s\,x^s,\qquad \delta_j^s=g'(z_j^s)\bigl(y^s-f(x^s;W^s)\bigr),
+\end{equation}
+which is a gradient step on $\frac12(y^s-f(x^s;W^s))^2$. The \term{order parameters}\index{order parameters} are the overlaps
+\[
+  Q_{jl}=\ip{w_j,w_l},\qquad R_{jk}=\ip{w_j,w_{\star k}},\qquad T_{kk'}=\ip{w_{\star k},w_{\star k'}}.
+\]
+\end{definition}
+
+This is the \term{soft committee machine}\index{soft committee machine}: a two-layer network whose second layer is fixed to ones, so that the units vote with equal weight, and whose units are soft versions of the sign. Its weights have norm of order one, so the preactivations $z_j$ are of order one, and the gradient step $\frac\eta d\delta_jx$ has norm of order $\eta d^{-1/2}$, which is the scaling at which each step changes the overlaps by $O(1/d)$. Time is measured in samples per dimension, $t=s/d$.
+
+Rotational invariance does the first reduction. Given the current weights, the vector $(z_1,\dots,z_m,z_{\star1},\dots,z_{\star m_\star})$ is a centered Gaussian with covariance
+\begin{equation}\label{eq:committee:M}
+  \committeeM=\begin{pmatrix}Q&R\\R^\top&T\end{pmatrix},
+\end{equation}
+so the population loss, and the mean of every update of the overlaps, depend on the $d$-dimensional weights only through $Q$ and $R$. The order parameters are to this model what the single overlap $r$ was to the single-index model of \cref{ch:singleindex}: the reason the high-dimensional dynamics collapses to a few numbers. The difference is that now there are several of them, and permutations of the student units act on them.
+
+The model freezes the readout, takes isotropic Gaussian inputs, which make the overlaps sufficient statistics, keeps the width fixed while $d\to\infty$ (the opposite of the infinite-width limits of \cref{ch:signalprop,ch:lazy}), and uses noiseless labels, each sample once. Each simplification isolates the mechanism of interest, the interplay between the permutation symmetry and the gradient noise, and the activation $g$ is chosen because every Gaussian integral the dynamics needs is then elementary (\cref{lem:committee:erf}). The target has information exponent $1$ in each direction, since $\hat g_1=\E[zg(z)]=\E g'(z)=1/\sqrt\pi\ne0$, so no unit has to search; whatever delay we find is due to symmetry, not to the flatness studied in \cref{ch:singleindex}.
+
+To invent the model one had to notice that two facts compose. Rotational invariance reduces the state to the Gram matrix of the student and teacher weights; and the gradient noise of online learning in high dimension averages out over $d$ steps, except for a deterministic contribution of order $\eta^2$ that a naive gradient-flow limit misses. Together they turn a stochastic process in $\R^{md}$ into an autonomous ODE in $m(m+1)/2+mm_\star$ variables.
+
+\begin{dictionary}
+student weights $w_j$ & incoming weights of hidden unit $j$\\
+teacher weights $w_{\star k}$ & the features the target is built from\\
+fixed readout $f=\sum_jg(z_j)$ & second layer, frozen at equal weights\\
+overlap $R_{jk}$ & how much unit $j$ has learned feature $k$\\
+overlap $Q_{jl}$, $j\ne l$ & redundancy between units $j$ and $l$\\
+symmetric fixed point & a plateau: units are copies, each a blend of all features\\
+specialization & the drop that ends the plateau: each unit takes one feature\\
+unstable eigenvalue $\committeelu$ & the rate at which redundancy breaks\\
+asymmetry of order $d^{-1/2}$ & accidents of a random initialization\\
+$\eta^2$ term & gradient noise, which limits the step size\\
+\end{dictionary}
+
+\section{The solution: Gaussian integrals and the ODE limit}\label{sec:committee:ode}
+
+Three lemmas prepare the main theorem. The first is the computational engine: a Gaussian weight $e^{-z^2/2}$, which is what $g'$ contributes, can be absorbed into the covariance.
+
+\begin{lemma}[Gaussian tilting]\label[lemma]{lem:committee:tilt}
+Let $X\sim\cN(0,C)$ in $\R^n$ with $C$ positive semidefinite, let $S=(s_1,\dots,s_r)$ be a list of indices in $\{1,\dots,n\}$, repetitions allowed, and write $X_S=(X_{s_1},\dots,X_{s_r})$, $C_{SS}=(C_{s_is_{i'}})$, and $C_{\cdot S}$ for the $n\times r$ matrix with columns $C_{\cdot s_i}$. For every measurable $H$ of polynomial growth,
+\[
+  \E\bigl[e^{-\norm{X_S}^2/2}H(X)\bigr]=\det(I_r+C_{SS})^{-1/2}\,\E H(\tilde X),
+\]
+where $\tilde X\sim\cN(0,\tilde C)$ with $\tilde C=C-C_{\cdot S}(I_r+C_{SS})^{-1}C_{\cdot S}^\top$.
+\end{lemma}
+
+\begin{proof}
+Write $C=LL^\top$ with $L\in\R^{n\times n}$ and $X=LZ$ with $Z\sim\cN(0,I_n)$, and let $L_S$ be the $r\times n$ matrix whose rows are the rows $s_1,\dots,s_r$ of $L$, so that $X_S=L_SZ$ and $C_{SS}=L_SL_S^\top$. The weight times the standard Gaussian density is
+\[
+  e^{-\norm{L_Sz}^2/2}(2\pi)^{-n/2}e^{-\norm z^2/2}=(2\pi)^{-n/2}\exp\bigl(-\tfrac12z^\top(I_n+L_S^\top L_S)z\bigr),
+\]
+an unnormalized Gaussian density with covariance $\Sigma=(I_n+L_S^\top L_S)^{-1}$ and total mass $\det(I_n+L_S^\top L_S)^{-1/2}=\det(I_r+L_SL_S^\top)^{-1/2}$, by Sylvester's determinant identity. Hence the left side equals $\det(I_r+C_{SS})^{-1/2}\E H(L\tilde Z)$ with $\tilde Z\sim\cN(0,\Sigma)$. The Woodbury identity $\Sigma=I_n-L_S^\top(I_r+L_SL_S^\top)^{-1}L_S$ and $LL_S^\top=C_{\cdot S}$ give $\operatorname{Cov}(L\tilde Z)=L\Sigma L^\top=C-C_{\cdot S}(I_r+C_{SS})^{-1}C_{\cdot S}^\top$.
+\end{proof}
+
+The covariance of $\tilde X$ is a Schur complement of $I+C$ minus the identity, hence positive semidefinite. The second lemma says how a Gaussian expectation changes with the covariance; it contains Price's theorem (\cref{lem:toolkit:price}) for variables that are not standardized, and it will also supply the Lipschitz bounds that the ODE method needs.
+
+\begin{lemma}[Gaussian interpolation]\label[lemma]{lem:committee:interp}
+Let $\psi\colon\R^n\to\R$ be twice continuously differentiable with $\abs\psi$, $\abs{\partial_a\psi}$, and $\abs{\partial_a\partial_b\psi}$ bounded by $\kappa(1+\norm\xi^p)$. For positive semidefinite $C$ write $\E_C\psi=\E\psi(X)$ with $X\sim\cN(0,C)$. For positive semidefinite $C,C'$, with $C_\theta=(1-\theta)C+\theta C'$,
+\[
+  \E_{C'}\psi-\E_C\psi=\frac12\int_0^1\sum_{a,b=1}^n(C'-C)_{ab}\,\E_{C_\theta}[\partial_a\partial_b\psi]\dd\theta .
+\]
+Consequently, if $\norm C_F,\norm{C'}_F\le B$, then $\abs{\E_{C'}\psi-\E_C\psi}\le L_B\norm{C'-C}_F$ with $L_B=\frac12n\kappa(1+\mu_pB^{p/2})$, where $\mu_p=\E\norm{\cN(0,I_n)}^p$.
+\end{lemma}
+
+\begin{proof}
+The plan is to join the two laws by a path of Gaussians and to differentiate along it, converting the result with Stein's lemma. Let $X\sim\cN(0,C)$ and $X'\sim\cN(0,C')$ be independent and $X_\theta=\sqrt{1-\theta}\,X+\sqrt\theta\,X'$, which has law $\cN(0,C_\theta)$; put $\varphi(\theta)=\E\psi(X_\theta)$. For $0<\theta<1$ the growth bounds justify differentiating under the expectation:
+\[
+  \varphi'(\theta)=\sum_a\E\Bigl[\partial_a\psi(X_\theta)\Bigl(\frac{X'_a}{2\sqrt\theta}-\frac{X_a}{2\sqrt{1-\theta}}\Bigr)\Bigr].
+\]
+Condition on $X$ and apply Stein's lemma (\cref{thm:toolkit:stein}) to $X'$ and the function $h(X')=\partial_a\psi(\sqrt{1-\theta}X+\sqrt\theta X')$, whose derivatives are $\partial_bh=\sqrt\theta\,\partial_b\partial_a\psi$: this gives $\E[X'_ah(X')]=\sqrt\theta\sum_bC'_{ab}\E[\partial_a\partial_b\psi(X_\theta)]$. The same computation for $X$ gives the second term, and
+\[
+  \varphi'(\theta)=\frac12\sum_{a,b}(C'_{ab}-C_{ab})\,\E[\partial_a\partial_b\psi(X_\theta)].
+\]
+The right side is bounded on $(0,1)$, and $\varphi$ is continuous on $[0,1]$ by dominated convergence, so integrating proves the identity. For the bound, $\norm{C_\theta}_F\le B$ gives $\E\norm{X_\theta}^p\le\norm{C_\theta}_{\op}^{p/2}\mu_p\le B^{p/2}\mu_p$, so every $\abs{\E_{C_\theta}\partial_a\partial_b\psi}$ is at most $\kappa(1+\mu_pB^{p/2})$, and the Cauchy--Schwarz inequality over the $n^2$ pairs $(a,b)$ finishes the proof.
+\end{proof}
+
+Taking $C'$ near $C$ shows that $C\mapsto\E_C\psi$ is continuously differentiable on the cone of positive semidefinite matrices, with partial derivative $\E_C[\partial_a\partial_b\psi]$ with respect to an off-diagonal pair $C_{ab}=C_{ba}$ and $\frac12\E_C[\partial_a^2\psi]$ with respect to a diagonal entry. The third lemma evaluates every integral the committee machine needs.\sidenote{These are the integrals $I_2$, $I_3$, and $I_4$ of \textcite{SaadSolla1995b}; the matrix form of $I_4$ through a Schur complement is our arrangement of their formula.}
+
+\begin{lemma}[The $\erf$ integrals]\label[lemma]{lem:committee:erf}
+Let $X\sim\cN(0,C)$ with $C$ positive semidefinite, and let $a,b,c,c'$ be indices, not necessarily distinct. Then
+\begin{align*}
+  I_2(a,b)&\defeq\E[g(X_a)g(X_b)]=\frac2\pi\arcsin\frac{C_{ab}}{\sqrt{(1+C_{aa})(1+C_{bb})}},\\
+  I_3(a,b,c)&\defeq\E[g'(X_a)\,X_b\,g(X_c)]\\
+  &=\frac2\pi\,\frac{C_{bc}(1+C_{aa})-C_{ab}C_{ac}}{(1+C_{aa})\sqrt{(1+C_{aa})(1+C_{cc})-C_{ac}^2}},\\
+  I_4(a,b;c,c')&\defeq\E[g'(X_a)g'(X_b)g(X_c)g(X_{c'})]\\
+  &=\frac{4}{\pi^2}\,\frac{1}{\sqrt{\det(I_2+C_{SS})}}\arcsin\frac{\tilde C_{cc'}}{\sqrt{(1+\tilde C_{cc})(1+\tilde C_{c'c'})}},
+\end{align*}
+where $S=(a,b)$ and $\tilde C=C-C_{\cdot S}(I_2+C_{SS})^{-1}C_{\cdot S}^\top$. All denominators are at least $1$, and all arguments of $\arcsin$ lie in $(-1,1)$.
+\end{lemma}
+
+\begin{proof}
+For $I_2$, only the covariance of the pair $(X_a,X_b)$ matters; write $\alpha=C_{aa}$, $\beta=C_{bb}$, and $\gamma=C_{ab}$, so that $\abs\gamma\le\sqrt{\alpha\beta}$. Move the off-diagonal entry from $0$ to $\gamma$ with the diagonal fixed; every matrix on the way is positive semidefinite. By \cref{lem:committee:interp} with $\psi(u,v)=g(u)g(v)$, whose derivatives are bounded, the derivative with respect to the off-diagonal entry $c$ is $\E[g'(X_a)g'(X_b)]$, which is $\frac2\pi\E[e^{-(X_a^2+X_b^2)/2}]=\frac2\pi((1+\alpha)(1+\beta)-c^2)^{-1/2}$ by \cref{lem:committee:tilt} with $H=1$. At $c=0$ the two variables are independent and $g$ is odd, so the expectation vanishes. Integrating,
+\[
+  I_2(a,b)=\frac2\pi\int_0^\gamma\frac{\dd c}{\sqrt{(1+\alpha)(1+\beta)-c^2}}=\frac2\pi\arcsin\frac{\gamma}{\sqrt{(1+\alpha)(1+\beta)}} .
+\]
+For $I_3$, apply \cref{lem:committee:tilt} with $S=(a)$: $I_3=\sqrt{2/\pi}\,(1+C_{aa})^{-1/2}\E[\tilde X_bg(\tilde X_c)]$. Stein's lemma (\cref{thm:toolkit:stein}) gives $\E[\tilde X_bg(\tilde X_c)]=\tilde C_{bc}\E g'(\tilde X_c)$, and \cref{lem:committee:tilt} with $H=1$ gives $\E g'(\tilde X_c)=\sqrt{2/\pi}\,(1+\tilde C_{cc})^{-1/2}$. Substituting $\tilde C_{bc}=C_{bc}-C_{ab}C_{ac}/(1+C_{aa})$ and $1+\tilde C_{cc}=((1+C_{aa})(1+C_{cc})-C_{ac}^2)/(1+C_{aa})$ gives the formula. For $I_4$, apply \cref{lem:committee:tilt} with $S=(a,b)$ and then the formula for $I_2$ to the Gaussian vector $\tilde X$.
+
+For the last sentence: $(1+C_{aa})(1+C_{cc})-C_{ac}^2\ge1+C_{aa}+C_{cc}\ge1$ because $C_{ac}^2\le C_{aa}C_{cc}$; $\det(I_2+C_{SS})\ge1$ because $C_{SS}$ is positive semidefinite; and for a positive semidefinite matrix $D$, $\abs{D_{ab}}\le\sqrt{D_{aa}D_{bb}}<\sqrt{(1+D_{aa})(1+D_{bb})}$, which applies to $C$ and to $\tilde C$.
+\end{proof}
+
+With the lemma, the population loss is explicit. Expanding the square and using $I_2$ with the covariance \eqref{eq:committee:M},
+\begin{equation}\label{eq:committee:loss}
+\begin{aligned}
+  \pi\Loss={}&\sum_{k,k'}\arcsin\frac{T_{kk'}}{\sqrt{(1+T_{kk})(1+T_{k'k'})}}+\sum_{j,l}\arcsin\frac{Q_{jl}}{\sqrt{(1+Q_{jj})(1+Q_{ll})}}\\
+  &-2\sum_{j,k}\arcsin\frac{R_{jk}}{\sqrt{(1+Q_{jj})(1+T_{kk})}}.
+\end{aligned}
+\end{equation}
+For an orthonormal teacher, $T=I_{m_\star}$, the loss at $W=0$ is $\frac1\pi m_\star\arcsin\frac12=m_\star/6$.
+
+\subsection{The order parameters follow an ODE}\label{sec:committee:odelimit}
+
+Collect the order parameters in a vector $\omega=((Q_{jl})_{j\le l},(R_{jk}))\in\R^D$ with $D=m(m+1)/2+mm_\star$, and write $\committeeM(\omega)$ for the matrix \eqref{eq:committee:M}, with the teacher Gram matrix $T$ fixed. Call $\omega$ \term{realizable} if $\committeeM(\omega)$ is positive semidefinite; these are exactly the order parameters of some weights, in every dimension $d\ge m+m_\star$. Taking the inner product of \eqref{eq:committee:sgd} with $w_{\star k}$ and with $w_l$ gives the exact recursion
+\begin{equation}\label{eq:committee:recursion}
+\begin{aligned}
+  R_{jk}^{s+1}&=R_{jk}^s+\frac\eta d\,\delta_j^sz_{\star k}^s,\\
+  Q_{jl}^{s+1}&=Q_{jl}^s+\frac\eta d\bigl(\delta_j^sz_l^s+\delta_l^sz_j^s\bigr)+\frac{\eta^2}{d^2}\,\delta_j^s\delta_l^s\,\norm{x^s}^2 .
+\end{aligned}
+\end{equation}
+The last term is the one that a gradient-flow limit would drop. It carries a factor $\norm{x^s}^2/d^2\approx1/d$, the same order as the others, because the step moves the weights along $x^s$, a vector of length $\sqrt d$. For realizable $\omega$ define $F_\eta(\omega)\in\R^D$ by Gaussian expectations under $(z,z_\star)\sim\cN(0,\committeeM(\omega))$, with $\delta_j=g'(z_j)(\sum_kg(z_{\star k})-\sum_lg(z_l))$:
+\begin{equation}\label{eq:committee:field}
+\begin{aligned}
+  F_\eta(\omega)_{R,jk}&=\eta\,\E[\delta_jz_{\star k}],\\
+  F_\eta(\omega)_{Q,jl}&=\eta\,\E[\delta_jz_l+\delta_lz_j]+\eta^2\,\E[\delta_j\delta_l].
+\end{aligned}
+\end{equation}
+Expanding $\delta_j$ and applying \cref{lem:committee:erf} with the covariance $\committeeM(\omega)$ makes the field explicit:
+\begin{align*}
+  \E[\delta_jz_{\star k}]&=\sum_{k'}I_3(z_j,z_{\star k},z_{\star k'})-\sum_{l'}I_3(z_j,z_{\star k},z_{l'}),\\
+  \E[\delta_jz_l]&=\sum_{k'}I_3(z_j,z_l,z_{\star k'})-\sum_{l'}I_3(z_j,z_l,z_{l'}),\\
+  \E[\delta_j\delta_l]&=\sum_{k,k'}I_4(z_j,z_l;z_{\star k},z_{\star k'})-2\sum_{k,l'}I_4(z_j,z_l;z_{\star k},z_{l'})\\
+  &\quad+\sum_{l',l''}I_4(z_j,z_l;z_{l'},z_{l''}),
+\end{align*}
+where each $I$ is evaluated by reading the entries of its arguments' covariance from $Q$, $R$, and $T$. This is the \term{Saad--Solla system}\index{Saad--Solla equations}. To apply the ODE method we extend $F_\eta$ to all of $\R^D$: let $\Pi$ be the Frobenius-norm projection onto the closed convex cone of positive semidefinite matrices of size $m+m_\star$, and put $\bar F_\eta(\omega)=F_\eta(\Pi\committeeM(\omega))$, where $F_\eta(\committeeM)$ means the expectations \eqref{eq:committee:field} under $\cN(0,\committeeM)$. On realizable points $\bar F_\eta=F_\eta$.
+
+\begin{theorem}[The ODE limit]\label{thm:committee:ode}
+Fix $m$, $m_\star$, $\eta>0$, a positive semidefinite teacher Gram matrix $T$, a realizable starting point $\committeeOm_0$, and a horizon $t_1>0$. The equation $\dot{\committeeOm}=\bar F_\eta(\committeeOm)$, $\committeeOm(0)=\committeeOm_0$, has a unique solution on $[0,t_1]$, the solution is realizable for every $t$, and so it solves $\dot{\committeeOm}=F_\eta(\committeeOm)$ with the explicit field above. There is a constant $C$, depending only on $m,m_\star,\eta,T,\committeeOm_0,t_1$, such that the following holds. Let $d\ge m+m_\star$, let the teacher have Gram matrix $T$, run \eqref{eq:committee:sgd} from deterministic weights with order parameters $\omega_0$, and let $\omega_s$ be the order parameters after $s$ steps. For every $a\in(0,1]$ with $\Delta\defeq C(\norm{\omega_0-\committeeOm_0}+a+d^{-1/2})<1$,
+\[
+  \Pr\Bigl(\max_{0\le s\le t_1d}\norm{\omega_s-\committeeOm(s/d)}>\Delta\Bigr)\le\frac{C}{a^2d}.
+\]
+\end{theorem}
+
+With $\omega_0\to\committeeOm_0$ and $a=d^{-1/4}$, the order parameters stay within $O(\norm{\omega_0-\committeeOm_0}+d^{-1/4})$ of the ODE over $t_1d$ steps, with probability $1-O(d^{-1/2})$. A random initialization $w_j^0\sim\cN(0,\frac{q_0}dI_d)$ has $\norm{\omega_0-\committeeOm_0}=O(d^{-1/2})$ with high probability for $\committeeOm_0=(q_0I_m,0)$, and the theorem applies conditionally on the initialization.
+
+\begin{proof}
+The plan is to verify the hypotheses of the ODE method (\cref{thm:toolkit:ode-method}): a field that is Lipschitz and bounded on a neighborhood of the path, increments whose noise has bounded conditional variance, and a small bias.
+
+\emph{Bounds on the integrands.} Since $\abs g<1$ and $0<g'\le\sqrt{2/\pi}$, every $\delta_j$ satisfies $\abs{\delta_j}\le\bar\delta\defeq\sqrt{2/\pi}\,(m+m_\star)$. The integrands $\delta_jz_{\star k}$, $\delta_jz_l$, and $\delta_j\delta_l$ are smooth functions of $(z,z_\star)$ whose derivatives up to order two are bounded by $\kappa(1+\norm{(z,z_\star)})$ for a constant $\kappa$ depending on $m$ and $m_\star$, by \eqref{eq:committee:gprime}.
+
+\emph{The field is Lipschitz on bounded sets and grows sublinearly.} The map $\omega\mapsto\committeeM(\omega)$ is affine with $\norm{\committeeM(\omega)-\committeeM(\omega')}_F\le\sqrt2\norm{\omega-\omega'}$, and $\Pi$ is nonexpansive with $\Pi0=0$, so $\norm{\Pi\committeeM(\omega)}_F\le\norm{\committeeM(\omega)}_F$. By \cref{lem:committee:interp}, $\bar F_\eta$ is Lipschitz on every ball. By the Cauchy--Schwarz inequality, $\abs{\E[\delta_jz_l]}\le\bar\delta\,(\Pi\committeeM)_{ll}^{1/2}\le\bar\delta\norm{\committeeM(\omega)}_F^{1/2}$, and similarly for the other entries, so $\norm{\bar F_\eta(\omega)}\le c_0(1+\norm\omega)$. A locally Lipschitz field with linear growth has a unique solution on $[0,t_1]$; call it $\committeeOm$, let $r_1=\max_t\norm{\committeeOm(t)}$, and let $U$ be the open ball of radius $r_1+2$. On $U$ the field is bounded by some $B$ and $L$-Lipschitz, and every point within distance $\rho=1$ of the path lies in $U$.
+
+\emph{Noise and bias.} Let $\cF_s$ be generated by $x^0,\dots,x^{s-1}$. Given $\cF_s$, the vector $(z^s,z_\star^s)$ is $\cN(0,\committeeM(\omega_s))$, and $\committeeM(\omega_s)$ is positive semidefinite, so $\Pi\committeeM(\omega_s)=\committeeM(\omega_s)$. Write $d(\omega_{s+1}-\omega_s)=\bar F_\eta(\omega_s)+\xi_{s+1}+\epsilon_{s+1}$ with $\epsilon_{s+1}=\E[d(\omega_{s+1}-\omega_s)\mid\cF_s]-\bar F_\eta(\omega_s)$ and $\xi_{s+1}$ the centered remainder. By \eqref{eq:committee:recursion}, the $R$-entries of $\epsilon_{s+1}$ vanish and its $Q$-entries are $\eta^2\E[\delta_j\delta_l(\norm{x^s}^2/d-1)\mid\cF_s]$, which are at most $\eta^2\bar\delta^2\E\abs{\norm x^2/d-1}\le\eta^2\bar\delta^2\sqrt{2/d}$ in absolute value, because $\Var\norm x^2=2d$. So $\norm{\epsilon_{s+1}}\le\epsilon\defeq\sqrt D\,\eta^2\bar\delta^2\sqrt{2/d}$. The conditional second moment of $\xi_{s+1}$ is at most that of $d(\omega_{s+1}-\omega_s)$, whose entries are bounded in mean square by $\eta^2\bar\delta^2T_{kk}$, by $3\eta^2\bar\delta^2(Q_{jj}+Q_{ll})+3\eta^4\bar\delta^4\E\norm x^4/d^2$, and $\E\norm x^4=d^2+2d\le3d^2$. On the event $\{\omega_s\in U\}$ these are bounded by a constant $\varsigma^2$.
+
+\emph{Conclusion.} \Cref{thm:toolkit:ode-method} applies with these constants: with $\Delta'=(\norm{\omega_0-\committeeOm_0}+a+t_1\epsilon+t_1LB/(2d))e^{Lt_1}$, if $\Delta'<1$, the probability that $\norm{\omega_s-\committeeOm(s/d)}>\Delta'$ for some $s\le t_1d$ is at most $\varsigma^2t_1/(a^2d)$. Since $\epsilon$ and $1/d$ are at most constants times $d^{-1/2}$, $\Delta'\le\Delta$ for a suitable $C$, which proves the bound.
+
+\emph{Realizability.} Fix $t\in[0,t_1]$. For each $d\ge m+m_\star$ choose initial weights with $\omega_0=\committeeOm_0$ exactly, which is possible because $\committeeOm_0$ is realizable, and take $a=d^{-1/4}$. For large $d$ the bound shows that with positive probability $\norm{\omega_{\floor{td}}-\committeeOm(\floor{td}/d)}\le C(2d^{-1/4})$, so some realizable point lies within $2Cd^{-1/4}+Bd^{-1}$ of $\committeeOm(t)$. The realizable set is closed, so $\committeeOm(t)$ is realizable, and there $\bar F_\eta=F_\eta$.
+\end{proof}
+
+\begin{remark}[The overlaps form a Markov chain]\label[remark]{rem:committee:chain}
+The proof shows more. Given $\cF_s$, the update \eqref{eq:committee:recursion} is a function of $\omega_s$ and of the triple $(z^s,z_\star^s,\norm{x^s}^2)$, whose conditional law depends only on $\omega_s$: if $P$ is the orthogonal projection onto the span of the current student and teacher weights, of dimension $\varrho$, then $\norm{x}^2=\norm{Px}^2+\chi^2_{d-\varrho}$ with an independent chi-square variable, and $\norm{Px}^2$ is a function of $(z,z_\star)$. So $(\omega_s)$ is a Markov chain whose law can be simulated exactly in every dimension at a cost independent of $d$ per step. All simulations in this chapter use it; for $m=m_\star=2$, $d=100$, and $400$ runs, its median loss agrees with that of SGD in $\R^{100}$ within $1\%$ at $t=10,20,40,80$ (\cref{ex:committee:chain}).
+\end{remark}
+
+\begin{remark}[Two time scales]\label[remark]{rem:committee:tau}
+The $\eta$-term of $F_\eta$ is the image of gradient flow on the population loss: $-\nabla_{w_j}\Loss(W)=\E[\delta_jx]$, and its inner products with $w_{\star k}$ and $w_l$ are the entries of $F_\eta/\eta$ without the $\eta^2$ term. So for small $\eta$, in the time $\tau=\eta t$, the order parameters follow
+\begin{equation}\label{eq:committee:G}
+  \frac{\dd\omega}{\dd\tau}=G(\omega),\qquad G(\omega)_{R,jk}=\E[\delta_jz_{\star k}],\quad G(\omega)_{Q,jl}=\E[\delta_jz_l+\delta_lz_j],
+\end{equation}
+the order-parameter shadow of $\dot w_j=-\nabla_{w_j}\Loss(W)$, and the $\eta^2$ term is a correction of relative size $\eta$.
+\end{remark}
+
+\subsection{One unit: the learning-rate threshold}\label{sec:committee:single}
+
+The simplest case already shows what the $\eta^2$ term does. Let $m=m_\star=1$ and $T=1$, write $R=R_{11}$ and $Q=Q_{11}$, and use the coordinates $u=R-1$ and $v=Q-R^2$, the squared distance of $w$ from the line through $w_\star$; the realizable set is $v\ge0$, and $\norm{w-w_\star}^2=u^2+v$. Put $c_1=\E[g'(z)^2z^2]$, $c_2=\E[g'(z)^2]$, and $c_3=\E[g'(z)^4]$ for $z\sim\cN(0,1)$, so that
+\[
+  c_1=\frac{2}{3\sqrt3\,\pi},\qquad c_2=\frac{2}{\sqrt3\,\pi},\qquad c_3=\frac{4}{\sqrt5\,\pi^2};
+\]
+these values follow from $g'(z)^2=\frac2\pi e^{-z^2}$, $\E e^{-z^2}=3^{-1/2}$, $\E z^2e^{-z^2}=3^{-3/2}$, and $\E e^{-2z^2}=5^{-1/2}$.
+
+\begin{proposition}[A single unit and its learning-rate threshold]\label[proposition]{prop:committee:single}
+For every $\eta>0$ the point $w=w_\star$, that is $(u,v)=(0,0)$, is a fixed point of the ODE of \cref{thm:committee:ode}. In the coordinates $(u,v)$ the Jacobian of the field there is upper triangular, with diagonal entries $-\eta c_1$ and $-(2\eta c_2-\eta^2c_3)$. Consequently, with
+\[
+  \eta_{\max}=\frac{2c_2}{c_3}=\pi\sqrt{5/3}\approx4.056,
+\]
+the fixed point is linearly stable for $0<\eta<\eta_{\max}$: solutions starting near it converge exponentially, and the loss decays at the rate $\min(2\eta c_1,\,2\eta c_2-\eta^2c_3)$, which is largest, $8\sqrt5/27\approx0.663$, at $\eta=\frac23\eta_{\max}$. For $\eta>\eta_{\max}$ the fixed point is unstable, and an eigenvector of the positive eigenvalue points into the realizable region $v>0$.
+\end{proposition}
+
+\begin{proof}
+The plan is to write the ODE in the coordinates $(u,v)$, to compute its derivatives at $(0,0)$ with the interpolation lemma, and to read off the eigenvalues. Represent $z=Rz_\star+\sqrt v\,\zeta$ with $z_\star,\zeta$ independent standard Gaussians, and let $\delta=g'(z)(g(z_\star)-g(z))$. At $w=w_\star$ we have $z=z_\star$ and $\delta=0$ identically, so every term of \eqref{eq:committee:field} vanishes: the point is fixed for every $\eta$.
+
+\emph{The equation for $v$.} By the chain rule and \eqref{eq:committee:field},
+\[
+  \dot v=\dot Q-2R\dot R=2\eta\,\E[\delta(z-Rz_\star)]+\eta^2\E[\delta^2]=2\eta\sqrt v\,\E[\delta\zeta]+\eta^2\E[\delta^2].
+\]
+Stein's lemma in $\zeta$ gives $\E[\delta\zeta]=\sqrt v\,\E[\partial_z\delta]$, so $\dot v=2\eta v\,A+\eta^2B$ with $A=\E[\partial_z\delta]$ and $B=\E[\delta^2]$, both continuously differentiable functions of $(R,Q)$ by \cref{lem:committee:interp}. At the fixed point, $\partial_z\delta=g''(z)(g(z_\star)-g(z))-g'(z)^2=-g'(z_\star)^2$, so $A=-c_2$. For $B$, use the derivative rules after \cref{lem:committee:interp}, with $Q$ the variance of $z$ and $R$ its covariance with $z_\star$. At $z=z_\star$, $\delta=0$ and $\partial_z\delta=-\partial_{z_\star}\delta=-g'^2$, so $\partial_Q B=\frac12\E[\partial_z^2\delta^2]=\E[(\partial_z\delta)^2]=c_3$ and $\partial_RB=\E[\partial_z\partial_{z_\star}\delta^2]=2\E[\partial_z\delta\,\partial_{z_\star}\delta]=-2c_3$. Since $\dd Q=\dd v+2R\,\dd R$ and $\dd R=\dd u$, at $R=1$ this reads $\dd B=c_3\,\dd v$. Hence $\partial_u\dot v=0$ and $\partial_v\dot v=2\eta A+\eta^2c_3=-(2\eta c_2-\eta^2c_3)$ at the fixed point.
+
+\emph{The equation for $u$.} Here $\dot u=\eta\phi(R,Q)$ with $\phi=\E[\delta z_\star]$. At the fixed point, writing $z_\star=z$ after differentiating,
+\begin{align*}
+  \partial_R\phi&=\E[\partial_z\partial_{z_\star}(\delta z_\star)]=\E[-g'^2-z_\star^2g'^2]=-c_2-c_1,\\
+  \partial_Q\phi&=\tfrac12\E[z_\star\partial_z^2\delta]=\tfrac12\E[-3z_\star g'g'']=\tfrac32c_1,
+\end{align*}
+using $\partial_z^2\delta=-3g'g''$ at $z=z_\star$ and $g''=-zg'$. Moving along $u$ at fixed $v$ changes $Q$ by $2\,\dd u$, so $\partial_u\dot u=\eta(\partial_R\phi+2\partial_Q\phi)=\eta(2c_1-c_2)=-\eta c_1$, because $c_2=3c_1$.
+
+\emph{Conclusion.} The Jacobian is $\begin{psmallmatrix}-\eta c_1&*\\0&-(2\eta c_2-\eta^2c_3)\end{psmallmatrix}$. For $\eta<\eta_{\max}$ both eigenvalues are negative and the linearization theorem gives local exponential convergence; it applies at the boundary point $(0,0)$ of the realizable set because the closed-form field of \cref{lem:committee:erf} is real-analytic on a neighborhood of that set, and solutions that start realizable stay realizable (\cref{thm:committee:ode}). The loss is $\frac12\E[g'(z_\star)^2(z-z_\star)^2]$ to second order, that is $\frac12(c_1u^2+c_2v)$, and $u^2$ decays at rate $2\eta c_1$ while $v$, forced by terms of order $u^2$, decays at rate $\min(2\eta c_1,2\eta c_2-\eta^2c_3)$; so does the loss. The two rates are equal at $\eta=2(c_2-c_1)/c_3=\frac23\eta_{\max}$, where the first is increasing and the second decreasing in $\eta$, which gives the maximum $\frac43\eta_{\max}c_1=8\sqrt5/27$. For $\eta>\eta_{\max}$ the eigenvalue $-(2\eta c_2-\eta^2c_3)$ is positive, and its eigenvector in a triangular matrix has a nonzero second coordinate, which can be taken positive.
+\end{proof}
+
+The threshold is a stability condition of the kind met in \hyperref[ch:prologue]{the prologue} and in \cref{ch:stability}: gradient descent on a quadratic with curvature $\lambda_1$ diverges for steps above $2/\lambda_1$. Here the curvature in the directions orthogonal to $w_\star$ is $c_2$ per unit time, and the noise term $\eta^2c_3v$ plays the role of the overshoot. The variance of the gradient, not the curvature alone, sets the threshold. Beyond it the ODE converges to a different fixed point with positive error: numerically, $\Loss\approx0.0056$ at $\eta=4.2$ and $0.036$ at $\eta=5$, with $Q>1$; the student overshoots in norm.
+
+\section{The solution: the symmetric plateau}\label{sec:committee:plateau}
+
+Now take $K\ge2$ students and $K$ orthonormal teachers: $m=m_\star=K$ and $T=I_K$. The permutations of the students, and separately of the teachers, leave the dynamics unchanged, and they single out two linear subspaces of order parameters,
+\begin{align*}
+  \cS&=\{\omega:\ R_{jk}=R\text{ for all }j,k;\ Q_{jj}=Q\text{ for all }j;\ Q_{jl}=C\text{ for all }j\ne l\},\\
+  \cS_0&=\cS\cap\{C=Q\}.
+\end{align*}
+Points of $\cS_0$ are the order parameters of identical students, $w_1=\dots=w_K$, since then $\norm{w_j-w_l}^2=2Q-2C=0$.
+
+\begin{theorem}[The symmetric plateau]\label{thm:committee:plateau}
+Let $m=m_\star=K\ge2$ and $T=I_K$.
+\begin{enumerate}
+\item[\textup{(a)}] For every $\eta>0$, solutions of the ODE of \cref{thm:committee:ode} that start in $\cS$ stay in $\cS$, and solutions that start in $\cS_0$ stay in $\cS_0$. For SGD itself, students that start identical stay identical.
+\item[\textup{(b)}] The point $P_\star\in\cS_0$ with
+\[
+  R=a\defeq\frac{1}{\sqrt{K(2K-1)}},\qquad Q=C=\frac1{2K-1},
+\]
+the order parameters of $w_j=a\sum_kw_{\star k}$ for every $j$, is a fixed point of the gradient-flow field $G$ of \eqref{eq:committee:G}, and the only one of the form $w_j=a'\sum_kw_{\star k}$ for all $j$ with $a'>0$. Its loss is
+\[
+  \Loss_\star=\frac K6-\frac{K^2}\pi\arcsin\frac1{2K}.
+\]
+\item[\textup{(c)}] Let $\Xi$ be the direction with $\Xi_{R,11}=\Xi_{R,22}=1$, $\Xi_{R,12}=\Xi_{R,21}=-1$, and all other entries $0$. Then $\Xi$ is an eigenvector of the Jacobian of $G$ at $P_\star$ with eigenvalue
+\[
+  \committeelu=\frac{2K}{\pi\,(2K+1)^{3/2}(2K-1)^{1/2}}>0 .
+\]
+So $P_\star$ is a saddle, and its unstable direction makes student $1$ prefer teacher $1$ and student $2$ prefer teacher $2$. For $K=2$, $\committeelu=4\sqrt{15}/(75\pi)\approx0.0657$ and $\Loss_\star=\frac13-\frac4\pi\arcsin\frac14\approx0.01161$.
+\item[\textup{(d)}] Perturbations of $P_\star$ in which the students split into directions orthogonal to all teachers, $w_j=w+\varepsilon u_j$ with $\sum_ju_j=0$ and each $u_j$ orthogonal to $w_{\star1},\dots,w_{\star K}$, have velocity $O(\varepsilon^2)$ under the gradient flow: these directions are marginal.
+\end{enumerate}
+\end{theorem}
+
+The plateau is the time spent near $P_\star$: the dynamics is drawn into $\cS_0$ toward $P_\star$ along stable directions and leaves it along $\Xi$. In $\cS_0$ itself and for $K=2$, the two eigenvalues at $P_\star$ are $-0.592$ and $-1.972$ (computed numerically), so $P_\star$ attracts identical students exponentially. The full $7\times7$ Jacobian of $G$ at $P_\star$ for $K=2$ has the eigenvalues
+\[
+  0.0657,\quad0,\quad0,\quad-0.592,\quad-0.920,\quad-0.986,\quad-1.972,
+\]
+where the zeros belong to directions that are of second order in the weights, among them the marginal directions of (d), and $-0.920$ to identical students turning toward one teacher (\cref{ex:committee:modes}). Within $\cS$ the fixed point therefore attracts only algebraically along the coordinate $Q-C$; numerically $Q-C$ decays like $5/\tau$ along the flow.
+
+\begin{proof}
+The plan is to prove (a) by checking that the field is tangent to the two subspaces, (b) with the integrals of \cref{lem:committee:erf}, and (c) and (d) in weight space, where the gradient flow is a gradient flow and the Hessian of the loss can be computed with Stein's lemma.
+
+\emph{(a) Invariance.} We use one fact about ODEs: if a field $F$ is Lipschitz on bounded sets and $F(V)\subseteq V$ for a linear subspace $V$, then solutions starting in $V$ stay in $V$, because the ODE restricted to $V$ has a solution, which solves the full equation, and solutions are unique. For $\omega\in\cS$, the covariance $\committeeM(\omega)$ is unchanged when the students are permuted, and also when the teachers are permuted, so the joint law of $(z,z_\star)$ is invariant under both kinds of relabeling, while the label and the prediction are symmetric functions. Hence $\E[\delta_jz_{\star k}]$ does not depend on $(j,k)$, $\E[\delta_jz_j]$ and $\E[\delta_j^2]$ do not depend on $j$, and $\E[\delta_jz_l+\delta_lz_j]$ and $\E[\delta_j\delta_l]$ for $j\ne l$ do not depend on the pair. So $F_\eta(\omega)\in\cS$, and the same holds for $\bar F_\eta$, because the projection $\Pi$ commutes with simultaneous permutations of rows and columns. For $\omega\in\cS_0$ the variables $z_1,\dots,z_K$ coincide almost surely, because $\E(z_j-z_l)^2=2Q-2C=0$; so are the $\delta_j$, and $F_\eta(\omega)_{Q,jl}$ does not depend on whether $j=l$: $F_\eta(\omega)\in\cS_0$. For SGD, \eqref{eq:committee:sgd} gives identical students identical updates.
+
+\emph{(b) The fixed point.} At $w_j=w=a'\sum_kw_{\star k}$, all preactivations equal $z=a'\sum_kz_{\star k}$, with $\Var z=Q=Ka'^2$ and $\operatorname{Cov}(z,z_{\star k})=a'$. Put $\Lambda=\sqrt{2+(2K-1)a'^2}$. By \cref{lem:committee:erf}(ii), the three integrals $\E[g'(z)z_{\star1}g(z_{\star1})]$, $\E[g'(z)z_{\star1}g(z_{\star2})]$, and $\E[g'(z)z_{\star1}g(z)]$ are $\frac2\pi(1+Q)^{-1}$ times, respectively,
+\[
+  \frac{1+Q-a'^2}{\Lambda},\qquad\frac{-a'^2}{\Lambda},\qquad\frac{a'}{\sqrt{1+2Q}},
+\]
+where we used $2(1+Q)-a'^2=\Lambda^2$, $(1+Q)^2-Q^2=1+2Q$, and $C_{bc}(1+C_{aa})-C_{ab}C_{ac}=a'(1+Q)-a'Q$ in the third. Summing with weights $1$, $K-1$, and $-K$, and using $1+Q-Ka'^2=1$,
+\[
+  G_{R,jk}=\frac{2}{\pi(1+Q)}\Bigl(\frac1{\sqrt{2+(2K-1)a'^2}}-\frac{Ka'}{\sqrt{1+2Ka'^2}}\Bigr).
+\]
+The bracket vanishes exactly when $a'>0$ and $1+2Ka'^2=K^2a'^2(2+(2K-1)a'^2)$, a quadratic equation in $a'^2$ with product of roots $-1/(K^2(2K-1))<0$, hence with exactly one positive root, and $a'^2=1/(K(2K-1))$ satisfies it: $\frac{1}{2K-1}+\frac{2(K-1)}{2K-1}=1$. The $Q$-entries of $G$ vanish too, because $z=a\sum_kz_{\star k}$ makes $\E[\delta_jz]=a\sum_k\E[\delta_jz_{\star k}]=0$. For the loss, \eqref{eq:committee:loss} with $Q/(1+Q)=\frac1{2K}$ and $a/\sqrt{2(1+Q)}=\frac1{2K}$ gives $\Loss_\star=\frac1\pi(K\arcsin\frac12+K^2\arcsin\frac1{2K}-2K^2\arcsin\frac1{2K})$.
+
+\emph{The Hessian at $P_\star$.} Let $W_\star=(w,\dots,w)$ with $w=a\sum_kw_{\star k}$, and let $z=\ip{w,x}$, $\delta=g'(z)(y-Kg(z))$. The point $W_\star$ is a critical point of $\Loss$: the gradient $-\E[\delta x]$ lies in the span of the teachers, because $\delta$ depends on $x$ only through $z_{\star1},\dots,z_{\star K}$, and its inner products with the teachers vanish by (b). Differentiating $\nabla_{w_j}\Loss=-\E[g'(z_j)(y-f)x]$ once more at $W_\star$, the blocks of the Hessian are $H_{jl}=\cB+\ind\{j=l\}\cA$ with
+\[
+  \cB=\E[g'(z)^2xx^\top],\qquad \cA=-\E[(y-Kg(z))g''(z)\,xx^\top]=\E[\delta z\,xx^\top],
+\]
+using $g''(z)=-zg'(z)$. For a perturbation $W=W_\star+\varepsilon(p_1,\dots,p_K)$ with $\sum_jp_j=0$, the sum $\sum_lH_{jl}p_l$ equals $\cA p_j$, so the gradient flow gives $\dot p_j=-\cA p_j+O(\varepsilon)$.
+
+\emph{(d) The marginal directions.} Write $x=\sum_kz_{\star k}w_{\star k}+x_\perp$, with $x_\perp$ independent of the $z_{\star k}$. Since $\delta z$ depends only on the $z_{\star k}$, $\cA u=\E[\delta z]\,u$ for $u$ orthogonal to the teachers, and $\E[\delta z]=0$ at $P_\star$ by (b). So $\cA u_j=0$, which is (d).
+
+\emph{(c) The specialization eigenvalue.} Let $v=(w_{\star1}-w_{\star2})/\sqrt2$ and $V=\ip{v,x}=(z_{\star1}-z_{\star2})/\sqrt2$, a standard Gaussian independent of $z$ and of $z_{\star3},\dots,z_{\star K}$. Exchanging teachers $1$ and $2$ preserves the law of $x$ and the function $\delta z$ but changes the sign of $V$; so $\ip{w_{\star k},\cA v}=\E[\delta z\,z_{\star k}V]$ vanishes for $k\ge3$ and is antisymmetric in $k\in\{1,2\}$, and with $\cA$ vanishing off the teacher span this means $\cA v=\mu v$ with $\mu=\E[\delta zV^2]$. For a standard Gaussian $V$ and a smooth $h$ of polynomial growth, two applications of Stein's lemma give $\E[V^2h(V)]=\E h(V)+\E h''(V)$. Write $z_{\star1}=U+V/\sqrt2$ and $z_{\star2}=U-V/\sqrt2$ with $U=(z_{\star1}+z_{\star2})/2$; then $V$ is independent of $(U,z_{\star3},\dots,z_{\star K})$, and $z$ is a function of these variables. Apply the identity conditionally on them. Only $g(z_{\star1})+g(z_{\star2})$ depends on $V$, with second derivative $\frac12(g''(z_{\star1})+g''(z_{\star2}))$, so
+\[
+  \mu=\E[\delta z]+\tfrac12\E\bigl[g'(z)z\,(g''(z_{\star1})+g''(z_{\star2}))\bigr]=-\E\bigl[g'(z)g'(z_{\star1})\,z\,z_{\star1}\bigr],
+\]
+using $\E[\delta z]=0$, the symmetry between teachers $1$ and $2$, and $g''=-zg'$. The pair $(z,z_{\star1})$ has covariance $C_2=\begin{psmallmatrix}Q&a\\a&1\end{psmallmatrix}$, with $\det(I_2+C_2)=2(1+Q)-a^2=(2K+1)/K$. \Cref{lem:committee:tilt} with $S$ the pair gives
+\[
+  \E[g'(z)g'(z_{\star1})zz_{\star1}]=\frac{2}{\pi}\,\frac{\bigl(C_2(I_2+C_2)^{-1}\bigr)_{12}}{\det(I_2+C_2)^{1/2}}=\frac2\pi\,\frac{a}{\det(I_2+C_2)^{3/2}},
+\]
+because $C_2-C_2(I_2+C_2)^{-1}C_2=C_2(I_2+C_2)^{-1}$, whose off-diagonal entry is $(a(1+Q)-aQ)/\det(I_2+C_2)$. Inserting $a$ and the determinant gives $-\mu=\committeelu$.
+
+\emph{From weights to order parameters.} Take $p_1=v$, $p_2=-v$, and $p_j=0$ for $j\ge3$. Along $W_\star+\varepsilon(p_j)$ the order parameters are $\omega(\varepsilon)=P_\star+\frac\varepsilon{\sqrt2}\Xi+O(\varepsilon^2)$, because $\ip{v,w_{\star1}}=-\ip{v,w_{\star2}}=1/\sqrt2$ and $\ip{v,w}=0$. By \cref{rem:committee:tau}, $G(\omega(\varepsilon))$ is the time derivative of the order parameters under the gradient flow, whose first-order part is $\dot w_j=\varepsilon\committeelu p_j$. Its $R$-entries are $\varepsilon\committeelu\ip{p_j,w_{\star k}}=\frac{\varepsilon}{\sqrt2}\committeelu\Xi_{R,jk}$, and its $Q$-entries are $\varepsilon\committeelu(\ip{p_j,w}+\ip{w,p_l})=0$. Differentiating at $\varepsilon=0$ gives $\frac1{\sqrt2}J\Xi=\frac1{\sqrt2}\committeelu\Xi$ for the Jacobian $J$ of $G$, which is continuously differentiable near $P_\star$ by \cref{lem:committee:interp}.
+\end{proof}
+
+The proof of (d) uses the identity $g''=-zg'$, and it is special to this activation: for a general odd $g$ the orthogonal split has curvature $-\E[(y-Kg(z))g''(z)]$, which need not vanish (\cref{ex:committee:activation}).
+
+\begin{heuristic}[The plateau lasts $\frac1{2\committeelu(\eta)}\log d$]
+Let $\committeelu(\eta)$ be the eigenvalue of the full field $F_\eta$ in the direction $\Xi$, at the symmetric fixed point $P_\star(\eta)$ of $F_\eta$ in $\cS_0$; by (c), $\committeelu(\eta)=\eta\committeelu+O(\eta^2)$. Start from small random weights. The initial order parameters are symmetric up to fluctuations of order $d^{-1/2}$, and in time $O(1)$ the ODE carries them close to $P_\star(\eta)$ while the component along $\Xi$, call it $S$, stays of order $d^{-1/2}$. Near $P_\star(\eta)$ the recursion \eqref{eq:committee:recursion} for $S$ reads $S_{s+1}=S_s+\frac1d(\committeelu(\eta)S_s+\xi_s)$ to first order, with centered noise $\xi_s$ of variance of order one, so in time $t$,
+\[
+  S(t)\approx e^{\committeelu(\eta)t}\Bigl(S(0)+\frac1d\sum_{s<td}e^{-\committeelu(\eta)s/d}\xi_s\Bigr),
+\]
+and the bracket converges to a random variable $\Gamma d^{-1/2}$ with $\Gamma$ of order one: the initial asymmetry and the asymmetry injected by the noise are of the same order. The plateau ends when $S$ becomes of order one, at
+\[
+  t_{\mathrm{esc}}\approx\frac{1}{2\committeelu(\eta)}\log d+\frac1{\committeelu(\eta)}\log\frac{1}{\abs\Gamma}+O(1),
+\]
+a time of order $\log d$ with fluctuations of order one that do not shrink as $d$ grows. In steps, the plateau costs about $\frac{d}{2\committeelu(\eta)}\log d$ samples.
+\end{heuristic}
+
+The heuristic leaves the range of \cref{thm:committee:ode}, which controls the dynamics only up to a fixed horizon $t_1$, while $t_{\mathrm{esc}}$ grows with $d$; and the escape is decided by fluctuations of order $d^{-1/2}$, exactly the scale the theorem neglects. Without them the ODE started on $\cS$ never leaves it, and SGD started from identical students never specializes, at every $d$.
+
+\section{Reading the solution}\label{sec:committee:reading}
+
+The solution makes four quantitative predictions. The plateau height $\Loss_\star=K/6-(K^2/\pi)\arcsin\frac1{2K}$ is $0.0116$, $0.0203$, and $0.0284$ for $K=2,3,4$, a small fraction of the initial loss $K/6$: the symmetric student, which sends every unit to the average teacher direction, already captures most of the variance of the label, and what remains is the part that requires a division of labor. The plateau length is $\frac1{2\committeelu}\log d$ in units of $\tau=\eta t$, and since $\committeelu\approx\frac1{2\pi K}$ for large $K$, it grows linearly in the number of units as well as logarithmically in the dimension.\sidenote{The exact values are $\committeelu=0.0657$, $0.0461$, and $0.0356$ for $K=2,3,4$, against $1/(2\pi K)=0.0796$, $0.0531$, and $0.0398$.} The level and the escape rate depend on $\eta$ through the $\eta^2$ term: at $\eta=0.5$ and $K=2$ the plateau rises from $0.0116$ to $0.0147$, and $\committeelu(\eta)/\eta$ is $0.0662$, $0.0670$, $0.0687$, and $0.0748$ for $\eta=0.1$, $0.25$, $0.5$, and $1$. Finally, every unit's step size is limited by the threshold of \cref{prop:committee:single}, and the committee's threshold is lower: for $K=2$ the specialized fixed point $R=Q=I$ loses stability at $\eta\approx2.31$, against $4.06$ for one unit (\cref{ex:committee:etamax}).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=1.35cm},hplot,width=0.48\linewidth,height=0.46\linewidth,
+  xlabel={$t=$ steps$/d$},xmin=0,xmax=300]
+\nextgroupplot[ymode=log,ymin=2e-5,ymax=0.5,ylabel={population loss}]
+\addplot[guide] coordinates {(0,0.01468) (300,0.01468)};
+\addplot[theory] table[x=t,y=eg] {figures/data/08-committee-plateau-ode.dat};
+\addplot[simulation2] table[x=t,y=eg300] {figures/data/08-committee-plateau-sgd.dat};
+\addplot[simulation] table[x=t,y=eg3000] {figures/data/08-committee-plateau-sgd.dat};
+\nextgroupplot[ymin=0,ymax=1.05,ylabel={overlap},legend pos=north west]
+\addplot[theory] table[x=t,y=R11] {figures/data/08-committee-plateau-ode.dat};
+\addplot[theory2] table[x=t,y=R12] {figures/data/08-committee-plateau-ode.dat};
+\addplot[simulation] table[x=t,y=R11_3000] {figures/data/08-committee-plateau-sgd.dat};
+\addplot[simulation2] table[x=t,y=R12_3000] {figures/data/08-committee-plateau-sgd.dat};
+\legend{ODE $R_{11}$,ODE $R_{12}$,SGD $R_{11}$,SGD $R_{12}$}
+\end{groupplot}
+\end{tikzpicture}
+\caption{Plateau and specialization for $K=2$ students and orthonormal teachers, $\eta=0.5$. Left: the population loss \eqref{eq:committee:loss} along the ODE of \cref{thm:committee:ode} (curve), and medians over $16$ runs of SGD in dimension $d=300$ (squares) and $d=3000$ (dots); the dashed line is the plateau level $\Loss_\star(\eta)=0.0147$ of the full field. Right: the overlaps of student $1$ with teachers $1$ and $2$, ODE (curves) and medians at $d=3000$ (points). All runs start from the same order parameters, $R=0.003\,I$ and $Q-RR^\top=0.01\,I$, and are simulated with the exact chain of \cref{rem:committee:chain} (seed $8$).}\label{fig:committee:plateau}
+\end{figure}
+
+\Cref{fig:committee:plateau} tests the ODE limit across a plateau. The runs start with a slight preference of each student for its own teacher, $R(0)=0.003\,I$, so that the ODE itself escapes; its loss falls below half the plateau level at $t=166$. In the first $20$ time units the loss falls by a factor $23$ to the plateau, and both students move to the blend $R_{jk}\approx0.41$, close to $a=1/\sqrt6\approx0.408$ (the full field at $\eta=0.5$ puts the fixed point at $0.410$). On the plateau the medians agree with the ODE to within $1\%$ in loss, for both dimensions. The escape is where the noise matters: the medians cross the half-plateau level at $t=170$ in both dimensions, about $4$ time units after the ODE; the noise injects asymmetry of order $d^{-1/2}$ in both directions, which shortens some plateaus and lengthens others. After the escape the medians trail the ODE by a few time units: $R_{11}$ rises to $0.98$ and $R_{12}$ falls to $0.01$ by $t=300$, with the loss decaying exponentially at the rate of the specialized fixed point.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,xmode=log,log basis x=2,xmin=80,xmax=4000,ymin=110,ymax=230,
+  xlabel={dimension $d$},ylabel={escape time $t_{\mathrm{esc}}$},legend pos=north west,
+  xtick={100,200,400,800,1600,3200},xticklabels={$100$,$200$,$400$,$800$,$1600$,$3200$}]
+\addplot[theory] table[x=d,y=theory] {figures/data/08-committee-escape.dat};
+\addplot[simulation,error bars/.cd,y dir=both,y explicit] table[x=d,y=median,
+  y error plus expr=\thisrow{q75}-\thisrow{median},y error minus expr=\thisrow{median}-\thisrow{q25}]
+  {figures/data/08-committee-escape.dat};
+\legend{slope $1/(2\committeelu(\eta))$,SGD median and quartiles}
+\end{axis}
+\end{tikzpicture}
+\caption{Length of the symmetric plateau from random initialization, $K=2$, $\eta=0.5$, $w_j(0)\sim\cN(0,\frac{0.01}{d}I_d)$. Points: median and quartiles over $40$ runs of the first time at which the loss falls below half the plateau level, simulated with the exact chain of \cref{rem:committee:chain} (seed $9$). Line: slope $1/(2\committeelu(\eta))=14.6$ per unit of $\log d$, computed from the Jacobian of the full field at $P_\star(\eta)$, with the intercept fitted to the medians.}\label{fig:committee:escape}
+\end{figure}
+
+\Cref{fig:committee:escape} tests the heuristic from random initialization, where the only asymmetry is accidental. The predicted slope is $1/(2\committeelu(\eta))=14.6$ per unit of $\log d$; a least-squares fit to the medians gives $13.7$, and over the factor $32$ in dimension the medians rise from $145$ to $193$. The slope is a parameter-free prediction; the intercept is not, since it depends on the law of $\Gamma$, which the heuristic does not compute. The quartiles show the other prediction: the interquartile range stays between $30$ and $40$ time units at every $d$, as it must if the escape time is $\frac1{2\committeelu}\log d$ plus a fluctuation of order one.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,xmin=0,xmax=4.7,ymin=-0.03,ymax=0.75,xlabel={$\eta$},ylabel={decay rate of $\norm{w-w_\star}^2$},legend pos=north west]
+\addplot[guide] coordinates {(4.0558,-0.03) (4.0558,0.75)};
+\addplot[theory] table[x=eta,y=rate] {figures/data/08-committee-single-theory.dat};
+\addplot[simulation] table[x=eta,y=rate] {figures/data/08-committee-single-sim.dat};
+\legend{$\eta_{\max}=\pi\sqrt{5/3}$,{$\min(2\eta c_1,2\eta c_2-\eta^2c_3)$},SGD}
+\end{axis}
+\end{tikzpicture}
+\caption{The learning-rate threshold of a single $\erf$ unit (\cref{prop:committee:single}). Curve: the asymptotic decay rate predicted by the linearization, which vanishes at $\eta_{\max}\approx4.056$ (dashed). Points: minus the slope of the median of $\log\norm{w-w_\star}^2$ over $8$ runs of SGD with $d=1000$, fitted where $10^{-40}<\norm{w-w_\star}^2<10^{-6}$, from $R=0$ and $Q=0.25$ (exact chain, seed $10$). Beyond $\eta_{\max}$ the runs do not converge and the fitted rate is zero.}\label{fig:committee:single}
+\end{figure}
+
+\Cref{fig:committee:single} tests \cref{prop:committee:single}. The measured rates agree with the predicted rate within $2\%$ for $\eta\le3.75$ and within $4\%$ at $\eta=4$, where the decay is slow and the fitting window short; the largest deviations elsewhere are near the kink at $\eta=2.70$, where the two modes have nearly equal rates. For small $\eta$ the slow mode is the component along $w_\star$; for large $\eta$ it is the orthogonal component, whose contraction $2\eta c_2$ is fought by the noise $\eta^2c_3$. At $\eta=4.25$ and $4.5$ the runs settle at a nonzero error, as the bifurcation in \cref{sec:committee:single} predicts.
+
+\section{What the model gets wrong}\label{sec:committee:wrong}
+
+\paragraph{What was thrown away.}
+Isotropic Gaussian inputs, which made the overlaps sufficient statistics and every integral explicit. A fixed second layer, which forbids reweighting units instead of moving them. A width fixed while $d\to\infty$, and a teacher of the same form and width. One pass over fresh samples. Steps of size $\eta/d$, which make the dynamics deterministic at the scale of the theorem and push the decisive fluctuations below it. And small initialization, which places the trajectory near the symmetric saddle; a student started far from $\cS$ need not visit it.
+
+\paragraph{Where it breaks.}
+The first failure is internal: the plateau length is set by fluctuations of order $d^{-1/2}$ that \cref{thm:committee:ode} discards, and we do not know a proof of the $\frac1{2\committeelu}\log d$ law for this model. The other failures are external. \emph{Overparameterization.} With more students than teachers the picture changes qualitatively: \textcite{GoldtEtAl2019} prove that the ODE description remains exact and find that the final error of the student grows with the width when only the first layer is trained but stays constant or decreases when both layers are trained; and \textcite{RichertWorschechRosenow2022} show that in the over-realizable case the approach to perfect learning follows a power law, not the exponential convergence of the matched case. \emph{Data.} \textcite{YoshidaOkada2019} show that the plateau depends on the input statistics, and becomes less noticeable when the covariance has small and dispersed eigenvalues; \textcite{GoldtEtAl2020} replace isotropic inputs by the hidden manifold model, inputs that lie near a low-dimensional manifold with labels that depend on the position on it, and describe one-pass SGD on such data through a Gaussian equivalence property, which brings in data parameters, such as the dimension of the manifold, that isotropic inputs do not have. \emph{Optimizers.} Natural gradient descent, which preconditions by the Fisher information, shortens or removes the plateaus \parencite{Amari1998,RattraySaad1999}, so the plateau is a property of plain gradient descent as much as of the network. \emph{Steps and width.} \textcite{VeigaEtAl2022} map the interplay of the learning rate, the time scale, and the number of hidden units, and show that the regime of this chapter, small steps with $m$ fixed, is one corner of a phase diagram whose other corners include the mean-field limit of wide networks and regimes in which the noise dominates the dynamics. \emph{The readout.} \textcite{RieglerBiehl1995} train the hidden-to-output weights as well and compare with fixed readouts.
+
+\paragraph{Fine structure.}
+The repairs come in three kinds. \emph{Exact descriptions of more general dynamics.} \textcite{ArnaboldiStephanKrzakalaLoureiro2023} derive one low-dimensional deterministic description that connects the small-step, high-dimensional, and mean-field limits of one-pass SGD in two-layer networks, and \textcite{CollinsWoodfinEtAl2023}, in an arXiv preprint, give ODE deterministic equivalents for streaming SGD on generalized linear and multi-index models, with learning-rate thresholds for stability that generalize \cref{prop:committee:single}; \textcite{BenArousGheissariJagannath2022} prove limit theorems for summary statistics of SGD, find a critical step size at which a correction term, the counterpart of our $\eta^2$ term, enters the effective dynamics, and show that diffusive limits near fixed points, where escapes are decided, can be complex. \emph{Targets that require several escapes.} For multi-index targets on Gaussian or Boolean inputs, \textcite{AbbeBoixAdseraMisiakiewicz2023} introduce the leap complexity, conjecture that SGD on two-layer networks needs total time about $d^{\max(\mathrm{Leap},2)}$, that is about $d^{\max(\mathrm{Leap}-1,1)}$ samples, prove a version for Gaussian inputs under additional assumptions on how SGD is run, and show that the support of the target is learned in a sequence of saddle-to-saddle transitions; the cascade of plateaus of \cref{obs:committee:plateau} is the matched-teacher ancestor of this picture, and \cref{ch:singleindex,ch:parity} develop the single-direction case. \textcite{BerthierMontanariZhou2023}, in a preprint and partly non-rigorously, find separated time scales for wide networks on single-index targets. \emph{Landscape and symmetry.} \textcite{FukumizuAmari2000} and \textcite{AmariParkOzeki2006} relate plateaus to the singular regions created by duplicated units, and \textcite{CousseauOzekiAmari2008} analyze the dynamics near them; \textcite{SimsekEtAl2021} count the symmetry-induced critical points of overparameterized networks and show that one extra neuron per layer connects the permutation-equivalent minima into a single manifold. Open: a proof of the logarithmic plateau law and of the law of the escape time; the plateau length when $m>m_\star$; and a description of plateaus with data that are neither Gaussian nor isotropic.
+
+\section{Model card}\label{sec:committee:card}
+
+\modelcard{Plateaus in online training of small sigmoidal networks from small weights: hidden units are redundant copies, then specialize.}
+{Teacher and student soft committee machines with $g(z)=\erf(z/\sqrt2)$, Gaussian inputs, online SGD with step $\eta/d$; order parameters $Q,R,T$.}
+{As $d\to\infty$ the overlaps follow explicit ODEs with an $\eta^2$ noise term (proved); one unit converges for $\eta<\pi\sqrt{5/3}$ (proved); for $K$ students and teachers, a symmetric saddle with loss $\frac K6-\frac{K^2}\pi\arcsin\frac1{2K}$ and unstable eigenvalue $\frac{2K}{\pi(2K+1)^{3/2}(2K-1)^{1/2}}$ (proved).}
+{Plateau level; plateau length $\frac1{2\committeelu}\log d$ in units of $\eta t$, growing linearly in $K$ (derived); optimal and maximal learning rates.}
+{The plateau length is decided by fluctuations the ODE omits; overparameterization, structured data, natural gradients, large steps, and trained readouts change or remove the plateau.}
+{Overparameterized students; hidden manifold and Gaussian equivalence; dimensionless ODEs and phase diagrams of SGD; leap complexity and saddle-to-saddle dynamics; effective dynamics of summary statistics.}
+
+The committee machine is the matrix version of the single-index model of \cref{ch:singleindex}: Gaussian rotational invariance again reduces the state to overlaps, and the ODE method of \cref{thm:toolkit:ode-method} turns online SGD into a deterministic flow on them. The two chapters produce plateaus for different reasons. In \cref{ch:singleindex} the target is invisible at low degree, and the plateau is a search whose length is a power of $d$; here every unit sees its signal at once, and the plateau is a symmetric saddle whose length is a logarithm. Both are escapes from small initialization, the thread that runs from the deep linear networks of \cref{ch:deeplinear} and the diagonal networks of \cref{ch:diagonal} to the hidden progress of \cref{ch:parity} and the induction heads of \cref{ch:induction}; the escape here has the logistic form of \cref{ch:deeplinear}, with initialization $d^{-1/2}$.
+
+The threshold $\pi\sqrt{5/3}$ is a stability bound of the kind studied in \hyperref[ch:prologue]{the prologue} and \cref{ch:stability}, with the variance of the stochastic gradient in the role of the top curvature. The plateau is one instance of the abrupt transitions collected in \cref{ch:parity,ch:grokking,ch:induction,ch:scaling}, where a smooth underlying dynamics produces a sudden drop in the loss.
+
+\begin{exercises}
+\item \consolidation (Facts about the $\erf$ unit.) (a) Prove \eqref{eq:committee:gprime}, $\E g(z)^2=\frac13$, and $\hat g_1=1/\sqrt\pi$ for $z\sim\cN(0,1)$. (b) Show that the loss at $W=0$ equals $m_\star/6$ for an orthonormal teacher and that the information exponent of $g$ is $1$. (c) Use \cref{lem:committee:tilt} with $S=(a,a)$ to show $\E g'(X_a)^2=\frac2\pi(1+2C_{aa})^{-1/2}$.\label{ex:committee:basics}
+
+\item \consolidation (One unit, explicitly.) For $m=m_\star=1$ and $T=1$, show that the gradient-flow part of the ODE is
+\[
+  \frac{\dd R}{\dd\tau}=\frac{2}{\pi(1+Q)}\Bigl(\frac{1+Q-R^2}{\sqrt{2(1+Q)-R^2}}-\frac{R}{\sqrt{1+2Q}}\Bigr),
+\]
+derive the corresponding equation for $Q$, check that $(R,Q)=(1,1)$ is a fixed point, and compute the Jacobian there numerically for $\eta=1$ to confirm the eigenvalues $-c_1$ and $-(2c_2-c_3)$ of \cref{prop:committee:single}.\label{ex:committee:one}
+
+\item \consolidation (The exact chain.) Prove \cref{rem:committee:chain}: write $\norm{Px}^2$ as a quadratic form in $(z,z_\star)$ using the pseudoinverse of $\committeeM(\omega)$, and show that, given $\cF_s$, the law of $\omega_{s+1}$ depends only on $\omega_s$. For $m=m_\star=2$ and $T=I$, give an explicit sampler that uses five scalar random variables per step.\label{ex:committee:chain}
+
+\item \consolidation (The other modes at $P_\star$.) Let $p_j=v$ for every $j$, with $v=(w_{\star1}-w_{\star2})/\sqrt2$: identical students turning toward teacher $1$. Show that the gradient flow gives $\dot p=-(K\cB+\cA)p$ to first order, and that the eigenvalue is
+\[
+  -\frac{2K}\pi\sqrt{\frac{2K-1}{2K+1}}+\committeelu,
+\]
+which is $-0.920$ for $K=2$.\label{ex:committee:modes}
+
+\item \variation (Label noise.) Let $y=\sum_kg(z_{\star k})+\sigma\zeta$ with $\zeta\sim\cN(0,1)$ independent. Show that the ODE acquires the term $\eta^2\sigma^2\E[g'(z_j)g'(z_l)]$ in $\dot Q_{jl}$ and nothing else. For one unit, show that $w_\star$ is no longer a fixed point, and that to leading order the excess loss at the new fixed point is $\frac{\eta\sigma^2c_2^2}{2(2c_2-\eta c_3)}$, which is about $\eta\sigma^2/(2\sqrt3\pi)$ for small $\eta$ and diverges at $\eta_{\max}$.\label{ex:committee:noise}
+
+\item \variation (Unequal teachers.) Let $K=2$ and $T=\diag(1,\vartheta^2)$ with $\vartheta\ne1$. Show that $\cS$ is no longer invariant, so that the plateau of \cref{thm:committee:plateau} disappears as an exact object. Integrate the ODE from a symmetric start for $\vartheta=0.9$ and $0.5$: which teacher is learned first, and how does the delay depend on $\abs{1-\vartheta}$?\label{ex:committee:unequal}
+
+\item \variation (Other activations.) For an odd activation $\phi$ in place of $g$, with the corresponding symmetric fixed point, show that the Hessian block $\cA$ acts on directions orthogonal to the teachers as multiplication by $-\E[(y-K\phi(z))\phi''(z)]$. Show that this vanishes for every activation with $\phi''(z)=-c\,z\,\phi'(z)$ for a constant $c$, and give an odd activation for which it does not vanish. What does this change in \cref{thm:committee:plateau}(d)?\label{ex:committee:activation}
+
+\item \variation (Specialization for general $K$.) Prove that for $K\ge3$ every vector $v$ in the teacher span with $\ip{v,\sum_kw_{\star k}}=0$ satisfies $\cA v=-\committeelu v$, so that the unstable eigenvalue of $P_\star$ has multiplicity at least $K-1$ in weight space. How many distinct ways to break the symmetry does this give, and how does the plateau length depend on $K$?\label{ex:committee:generalK}
+
+\item \simulation (The committee's learning-rate threshold.) For $K=2$, $T=I$, compute numerically the Jacobian of the full field $F_\eta$ at the specialized fixed point $R=Q=I$ for $\eta$ between $1$ and $3$. You should find that its largest eigenvalue crosses zero at $\eta\approx2.31$, well below the single-unit threshold $4.06$; identify the unstable eigenvector and explain the role of the cross terms $\E[\delta_1\delta_2]$.\label{ex:committee:etamax}
+
+\item \simulation (Plateau length and the number of units.) Integrate the ODE with $\eta=0.1$ from $Q(0)=0.01\,I$ and $R(0)=\epsilon I$ for $\epsilon=10^{-3}$ and $10^{-5}$, for $K=2$ and $K=3$, and record the first time after the approach at which the loss falls below $\Loss_\star/2$. You should find that the escape time grows by about $153$ (for $K=2$) and $217$ (for $K=3$) per factor $e$ decrease of $\epsilon$, within $1\%$ of $1/(\eta\committeelu)$ from \cref{thm:committee:plateau}.\label{ex:committee:Kscaling}
+
+\item \research (Plateaus with more students than teachers.) For $m_\star=2$ orthonormal teachers and $m=3$ or $4$ students, find the symmetric fixed points of the gradient-flow field, their unstable eigenvalues, and the predicted plateau length, and compare with simulations. How the plateau depends on $m/m_\star$ is, as far as we know, not settled.\label{ex:committee:over}
+
+\item \research (A theorem for the escape.) Prove that for $K=2$ and fixed $\eta<\eta_{\max}$, the escape time from random initialization divided by $\log d$ converges in probability to $1/(2\committeelu(\eta))$, and identify the limit law of $t_{\mathrm{esc}}-\frac1{2\committeelu(\eta)}\log d$. We do not know of a proof for this model.\label{ex:committee:escapethm}
+\end{exercises}
+
+\notesandrefs
+The committee machine belongs to the statistical mechanics of learning, surveyed by \textcite{EngelVandenBroeck2001}. The exact dynamics of online learning came in 1995. \Textcite{SaadSolla1995} announced the exact solution for soft committee machines with arbitrary numbers of hidden units in student and teacher, and \textcite{SaadSolla1995b} gave the full derivation and treated the realizable, over-realizable, and unrealizable cases and the role of the learning rate. \Textcite{BiehlSchwarze1995} analyzed the same dynamics independently, \textcite{RieglerBiehl1995} trained the readout too, and \textcite{BiehlRieglerWohler1996}, in a preprint, found several fixed points and cascades of plateaus between them.
+
+The plateau problem shaped the next decade of work on optimization. It led to the natural gradient \parencite{Amari1998}, analyzed in the committee machine with the methods of this chapter by \textcite{RattraySaad1999}, and to the geometry of the singular regions created by duplicated units \parencite{FukumizuAmari2000,AmariParkOzeki2006,CousseauOzekiAmari2008}; \cref{sec:committee:wrong} describes both.\sidenote{The geometric view and the ODE view describe the same object: the set $\cS_0$ of identical students is the image of a network with one hidden unit inside the network with $K$.}
+
+The modern revival began with \textcite{GoldtEtAl2019}, who proved that the ODE description is asymptotically exact and studied overparameterized students, and \textcite{GoldtEtAl2020}, who treated structured inputs. \Textcite{VeigaEtAl2022} drew the phase diagram of one-pass SGD with rigorous convergence rates, and \textcite{ArnaboldiStephanKrzakalaLoureiro2023} unified the high-dimensional and mean-field limits. The weight-space derivation of the unstable eigenvalue in \cref{thm:committee:plateau} is our arrangement.
+
+\paragraph{Translating the literature.}
+\Textcite{SaadSolla1995b} write $N$ for our $d$, $\xi$ for our input $x$, $J_i$ for our student weights $w_j$, $B_n$ for our teacher weights $w_{\star k}$, $K$ and $M$ for our $m$ and $m_\star$, and $\mu$ for our step $s$, so that their update is \eqref{eq:committee:sgd}; their time $\alpha=\mu/N$ is our $t$, their generalization error $\epsilon_g$ is our $\Loss$, and the overlaps $Q$, $R$, $T$ keep their names, with student indices $i,k$ and teacher indices $n,m$. Their integrals $I_2$, $I_3$, $I_4$ are those of \cref{lem:committee:erf}. \Textcite{GoldtEtAl2019} write $N$ for $d$ and $K$, $M$ for the numbers of student and teacher units, keep the entries of the weights of order one and divide the preactivations by $\sqrt N$, so that their order parameters, normalized by $N$, are ours; they also study training the second layer, which our model freezes at one.
+
+\printchapterbib
+\end{refsection}
