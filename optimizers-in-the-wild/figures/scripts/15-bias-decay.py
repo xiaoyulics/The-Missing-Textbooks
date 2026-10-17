@@ -11,7 +11,7 @@ the script computes, for radii B between 1 and 300:
   * simulation points: AdamW without memory, theta <- (1 - eta_t lambda) theta - eta_t sign(g_t),
     with eta_t lambda = 2/(t+2) (the Frank-Wolfe schedule), run for 20000 steps from zero.
 Output: figures/data/15-bias-decay.dat (curves) and figures/data/15-bias-decay-fw.dat (points).
-numpy and scipy only; deterministic; about 15 s on a laptop CPU.
+numpy and scipy only; deterministic; about 20 s on a laptop CPU.
 """
 import os
 import numpy as np
