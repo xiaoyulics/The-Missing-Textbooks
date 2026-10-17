@@ -27,7 +27,6 @@ l0 = 0.5 * h                      # initial loss of each mode, theta_0 = 1
 eps = 0.05 * l0.sum()
 S = h.max()
 BETA = 0.9
-R = 32
 
 
 # ---------------- SGD and preconditioned SGD: closed form (thm:noise:nqm) ----------------
@@ -127,8 +126,8 @@ def mom_best(B, Tmax):
 
 # ---------------- Monte Carlo ----------------
 def mc_first_passage(kind, eta, B, rng, T_theory):
-    """first t at which the average loss of R runs, smoothed by a centred moving average over
-    w = 2 floor(0.02 T) + 1 steps (w = 1 below 50 steps), is below eps."""
+    """first t at which the average loss of Rk runs (64 for B <= 32, 256 above), smoothed by a
+    centred moving average over w = 2 floor(0.02 T) + 1 steps (w = 1 below 50 steps), is below eps."""
     Rk = 64 if B <= 32 else 256
     w = 2 * int(0.02 * T_theory) + 1 if T_theory >= 50 else 1
     Tmax = int(1.3 * T_theory) + w + 20
