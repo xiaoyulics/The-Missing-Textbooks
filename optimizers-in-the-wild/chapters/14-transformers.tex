@@ -1,0 +1,421 @@
+% Chapter 14 of Optimizers in the Wild: why Adam beats SGD on transformers.
+
+\casechapter{Why Adam Beats SGD on Transformers}{Heterogeneous curvature, heavy-tailed classes and the batch-size regime}{Adam for transformers, SGD for convnets}{ch:transformers}
+\begin{refsection}[chapters/14-transformers.bib]
+
+\begin{chaptersummary}
+Transformers are trained with Adam because stochastic gradient descent trains them far more slowly, while on convolutional networks the two are close; the gap survives full batches and widens with the batch size. We study three solvable idealizations, a table whose rows are used with Zipfian frequencies, a quadratic whose blocks sit at different curvature scales, and the noisy quadratic model with a diagonal preconditioner, connected by one symmetry: gradient descent turns the weight of a row or a block into a clock, and sign descent and Adam do not see it. We prove that under Zipf's law gradient descent removes only the fraction $\ln10/Z_K\approx\ln10/\ln K$ of the loss per decade of steps, that blockwise step sizes replace the global condition number by the worst block's, and that a preconditioner's advantage grows with the batch size from a noise-weighted constant to its condition-number factor. The models leave out parameter sharing and the interplay of the mechanisms; a heuristic derivation, checked numerically, shows the preconditioner's small-batch advantage vanishing for averaged iterates, as plain SGD's deficit at batch size one reportedly does in practice.
+\end{chaptersummary}
+
+\section{In the wild: Adam for language, SGD for vision}\label{sec:transformers:wild}
+
+The transformer was trained with Adam from the start \parencite{VaswaniEtAl2017,KingmaBa2015}, and as of 2025 most large language models are trained with Adam, AdamW or a close relative. Convolutional networks for image classification are often still trained with stochastic gradient descent with momentum, which there reaches test accuracy as good as that of adaptive methods or better \parencite{WilsonEtAl2017}. In this chapter \emph{learning rate}, the practitioners' word, and \emph{step size}, the theorist's, mean the same thing.
+
+\begin{practice}[GPT-3, \textcite{BrownEtAl2020}; LLaMA, \textcite{TouvronEtAl2023}; ResNets on ImageNet, \textcite{GoyalEtAl2017}]
+Train a transformer language model with Adam or AdamW, $\beta_1=0.9$, $\beta_2=0.95$, weight decay $0.1$, a warmup and a cosine decay (GPT-3 also sets $\epsilon=10^{-8}$); SGD is not used. Train a ResNet on ImageNet with SGD with momentum $0.9$, learning rate $0.1\cdot B/256$ at batch size $B$, weight decay $10^{-4}$ and a step decay; Adam is not needed.
+\end{practice}
+
+The rule is folklore, supported by training runs rather than by a theorem. What has been measured:
+
+\begin{observation}[The gap; \textcite{ZhangEtAl2020,KunstnerEtAl2023,ZhangEtAl2024}]\label[observation]{obs:transformers:gap}
+On transformers, and most of all on language models, tuned SGD with momentum reduces the training loss much more slowly than Adam; on convolutional networks for image classification the two are close.
+\end{observation}
+
+An early explanation was the noise: \textcite{ZhangEtAl2020} found the stochastic gradients of attention models heavy-tailed, argued that adaptive methods and clipping cope with such noise where SGD does not, and proposed an adaptive clipping method that they tested on BERT.
+
+\begin{observation}[Not the noise; \textcite{KunstnerEtAl2023}]\label[observation]{obs:transformers:noise}
+As the batch size grows, up to the full training set, the gap between SGD and Adam on transformers does not close: SGD gains less from larger batches than Adam. With full batches Adam behaves much like sign descent with momentum, which closes most of the gap.
+\end{observation}
+
+Sign descent is steepest descent in the $\ell_\infty$ norm (\cref{ch:sign}), so the question moves from the noise to the geometry. Two answers have been proposed and tested.
+
+\begin{observation}[Rare classes are slow; \textcite{KunstnerEtAl2024}]\label[observation]{obs:transformers:rare}
+Group the tokens into \term{frequency buckets}\index{frequency bucket} of similar frequency and follow the training loss of each bucket. Under gradient descent the loss of the frequent tokens falls first, and that of the infrequent ones, which together account for most of the examples, much more slowly; under Adam and sign descent the buckets progress at much more similar speeds. The same happens in vision and linear models with heavy-tailed classes.
+\end{observation}
+
+\begin{observation}[Block heterogeneity; \textcite{ZhangEtAl2024}]\label[observation]{obs:transformers:blocks}
+The spectra of the Hessian restricted to the parameter blocks (embeddings, attention, feed-forward layers, normalization gains, output layer) differ widely from block to block in transformers and are similar in convolutional networks. SGD performs on par with Adam on problems without this \term{block heterogeneity}\index{block heterogeneity}, including quadratics built for the test, and worse when it is present.
+\end{observation}
+
+\Textcite{KunstnerEtAl2024} trace the slowness of rare classes to gradients and Hessians that are imbalanced across classes and correlated with each other, and \textcite{ZhangEtAl2024} trace the block effect to the single step size that SGD uses for all blocks.\sidenote{Frederik Kunstner's PhD thesis, \emph{Why Do Machine Learning Optimizers That Work, Work?} (University of British Columbia, 2024), asks why such heuristics beat classical methods and formalizes what makes per-coordinate step sizes adaptive.} \Textcite{ZhaoEtAl2025} report that adaptivity in the last layer and the normalization parameters alone keeps most of Adam's advantage, and \textcite{XieEtAl2025} that rotating the parameters of GPT-2 slows Adam but not SGD: the advantage lives in the coordinate system. The last observation brings the batch size back.
+
+\begin{observation}[Small batches; \textcite{MarekEtAl2025}]\label[observation]{obs:transformers:small}
+Language models train stably with batch sizes down to one when Adam's $\beta_2$ is rescaled to keep its half-life fixed in tokens, and small batches are more robust to hyperparameters and as efficient per FLOP as large ones or more. At small batch sizes even vanilla SGD, without momentum, trains them stably and comes close to Adam; the gap grows with the batch size.
+\end{observation}
+
+\Textcite{MarekEtAl2025} is refereed; a preprint reaches a similar conclusion for SGD with momentum \parencite{SreckovicEtAl2025}. This chapter models three of the explanations exactly and asks: \emph{which structure of the loss makes a per-coordinate normalization worth an order of magnitude in steps, why is the benefit specific to transformers, and why does it depend on the batch size?}
+
+\section{The idealization: frequencies, blocks and batches}\label{sec:transformers:ideal}
+
+\begin{definition}[Table models]\label[definition]{def:transformers:table}
+Let $q_1\ge\dots\ge q_K>0$, $\sum_jq_j=1$, be the frequencies of $K$ items (tokens or classes). A \term{table model}\index{table model} has one row $w_j\in\R^r$ per item and the loss
+\begin{equation}\label{eq:transformers:table}
+  \Loss(W)=\sum_{j=1}^Kq_j\,\ell_j(w_j),\qquad W=(w_1,\dots,w_K),
+\end{equation}
+with differentiable row losses $\ell_j$. The \emph{square-loss table} has $\ell_j(w)=\frac12\norm{w-y_j}_2^2$, the \emph{softmax table} has $\ell_j(w)=-\sum_k\nu_{jk}\log\softmax(w)_k$ for probability vectors $\nu_j$. The frequencies follow \term{Zipf's law}\index{Zipf's law} if $q_j=1/(jZ_K)$, where $Z_K=1+\frac12+\dots+\frac1K$ is the $K$-th \term{harmonic number}\index{harmonic number}.
+\end{definition}
+
+The softmax table is a bigram language model: row $j$ holds the logits of the token after token $j$, $\nu_j$ is the conditional distribution of that token, and $q_j$ is the frequency of token $j$ as an input. An embedding table has the same structure, since its row $j$ gets a gradient only from examples that contain token $j$. The square-loss table with $y_j=\nu_j$ is the bigram model trained with the square loss on one-hot targets $e_Y$: given $X=j$, the expectation of $\frac12\norm{w_X-e_Y}_2^2$ is $\frac12\norm{w_j-\nu_j}_2^2+\frac12(1-\norm{\nu_j}_2^2)$. It is the model of \textcite{KunstnerBach2025}. In the output layer of a classifier the frequencies are those of the labels, and near the optimum they enter as curvatures (\cref{prop:transformers:softmax}).
+
+The second model is a quadratic $\Loss(\theta)=\frac12(\theta-\theta^\star)^\top H(\theta-\theta^\star)$ with block-diagonal $H=\diag(H_1,\dots,H_N)\succ0$, whose blocks stand for the parameter groups of \cref{obs:transformers:blocks}; a table is the case of blocks that are rows. The third is the \term{noisy quadratic model}\index{noisy quadratic model} of \cref{ch:noise}.
+
+\begin{assumption}[Noisy quadratic model; \textcite{ZhangEtAl2019}]\label[assumption]{ass:transformers:nqm}
+The loss is $\Loss(\theta)=\frac12\sum_{i=1}^dh_i\theta_i^2$ with $h_1\ge\dots\ge h_d>0$. At step $t$ the optimizer receives $g_t=H\theta_t+\zeta_t$, where the $\zeta_t$ are independent of each other and of the past, with mean zero and covariance $\diag(c_1,\dots,c_d)/B$ at batch size $B$, a positive real number that enters only through the noise. Preconditioned SGD with multipliers $a_1,\dots,a_d>0$ updates $\theta_{t+1,i}=\theta_{t,i}-\eta a_ig_{t,i}$; SGD is $a_i=1$. We write $\lambda_i=a_ih_i$ for the curvatures that the preconditioned method sees.
+\end{assumption}
+
+Near a minimum of a well-specified model the gradient covariance is close to the Hessian, which suggests $c_i\propto h_i$; our example takes $h_i=1/i$ and $c_i=h_i$. Adam is modelled by $a_i=h_i^{-1/2}$: its second moment estimates $\E g_{t,i}^2=h_i^2\theta_{t,i}^2+c_i/B$, in which the noise dominates at small batch sizes, so that its preconditioner is $\diag(c)^{1/2}/\sqrt B$, a constant times $H^{1/2}$ when $c\propto h$ (Exercise~\ref{ex:transformers:adamnqm}). At large batch sizes the gradient dominates, and Adam is closer to sign descent.\sidenote{\Textcite{ZhangEtAl2019} use the same device, preconditioning by a power of the curvature, to stand for adaptive and second-order optimizers. Adam's preconditioner is not the Hessian; see \cref{ch:adaptive}.} One symmetry of optimizers connects the three models.
+
+\begin{definition}[Scale invariance]\label[definition]{def:transformers:invariant}
+An optimizer computes its update $u_t$ from the gradients $g_0,\dots,g_t$ and its hyperparameters, and sets $\theta_{t+1}=\theta_t+u_t$. Partition the coordinates into blocks. The optimizer \emph{acts blockwise} if the update of each block is computed from the gradients of that block by the rule that the optimizer follows when run on that block alone, and it is \term{scale invariant}\index{scale invariance} if multiplying the gradients of every block, at all steps, by a positive constant of that block leaves all updates unchanged. With blocks of one coordinate we say \emph{coordinatewise}, for both properties.
+\end{definition}
+
+Sign descent $u_t=-\eta\sign(g_t)$ is coordinatewise scale invariant, and so are signum and Lion, which take signs of moving averages (\cref{ch:sign,ch:momentum}), and Adam, RMSProp and AdaGrad with $\epsilon=0$: multiplying every $g_{t,i}$ by $s_i>0$ multiplies $m_{t,i}$ by $s_i$ and $v_{t,i}$ by $s_i^2$, and leaves $m_{t,i}/\sqrt{v_{t,i}}$ unchanged (we read $0/0$ as $0$). Adalayer \parencite{ZhaoEtAl2025} and Adam-mini \parencite{ZhangEtAl2025}, which keep one second moment or one learning rate per block, are blockwise scale invariant. Gradient descent is not; normalized gradient descent is invariant only under a common scale for all blocks; and Adam with $\epsilon>0$ only for gradients much larger than $\epsilon$, below which it is SGD with momentum and step size $\eta/\epsilon$ (\cref{ch:adaptive}).\sidenote{With $\epsilon=10^{-8}$ the condition is mild: in a Zipfian table with $K=10^5$ the rarest row carries the weight $q_K\approx10^{-6}$, so its gradients exceed $\epsilon$ until its error falls below about $10^{-2}$.}
+
+\begin{dictionary}
+the frequency $q_j$ of row $j$ & how often token $j$ occurs as an input (embedding, bigram rows) or as a label (output rows)\\
+gradient descent's clock $\eta q_jt$ & the learning rate times the number of times token $j$ was seen, divided by the batch size\\
+Zipf's law; $Z_K\approx\ln K+0.58$ & token frequencies of text; $Z_K\approx11.4$ for $50{,}000$ tokens\\
+a scale-invariant optimizer & Adam with small $\epsilon$, sign descent, Lion; Adam-mini blockwise\\
+blocks $H_b$ at different scales & parameter groups of \cref{obs:transformers:blocks}\\
+small and large batch limits & noise-limited and curvature-limited training\\
+the multipliers $a_i=h_i^{-1/2}$ & Adam at small batch sizes, whose second moment is mostly noise
+\end{dictionary}
+
+\paragraph{What was thrown away.} Shared parameters (in a transformer the embedding rows feed shared layers), nonlinearity, changing curvature, and noise that is heavy-tailed or depends on the parameters. These go first because what remains can be solved exactly, so that the signature of each mechanism, a logarithmic loss curve, a rate set by blockwise spectra, a gap depending on the batch size, can be held against the observations one at a time.
+
+\paragraph{What one had to notice.} That the frequency of a token is a curvature: the Hessian of a table is block diagonal with blocks $q_j\nabla^2\ell_j$, so Zipf's law becomes the spectrum $1/j$, the hardest power law for gradient descent \parencite{KunstnerBach2025}; and that per-coordinate normalization is exactly the operation that removes such a weight.
+
+\section{The theory: frequencies are clocks}\label{sec:transformers:freq}
+
+\begin{proposition}[Weights are clocks]\label[proposition]{prop:transformers:clock}
+Let $\Loss(\theta)=\sum_{b=1}^Ns_b\,\ell_b(\theta_b)$ with weights $s_b>0$ and functions $\ell_b$ with locally Lipschitz gradients, $\theta=(\theta_1,\dots,\theta_N)$ split into blocks.
+\begin{enumerate}
+\item Gradient descent with step size $\eta$ on $\Loss$ moves each block $\theta_b$ as gradient descent with step size $\eta s_b$ on $\ell_b$ alone. Gradient flow on $\Loss$ is $\theta_b(t)=\varphi_b(s_bt)$ as long as these exist, where $\varphi_b$ is gradient flow on $\ell_b$ from $\theta_b(0)$.
+\item An optimizer that acts blockwise and is scale invariant moves each block exactly as when run on $\ell_b$ alone, from the same point with the same hyperparameters. Its iterates do not depend on $s_1,\dots,s_N$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to compare each block with its solo run, step by step. The gradient of $\Loss$ with respect to $\theta_b$ is $s_b\nabla\ell_b(\theta_b)$, which gives (i) for gradient descent; for the flow, $\psi(t)=\varphi_b(s_bt)$ satisfies $\psi'(t)=-s_b\nabla\ell_b(\psi(t))$, the equation of block $b$ under gradient flow on $\Loss$, with the same initial point, and solutions are unique because the gradients are locally Lipschitz. For (ii), let $\tilde\theta_{b,t}$ be the iterates of the solo run on $\ell_b$, and suppose that $\theta_{b,\tau}=\tilde\theta_{b,\tau}$ for $\tau\le t$, as holds for $t=0$. The gradients of block $b$ seen so far are then $s_b$ times those of the solo run; the update of block $b$ is computed from them by the rule of the solo run, and by scale invariance it equals the update of the solo run. Hence $\theta_{b,t+1}=\tilde\theta_{b,t+1}$.
+\end{proof}
+
+For gradient descent the step size must be stable for every block, so on a table whose row losses all have the Hessian $\Lambda I$ it needs $\eta q_1\Lambda<2$: the most frequent row caps the step size, and the rarest then needs about $1/(\eta q_K\Lambda)>q_1/(2q_K)$ steps. The ratio $q_1/q_K$ is a condition number made of frequencies alone, and under Zipf's law it is $K$. What this costs is the content of the next theorem. Write $\gamma=0.5772\ldots$ for Euler's constant and $E_1(z)=\int_z^\infty u^{-1}e^{-u}\dd u$.
+
+\begin{lemma}[Exponentially weighted harmonic sums]\label[lemma]{lem:transformers:harmonic}
+If a function $f\ge0$ on $[1,K]$ is nondecreasing up to some point and nonincreasing after it, then $\abs{\sum_{j=1}^Kf(j)-\int_1^Kf}\le\max f$. For $b>0$ and every integer $K\ge1$, $J_K(b)=\sum_{j=1}^Kj^{-1}e^{-b/j}$ satisfies
+\[
+  -\frac1{eb}-\frac{e^{-b}}b\le J_K(b)-\ln\frac Kb+\gamma\le\frac1{eb}+\frac bK .
+\]
+\end{lemma}
+
+\begin{proof}
+The plan is to compare sums with integrals on the two monotone pieces, and then to evaluate the integral. Let $f$ increase on $[1,m]$ and decrease on $[m,K]$, and let $p=\floor m$. On $[j,j+1]$ the integral of $f$ lies between $f(j)$ and $f(j+1)$, the smaller being $f(j)$ for $j<p$ and $f(j+1)$ for $j>p$; on $[p,p+1]$, when $p<K$, it lies between $\min(f(p),f(p+1))$ and $\max f$. Adding the lower bounds gives $\int_1^Kf\ge\sum_jf(j)-\max(f(p),f(p+1))$, and adding the upper bounds gives $\int_1^Kf\le\sum_jf(j)+\max f-f(1)-f(K)$.
+
+For the second statement, $f(x)=x^{-1}e^{-b/x}$ increases up to $x=b$ and decreases afterwards, with maximum $1/(eb)$, and $u=b/x$ gives $\int_1^Kf=E_1(b/K)-E_1(b)$. The function $E_1(z)+\ln z$ has derivative $(1-e^{-z})/z$ and the classical limit $-\gamma$ at $z=0$, so $E_1(z)=-\gamma-\ln z+\operatorname{Ein}(z)$ with $\operatorname{Ein}(z)=\int_0^z(1-e^{-u})u^{-1}\dd u\in[0,z]$; and $0\le E_1(b)\le b^{-1}\int_b^\infty e^{-u}\dd u=e^{-b}/b$. Hence $\int_1^Kf-\ln(K/b)+\gamma=\operatorname{Ein}(b/K)-E_1(b)\in[-e^{-b}/b,\,b/K]$, and the first statement adds $\pm1/(eb)$.
+\end{proof}
+
+\begin{theorem}[Zipf frequencies]\label{thm:transformers:zipf}
+Consider the square-loss table with Zipfian frequencies $q_j=1/(jZ_K)$, $K\ge2$, started from rows with $\norm{w_j(0)-y_j}_2=1$, and run gradient descent with step size $\eta\in(0,2/q_1)$; write $\Loss_t$ for the loss after $t$ steps, so $\Loss_0=\frac12$.
+\begin{enumerate}
+\item For every $\eta$, $\Loss_t=\frac12\sum_{j=1}^Kq_j(1-\eta q_j)^{2t}$.
+\item For $\eta=1/q_1$ and every $t\ge1$,
+\[
+  \frac{\Loss_t}{\Loss_0}=1-\frac{\cA(t)-R_K(t)}{Z_K},\qquad \cA(t)=\sum_{j\ge1}\frac1j\Bigl[1-\Bigl(1-\frac1j\Bigr)^{2t}\Bigr],
+\]
+with $0\le R_K(t)\le2t/K$ and $\abs{\cA(t)-\ln(2t)-2\gamma}\le\frac3{2t}$. Also, $\Loss_t/\Loss_0=\bigl(\ln\frac K{2t}-\gamma+\delta\bigr)/Z_K$ with $\abs\delta\le\frac3{2t}+\frac{2t}K$.
+\item For every $\eta\in(0,2/q_1)$ and every $t\ge1$, $\Loss_t/\Loss_0\ge\bigl(\ln\frac K{4t}-\gamma-\frac3{2t}\bigr)/Z_K$.
+\item For every $\eps\in(0,1)$ and every stable step size, the number $T_\eps$ of steps needed to reach $\Loss_t\le\eps\Loss_0$ satisfies $T_\eps\ge\frac K4e^{-\gamma-\eps Z_K-3/(2T_\eps)}$; as $K\to\infty$ with $\eps$ fixed, $T_\eps\ge(1-o(1))\frac{e^{-\gamma}}4Ke^{-\eps Z_K}$, which is of order $K^{1-\eps}$.
+\end{enumerate}
+\end{theorem}
+
+The amount $\cA(t)$ does not depend on $K$ and grows by $\ln10$ per decade: \emph{between steps $t$ and $10t$, for $1\ll t\ll K$, gradient descent removes the fraction $\ln10/Z_K$ of the initial loss}, the same in every decade, until $t$ approaches $K$.
+
+\begin{proof}
+The plan is to reduce the loss to a harmonic sum with geometric weights, compare those weights with exponential ones, and apply \cref{lem:transformers:harmonic}. By \cref{prop:transformers:clock}(i), row $j$ runs gradient descent with step size $\eta q_j$ on $\frac12\norm{w-y_j}_2^2$, which multiplies its error by $1-\eta q_j$ at each step; this is (i).
+
+For (ii), $\eta=1/q_1=Z_K$ gives $\eta q_j=1/j$, so $\Loss_t/\Loss_0=F_K(t)/Z_K$ with $F_K(t)=\sum_{j\le K}j^{-1}(1-1/j)^{2t}$, and since $Z_K=\sum_{j\le K}1/j$,
+\[
+  F_K(t)=Z_K-\cA(t)+R_K(t),\qquad R_K(t)=\sum_{j>K}\frac1j\Bigl[1-\Bigl(1-\frac1j\Bigr)^{2t}\Bigr].
+\]
+Bernoulli's inequality gives $0\le1-(1-1/j)^{2t}\le2t/j$, so the series converge and $0\le R_K(t)\le\sum_{j>K}2t/j^2\le2t/K$. To size $F_K(t)$, compare it with $J_K(2t)$. For $j\ge2$ put $x=1/j\le\frac12$; the inequalities $-x-x^2\le\ln(1-x)\le-x$ on $[0,\frac12]$ give
+\[
+  e^{-2t/j}\Bigl(1-\frac{2t}{j^2}\Bigr)\le e^{-2t/j-2t/j^2}\le\Bigl(1-\frac1j\Bigr)^{2t}\le e^{-2t/j},
+\]
+and the term $j=1$ of $F_K$ vanishes. Hence $0\le J_K(2t)-F_K(t)\le e^{-2t}+\sum_{j\ge2}g(j)$ with $g(x)=2tx^{-3}e^{-2t/x}$, which increases up to $x=2t/3$ and decreases afterwards, has maximum $\frac{27}{4t^2}e^{-3}<0.34/t^2$, and has $\int_0^\infty g=1/(2t)$; by the lemma, $\sum_{j\ge2}g(j)\le\frac1{2t}+\frac{0.34}{t^2}$. With the lemma at $b=2t$,
+\[
+  -\frac1{2et}-\frac{e^{-2t}}{2t}-e^{-2t}-\frac1{2t}-\frac{0.34}{t^2}\le F_K(t)-\ln\frac K{2t}+\gamma\le\frac1{2et}+\frac{2t}K .
+\]
+For $t\ge1$ the left side is at least $-1.25/t$, since $e^{-2t}\le e^{-2}$ and $te^{-2t}\le e^{-2}$ there. This is the second form of (ii). For the first, let $K\to\infty$ in $\cA(t)=Z_K-F_K(t)+R_K(t)$: since $Z_K-\ln K\to\gamma$ and $R_K(t)\to0$, the bounds on $F_K(t)-\ln K$ pass to the limit and give $\abs{\cA(t)-\ln(2t)-2\gamma}\le1.25/t$.
+
+For (iii), let $j\ge2$; then $0<\eta q_j<2/j\le1$, so $(1-\eta q_j)^{2t}\ge(1-2/j)^{2t}\ge0$. Drop the terms $j\le3$, and for $j\ge4$ use $\ln(1-x)\ge-x-x^2$ with $x=2/j\le\frac12$, to get
+\[
+  \frac{\Loss_t}{\Loss_0}\ge\frac1{Z_K}\Bigl[J_K(4t)-\sum_{j\le3}\frac{e^{-4t/j}}j-\sum_{j\ge4}\frac{8t}{j^3}e^{-4t/j}\Bigr].
+\]
+By the lemma applied to $8tx^{-3}e^{-4t/x}$ the last sum is at most $\frac1{2t}+\frac{0.17}{t^2}$; the middle sum is at most $\frac{11}6e^{-4t/3}\le0.49/t$ for $t\ge1$; and the lemma at $b=4t$ gives $J_K(4t)\ge\ln\frac K{4t}-\gamma-\frac1{4et}-\frac{e^{-4t}}{4t}$. The errors add up to less than $1.3/t$.
+
+For (iv), if $\Loss_t\le\eps\Loss_0$, then (iii) gives $\ln\frac K{4t}-\gamma-\frac3{2t}\le\eps Z_K$, that is, $t\ge\frac K4e^{-\gamma-\eps Z_K-3/(2t)}$; at $t=T_\eps$ this is the first claim. Since $T_\eps\ge1$, it gives $T_\eps\ge\frac K4e^{-\gamma-\eps Z_K-3/2}\to\infty$, so $e^{-3/(2T_\eps)}\to1$. Finally $Z_K=\ln K+\gamma+O(1/K)$, so $Ke^{-\eps Z_K}=e^{-\eps\gamma}K^{1-\eps}(1+o(1))$.
+\end{proof}
+
+The constant $\frac32$ is not sharp: numerically $\cA(t)-\ln(2t)-2\gamma$ is close to $1/(4t)$. By (iii) the best stable step gains at most about a factor two in time. The asymptotic form of (iv) converges slowly, with relative errors of order $K^{-\eps}$: for $K=10^4$ and $\eps=0.1$, formula (i) gives $1361$ steps at $\eta=1/q_1$ and $683$ at the best constant step size, against the lower bound $526$ of (iv). A scale-invariant optimizer sees none of this.
+
+\begin{corollary}[Sign descent and Adam on a table]\label[corollary]{cor:transformers:sign}
+Start the square-loss table, with arbitrary frequencies, from the same error $e=w_j(0)-y_j\in\R^r$ in every row. For every coordinatewise scale-invariant optimizer, $\Loss_t/\Loss_0$ does not depend on the frequencies or on $K$: it is the normalized loss of the optimizer on the single row $\frac12\norm{w-y}_2^2$ from the error $e$. Under sign descent with step size $\eta$, the $i$-th coordinate of the error has size $\abs{e_i}-t\eta$ for $t\le\floor{\abs{e_i}/\eta}$, and afterwards it alternates between two values whose sum is $\eta$, or stays at $0$; so $\Loss_t/\Loss_0\le r\eta^2/\norm e_2^2$ for $t>\max_i\abs{e_i}/\eta$.
+\end{corollary}
+
+\begin{proof}
+The plan is to apply \cref{prop:transformers:clock}(ii) with the rows as blocks, which is allowed because a coordinatewise scale-invariant optimizer acts blockwise for every partition and is invariant under rescalings that are constant on rows. Every row then follows the solo run from $e$, so $\Loss_t=\sum_jq_j\ell(t)$ for the solo loss $\ell(t)$, and $\Loss_t/\Loss_0=\ell(t)/\ell(0)$. Under sign descent the solo gradient is the error, updated by $e_i\leftarrow e_i-\eta\sign(e_i)$: its size falls by $\eta$ while it is at least $\eta$; then each step flips its sign and maps the size $\rho$ to $\eta-\rho$, unless it is exactly $0$, where it stays.
+\end{proof}
+
+So on the Zipf table with $K=10^4$, gradient descent needs $683$ steps at its best constant step size to reach a tenth of the initial loss, and sign descent with step size $0.005$ needs $55$ for every $K$ (\cref{fig:transformers:zipf}). The corollary removes the frequencies, not the spread of the targets within a row: when the targets are themselves Zipfian, as in a bigram model, a constant step must suit the smallest targets and the run must be long enough for the largest. On Zipf-distributed data \textcite{KunstnerBach2025} find that sign descent needs a number of steps growing only like the square root of the dimension; Exercise~\ref{ex:transformers:signzipf} derives this for one row, for the loss at consecutive steps, since sign descent oscillates.
+
+For the softmax table the frequency enters in the same way, exactly; for the output layer, where the frequencies are those of the labels, it enters as the curvature at the optimum.
+
+\begin{proposition}[Frequencies in the softmax]\label[proposition]{prop:transformers:softmax}
+\begin{enumerate}
+\item For the softmax table, with $s_j=\softmax(w_j)$,
+\[
+  \nabla_{w_j}\Loss=q_j\,(s_j-\nu_j),\qquad \nabla^2_{w_j}\Loss=q_j\bigl(\diag(s_j)-s_js_j^\top\bigr),
+\]
+the Hessian is block diagonal over the rows, and $0\preceq\diag(s)-ss^\top\preceq\frac12I$ for every probability vector $s$. Hence \cref{prop:transformers:clock} applies with the weights $q_j$.
+\item For logits $z\in\R^K$ of classes with frequencies $q_1>\dots>q_K>0$, the loss $\ell(z)=-\sum_kq_k\log\softmax(z)_k$ is minimized exactly at $z=\log q+c\mathbf1$, $c\in\R$, where its Hessian is $\diag(q)-qq^\top$. Its eigenvalues are $0$, with eigenvector $\mathbf1$, and $\mu_1\ge\dots\ge\mu_{K-1}$ with $q_{k+1}\le\mu_k\le q_k$. For Zipfian $q$ the condition number $\mu_1/\mu_{K-1}$ on the subspace orthogonal to $\mathbf1$ lies between $(K-1)/2$ and $K$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to compute the derivatives and to read the spectrum from the Courant--Fischer characterization. (i) Since $\sum_k\nu_{jk}=1$, $\ell_j(w)=-\sum_k\nu_{jk}w_k+\log\sum_ke^{w_k}$, whose gradient is $s_j-\nu_j$, and $\partial s_k/\partial w_l=s_k(\delta_{kl}-s_l)$ gives the Hessian. The form $u^\top(\diag(s)-ss^\top)u=\sum_ks_ku_k^2-(\sum_ks_ku_k)^2$ is the variance of $u_k$ for $k$ drawn from $s$, nonnegative and, by Popoviciu's inequality, at most $\frac14(\max_ku_k-\min_ku_k)^2\le\frac12\norm u_2^2$.
+
+(ii) The gradient $\softmax(z)-q$ vanishes exactly when $z-\log q\in\R\mathbf1$, and $\ell$ is convex by (i), so these points are the minimizers. If $(\diag(q)-qq^\top)u=0$, then $q_ku_k=q_k\ip{q,u}$ for every $k$, so $u\propto\mathbf1$. By Courant--Fischer, $\mu_k$ is the largest value, over subspaces $U$ of dimension $k$, of the least value of the form on unit vectors of $U$. Since $-qq^\top\preceq0$, $\mu_k\le q_k$; and the vectors of $\operatorname{span}(e_1,\dots,e_{k+1})$ orthogonal to $q$ form a subspace of dimension at least $k$ on which the form is $\sum_{i\le k+1}q_iu_i^2\ge q_{k+1}\norm u_2^2$, so $\mu_k\ge q_{k+1}$. For Zipfian $q$ this puts $\mu_1/\mu_{K-1}$ between $q_2/q_{K-1}=(K-1)/2$ and $q_1/q_K=K$.
+\end{proof}
+
+Near its optimum the output layer is a quadratic whose curvatures interlace the frequencies, and at uniform initialization the gradient $1/K-q_k$ of a frequent class carries its frequency: the imbalanced, correlated gradients and Hessians that \textcite{KunstnerEtAl2024} find in linear models. In a table, by \cref{prop:transformers:clock}, gradient descent fits a bucket of frequency $q$ at the time $1/(\eta q)$, a decade of time per decade of frequency, while a scale-invariant optimizer fits all buckets together (\cref{fig:transformers:zipf}, right).\sidenote{\Textcite{YadavEtAl2025}, a workshop paper, prove in a minimal next-token-prediction model with heavy-tailed classes that sign descent converges faster than normalized gradient descent.}
+
+\section{The theory: blocks and batches}\label{sec:transformers:blocks}
+
+Rows are blocks that do not interact, each with its own weight; the block quadratic keeps the first property and replaces the weights by curvature scales. For a block write $\mu_b=\lmin(H_b)$, $L_b=\lmax(H_b)$ and $\kappa_b=L_b/\mu_b$; globally $L=\max_bL_b$, $\mu=\min_b\mu_b$ and $\kappa=L/\mu$; and call $\omega=\max_bL_b/\min_bL_b$ the \term{scale spread}\index{scale spread}.
+
+\begin{theorem}[Block heterogeneity]\label{thm:transformers:blocks}
+Let $\Loss(\theta)=\frac12(\theta-\theta^\star)^\top H(\theta-\theta^\star)$ with $H=\diag(H_1,\dots,H_N)\succ0$.
+\begin{enumerate}
+\item Let $\rho(\eta)=\max(\abs{1-\eta L},\abs{1-\eta\mu})$. Gradient descent with step size $\eta$ has $\norm{\theta_t-\theta^\star}_2\le\rho(\eta)^t\norm{\theta_0-\theta^\star}_2$, with equality for some $\theta_0\ne\theta^\star$, and $\min_\eta\rho(\eta)=(\kappa-1)/(\kappa+1)$, attained at $\eta=2/(L+\mu)$.
+\item With a step size $\eta_b$ for each block, the best worst-case rate is the largest of the rates $(\kappa_b-1)/(\kappa_b+1)$.
+\item $\max(\omega,\max_b\kappa_b)\le\kappa\le\omega\max_b\kappa_b$.
+\item If $H_b=s_b\bar H_b$ with $s_b>0$, every blockwise scale-invariant optimizer produces the same iterates for all choices of the scales $s_b$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to diagonalize and treat each block as in (i). (i) In an orthonormal eigenbasis of $H$, the component along an eigenvector with eigenvalue $\lambda_k$ is multiplied by $1-\eta\lambda_k$ at each step, so the norm ratio is at most $\max_k\abs{1-\eta\lambda_k}^t$, with equality for an eigenvector attaining the maximum. The function $x\mapsto\abs{1-\eta x}$ is convex, so the maximum over the spectrum is at $\mu$ or $L$, and the branches $1-\eta\mu$ and $\eta L-1$ cross at $\eta=2/(L+\mu)$, where both equal $(\kappa-1)/(\kappa+1)$. (ii) The blocks evolve independently, so the worst case is the worst block, and each block's rate is minimized separately by (i). (iii) Since $\mu_b\le L_b$, $\kappa\ge\max_bL_b/\min_bL_b=\omega$, and $\kappa\ge L_b/\mu_b$ for every $b$; if $b^*$ attains $\min_b\mu_b$, then $\kappa=(\max_bL_b/L_{b^*})(L_{b^*}/\mu_{b^*})\le\omega\kappa_{b^*}$. (iv) is \cref{prop:transformers:clock}(ii) with $\ell_b(\theta_b)=\frac12(\theta_b-\theta_b^\star)^\top\bar H_b(\theta_b-\theta_b^\star)$.
+\end{proof}
+
+Gradient descent needs about $\frac\kappa2\ln\frac1\eps$ steps to reduce the error by a factor $\eps$, blockwise step sizes about $\frac12\max_b\kappa_b\ln\frac1\eps$, and by (iii) the gain $\kappa/\max_b\kappa_b$ is at most the scale spread $\omega$, with equality when every $\kappa_b=1$. Part (iii) also says what block heterogeneity is. Arrange one spectrum in two ways: each block a narrow band at its own scale, or every block the whole range. Gradient descent cannot tell the two apart; blockwise step sizes gain $\omega$ in the first arrangement and nothing in the second, where $\omega=1$. In the language of \cref{obs:transformers:blocks}, transformers are closer to the first arrangement and convolutional networks to the second. By (iv), a blockwise scale-invariant optimizer, Adam among them, does not see the scales: its iterates are those of the problem rescaled to $\omega=1$.
+
+Both invariances are tied to the coordinate system. Gradient descent is \term{rotation equivariant}\index{rotation equivariance}: for an orthogonal $Q$, gradient descent on $\theta\mapsto\Loss(Q\theta)$ from $Q^\top\theta_0$ produces $Q^\top$ times the iterates on $\Loss$. Scale invariance does not survive a rotation that mixes rows or blocks, and for sign descent the $\ell_\infty$ smoothness constant of a quadratic can grow from $\tr H$ to about $\frac2\pi d\lmax(H)$ after a random rotation (\cref{ch:sign}), which is the effect that \textcite{XieEtAl2025} measure in GPT-2 (Exercise~\ref{ex:transformers:rotation}).\sidenote{SOAP runs Adam in the eigenbasis of Shampoo's Kronecker factors (\cref{ch:kronecker}): it chooses the coordinate system in which a diagonal, scale-invariant method acts, instead of inheriting the parameters' own.}
+
+With noise, the advantage of a preconditioner has different limits at large and small batch sizes, the two regimes of \cref{ch:noise}. The small-batch limit is a number of samples, defined through the bias and the noise per unit of $\eta/B$ of the flow at time $\tau=\eta t$:
+\begin{equation}\label{eq:transformers:BV}
+  \cB_a(\tau)=\frac12\sum_{i=1}^dh_i\theta_{0,i}^2e^{-2\lambda_i\tau},\qquad \cV_a(\tau)=\frac14\sum_{i=1}^da_ic_i\bigl(1-e^{-2\lambda_i\tau}\bigr).
+\end{equation}
+We write $\Phi_a(\tau,\alpha)=\cB_a(\tau)+\alpha\cV_a(\tau)$, $\Delta_{0,i}=\frac12h_i\theta_{0,i}^2$, so that $\sum_i\Delta_{0,i}=\Loss(\theta_0)$, and $V_a=\sum_ia_ic_i$.
+
+\begin{lemma}[Small steps]\label[lemma]{lem:transformers:discrete}
+In the noisy quadratic model let $\lmax=\max_i\lambda_i$, $\eta\in(0,2/\lmax)$ and $\alpha=\eta/B$. Then, with $u_i=(1-\eta\lambda_i)^{2t}$,
+\[
+  \E\Loss(\theta_t)=\sum_{i=1}^d\Bigl[\Delta_{0,i}u_i+\frac{\alpha a_ic_i}4\,\frac{2(1-u_i)}{2-\eta\lambda_i}\Bigr],
+\]
+and if $\eta\le1/(2\lmax)$, then $\abs{\E\Loss(\theta_t)-\Phi_a(\eta t,\alpha)}\le\eta\lmax\bigl(\Loss(\theta_0)+\alpha V_a\bigr)$ for every $t$.
+\end{lemma}
+
+\begin{proof}
+The plan is to solve the recursion of the second moments and to compare it term by term with the flow. Squaring $\theta_{t+1,i}=(1-\eta\lambda_i)\theta_{t,i}-\eta a_i\zeta_{t,i}$ and taking expectations gives $\E\theta_{t+1,i}^2=(1-\eta\lambda_i)^2\E\theta_{t,i}^2+\eta^2a_i^2c_i/B$ (\cref{ch:noise}), so $\E\theta_{t,i}^2=u_i\theta_{0,i}^2+(\eta^2a_i^2c_i/B)(1-u_i)/(1-(1-\eta\lambda_i)^2)$; multiplying by $\frac12h_i$ and using $1-(1-x)^2=x(2-x)$ with $x=\eta\lambda_i$ gives the formula. Now let $x\le\frac12$ and $\bar u=e^{-2xt}$. The inequalities $-x-x^2\le\ln(1-x)\le-x$ give $\bar ue^{-2tx^2}\le u_i\le\bar u$, hence $0\le\bar u-u_i\le2tx^2\bar u=2x\,(xt)e^{-2xt}\le x/e$. The term of $\Phi_a$ for coordinate $i$ is $\Delta_{0,i}\bar u+\frac14\alpha a_ic_i(1-\bar u)$, and $\frac{2(1-u_i)}{2-x}-(1-\bar u)=\frac x{2-x}(1-u_i)+(\bar u-u_i)\in[0,2x]$. So the two terms differ by at most $x\Delta_{0,i}/e+x\alpha a_ic_i/2$, and summing over $i$ with $x\le\eta\lmax$ gives the bound.
+\end{proof}
+
+\begin{theorem}[The gap and the batch size]\label{thm:transformers:batch}
+In the noisy quadratic model let $\theta_{0,i}\ne0$ and $c_i>0$ for all $i$, let $\lmin$ and $\lmax$ be the extreme effective curvatures, and let $0<\eps<\Loss(\theta_0)$. Let $T_a(B)$ be the least $t$ such that some $\eta\in(0,2/\lmax)$ gives $\E\Loss(\theta_t)\le\eps$, and $T_a(\infty)$ the same count for exact gradients ($c=0$).
+\begin{enumerate}
+\item (Large batches.) $T_a(B)$ is nonincreasing in $B$ and at least $T_a(\infty)$. Unless $\eps$ is one of the countably many numbers $\inf_\eta\Loss(\theta_t)$, $t\in\N$, for exact gradients, $T_a(B)=T_a(\infty)$ for all large $B$.
+\item (Small batches.) As $B\to0$, $B\,T_a(B)$ converges to the number of samples
+\[
+  n_a(\eps)=\min\Bigl\{\frac{\tau\,\cV_a(\tau)}{\eps-\cB_a(\tau)}\colon\tau>0,\ \cB_a(\tau)<\eps\Bigr\}.
+\]
+\item (High accuracy.) If $\lmin<\lmax$, then as $\eps\to0$,
+\[
+  T_a(\infty)\sim\frac{\ln(1/\eps)}{4\operatorname{artanh}(\lmin/\lmax)},\qquad n_a(\eps)\sim\frac{V_a}{8\lmin}\cdot\frac{\ln(1/\eps)}\eps .
+\]
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to read the large-batch limit off the exact formula of \cref{lem:transformers:discrete}, to match the discrete dynamics to its flow from above and from below for the small-batch limit, and to estimate directly for (iii).
+
+(i) The noise term of the formula is nonnegative and proportional to $1/B$, which gives the first two claims. Let $t^*=T_a(\infty)$; unless $\eps$ is exceptional, some $\eta^*$ gives a deterministic loss below $\eps$ at step $t^*$, the noise term at $(\eta^*,t^*)$ tends to $0$ as $B\to\infty$, and $T_a(B)\le t^*$ for large $B$.
+
+(ii) The minimum exists: the admissible $\tau$ form an interval $(\tau_\eps,\infty)$, since $\cB_a$ decreases continuously from $\Loss(\theta_0)$ to $0$; the quotient is continuous there and tends to $\infty$ at both ends, because its denominator vanishes at $\tau_\eps$ and $\cV_a(\tau)\to V_a/4>0$.
+
+\emph{Upper bound.} Let $\tau$ be admissible and $0<\alpha<(\eps-\cB_a(\tau))/\cV_a(\tau)$, so that $\Phi_a(\tau,\alpha)<\eps$. Put $\eta=\alpha B$ and $t=\ceil{\tau/\eta}$. As $B\to0$, $\eta t\to\tau$, $\Phi_a(\eta t,\alpha)\to\Phi_a(\tau,\alpha)$, and the error bound of the lemma tends to $0$; so for small $B$, $\E\Loss(\theta_t)\le\eps$ and $B\,T_a(B)\le Bt\le\tau/\alpha+B$. Letting $B\to0$, then $\alpha\uparrow(\eps-\cB_a(\tau))/\cV_a(\tau)$, and minimizing over $\tau$ gives $\limsup_{B\to0}B\,T_a(B)\le n_a(\eps)$.
+
+\emph{Lower bound.} Let $\eta_B$ attain the count $t_B=T_a(B)$, and $\alpha_B=\eta_B/B$. Since $2/(2-\eta\lambda_i)\ge1$, the term of coordinate $i$ in the formula of the lemma is a convex combination of $\Delta_{0,i}$ and a number at least $\frac14\alpha a_ic_i$, hence at least $\min(\Delta_{0,i},\frac14\alpha a_ic_i)$; these bounds sum to more than $\eps$ for every $\alpha$ above some $\bar\alpha$, since their sum tends to $\Loss(\theta_0)>\eps$. So $\alpha_B\le\bar\alpha$, $\eta_B\le\bar\alpha B$, and for small $B$ the lemma applies with $\tau_B=\eta_Bt_B$:
+\[
+  \eps\ge\E\Loss(\theta_{t_B})\ge\Phi_a(\tau_B,\alpha_B)-\delta_B,\qquad\delta_B=\bar\alpha B\lmax\bigl(\Loss(\theta_0)+\bar\alpha V_a\bigr)\to0 .
+\]
+Hence $B\,t_B=\tau_B/\alpha_B\ge\tau_B\cV_a(\tau_B)/(\eps+\delta_B-\cB_a(\tau_B))\ge n_a(\eps+\delta_B)$. It remains to show $\liminf_{\delta\downarrow0}n_a(\eps+\delta)\ge n_a(\eps)$. Let $\delta_k\downarrow0$ and let $\tau_k$ attain $n_a(\eps+\delta_k)\le n_a(\eps)$. Along a subsequence with $\tau_k\to\infty$ or $\tau_k\to\tau_\eps$ the quotients would tend to $\infty$, as above; so the $\tau_k$ have a limit point in $(\tau_\eps,\infty)$, where the quotient is continuous in $(\tau,\eps)$, and the limit of $n_a(\eps+\delta_k)$ along it is at least $n_a(\eps)$.
+
+(iii) Let $\kappa_a=\lmax/\lmin$ and let $\rho=(\kappa_a-1)/(\kappa_a+1)$ be the rate of \cref{thm:transformers:blocks}(i), so that $\ln(1/\rho)=2\operatorname{artanh}(1/\kappa_a)$. As in that theorem, every $\eta$ has $\abs{1-\eta\lambda_i}\ge\rho$ for some $i$ with $\lambda_i\in\{\lmin,\lmax\}$, so the deterministic loss at step $t$ is at least $m\rho^{2t}$, with $m$ the least $\Delta_{0,i}$ among those $i$, while $\eta=2/(\lmax+\lmin)$ gives a loss at most $\Loss(\theta_0)\rho^{2t}$. Hence $T_a(\infty)$ lies between $\frac{\ln(m/\eps)}{2\ln(1/\rho)}$ and $\frac{\ln(\Loss(\theta_0)/\eps)}{2\ln(1/\rho)}+1$. For $n_a$, let $m_1$ be the sum of the $\Delta_{0,i}$ with $\lambda_i=\lmin$. Every admissible $\tau$ has $m_1e^{-2\lmin\tau}<\eps$, that is, $\tau>\tau_1=\ln(m_1/\eps)/(2\lmin)$, and $\tau\cV_a(\tau)$ increases in $\tau$, so $n_a(\eps)\ge\tau_1\cV_a(\tau_1)/\eps$ with $\cV_a(\tau_1)\to V_a/4$. Conversely, at $\tau=(\ln(\Loss(\theta_0)/\eps)+s)/(2\lmin)$ with $s=\ln\ln(1/\eps)$ we have $\cB_a(\tau)\le\eps e^{-s}$ and $\cV_a\le V_a/4$, so $n_a(\eps)\le\frac{V_a}{8\lmin\eps}\frac{\ln(\Loss(\theta_0)/\eps)+s}{1-e^{-s}}$. Both bounds are $\frac{V_a}{8\lmin}\frac{\ln(1/\eps)}\eps(1+o(1))$.
+\end{proof}
+
+By \eqref{eq:transformers:BV}, coordinate $i$ of the preconditioned method at time $\tau$ and noise level $\alpha$ is coordinate $i$ of SGD at time $a_i\tau$ and noise level $a_i\alpha$, with the same number of samples $\tau/\alpha$. \emph{In the small-batch limit a diagonal preconditioner does not create samples; it reallocates time among the coordinates at a fixed number of samples.} This helps when SGD's single time is wrong for some coordinates, and less than at large batch, where the preconditioner shortens the time itself.
+
+\begin{corollary}[The two ends of the gap]\label[corollary]{cor:transformers:gap}
+Compare SGD with the preconditioner $a_i=h_i^{-p}$, $0\le p<1$, under the hypotheses of \cref{thm:transformers:batch}, and write $\kappa=h_1/h_d>1$. As $\eps\to0$,
+\[
+  \frac{T_1(\infty)}{T_a(\infty)}\to\frac{\operatorname{artanh}(\kappa^{p-1})}{\operatorname{artanh}(\kappa^{-1})}\ge\kappa^p,\qquad \frac{n_1(\eps)}{n_a(\eps)}\to\frac{\sum_ic_i}{\sum_i(h_d/h_i)^pc_i}\in[1,\kappa^p].
+\]
+For $h_i=1/i$, $c_i=h_i$ and $0<p<1$ the small-batch limit is $pZ_d(1+o(1))$ as $d\to\infty$, the large-batch limit at least $d^p$.
+\end{corollary}
+
+\begin{proof}
+For SGD, $\lmin/\lmax=1/\kappa$, $\lmin=h_d$ and $V_1=\sum_ic_i$; for the preconditioner, $\lmin/\lmax=\kappa^{p-1}$, $\lmin=h_d^{1-p}$ and $V_a=\sum_ih_i^{-p}c_i$. Both limits follow from \cref{thm:transformers:batch}(iii); the first is at least $\kappa^p$ because $\operatorname{artanh}(x)/x$ increases on $(0,1)$, and $(h_d/h_i)^p\in[\kappa^{-p},1]$ gives the bounds on the second. For $h_i=1/i$ and $c_i=h_i$ the numerator is $Z_d$ and the denominator $d^{-p}\sum_{i\le d}i^{p-1}$ tends to $1/p$, by comparison with $\int_0^dx^{p-1}\dd x=d^p/p$.
+\end{proof}
+
+So the gap opens with the batch size, in the high-accuracy limit from $pZ_d\approx p\ln d$ to $d^p$, and the preconditioner moves the \term{critical batch size}\index{critical batch size} $n_a(\eps)/T_a(\infty)$, where the two asymptotes cross, to the right by the ratio of the two ends (\cref{ch:noise}).\sidenote{\Textcite{McCandlishEtAl2018} fit steps-to-target curves of the form $S_{\min}(1+B_{\mathrm{crit}}/B)$; in our notation $S_{\min}=T_a(\infty)$ and $S_{\min}B_{\mathrm{crit}}=n_a(\eps)$.} The small-batch end is close to $1$ only if the noise sits mostly in the flattest directions: with a constant step size the model does not give parity at batch size one. Averaging the iterates changes this.
+
+\begin{heuristic}[Heuristic derivation: averaging]
+In the small-batch limit, coordinate $i$ of preconditioned SGD in the time $\tau=\eta t$ follows, to leading order, the Ornstein--Uhlenbeck process $\dd\theta_i=-\lambda_i\theta_i\dd\tau+a_i\sqrt{\alpha c_i}\dd W_\tau$, with $\alpha=\eta/B$. Its stationary autocovariance is $(\alpha a_i^2c_i/(2\lambda_i))e^{-\lambda_i\abs s}$, with integral $\alpha a_i^2c_i/\lambda_i^2$ over $s\in\R$. The average of the iterates over a window of length $\tau_w\gg1/\lambda_i$, which uses $n_w=\tau_w/\alpha$ samples, therefore has variance about $\alpha a_i^2c_i/(\lambda_i^2\tau_w)=c_i/(h_i^2n_w)$, and contributes $c_i/(2h_in_w)$ to the loss. Neither $a_i$ nor the step size appears: this is the variance of the best estimate of $\theta_i^\star=0$ from $n_w$ samples with noise variance $c_i$ and curvature $h_i$. Once every direction has relaxed, averaged SGD and averaged preconditioned SGD reach the same loss with the same samples; the preconditioner helps only through the burn-in and the relaxation of the flattest directions, whose cost grows like $\ln(1/\eps)$, against $1/\eps$ for the variance. So the small-batch advantage of averaged iterates tends to one.\index{iterate averaging}
+\end{heuristic}
+
+\section{Reading the theory}\label{sec:transformers:reading}
+
+\paragraph{Logarithmic loss curves.} \Cref{thm:transformers:zipf} predicts that on Zipfian data gradient descent removes the same fraction $\ln10/Z_K$ of the initial loss in every decade of steps: against $\log t$ its loss is a straight line, flatter for larger vocabularies, with slopes $0.44$, $0.31$ and $0.24$ per decade for $K=10^2$, $10^3$ and $10^4$, and about $0.20$ for $50{,}000$ tokens (\cref{fig:transformers:zipf}, left). For $K=10^4$ the asymptote is within $0.003$ of the exact loss at $t=10$ and $t=100$, and falls below it as $t$ approaches $K$, where $R_K(t)$ matters and the curve turns into the exponential tail of the rarest rows. Sign descent and Adam fall on one curve for every $K$, as \cref{cor:transformers:sign} requires: runs with $K=10^4$ and $K=10^2$ agree with the single-row predictions to rounding error. Sign descent shrinks each error by $\eta$ per step and stops at its floor; Adam with $\beta_2=0.999$, once its second moment stops growing, acts like heavy ball with a slowly varying diagonal preconditioner and converges linearly.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=52mm,xmode=log,xmin=1,xmax=1e5,ymin=0,ymax=1.02]
+\nextgroupplot[xlabel={step $t$},ylabel={normalized loss $\Loss_t/\Loss_0$},legend style={at={(0.995,0.99)},anchor=north east,font=\tiny,inner sep=1pt,row sep=-1.5pt},legend columns=1]
+\addplot[theory3] table[x=t,y=gd2] {figures/data/14-transformers-zipf-curves.dat};
+\addplot[theory2] table[x=t,y=gd3] {figures/data/14-transformers-zipf-curves.dat};
+\addplot[theory] table[x=t,y=gd4] {figures/data/14-transformers-zipf-curves.dat};
+\addplot[muted,line width=0.9pt,densely dotted,no marks] table[x=t,y=sign] {figures/data/14-transformers-zipf-curves.dat};
+\addplot[ink,line width=0.7pt,no marks] table[x=t,y=adam] {figures/data/14-transformers-zipf-curves.dat};
+\addplot[guide,forget plot] table[x=t,y=asy2] {figures/data/14-transformers-zipf-curves.dat};
+\addplot[guide,forget plot] table[x=t,y=asy3] {figures/data/14-transformers-zipf-curves.dat};
+\addplot[guide] table[x=t,y=asy4] {figures/data/14-transformers-zipf-curves.dat};
+\addplot[simulation,forget plot] table[x=t,y=gd2] {figures/data/14-transformers-zipf-points.dat};
+\addplot[simulation,forget plot] table[x=t,y=gd3] {figures/data/14-transformers-zipf-points.dat};
+\addplot[simulation] table[x=t,y=gd4] {figures/data/14-transformers-zipf-points.dat};
+\addplot[simulation2] table[x=t,y=sign4] {figures/data/14-transformers-zipf-points.dat};
+\addplot[only marks,mark=triangle*,mark size=1.9pt,color=ink,mark options={fill=ink!70,draw=white,line width=0.2pt}] table[x=t,y=adam4] {figures/data/14-transformers-zipf-points.dat};
+\legend{{GD, $K=10^2$},{GD, $K=10^3$},{GD, $K=10^4$},sign descent,Adam,asymptotes,{GD runs},{sign runs},{Adam runs}}
+\nextgroupplot[xlabel={step $t$},ylabel={bucket loss / initial value},legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize},legend columns=4]
+\addplot[theory] table[x=t,y=b1] {figures/data/14-transformers-zipf-buckets.dat};
+\addplot[theory,forget plot] table[x=t,y=b2] {figures/data/14-transformers-zipf-buckets.dat};
+\addplot[theory,forget plot] table[x=t,y=b3] {figures/data/14-transformers-zipf-buckets.dat};
+\addplot[theory,forget plot] table[x=t,y=b4] {figures/data/14-transformers-zipf-buckets.dat};
+\addplot[ink,line width=0.7pt,no marks] table[x=t,y=adam] {figures/data/14-transformers-zipf-buckets.dat};
+\addplot[simulation] table[x=t,y=gdb1] {figures/data/14-transformers-zipf-bucketpts.dat};
+\addplot[simulation,forget plot] table[x=t,y=gdb2] {figures/data/14-transformers-zipf-bucketpts.dat};
+\addplot[simulation,forget plot] table[x=t,y=gdb3] {figures/data/14-transformers-zipf-bucketpts.dat};
+\addplot[simulation,forget plot] table[x=t,y=gdb4] {figures/data/14-transformers-zipf-bucketpts.dat};
+\addplot[only marks,mark=triangle*,mark size=1.9pt,color=ink,mark options={fill=ink!70,draw=white,line width=0.2pt}] table[x=t,y=adamb4] {figures/data/14-transformers-zipf-bucketpts.dat};
+\legend{{GD, exact},Adam,{GD runs},{Adam runs}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The square-loss table with Zipfian frequencies, every row starting at distance one from its target (rows of $16$ Gaussian quantiles rescaled to unit norm). Left: curves are the exact loss of \cref{thm:transformers:zipf}(i) for gradient descent with $\eta=1/q_1$ ($K=10^2,10^3,10^4$ from left to right), its asymptote (dashed), and the frequency-free predictions of \cref{cor:transformers:sign}: the exact sign-descent loss of one row and Adam on one row ($\eta=0.005$; Adam $\beta=(0.9,0.999)$, $\epsilon=0$); points are runs on the full table ($K=10^4$ for sign descent and Adam; gradient descent runs use one coordinate per row, which gives the same loss). Right: for $K=10^4$, the buckets $j\in[1,10),\dots,[10^3,10^4]$ (left to right), each relative to its initial loss; Adam's four coincide. Deterministic; script \texttt{14-transformers-zipf.py}.}
+\label{fig:transformers:zipf}
+\end{figure}
+
+\paragraph{The staircase.} The right panel of \cref{fig:transformers:zipf} is the frequency-bucket picture of \cref{obs:transformers:rare} in a model where it is exact: gradient descent fits the bucket of frequency near $q$ around $t=1/(\eta q)$, a decade after the previous one, and Adam fits all buckets together. Each bucket $[10^k,10^{k+1})$ with $k\ge1$ carries about the fraction $\ln10/Z_K$ of the data, so the average loss is dominated by buckets that gradient descent has not reached yet. The disadvantage concentrates in the rows that serve rare tokens; the role of the normalization gains in \textcite{ZhaoEtAl2025} is a block effect.
+
+\paragraph{The gap and the batch size.} In \cref{fig:transformers:batch}, SGD needs $10063$, $723$, $220$ and $184$ steps at $B=1,16,256$ and $4096$, and the preconditioner $a_i=h_i^{-1/2}$ needs $3392$, $214$, $16$ and $10$. At small batches both follow their asymptotes $n_a(\eps)/B$, with $n_1(\eps)=9987$ and $n_a(\eps)=3390$ samples; at large batches they level off near the deterministic counts $177$ and $10$. The advantage grows from $2.95$ to $17.7$, the critical batch size from $56$ to $339$; in the high-accuracy limit of \cref{cor:transformers:gap} the ends would be $3.83$ and $31.6$. Monte Carlo runs agree with the exact counts to within $2\%$ or one step. RMSProp, Adam with $\beta_1=0$ and $\beta_2=0.999$, needs $3402$, $865$, $212$ and $54$ steps at $B=1,4,16,64$, the counts of the $H^{1/2}$ preconditioner; at larger batches the gradient dominates its second moment, and the model stops applying.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=52mm,xmode=log,log basis x=2,xmin=1,xmax=8192,xtick={1,4,16,64,256,1024,4096},xticklabels={$1$,$4$,$16$,$64$,$256$,$1024$,$4096$}]
+\nextgroupplot[xlabel={batch size $B$},ylabel={steps to target $T(B)$},ymode=log,ymin=5,ymax=3e4,legend style={at={(0.995,0.99)},anchor=north east,font=\tiny,inner sep=1pt,row sep=-1.5pt},legend columns=1]
+\addplot[theory] table[x=B,y=sgd] {figures/data/14-transformers-batch.dat};
+\addplot[theory2] table[x=B,y=pre] {figures/data/14-transformers-batch.dat};
+\addplot[guide] table[x=B,y=sgdsmall] {figures/data/14-transformers-batch.dat};
+\addplot[guide,forget plot] table[x=B,y=presmall] {figures/data/14-transformers-batch.dat};
+\addplot[guide,forget plot] table[x=B,y=sgdbig] {figures/data/14-transformers-batch.dat};
+\addplot[guide,forget plot] table[x=B,y=prebig] {figures/data/14-transformers-batch.dat};
+\addplot[simulation] table[x=B,y=mcsgd] {figures/data/14-transformers-batch-mc.dat};
+\addplot[simulation2] table[x=B,y=mcpre] {figures/data/14-transformers-batch-mc.dat};
+\addplot[only marks,mark=triangle*,mark size=2.1pt,color=ink,mark options={fill=ink!70,draw=white,line width=0.2pt}] table[x=B,y=mcrms] {figures/data/14-transformers-batch-mc.dat};
+\legend{SGD,{$a_i=h_i^{-1/2}$},asymptotes,{SGD runs},{precond.\ runs},{RMSProp runs}}
+\nextgroupplot[xlabel={batch size $B$},ylabel={advantage $T_1(B)/T_a(B)$},ymode=log,ymin=0.7,ymax=60,ytick={1,2,5,10,20},yticklabels={$1$,$2$,$5$,$10$,$20$},legend style={at={(0.01,0.99)},anchor=north west,font=\tiny,inner sep=1pt,row sep=-1.5pt},legend columns=1]
+\addplot[theory] table[x=B,y=rconst] {figures/data/14-transformers-batch.dat};
+\addplot[theory3] table[x=B,y=rlin] {figures/data/14-transformers-batch.dat};
+\addplot[theory2] table[x=B,y=ravg] {figures/data/14-transformers-batch.dat};
+\addplot[muted,line width=0.9pt,dashdotted,no marks] table[x=B,y=riso] {figures/data/14-transformers-batch.dat};
+\addplot[simulation] table[x=B,y expr=\thisrow{mcsgd}/\thisrow{mcpre}] {figures/data/14-transformers-batch-mc.dat};
+\addplot[guide,domain=1:8192,forget plot] {2.946};
+\addplot[guide,domain=1:8192,forget plot] {17.7};
+\legend{constant step,linear decay,tail average,{isotropic noise},runs}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Steps to target in the noisy quadratic model ($d=1000$, $h_i=1/i$, $c_i=h_i$, $\theta_0=\mathbf1$, target $5\%$ of the initial loss), SGD against $a_i=h_i^{-1/2}$, each at its best constant step size. Left: exact counts (curves; $400$ step sizes tried), the asymptotes of \cref{thm:transformers:batch} (dashed), and Monte Carlo runs (points; $32$ runs, first step at which the run average, smoothed over the last $2\%$ of the steps, is below the target; unsmoothed, the stiff coordinates' fluctuations make SGD's first passage $5$ to $12\%$ early); triangles: RMSProp ($16$ runs, four learning rates) where its second moment is noise-dominated. Right: the exact advantage for a constant step (dashed: its two limits), a linear decay to zero, the average of the last iterates, and isotropic noise $c_i=\frac1d\sum_jh_j$. Script \texttt{14-transformers-batch.py}, seeds fixed.}
+\label{fig:transformers:batch}
+\end{figure}
+
+\paragraph{What closes the gap at small batch.} With a constant step size the small-batch advantage does not tend to one: it is $2.95$ here and tends to $3.83$, close to $pZ_d=3.74$, as the target falls. It is near one in two cases (\cref{fig:transformers:batch}, right). With isotropic noise it is $1.11$, tending to $1+p=1.5$ (Exercise~\ref{ex:transformers:noise}). With averaged iterates it is $0.99$ at $B=1$, where both methods need about $2400$ steps against $10063$ and $3392$ for their last iterates, and it stays at one for lower targets ($0.998$ at $1\%$, $1.000$ at $0.1\%$, where both need $133{,}300$ steps, close to the $d/(2\eps)\approx133{,}600$ samples of the efficient estimator in the heuristic derivation). A linear decay of the step size to zero, which acts much like averaging (\cref{ch:schedules}), gives $1.32$ at $B=1$ and $4$. In every case the advantage grows with the batch size to the curvature factor, $18$ to $22$. So the model reproduces the trend of \cref{obs:transformers:small}, with parity at batch size one under averaging and most of the way to it under a decaying step, which recipes do use. This partly reconciles the batch-size observation with the curvature explanations (\cref{sec:transformers:back}).
+
+\paragraph{Where the agreement must fail.} The small-batch limit needs $\eta\lmax$ small, which here holds already at $B=1$ but fails for much stiffer problems, and Adam is $H^{1/2}$ preconditioning only while noise dominates its second moment; with $\beta_1>0$ it is, at small batch, to first order the same method with the same step size, since Adam's momentum is an average (\cref{ch:momentum}).
+
+\section{What the theory misses}\label{sec:transformers:misses}
+
+\paragraph{What was idealized away.} \emph{Parameter sharing:} rare tokens' embedding rows feed layers that every token shares, so the table model is exact for a bigram model, and for the embedding and output rows of a network it captures only the frequency factor of their gradients. \emph{Separate mechanisms:} heavy-tailed classes produce block heterogeneity, since embedding and output rows are blocks whose scales are frequencies. \emph{Fixed curvature and noise:} in training both change, and the noise of language models is heavy-tailed \parencite{ZhangEtAl2020}. \emph{Adam's state:} with $\epsilon>0$ the rarest rows fall back to momentum SGD with step size $\eta/\epsilon$, and the lag of the preconditioner is ignored. \emph{Schedules} enter only through the heuristic and the numerics.
+
+\paragraph{Where it breaks.} (1) No single mechanism accounts for the gap: \textcite{KunstnerEtAl2024} reproduce it with class imbalance in linear and vision models, \textcite{ZhangEtAl2024} with block heterogeneity in quadratics, which accompanies it in networks; neither excludes the other, and these models cannot weigh them. (2) Measured gaps depend on tuning, as \textcite{WenEtAl2026Fantastic} show for newer optimizers against AdamW, so the predicted sizes are hard to test. (3) The batch-size picture rests on one refereed study \parencite{MarekEtAl2025} and one preprint \parencite{SreckovicEtAl2025}; with constant steps the noisy quadratic model predicts a residual small-batch advantage of about $p\ln d$, and it gives parity only with averaging. (4) Outside the noise-dominated regime Adam is not $H^{1/2}$ preconditioning; at full batch it is closer to sign descent, whose speed on a table is set by the spread of the targets within rows \parencite{KunstnerBach2025}. (5) The block theorem says that blockwise steps can gain the scale spread, not that Adam's per-coordinate steps realize the gain; they can also lose, for instance after a rotation (\cref{ch:sign}), as \textcite{XieEtAl2025} find in GPT-2. (6) For convolutional networks the explanation is negative: SGD does not lose if their blockwise spectra are homogeneous, which is observed \parencite{ZhangEtAl2024}, not derived.
+
+\paragraph{Repairs and open problems.} Blockwise optimizers keep the invariance that matters at a fraction of Adam's memory: Adalayer, with one second moment per layer \parencite{ZhaoEtAl2025}, and Adam-mini, with one learning rate per block \parencite{ZhangEtAl2025}. Shampoo, SOAP and Muon do not depend on the bases of the rows and columns of each weight matrix (\cref{ch:kronecker,ch:spectral}). The scaling laws of \textcite{KunstnerBach2025} extend \cref{thm:transformers:zipf} to every power-law exponent and to sign descent. Open are a model in which the three mechanisms act together, with shared parameters and sampled tokens, and a theory of Adam at small batch that includes the estimation noise of its second moment and the half-life rule of \textcite{MarekEtAl2025} (Exercises~\ref{ex:transformers:unified} and~\ref{ex:transformers:adambs}).
+
+\section{Back in the wild}\label{sec:transformers:back}
+
+\fieldnotes{Adam(W) for transformers, SGD with momentum for convnets; the gap survives full batch, grows with the batch size, and nearly vanishes at batch size one.}
+{A table with Zipfian row frequencies; a block-diagonal quadratic with blocks at different scales; the noisy quadratic model with $H^{1/2}$ for Adam.}
+{Weights are clocks for gradient descent and invisible to scale-invariant methods; on Zipf tables gradient descent removes $\ln10/Z_K$ of the loss per decade and needs order $K^{1-\eps}$ steps; blockwise steps replace $\kappa$ by $\max_b\kappa_b$; at high accuracy the gap tends to at least $\kappa^p$ at large batch and to a noise-weighted constant at small batch.}
+{Logarithmic loss curves and a bucket staircase for GD on heavy-tailed data; Adam's progress independent of the vocabulary size; a gap opening with the batch size.}
+{Parameter sharing, interacting mechanisms, Adam's $\epsilon$ and memory, schedules, the size of the gap at scale.}
+{Expect Adam's advantage to be largest with heavy-tailed vocabularies and large batches (proved in the idealizations, suggested for networks), and smallest at batch size one with averaging (derived and computed in the noisy quadratic model); blockwise learning rates should keep most of it (suggested).}
+
+In these idealizations the gap has nothing to do with attention: it is what a scale invariance buys on a loss whose rows and blocks live at different scales, and Zipfian vocabularies and heterogeneous parameter blocks make such losses. An optimizer that keeps one statistic per block should keep most of the advantage, as Adalayer and Adam-mini report; that it keeps all of it is not proved. The batch size changes the answer: at large batch training is limited by curvature, and the preconditioner pays its full condition-number factor; at small batch it is limited by samples, and with averaging SGD is as fast as its preconditioned version in the noisy quadratic model, in agreement with \textcite{MarekEtAl2025}. The rule ``SGD for convnets'' agrees with the block theorem if convnets are block-homogeneous, which is observed, not derived. The scale invariance is the coordinatewise geometry of \cref{ch:sign,ch:adaptive}, its loss under rotation motivates the optimizers of \cref{ch:kronecker,ch:spectral}, and averaging ties the batch-size theorem to schedules (\cref{ch:schedules}); where each optimizer ends up is the subject of \cref{ch:bias}.
+
+\begin{exercises}
+\item \consolidation (Other Zipf exponents.) Let $q_j\propto j^{-\alpha}$, rows of unit initial error, and $\eta=1/q_1$. (a) Show that $\Loss_t/\Loss_0=\sum_jj^{-\alpha}(1-j^{-\alpha})^{2t}/\sum_jj^{-\alpha}$. (b) For $\alpha>1$ and $K=\infty$, show that $\Loss_t/\Loss_0\sim\Gamma(1-\frac1\alpha)(2t)^{-(\alpha-1)/\alpha}/(\alpha\zeta(\alpha))$ as $t\to\infty$. (c) For $\alpha<1$, show that $\Loss_t/\Loss_0$ stays above $\frac12$ until $t$ is of order $K^\alpha$. Conclude that only $\alpha=1$ gives a fixed decrease per decade over a range of times that grows with $K$. \hint{in (b) compare the sum with $\int_1^\infty x^{-\alpha}e^{-2tx^{-\alpha}}\dd x$ and substitute $u=2tx^{-\alpha}$.}\label{ex:transformers:alpha}
+
+\item \consolidation\hard (Zipfian targets.) A single row has targets $y_i=1/(iZ_r)$, $i\le r$, starts at $w=0$, and runs sign descent with a constant step size $\eta$. (a) Show that every coordinate with $y_i<\eta/2$ has error $y_i$ at even steps and $\eta-y_i$ at odd steps, so that the loss at every odd step is at least $\frac18\eta^2\cdot\#\{i:y_i<\eta/2\}$. (b) Deduce that if the loss is at most $\eps$ times its initial value at two consecutive steps, and $r$ is large compared with $1/\eps$, then $\eta$ is at most of order $\sqrt{\eps/r}/Z_r$ and the number of steps at least of order $\sqrt{r/\eps}$: the square-root law of \textcite{KunstnerBach2025}. (c) Show that the loss at even steps alone falls below $\eps$ times its initial value within a number of steps of order $1/\eps$, whatever $r$, and say what this means for measuring an oscillating method. \hint{the initial loss is $\frac12\norm y_2^2\approx\pi^2/(12Z_r^2)$; at even steps the at most $1/(\eta Z_r)$ coordinates with $y_i\ge\eta$ have errors at most $\eta$.}\label{ex:transformers:signzipf}
+
+\item \consolidation (The softmax Hessian.) (a) Show that $\lmax(\diag(s)-ss^\top)=\frac12$ for a probability vector $s$ if and only if $s$ has two coordinates equal to $\frac12$. (b) Deduce from the descent lemma (\cref{lem:toolkit:descent}) that gradient descent with every step size below $4/q_1$ decreases the loss of the softmax table at every step. (c) For $K=1000$ Zipfian frequencies, check the interlacing of \cref{prop:transformers:softmax}(ii) numerically; the condition number is $885$.\label{ex:transformers:softmax}
+
+\item \consolidation (The bounds of \cref{thm:transformers:blocks}(iii).) Give two-block quadratics with (a) $\kappa=\max_b\kappa_b$, (b) $\kappa=\omega$, (c) $\kappa=\omega\max_b\kappa_b$, and compute in each case the gain of blockwise step sizes.\label{ex:transformers:bounds}
+
+\item \variation (Momentum on the Zipf table.) Run heavy ball with momentum $\beta$ and $\eta=1/q_1$ on the Zipf table. (a) For rows with $\eta q_j\ll(1-\beta)^2$, show that the error contracts by about $1-\eta q_j/(1-\beta)$ per step. (b) Deduce that for $t\gg1/(1-\beta)$ heavy ball at step $t$ is about gradient descent at step $t/(1-\beta)$: momentum shifts the curve by $\log_{10}(1/(1-\beta))$ decades without changing its slope. Check that for $K=10^4$ and $\beta=0.9$ heavy ball at steps $100$ and $1000$ matches gradient descent at steps $1000$ and $10^4$ to within $3\%$.\label{ex:transformers:momentum}
+
+\item \variation (Noise not proportional to curvature.) In \cref{cor:transformers:gap} let $h_i=1/i$ and $c_i=i^{-\vartheta}$. Show that the small-batch limit tends, as $d\to\infty$, to $1+p/(1-\vartheta)$ for $0\le\vartheta<1$, and grows like $p\ln d$ for $\vartheta=1$. Compare the value $1.5$ for isotropic noise with the $1.11$ of \cref{fig:transformers:batch}, whose target is not small.\label{ex:transformers:noise}
+
+\item \variation (Adam in the noisy quadratic model.) (a) Show that $\E[g_{t,i}^2\mid\theta_t]=h_i^2\theta_{t,i}^2+c_i/B$. (b) Deduce that RMSProp with $\beta_2$ close to one behaves near $\theta_t$ like preconditioned SGD with $a_i=\sqrt B/(c_i+Bh_i^2\theta_{t,i}^2)^{1/2}$. (c) For $c_i=c_0h_i$ and small $B$, show that RMSProp with learning rate $\eta$ is the preconditioner $h_i^{-1/2}$ with step size $\eta\sqrt{B/c_0}$, and that keeping its small-batch dynamics fixed as $B$ changes requires $\eta\propto\sqrt B$, the square-root rule of \textcite{MalladiEtAl2022}. (d) What does RMSProp become at large $B$?\label{ex:transformers:adamnqm}
+
+\item \simulation (The softmax table.) Train a softmax bigram table with $K=1000$ Zipfian input frequencies and Zipfian conditional distributions, from $W=0$, by gradient descent with $\eta=1/q_1$ and by Adam with $\epsilon=0$. Check that under gradient descent row $j$ after $t$ steps has the loss of the single-row problem after $t$ steps of size $q_j/q_1$ (\cref{prop:transformers:softmax}(i)), and that under Adam all input-frequency buckets coincide.\label{ex:transformers:simsoftmax}
+
+\item \simulation (Rotating the table.) In the setting of \cref{fig:transformers:zipf} with $K=1000$, replace $W$ by $QW$ for a random orthogonal $Q$. Check that gradient descent is unchanged, that sign descent stalls near $0.15$ of the initial loss, and that Adam's advantage in steps to $10^{-3}$ of it falls from about $11$ to about $2.4$; explain with \cref{prop:transformers:clock} and the rotation equivariance of gradient descent.\label{ex:transformers:rotation}
+
+\item \simulation (Averaging and decay.) With the script of \cref{fig:transformers:batch}, reproduce the advantages $2.97$ (constant step), $1.32$ (linear decay) and $0.99$ (tail average) at $B=1$. Lower the target to $1\%$ and $0.1\%$ of the initial loss, and check that the averaged advantage stays near one while the constant-step advantage rises toward $3.83$ ($3.24$ and $3.43$).\label{ex:transformers:simavg}
+
+\item \research (One model for three mechanisms.) Find a model in which heavy-tailed classes, block heterogeneity and the batch size act together, such as a softmax bigram model with a shared embedding of dimension $k\ll K$ trained on sampled tokens, and derive the advantage of a blockwise scale-invariant optimizer over SGD as a function of $K$, $k$ and $B$. As far as we know none is solved.\label{ex:transformers:unified}
+
+\item \research (Adam at batch size one.) Extend \cref{thm:transformers:batch} to RMSProp with $1-\beta_2\propto B$, the half-life rule of \textcite{MarekEtAl2025}, including the estimation noise of the second moment, and decide whether Adam keeps an advantage over SGD with a decaying schedule as $B\to0$.\label{ex:transformers:adambs}
+\end{exercises}
+
+\notesandrefs
+The Zipf table is the linear bigram model of \textcite{KunstnerBach2025}, whose scaling laws for gradient descent and sign descent cover every power-law exponent. \Cref{thm:transformers:zipf} isolates the input frequencies by giving every row the same initial error, and the constants then come out exactly: the slope $\ln10/Z_K$ per decade and the offset $\ln2+\gamma$. \Cref{prop:transformers:clock} and \cref{cor:transformers:sign} are elementary, and the interlacing in \cref{prop:transformers:softmax} is the classical one for a rank-one perturbation of a diagonal matrix.
+
+The noisy quadratic model is due to \textcite{ZhangEtAl2019}, who found that preconditioning raises the critical batch size \parencite{McCandlishEtAl2018} and, unlike momentum, helps at small batch sizes too, and who also studied averaged iterates and learning-rate decay in it. \Cref{thm:transformers:batch}(i)--(ii) are the two regimes of \cref{ch:noise}, and the averaging heuristic is the efficiency of averaged iterates (\cref{ch:noise}); we have not seen part (iii) and \cref{cor:transformers:gap} stated elsewhere.
+
+\paragraph{Translating the literature.} \Textcite{KunstnerBach2025} write $\pi_k$ for the token frequencies, our $q_k$, and $\alpha$ for the exponent of the power law, as in Exercise~\ref{ex:transformers:alpha}. In the noisy quadratic model of \textcite{ZhangEtAl2019}, as in \cref{ch:noise}, $h_i$ and $c_i$ are the curvatures and noise variances along the eigendirections, and their preconditioner $H^p$, which multiplies the gradient by $H^{-p}$, is our $a_i=h_i^{-p}$. \Textcite{McCandlishEtAl2018} write $S_{\min}$ and $E_{\min}$ for the least numbers of steps and of examples, our $T_a(\infty)$ and $n_a(\eps)$, and $B_{\mathrm{crit}}=E_{\min}/S_{\min}$ for the critical batch size. What \textcite{ZhangEtAl2024} call Adam's coordinate-wise learning rates is, for deterministic gradients, our scale invariance: each coordinate's learning rate is set by that coordinate's own gradients.
+
+\printchapterbib
+\end{refsection}

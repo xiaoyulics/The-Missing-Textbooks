@@ -1,0 +1,444 @@
+% Chapter 11 of Optimizers in the Wild: noise and batch size.
+\newcommand{\noiseEmin}{E_{\min}}
+\newcommand{\noiseTmin}{T_{\min}}
+\newcommand{\noiseBcrit}{B_{\mathrm{crit}}}
+\newcommand{\noiseBnoise}{B_{\mathrm{noise}}}
+\newcommand{\noiseBsimple}{B_{\mathrm{simple}}}
+\newcommand{\noiseBeps}{B_{\eps}}
+\newcommand{\noisesl}{\mathrm{sl}}
+
+\casechapter{Noise and Batch Size}{The noisy quadratic model and the critical batch size}{Batch-size scaling rules}{ch:noise}
+\begin{refsection}[chapters/11-noise.bib]
+
+\begin{chaptersummary}
+Up to a critical batch size, doubling the batch and the learning rate together halves the number of steps of a training run; beyond it, larger batches buy almost nothing, and momentum and preconditioners raise the critical batch size. The noisy quadratic model, a quadratic loss whose gradients carry noise of covariance $\Sigma/B$, is the smallest idealization with both regimes. We solve it exactly and prove that the steps to a target loss, at the best constant step size, are asymptotic to $\noiseEmin/B$ at small batch sizes, with a step size proportional to $B$, and equal a constant $\noiseTmin$ at large ones, with a step size near the stability limit $2/S$; the critical batch size $\noiseEmin/\noiseTmin$ is of order $\tr\Sigma/(S\eps)$ for a target $\eps$. Preconditioning raises this scale, and when the noise lives in the bulk of the spectrum no diagonal preconditioner lowers the small-batch cost by much. With its fixed landscape and noise, the model cannot say how the critical batch size moves with the data and the model.
+\end{chaptersummary}
+
+\section{In the wild: batch sizes and scaling rules}\label{sec:noise:wild}
+
+A data-parallel run averages the gradients of $B$ examples per step; the average is unbiased, with covariance $\Sigma/B$ for the per-example covariance $\Sigma$. While the batch fits the hardware a step takes about the same time whatever $B$ is, so the number of steps $T$ measures wall-clock time and the number of examples $E=BT$ the cost in data and computation.\sidenote{For a language model an example is a sequence or a token, and batch sizes are quoted in tokens. Nothing here depends on the unit, as long as $B$ and $E$ are counted in the same one.} A larger batch pays off only through fewer steps. How should the learning rate change with the batch size, and how large can the batch be before it stops buying steps? We say \emph{learning rate} in the practice sections and \emph{step size} in the theory; both name $\eta$.
+
+\begin{practice}[ResNet-50 on ImageNet, \textcite{GoyalEtAl2017}; Adam, \textcite{MalladiEtAl2022}; GPT-3, \textcite{BrownEtAl2020}]
+For SGD, the \emph{linear scaling rule}: when the batch size is multiplied by $k$, multiply the learning rate by $k$. Goyal et al.\ trained ResNet-50 with the learning rate $0.1\cdot B/256$ for batch sizes up to $8192$, after a linear warmup over five epochs. For Adam, the \emph{square-root rule}: multiply the learning rate by $\sqrt k$, and $1-\beta_1$ and $1-\beta_2$ by $k$. Both are used up to a \emph{critical batch size}, beyond which larger batches save few steps, and batch sizes are chosen near it. Language models train on batches of millions of tokens ($3.2$ million for the largest GPT-3 model, in 2020), often reached by increasing the batch size early in training.
+\end{practice}
+
+The linear rule is discussed by \textcite{Krizhevsky2014}; \textcite{GoyalEtAl2017} made it the recipe that trained ResNet-50 on ImageNet in an hour. \Textcite{HofferHubaraSoudry2017} argued for a learning rate proportional to $\sqrt B$ for SGD, which keeps the covariance of the update fixed, \textcite{MalladiEtAl2022} derived the square-root rule for adaptive methods, and \textcite{SmithEtAl2018} replaced a decay of the learning rate by an increase of the batch size.
+
+\begin{observation}[Three regimes of data parallelism; \textcite{ShallueEtAl2019}]\label[observation]{obs:noise:regimes}
+With the learning rate and the other hyperparameters retuned for every batch size, the number of steps needed to reach a fixed out-of-sample error falls like $1/B$ at small batch sizes (\term{perfect scaling}\index{perfect scaling}), then more slowly, and finally not at all. The shape is the same across the image and text workloads studied; where perfect scaling ends differs widely between workloads and depends on the model, the data set, and the optimizer.
+\end{observation}
+
+\begin{observation}[The gradient noise scale; \textcite{McCandlishEtAl2018}]\label[observation]{obs:noise:scale}
+Across tasks from image classification to reinforcement learning, the critical batch size is roughly predicted by the gradient noise scale $\tr\Sigma/\norm{\nabla\Loss}_2^2$ measured during training, which grows as the loss falls and is larger for more complex tasks. The steps $T$ and examples $E$ needed to reach a target fit the relation $(T/\noiseTmin-1)(E/\noiseEmin-1)=1$.
+\end{observation}
+
+\begin{observation}[Optimizers; \textcite{ZhangEtAl2019NQM}]\label[observation]{obs:noise:optimizers}
+On image classification and language modeling workloads, the preconditioned optimizers Adam and K-FAC (\cref{ch:kronecker}) reach much larger critical batch sizes than momentum SGD.
+\end{observation}
+
+\begin{observation}[Language models; \textcite{KaplanEtAl2020}, \textcite{ZhangEtAl2025CBS}, \textcite{MarekEtAl2025}]\label[observation]{obs:noise:lm}
+In language-model pretraining the critical batch size grows as the loss falls, depending on the loss rather than directly on the model size (Kaplan et al.), and in controlled sweeps it grows with the amount of data more than with the model size (Zhang et al.). Batches down to one sequence train stably, with Adam's $\beta_2$ set to keep its averaging horizon fixed in tokens, and at such batch sizes plain SGD comes close to Adam; the gap grows with the batch size (Marek et al.).
+\end{observation}
+
+These observations rest on expensive sweeps over a few workloads each;\sidenote{At batch size one, the half-life rule of \textcite{MarekEtAl2025} gives $\beta_2=0.9999$ in their runs.} the noise scale predicts the critical batch size only roughly, and McCandlish et al.'s paper is an unrefereed preprint. Why does doubling the batch halve the steps up to some batch size and not beyond, what sets that batch size, and how do momentum and preconditioners move it?
+
+\section{The idealization: the noisy quadratic model}\label{sec:noise:model}\index{noisy quadratic model}
+
+\begin{assumption}[The noisy quadratic model]\label[assumption]{ass:noise:nqm}
+\begin{enumerate}
+\item The loss is $\Loss(\theta)=\frac12\theta^\top H\theta$ on $\R^d$, with $H$ symmetric positive definite, eigenvalues $h_1\ge\dots\ge h_d>0$, and sharpness $S=h_1=\lmax(H)$. We work in an orthonormal eigenbasis, so $H=\diag(h_1,\dots,h_d)$, $\theta^\star=0$, and $\Loss^\star=0$.
+\item At step $t$ the optimizer receives $g_t=H\theta_t+\zeta_t$, where, conditionally on the $\sigma$-field $\cF_t$ generated by $\zeta_0,\dots,\zeta_{t-1}$, $\E[\zeta_t\mid\cF_t]=0$ and $\E[\zeta_t\zeta_t^\top\mid\cF_t]=\Sigma/B$, for a fixed positive semidefinite $\Sigma\ne0$ and a batch size $B>0$. We write $c_i=\Sigma_{ii}$ in the eigenbasis of $H$.
+\item The initialization $\theta_0$ is deterministic; $\Delta_{0,i}=\frac12h_i\theta_{0,i}^2$ is the initial loss of mode $i$, and $\Delta_0=\Loss(\theta_0)=\sum_i\Delta_{0,i}$.
+\end{enumerate}
+\end{assumption}
+
+The average of $B$ independent per-example gradients satisfies (ii); in the theory $B$ is a positive real number that enters only through $\Sigma/B$, and the noise need be neither Gaussian nor diagonal in the eigenbasis of $H$. The standard choice is noise proportional to curvature, $\Sigma=\sigma^2H$, as in \textcite{ZhangEtAl2019NQM}: at the minimizer of a well-specified likelihood the covariance of the per-example gradients is the Fisher information, which equals the Hessian of the population loss there.\sidenote{The Hessian spectra of trained networks have a few outlier eigenvalues above a bulk \parencite{GhorbaniKrishnanXiao2019}. \Cref{prop:noise:spiked} uses this shape.} The running example, the \emph{harmonic model}, has $d=1000$, $h_i=1/i$, $\Sigma=H$, $\theta_0=(1,\dots,1)$ and the target $\eps=0.05\,\Delta_0$, with $\Delta_0\approx3.74$ and effective rank $\tr H/S\approx7.49$.
+
+\begin{dictionary}
+the quadratic $\frac12\theta^\top H\theta$, eigenvalues $h_i$ & the loss near the region the run is in; its Hessian spectrum (a bulk and outliers)\\
+the sharpness $S=h_1$, the limit $\eta<2/S$ & the largest stable learning rate; the edge of stability (\cref{ch:eos})\\
+the covariance $\Sigma$, often $\sigma^2H$ & the per-example gradient covariance, close to the Fisher information near a minimum\\
+$T(B)$ and $E(B)=B\,T(B)$ & steps and examples to a target loss, at a tuned constant learning rate\\
+the floor $\cR_\infty\approx\eta\tr\Sigma/(4B)$ & the plateau at a constant learning rate, removed by a decay (\cref{ch:schedules})\\
+the noise-limited regime, $\eta\approx\gamma^\star B$ & perfect scaling and the linear scaling rule\\
+the curvature-limited regime, $\eta$ near $2/S$ & maximal data parallelism\\
+$\noiseBcrit=\noiseEmin/\noiseTmin$ & the critical batch size\\
+a preconditioner $P$, $S_P=\lmax(P^{-1}H)$ & Adam's $\sqrt{\hat v}$, Shampoo, or K-FAC, frozen as a function of $H$
+\end{dictionary}
+
+\paragraph{What was thrown away.} The landscape is fixed, so there is no feature learning and no progressive sharpening; the noise does not depend on the parameters, although near interpolation it shrinks with the loss (Exercise~\ref{ex:noise:interp}); every step sees fresh examples, so there are no epochs and no generalization gap; the step size is constant; and the object is the expected loss. What remains is the smallest model with the two effects of the step size that the question is about: curvature, which limits the step size through stability, and noise, whose effect grows with the step size and falls with $B$.
+
+\paragraph{What one had to notice.} The batch size enters only through the noise level, while the step size enters twice: in the speed $\eta h_i$ of every mode and in a noise floor proportional to $\eta/B$. Stability, $\eta<2/S$, does not depend on $B$; the floor, about $\eta\tr\Sigma/(4B)$, must lie below the target, which caps $\eta$ at a multiple of $B$. When the floor binds, the best step size is proportional to $B$ and the steps to $1/B$; when stability binds, the steps do not depend on $B$. The critical batch size is where the two meet.
+
+\section{The theory: exact dynamics}\label{sec:noise:exact}
+
+\begin{theorem}[Exact dynamics of SGD in the noisy quadratic model]\label{thm:noise:nqm}
+Let \cref{ass:noise:nqm} hold, let $\theta_{t+1}=\theta_t-\eta g_t$ with a constant step size $\eta>0$, and write $m_{t,i}=\E\theta_{t,i}^2$ and $\cR_t(\eta,B)=\E\Loss(\theta_t)$.
+\begin{enumerate}
+\item For every $t\ge0$ and $i$, $m_{t+1,i}=(1-\eta h_i)^2m_{t,i}+\eta^2c_i/B$.
+\item If $0<\eta<2/S$, then for every $t\ge0$
+\begin{equation}\label{eq:noise:loss}
+  \cR_t(\eta,B)=\sum_{i=1}^d\Bigl[F_i+\bigl(\Delta_{0,i}-F_i\bigr)(1-\eta h_i)^{2t}\Bigr],\qquad F_i=\frac{\eta c_i}{2B(2-\eta h_i)},
+\end{equation}
+which converges geometrically to the \term{noise floor}\index{noise floor}
+\begin{equation}\label{eq:noise:floor}
+  \cR_\infty(\eta,B)=\frac{\eta}{2B}\sum_{i=1}^d\frac{c_i}{2-\eta h_i}\in\Bigl[\frac{\eta\tr\Sigma}{4B},\,\frac{\eta\tr\Sigma}{2B(2-\eta S)}\Bigr].
+\end{equation}
+\item If $\eta S\ge2$ and $c_1>0$, or if $\eta S>2$ and $\theta_{0,1}\ne0$, then $\cR_t(\eta,B)\to\infty$.
+\item The expected loss depends on the noise only through the conditional means and variances of its coordinates in the eigenbasis of $H$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to show that each coordinate is a scalar linear recursion driven by noise uncorrelated with its past, and to solve it. In the eigenbasis, $\theta_{t+1,i}=(1-\eta h_i)\theta_{t,i}-\eta\zeta_{t,i}$. The coordinate $\theta_{t,i}$ is a function of $\zeta_0,\dots,\zeta_{t-1}$, hence $\cF_t$-measurable, and \cref{ass:noise:nqm}(ii) gives $\E[\zeta_{t,i}\mid\cF_t]=0$ and $\E[\zeta_{t,i}^2\mid\cF_t]=c_i/B$. Squaring the update and conditioning on $\cF_t$, the cross term vanishes:
+\[
+  \E\bigl[\theta_{t+1,i}^2\bigm|\cF_t\bigr]=(1-\eta h_i)^2\theta_{t,i}^2+\eta^2c_i/B .
+\]
+Taking expectations gives (i), and by induction every $m_{t,i}$ is finite. For (ii), put $\rho_i=(1-\eta h_i)^2$. Since $0<\eta h_i\le\eta S<2$, we have $0\le\rho_i<1$ and $1-\rho_i=\eta h_i(2-\eta h_i)>0$, so (i) has the fixed point $m_i^\infty=\eta^2c_i/(B(1-\rho_i))=\eta c_i/(Bh_i(2-\eta h_i))$, and $m_{t,i}-m_i^\infty=\rho_i^t(m_{0,i}-m_i^\infty)$. Multiplying by $h_i/2$, with $\frac12h_im_i^\infty=F_i$ and $\frac12h_im_{0,i}=\Delta_{0,i}$, gives the $i$th term of \eqref{eq:noise:loss}; the convergence is geometric with ratio $\max_i\rho_i<1$, and the bounds in \eqref{eq:noise:floor} follow from $2-\eta S\le2-\eta h_i\le2$. For (iii), $\rho_1\ge1$ when $\eta S\ge2$, so (i) gives $m_{t,1}\ge t\eta^2c_1/B$ and also $m_{t,1}\ge\rho_1^t\theta_{0,1}^2$; in both cases $\cR_t\ge\frac12Sm_{t,1}\to\infty$. Part (iv) holds because the argument used nothing else about $\zeta_t$.
+\end{proof}
+
+Each mode relaxes geometrically from its initial loss to its share $F_i$ of the floor, at the rate $(1-\eta h_i)^2\approx e^{-2\eta h_i}$ per step; when $\Delta_{0,i}>F_i$ for every $i$, as at all step sizes that matter here, the expected loss decreases strictly. The step size sets both the speed and the floor, which for $\eta S\ll1$ is about $\eta\tr\Sigma/(4B)$; the batch size sets only the floor (\cref{fig:noise:curves}).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=47mm,xmode=log,ymode=log,xmin=1,xmax=4000,ymin=0.02,ymax=5,xlabel={step $t$},ylabel={expected loss $\cR_t(\eta,B)$}]
+\nextgroupplot[title={batch size $B=4$},legend style={at={(0.03,0.03)},anchor=south west,font=\scriptsize}]
+\addplot[theory3] table[x=t,y=a1] {figures/data/11-noise-curves.dat};
+\addplot[theory] table[x=t,y=a2] {figures/data/11-noise-curves.dat};
+\addplot[theory2] table[x=t,y=a3] {figures/data/11-noise-curves.dat};
+\addplot[simulation] table[x=t,y=a1] {figures/data/11-noise-curves-mc.dat};
+\addplot[simulation,color=sea,mark options={fill=sea,draw=white,line width=0.2pt}] table[x=t,y=a2] {figures/data/11-noise-curves-mc.dat};
+\addplot[simulation2] table[x=t,y=a3] {figures/data/11-noise-curves-mc.dat};
+\addplot[guide] table[x=t,y=fa1] {figures/data/11-noise-curves.dat};
+\addplot[guide] table[x=t,y=fa2] {figures/data/11-noise-curves.dat};
+\addplot[guide] table[x=t,y=fa3] {figures/data/11-noise-curves.dat};
+\addplot[ink,line width=0.6pt,densely dotted] table[x=t,y=eps] {figures/data/11-noise-curves.dat};
+\legend{$\eta=0.10$,$\eta=0.26$,$\eta=1.00$}
+\nextgroupplot[title={step size $\eta=0.26$},legend style={at={(0.03,0.03)},anchor=south west,font=\scriptsize}]
+\addplot[theory3] table[x=t,y=b1] {figures/data/11-noise-curves.dat};
+\addplot[theory] table[x=t,y=b2] {figures/data/11-noise-curves.dat};
+\addplot[theory2] table[x=t,y=b3] {figures/data/11-noise-curves.dat};
+\addplot[simulation] table[x=t,y=b1] {figures/data/11-noise-curves-mc.dat};
+\addplot[simulation,color=sea,mark options={fill=sea,draw=white,line width=0.2pt}] table[x=t,y=b2] {figures/data/11-noise-curves-mc.dat};
+\addplot[simulation2] table[x=t,y=b3] {figures/data/11-noise-curves-mc.dat};
+\addplot[guide] table[x=t,y=fb1] {figures/data/11-noise-curves.dat};
+\addplot[guide] table[x=t,y=fb2] {figures/data/11-noise-curves.dat};
+\addplot[guide] table[x=t,y=fb3] {figures/data/11-noise-curves.dat};
+\addplot[ink,line width=0.6pt,densely dotted] table[x=t,y=eps] {figures/data/11-noise-curves.dat};
+\legend{$B=1$,$B=4$,$B=16$}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The expected loss of SGD in the harmonic model ($d=1000$, $h_i=1/i$, $\Sigma=H$, $\theta_0=(1,\dots,1)$). Curves: the exact formula \eqref{eq:noise:loss}; dashed: the floors \eqref{eq:noise:floor}; dotted: the target $\eps=0.05\,\Delta_0$. Points: averages of $64$ independent runs with Gaussian noise of covariance $\Sigma/B$ (seed fixed in \texttt{11-noise-curves.py}), within $4.4\%$ of the curves, as the Monte Carlo error allows. Left: at a fixed batch size a larger step is faster and has a higher floor; $\eta=0.26$ is near the step size that reaches the target first. Right: at a fixed step size the batch size changes only the floor.}
+\label{fig:noise:curves}
+\end{figure}
+
+A preconditioner that is a function of $H$ changes only the coordinates.
+
+\begin{lemma}[Preconditioning is a change of variables]\label[lemma]{lem:noise:change}
+Let $P=\diag(1/\omega_1,\dots,1/\omega_d)$ with every $\omega_i>0$, and let $\theta_{t+1}=\theta_t-\eta P^{-1}g_t$. Then $\theta'_t=P^{1/2}\theta_t$ is SGD with step size $\eta$ on the noisy quadratic model with Hessian $H'=P^{-1/2}HP^{-1/2}$ and noise covariance $\Sigma'=P^{-1/2}\Sigma P^{-1/2}$, with $\Loss(\theta_t)=\frac12\theta_t'^\top H'\theta'_t$; in the eigenbasis, $h'_i=\omega_ih_i$, $c'_i=\omega_ic_i$, and $\Delta'_{0,i}=\Delta_{0,i}$. In particular \cref{thm:noise:nqm} holds with these substitutions: preconditioned SGD is stable for $\eta<2/S_P$, with the preconditioned sharpness $S_P=\lmax(P^{-1}H)=\max_i\omega_ih_i$, and its floor lies between $\eta\tr(P^{-1}\Sigma)/(4B)$ and $\eta\tr(P^{-1}\Sigma)/(2B(2-\eta S_P))$.
+\end{lemma}
+
+\begin{proof}
+Multiplying the update by $P^{1/2}$ and writing $\theta_t=P^{-1/2}\theta'_t$ gives $\theta'_{t+1}=\theta'_t-\eta(H'\theta'_t+\zeta'_t)$ with $\zeta'_t=P^{-1/2}\zeta_t$, whose conditional mean is $0$ and conditional covariance $\Sigma'/B$; and $\frac12\theta_t^\top H\theta_t=\frac12\theta_t'^\top H'\theta'_t$. Since $P^{-1/2}=\diag(\sqrt{\omega_i})$, we get $h'_i=\omega_ih_i$, $c'_i=\omega_ic_i$, $\theta'_{0,i}=\theta_{0,i}/\sqrt{\omega_i}$, so $\Delta'_{0,i}=\Delta_{0,i}$, and $\tr\Sigma'=\sum_i\omega_ic_i=\tr(P^{-1}\Sigma)$.
+\end{proof}
+
+The powers $P=H^p$, $0\le p\le1$, interpolate between SGD and Newton's method; $p=\frac12$ is what Adam's denominator becomes when the noise dominates and $\Sigma\propto H$ (\cref{sec:noise:critical}). A preconditioner that does not commute with $H$ also yields a noisy quadratic model (Exercise~\ref{ex:noise:change}).
+
+Momentum couples each coordinate to its previous value; \cref{ch:momentum} computes the stationary variance of the heavy ball on one quadratic direction, and summed over the modes it gives the floor.
+
+\begin{proposition}[Momentum in the noisy quadratic model]\label[proposition]{prop:noise:momentum}
+Let \cref{ass:noise:nqm} hold, and let $\theta_{t+1}=\theta_t-\eta g_t+\beta(\theta_t-\theta_{t-1})$ with $\eta>0$, $0\le\beta<1$, and $\theta_{-1}=\theta_0$.
+\begin{enumerate}
+\item The expected loss converges for every $\theta_0$ and every $\Sigma$ if and only if $\eta S<2+2\beta$, and then, with the effective step size $\eta_{\mathrm e}=\eta/(1-\beta)$, its limit is
+\[
+  \cR_\infty^\beta(\eta,B)=\sum_{i=1}^d\frac{\eta_{\mathrm e}c_i}{2B\bigl(2-\frac{1-\beta}{1+\beta}\eta_{\mathrm e}h_i\bigr)}.
+\]
+Each term is at most the corresponding term of SGD's floor at step size $\eta_{\mathrm e}$, when that step is stable, and agrees with it to first order in $\eta_{\mathrm e}$.
+\item \emph{(Proof sketched.)} For fixed $\beta$, let $T_\beta(B)$ be the steps to the target $\eps$ at the best $\eta\in(0,(2+2\beta)/S)$. Then $B\,T_\beta(B)\to\noiseEmin$ as $B\to0$, the same limit as for SGD in \cref{thm:noise:critical}.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan for (i) is to treat each mode as a second-order linear recursion. Mode $i$ evolves by $x_{t+1}=a_ix_t-\beta x_{t-1}-\eta\zeta_{t,i}$ with $a_i=1+\beta-\eta h_i$. By the Jury test (\cref{lem:toolkit:recurrence}) both roots of $z^2-a_iz+\beta$ lie in the open unit disk if and only if $\abs{a_i}<1+\beta$, that is, $0<\eta h_i<2+2\beta$. If this holds for every $i$, then the means tend to zero and the second moments converge. If it fails for $i=1$, then a root of modulus at least $1$ exists, the impulse response of mode $1$ does not tend to zero, and the variance of mode $1$, which is $\eta^2c_1/B$ times the sum of its squared impulse response, diverges when $c_1>0$. For a stable mode, the stationary moments $\gamma_0=\E x_t^2$ and $\gamma_1=\E x_tx_{t-1}$ satisfy $\gamma_1=a_i\gamma_0-\beta\gamma_1$ and $\gamma_0=(a_i^2+\beta^2)\gamma_0-2a_i\beta\gamma_1+\eta^2c_i/B$ (\cref{lem:toolkit:lyapunov}), because the noise is uncorrelated with $x_t$ and $x_{t-1}$; eliminating $\gamma_1=a_i\gamma_0/(1+\beta)$ and using $(1+\beta)^2-a_i^2=\eta h_i(2+2\beta-\eta h_i)$,
+\[
+  \tfrac12h_i\gamma_0=\frac{\eta c_i(1+\beta)}{2B(1-\beta)\bigl(2(1+\beta)-\eta h_i\bigr)},
+\]
+which is the stated term after $\eta=(1-\beta)\eta_{\mathrm e}$. Since $(1-\beta)/(1+\beta)\le1$, its denominator is at least $2B(2-\eta_{\mathrm e}h_i)$, and both equal $\eta_{\mathrm e}c_i/(4B)$ to first order.
+\end{proof}
+
+\begin{proofsketch}[Sketch of the proof of (ii)]
+The variance of mode $i$ is $\eta^2c_i/B$ after one step and never decreases, so a step size that reaches the target has $\eta^2\tr(H\Sigma)/(2B)<\eps$, and $\eta\to0$. For small $\eta$ the roots are $\mu_+=1-\eta h_i/(1-\beta)+O(\eta^2)$ and $\mu_-=\beta+O(\eta)$; with $\theta_{-1}=\theta_0$ the mean of mode $i$ is $\theta_{0,i}\mu_+^t(1+O(\eta))$, and the squared impulse response sums to the variance $\eta c_i(1-\mu_+^{2t})(1+O(\eta))/(2Bh_i(1-\beta))+O(\eta^2c_i/B)$, uniformly in $t$. With $\eta=(1-\beta)\gamma B$ and $t=E/B$ the expected loss is thus SGD's limit $D(\gamma E)+\frac\gamma4Q(\gamma E)$ (\cref{def:noise:steps}) up to relative errors $O(\eta)$ in $\gamma E$ and in both terms and an absolute error $O(\gamma\eta)$, and the argument of \cref{thm:noise:critical}(iii) applies. Omitted is the bookkeeping of these errors, which replaces facts (a)--(c); we know of no published proof, and \textcite{ZhangEtAl2019NQM} state the conclusion as a prediction of the model.
+\end{proofsketch}
+
+The benefit of momentum is at large batch sizes, where effective step sizes up to $(2+2\beta)/((1-\beta)S)$, which is $38/S$ for $\beta=0.9$, are stable and the iteration accelerates (\cref{ch:momentum}). The one-step model from which \textcite{McCandlishEtAl2018} derived their noise scale is exact in the noisy quadratic model.
+
+\begin{proposition}[The one-step model is exact]\label[proposition]{prop:noise:onestep}
+Let \cref{ass:noise:nqm} hold, fix $\theta$ with $G=\nabla\Loss(\theta)=H\theta\ne0$, and let $g=G+\zeta$ with $\E\zeta=0$ and $\E\zeta\zeta^\top=\Sigma/B$. Then
+\begin{equation}\label{eq:noise:onestep}
+  \E\Loss(\theta-\eta g)=\Loss(\theta)-\eta\norm{G}_2^2+\frac{\eta^2}2\Bigl(G^\top HG+\frac{\tr(H\Sigma)}B\Bigr),
+\end{equation}
+which is smallest at $\eta=\eta_{\max}/(1+\noiseBnoise/B)$, where it equals $\Loss(\theta)-\Delta_{\max}/(1+\noiseBnoise/B)$, with $\eta_{\max}=\norm G_2^2/G^\top HG$, $\Delta_{\max}=\norm G_2^4/(2G^\top HG)$ and $\noiseBnoise=\tr(H\Sigma)/G^\top HG$.
+\begin{enumerate}
+\item The \term{gradient noise scale}\index{gradient noise scale} $\noiseBsimple=\tr\Sigma/\norm G_2^2$ is at least $\tr\Sigma/(2S\Loss(\theta))$, with equality if and only if $H\theta=S\theta$; if $H=hI$, then $\noiseBnoise=\noiseBsimple=\tr\Sigma/(2h\Loss(\theta))$.
+\item $1/S\le\eta_{\max}\le1/h_d$, so the one-step optimum can exceed the stability limit $2/S$.
+\item At the stationary second moments of SGD with $\eta<2/S$, the measured scales $\tr\Sigma/\E\norm G_2^2$ and $\tr(H\Sigma)/\E G^\top HG$ equal $2B\tr\Sigma/(\eta\tr(H\Sigma))$ and $2B\tr(H\Sigma)/(\eta\tr(H^2\Sigma))$ up to factors in $[1-\eta S/2,1]$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to expand the quadratic loss exactly and to minimize over $\eta$. Since $\Loss(\theta-\eta g)=\Loss(\theta)-\eta G^\top g+\frac12\eta^2g^\top Hg$, with $\E G^\top g=\norm G_2^2$ and $\E g^\top Hg=G^\top HG+\tr(H\Sigma)/B$, we get \eqref{eq:noise:onestep}, a quadratic in $\eta$ minimized at $\norm G_2^2/(G^\top HG+\tr(H\Sigma)/B)$ with the stated minimum. (i) From $H^2\preceq SH$, $\norm G_2^2=\theta^\top H^2\theta\le2S\Loss(\theta)$, with equality if and only if $H(S-H)\theta=0$, that is, $H\theta=S\theta$; for $H=hI$ substitute $G=h\theta$. (ii) $1/\eta_{\max}$ is the Rayleigh quotient of $H$ at $G$. (iii) At stationarity $\E\theta_i^2=\eta c_i/(Bh_i(2-\eta h_i))$, so $\E\norm G_2^2=\frac\eta B\sum_ih_ic_i/(2-\eta h_i)$ and $\E G^\top HG=\frac\eta B\sum_ih_i^2c_i/(2-\eta h_i)$; use $2-\eta S\le2-\eta h_i\le2$.
+\end{proof}
+
+By (iii), a noise scale measured at the floor of a run reports the run's own ratio $B/\eta$, up to factors set by the spectrum (\cref{sec:noise:reading}).
+
+\section{The theory: the critical batch size}\label{sec:noise:critical}
+
+\begin{definition}[Steps and examples to a target]\label[definition]{def:noise:steps}
+Let \cref{ass:noise:nqm} hold and fix a target $0<\eps<\Delta_0$. For $B>0$, the \term{steps to target} $T(B)$ is the smallest $t\in\N$ for which some $\eta\in(0,2/S)$ gives $\cR_t(\eta,B)<\eps$, and $E(B)=B\,T(B)$. Without noise, $D_t(\eta)=\sum_i\Delta_{0,i}(1-\eta h_i)^{2t}$ is the loss of gradient descent, and $\noiseTmin$ is the smallest $t$ for which some $\eta\in(0,2/S)$ gives $D_t(\eta)<\eps$. In continuous time let
+\[
+  D(\tau)=\sum_{i=1}^d\Delta_{0,i}e^{-2h_i\tau},\qquad Q(\tau)=\sum_{i=1}^dc_i\bigl(1-e^{-2h_i\tau}\bigr),
+\]
+let $\tau_\eps$ solve $D(\tau_\eps)=\eps$, and let
+\begin{equation}\label{eq:noise:Emin}
+  \noiseEmin=\min_{\tau>\tau_\eps}\frac{\tau\,Q(\tau)}{4\bigl(\eps-D(\tau)\bigr)},
+\end{equation}
+attained at some $\tau^\star$, with $\gamma^\star=4(\eps-D(\tau^\star))/Q(\tau^\star)$, so that $\noiseEmin=\tau^\star/\gamma^\star$. The \term{critical batch size}\index{critical batch size} is $\noiseBcrit=\noiseEmin/\noiseTmin$.
+\end{definition}
+
+The function $D$ is the loss of gradient flow at time $\tau$, and $Q$ the noise accumulated by then. Since $D$ decreases continuously and strictly from $\Delta_0$ to $0$, $\tau_\eps$ is well defined, and the objective in \eqref{eq:noise:Emin} tends to infinity as $\tau\downarrow\tau_\eps$ and as $\tau\to\infty$, so the minimum exists. It is a budget: the flow time $\tau$ leaves $\eps-D(\tau)$ for the noise, the largest step per example whose noise $\frac\gamma4Q(\tau)$ fits is $4(\eps-D(\tau))/Q(\tau)$, and $\tau$ divided by it is the number of examples. In the harmonic model $\tau_\eps=350$, $\tau^\star=677$, $\gamma^\star=0.0678$ and $\noiseEmin=9987$; two thirds of the budget go to noise.
+
+\begin{theorem}[Two regimes and the critical batch size]\label{thm:noise:critical}
+Let \cref{ass:noise:nqm} hold, fix a target $0<\eps<\Delta_0$, and use the notation of \cref{def:noise:steps}.
+\begin{enumerate}
+\item \emph{(Monotonicity.)} $T(B)$ is finite and nonincreasing in $B$, and $T(B)\ge\noiseTmin$ for every $B$.
+\item \emph{(Curvature-limited regime.)} There is $B_1<\infty$ such that $T(B)=\noiseTmin$ for every $B\ge B_1$.
+\item \emph{(Noise-limited regime.)} $B\,T(B)\to\noiseEmin$ as $B\to0$. Quantitatively, if $\gamma^\star BS\le\frac12$, then $B\,T(B)\le\noiseEmin(1+\gamma^\star BS)^2(1+\gamma^\star B/\tau^\star)+B$; and if $8BS^2\eps\le\tr(H\Sigma)$, then $B\,T(B)\ge\noiseEmin\bigl(1+S\sqrt{2B\eps/\tr(H\Sigma)}\bigr)^{-2}$.
+\item \emph{(Linear scaling.)} Let $\eta_B\in(0,2/S)$ satisfy $\cR_{T(B)}(\eta_B,B)<\eps$. Every limit point of $\eta_B/B$ as $B\to0$ equals $4(\eps-D(\tau))/Q(\tau)$ for a minimizer $\tau$ of \eqref{eq:noise:Emin}; if the minimizer is unique, then $\eta_B/B\to\gamma^\star$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to split the expected loss into a deterministic part and a noise part proportional to $1/B$: at large batch sizes the noise part vanishes, and at small ones the step size is forced to zero, so that the discrete recursion approaches its continuous-time version, which is \eqref{eq:noise:Emin}. For $0<\eta<2/S$, \cref{thm:noise:nqm}(ii) gives
+\[
+  \cR_t(\eta,B)=D_t(\eta)+\frac{M_t(\eta)}B,\qquad M_t(\eta)=\sum_{i=1}^dBF_i\bigl(1-(1-\eta h_i)^{2t}\bigr)\ge0,
+\]
+and $BF_i=\eta c_i/(2(2-\eta h_i))$ does not depend on $B$. We use three facts: (a) $(1-x)^2\le e^{-2x}$ for $0\le x\le1$; (b) $(1-x)^2\ge e^{-2x(1+x)}$ for $0\le x\le\frac12$, since $\log(1-x)\ge-x-x^2$ there; (c) $Q$ is nondecreasing and concave with $Q(0)=0$, so $Q(a\tau)\le aQ(\tau)$ and $Q(\tau/a)\ge Q(\tau)/a$ for $a\ge1$.
+
+(i) As $\eta\to0$ the floor, at most $\eta\tr\Sigma/(2B(2-\eta S))$, tends to $0$; since $\cR_t$ converges to the floor, $T(B)$ is finite. Since $M_t\ge0$, $\cR_t(\eta,B)$ is nonincreasing in $B$, so a pair $(\eta,t)$ that reaches the target at batch size $B$ reaches it at every larger one, and $T$ is nonincreasing. Since $\cR_t\ge D_t$, every such pair has $D_t(\eta)<\eps$, so $T(B)\ge\noiseTmin$; and $\noiseTmin$ is finite: $D_t(1/S)\le D(t/S)$ by (a).
+
+(ii) Choose $\eta_\infty\in(0,2/S)$ with $\delta=\eps-D_{\noiseTmin}(\eta_\infty)>0$, and let $B_1=1+M_{\noiseTmin}(\eta_\infty)/\delta$. For $B\ge B_1$, $\cR_{\noiseTmin}(\eta_\infty,B)<\eps$, so $T(B)\le\noiseTmin$, and (i) gives equality.
+
+(iii) \emph{Upper bound.} Let $\gamma^\star BS\le\frac12$ and $0<\gamma\le\gamma^\star$, put $\eta=\gamma B$, so $\eta S\le\frac12$, and let $t=\lceil\tau^\star/\eta\rceil$, so $\tau^\star\le\eta t<\tau^\star+\eta$. By (a), $D_t(\eta)\le D(\eta t)\le D(\tau^\star)$. In the noise part, $BF_i\le\frac14\eta c_i(1+\eta h_i)$ because $(1+x)(2-x)\ge2$ on $[0,1]$, and by (b) and the concavity of $u\mapsto1-e^{-u}$,
+\[
+  1-(1-\eta h_i)^{2t}\le1-e^{-2\eta h_it(1+\eta h_i)}\le(1+\eta h_i)\bigl(1-e^{-2h_i\eta t}\bigr).
+\]
+Summing over $i$ and using (c) in the form $Q(\eta t)\le Q(\tau^\star+\eta)\le(1+\eta/\tau^\star)Q(\tau^\star)$,
+\[
+  \frac{M_t(\eta)}B\le(1+\eta S)^2\,\frac\gamma4\,Q(\eta t)\le(1+\gamma^\star BS)^2\Bigl(1+\frac{\gamma^\star B}{\tau^\star}\Bigr)\frac\gamma4\,Q(\tau^\star).
+\]
+Since $\eps-D(\tau^\star)=\frac14\gamma^\star Q(\tau^\star)$, the target is reached at step $t$ whenever $\gamma(1+\gamma^\star BS)^2(1+\gamma^\star B/\tau^\star)<\gamma^\star$. For every such $\gamma$, $T(B)\le\tau^\star/(\gamma B)+1$; letting $\gamma$ increase to $\gamma^\star(1+\gamma^\star BS)^{-2}(1+\gamma^\star B/\tau^\star)^{-1}$ gives the upper bound, since $\tau^\star/\gamma^\star=\noiseEmin$.
+
+\emph{Lower bound.} Let $t=T(B)$ and $\eta\in(0,2/S)$ with $\cR_t(\eta,B)<\eps$, and put $\gamma=\eta/B$ and $\tau=\eta t$. Since $\cR_0=\Delta_0>\eps$, $t\ge1$, and \cref{thm:noise:nqm}(i) gives $m_{t,i}\ge\eta^2c_i/B$; so $\eps>\cR_t\ge\eta^2\tr(H\Sigma)/(2B)$, where $\tr(H\Sigma)=\sum_ih_ic_i>0$ because $\Sigma\ne0$. If $8BS^2\eps\le\tr(H\Sigma)$, then $\eta S\le S\sqrt{2B\eps/\tr(H\Sigma)}\le\frac12$, and (b), (a) and $BF_i\ge\frac14\eta c_i$ give, with $\tau'=\tau(1+\eta S)$,
+\[
+  \eps>\cR_t(\eta,B)\ge D(\tau')+\frac\gamma4\,Q(\tau).
+\]
+Hence $\tau'>\tau_\eps$ and $\gamma<4(\eps-D(\tau'))/Q(\tau)$. Using $Q(\tau)=Q(\tau'/(1+\eta S))\ge Q(\tau')/(1+\eta S)$,
+\begin{equation}\label{eq:noise:lower}
+  B\,T(B)=\frac\tau\gamma>\frac{\tau\,Q(\tau)}{4\bigl(\eps-D(\tau')\bigr)}\ge\frac{\tau'\,Q(\tau')}{4(1+\eta S)^2\bigl(\eps-D(\tau')\bigr)}\ge\frac{\noiseEmin}{(1+\eta S)^2},
+\end{equation}
+which is the lower bound. Together the two bounds give $B\,T(B)\to\noiseEmin$.
+
+(iv) Let $B_k\to0$ and write $\eta_k=\eta_{B_k}$, $t_k=T(B_k)$, $\gamma_k=\eta_k/B_k$, $\tau_k=\eta_kt_k$, and $\tau'_k=\tau_k(1+\eta_kS)$. For large $k$ the lower-bound argument applies: $\eta_k\to0$, $\tau'_k>\tau_\eps$, $\gamma_k<4(\eps-D(\tau'_k))/Q(\tau_k)$, and $\tau_k/\gamma_k=B_kt_k\to\noiseEmin$. Since $\tau_k\ge\frac23\tau_\eps$ and $B_kt_k>\tau_kQ(\tau_k)/(4\eps)\ge\tau_kQ(\frac23\tau_\eps)/(4\eps)$, the sequences $\tau_k$, $\gamma_k$, and $1/\gamma_k$ are bounded. Along a subsequence $\gamma_k\to\bar\gamma>0$ and $\tau_k\to\bar\tau=\bar\gamma\noiseEmin$, and in the limit $\bar\gamma\le4(\eps-D(\bar\tau))/Q(\bar\tau)$, which forces $D(\bar\tau)<\eps$; therefore
+\[
+  \noiseEmin=\frac{\bar\tau}{\bar\gamma}\ge\frac{\bar\tau\,Q(\bar\tau)}{4\bigl(\eps-D(\bar\tau)\bigr)}\ge\noiseEmin .
+\]
+Equality holds throughout: $\bar\tau$ is a minimizer and $\bar\gamma=4(\eps-D(\bar\tau))/Q(\bar\tau)$. If the minimizer is unique, then every convergent subsequence has the limit $\gamma^\star$, so the bounded sequence $\gamma_k$ converges to $\gamma^\star$.
+\end{proof}
+
+Parts (iii) and (iv) are the \term{noise-limited regime}\index{noise-limited regime}: the examples needed become independent of the batch size and the best step size approaches $\gamma^\star B$, the \term{linear scaling rule}\index{linear scaling rule}; the bounds show that the regime lasts while $\gamma^\star BS\ll1$. Part (ii) is the \term{curvature-limited regime}\index{curvature-limited regime}, where stability alone limits the step size. The critical batch size is the ratio of the two asymptotes.
+
+\begin{corollary}[The scale of the critical batch size]\label[corollary]{cor:noise:bcrit}
+In the setting of \cref{thm:noise:critical}, let $\tau_\delta$ solve $D(\tau_\delta)=\delta$ for $0<\delta<\Delta_0$; let $D^\noisesl$ be the sum defining $D$ restricted to the modes with $h_i\le S/4$, and $\tau^\noisesl_\eps=\inf\{\tau\ge0:D^\noisesl(\tau)<\eps\}$. Then
+\[
+  \frac{\tau_\eps Q(\tau_\eps)}{4\eps}\le\noiseEmin\le\frac{\tau_{\eps/2}Q(\tau_{\eps/2})}{2\eps}\qquad\text{and}\qquad\frac{S\tau^\noisesl_\eps}4\le\noiseTmin\le S\tau_\eps+1 .
+\]
+Consequently, with $\noiseBeps=\tr\Sigma/(S\eps)$, the ratio $\noiseBcrit/\noiseBeps$ lies between $\frac{Q(\tau_\eps)}{4\tr\Sigma}\cdot\frac{S\tau_\eps}{S\tau_\eps+1}$ and, when $\tau^\noisesl_\eps>0$, $2\tau_{\eps/2}/\tau^\noisesl_\eps$.
+\end{corollary}
+
+\begin{proof}
+For $\tau>\tau_\eps$ we have $Q(\tau)\ge Q(\tau_\eps)$ and $0<\eps-D(\tau)<\eps$, so the objective of \eqref{eq:noise:Emin} is at least $\tau_\eps Q(\tau_\eps)/(4\eps)$; at $\tau=\tau_{\eps/2}$ its denominator is $2\eps$. The step size $1/S$ gives $D_t(1/S)\le D(t/S)$ by fact (a) of the previous proof, which is below $\eps$ at the smallest integer $t>S\tau_\eps$. Conversely, let $\eta\in(0,2/S)$ and $D_t(\eta)<\eps$. For the modes with $h_i\le S/4$, $x=\eta h_i<\frac12$ and $\log(1-x)\ge-2x$ give $(1-\eta h_i)^{2t}\ge e^{-2h_i(4t/S)}$, so $\eps>D^\noisesl(4t/S)$ and $4t/S\ge\tau^\noisesl_\eps$. The bounds on $\noiseBcrit$ follow by division, with $Q\le\tr\Sigma$ in the upper one.
+\end{proof}
+
+Up to these shape factors, $\noiseBcrit\asymp\tr\Sigma/(S\eps)$: the critical batch size grows like $1/\eps$ as the target falls, grows with the noise, and falls with the sharpness that caps the curvature-limited step; for $\Sigma=\sigma^2H$ it is $\sigma^2/\eps$ times the effective rank $\tr H/S$. In the harmonic model $\noiseBeps=40$, the corollary places $\noiseBcrit$ between $9.5$ and $125$, and the exact value is $9987/177=56$.
+
+\begin{theorem}[Preconditioning raises the critical batch size]\label{thm:noise:precond}
+Let \cref{ass:noise:nqm} hold, let $P=\diag(1/\omega_1,\dots,1/\omega_d)$ with every $\omega_i>0$, and define $T^P(B)$, $\noiseEmin^P$, $\noiseTmin^P$, and $\noiseBcrit^P=\noiseEmin^P/\noiseTmin^P$ for $\theta_{t+1}=\theta_t-\eta P^{-1}g_t$ as in \cref{def:noise:steps}, with $\eta\in(0,2/S_P)$.
+\begin{enumerate}
+\item \Cref{thm:noise:critical,cor:noise:bcrit} hold after the substitutions $h_i\to\omega_ih_i$, $c_i\to\omega_ic_i$, $S\to S_P=\max_i\omega_ih_i$, and $\tr\Sigma\to\tr(P^{-1}\Sigma)$; so $D$ becomes $D_P(\tau)=\sum_i\Delta_{0,i}e^{-2\omega_ih_i\tau}$, $Q$ becomes $Q_P(\tau)=\sum_i\omega_ic_i(1-e^{-2\omega_ih_i\tau})$, the linear rule holds at small batch sizes, and $\noiseBcrit^P$ is within the shape factors of \cref{cor:noise:bcrit} of $\tr(P^{-1}\Sigma)/(S_P\eps)$.
+\item The advantage of preconditioning, $T(B)/T^P(B)$, tends to $\noiseEmin/\noiseEmin^P$ as $B\to0$ and equals $\noiseTmin/\noiseTmin^P$ for every large $B$.
+\item For $P=H^p$ with $0\le p\le1$ and $\Sigma=\sigma^2H$, the scale $\tr(P^{-1}\Sigma)/(S_P\eps)=(\sigma^2/\eps)\sum_i(h_i/S)^{1-p}$ is nondecreasing in $p$; it is $\sigma^2/\eps$ times the effective rank $\tr H/S$ at $p=0$ and $\sigma^2d/\eps$ at $p=1$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+By \cref{lem:noise:change}, preconditioned SGD in the coordinates $P^{1/2}\theta$ is SGD on a noisy quadratic model with $h'_i=\omega_ih_i$, $c'_i=\omega_ic_i$, the same initial losses, and the same loss values, whose stable step sizes are those in $(0,2/S_P)$; apply \cref{thm:noise:critical,cor:noise:bcrit} to it. For (ii), $T(B)/T^P(B)=B\,T(B)/(B\,T^P(B))$ tends to $\noiseEmin/\noiseEmin^P$ by \cref{thm:noise:critical}(iii), applied to both models, and both step counts equal their limits beyond the two thresholds of \cref{thm:noise:critical}(ii). For (iii), $\omega_i=h_i^{-p}$ gives $\omega_ih_i=h_i^{1-p}$, with maximum $S^{1-p}$, and $\omega_ic_i=\sigma^2h_i^{1-p}$; each $(h_i/S)^{1-p}$ is nondecreasing in $p$ because $h_i/S\le1$.
+\end{proof}
+
+Preconditioning by $H^{-p}$ divides the stiffest curvature by more than the others, which narrows the spread of curvatures that one stable step size must serve and raises the scale (iii) of the critical batch size. Its effect on $\noiseEmin^P$ depends on the problem: in the harmonic model $p=\frac12$ gives $\noiseEmin^P=3390$ against $9987$, an advantage of $2.95$ that persists as $B\to0$, and $10$ steps instead of $177$ at large batch sizes. At small batch sizes a preconditioner can only reallocate time among the modes: mode $i$ is SGD with step size $\eta\omega_i$ (\cref{lem:noise:change}), and with $\Sigma=\sigma^2H$ every mode accumulates the same noise per unit of its own relaxation time. SGD gives the stiff modes more relaxation time than they need and pays for it in noise; when they carry little of the noise, as in a spiked spectrum, there is little to gain.
+
+\begin{proposition}[A spiked spectrum: little gain at small batch sizes]\label[proposition]{prop:noise:spiked}
+Let $H$ have $k$ eigenvalues $\kappa h$, the outliers, and $m$ eigenvalues $h$, the bulk, with $\kappa\ge4$. Let $\Sigma=\sigma^2H$ and $\theta_0=\bar\theta\mathbf1$, so that the bulk starts with the loss $L_{\mathrm b}=\frac12mh\bar\theta^2$ and the outliers with $\rho L_{\mathrm b}$, where $\rho=k\kappa/m$; and let $\eps=\phi L_{\mathrm b}$ with $0<\phi<1$. With $\psi(x)=-x\log(1-x)$ and $\chi(x)=-\log(1-x)$, let $V(\phi)$ be the infimum of $\psi(x)/(x-1+\phi)$ over $1-\phi<x<1$, let $W_\rho(\phi)$ be the infimum of $(\psi(x)+\rho\,\chi(x))/(\phi-(1+\rho)(1-x))$ over $1-\phi/(1+\rho)<x<1$, and let $R(\rho,\phi)=W_\rho(\phi)/V(\phi)$, which is at least $1$ and tends to $1$ as $\rho\to0$.
+\begin{enumerate}
+\item \emph{(Small batch sizes.)} Every diagonal preconditioner has $\noiseEmin^P\ge\frac{\sigma^2}{4h\bar\theta^2}V(\phi)$, and every power $P=H^p$, $0\le p\le1$, SGD included, has $\noiseEmin^{H^p}\le\frac{\sigma^2}{4h\bar\theta^2}W_\rho(\phi)$. Hence $\noiseEmin/\noiseEmin^P\le R(\rho,\phi)$ for every diagonal $P$, and $\noiseEmin/\noiseEmin^{H^p}\ge1/R(\rho,\phi)$.
+\item \emph{(Large batch sizes.)} For $0\le p\le1$, $\noiseTmin/\noiseTmin^{H^p}\ge\kappa\log(1/\phi)/\bigl(8+4\kappa^{1-p}\log((1+\rho)/\phi)\bigr)$, which for large $\kappa$ is about $\frac14\kappa^p\log(1/\phi)/\log((1+\rho)/\phi)$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to write the objective of \eqref{eq:noise:Emin}, for the model of \cref{thm:noise:precond}(i), in terms of the fraction of its initial loss that each mode has lost. For a diagonal $P$ and a time $\tau$ put $u_i=2\omega_ih_i\tau$ and $x_i=1-e^{-u_i}$. Because $c_i=\sigma^2h_i$, $\tau\omega_ic_i(1-e^{-u_i})=\frac12\sigma^2u_i(1-e^{-u_i})=\frac12\sigma^2\psi(x_i)$ and $\Delta_{0,i}e^{-u_i}=\frac12h_i\bar\theta^2(1-x_i)$, so
+\[
+  \tau Q_P(\tau)=\frac{\sigma^2}2\sum_i\psi(x_i),\qquad D_P(\tau)=\frac{\bar\theta^2}2\sum_ih_i(1-x_i).
+\]
+(i) \emph{Lower bound.} Dropping the outliers from both sums decreases the objective. The function $\psi$ is convex on $[0,1)$, since $\psi''(x)=(1-x)^{-1}+(1-x)^{-2}>0$; so by Jensen's inequality the bulk contributes at least $m\,\psi(\bar x)$ to $\sum_i\psi(x_i)$, with $\bar x$ the mean of its $x_i$, while it contributes exactly $mh(1-\bar x)$ to $\sum_ih_i(1-x_i)$. If $D_P(\tau)<\eps$, then $1-\bar x<\phi$ and
+\[
+  \frac{\tau Q_P(\tau)}{4(\eps-D_P(\tau))}\ge\frac{\frac12\sigma^2m\,\psi(\bar x)}{4L_{\mathrm b}(\bar x-1+\phi)}=\frac{\sigma^2}{4h\bar\theta^2}\cdot\frac{\psi(\bar x)}{\bar x-1+\phi}\ge\frac{\sigma^2}{4h\bar\theta^2}V(\phi).
+\]
+\emph{Upper bound.} For $P=H^p$ the bulk modes share $u=2h^{1-p}\tau=\chi(x)$, and the outliers have $u_{\mathrm o}=\kappa^{1-p}u\ge u$. Then $\psi(x_{\mathrm o})\le u_{\mathrm o}\le\kappa\,\chi(x)$ and $1-x_{\mathrm o}\le1-x$, so, with $k\kappa=\rho m$, $\tau Q_P(\tau)\le\frac12\sigma^2m(\psi(x)+\rho\,\chi(x))$ and $D_P(\tau)\le(1+\rho)L_{\mathrm b}(1-x)$. As $\tau$ runs over $(0,\infty)$, $x$ runs over $(0,1)$, which gives $\noiseEmin^{H^p}\le\frac{\sigma^2}{4h\bar\theta^2}W_\rho(\phi)$, and SGD is the case $p=0$. As for $R$: the numerator of $W_\rho$ is at least $\psi(x)$ and its denominator at most $x-1+\phi$, so $W_\rho\ge V$. The infimum $V(\phi)$ is attained at some $x_\phi$, because the quotient tends to infinity at both ends of the interval; for small $\rho$, $(1+\rho)(1-x_\phi)<\phi$, and $W_\rho(\phi)\le(\psi(x_\phi)+\rho\,\chi(x_\phi))/(\phi-(1+\rho)(1-x_\phi))\to V(\phi)$.
+
+(ii) Apply \cref{cor:noise:bcrit} to SGD and, through \cref{thm:noise:precond}(i), to $H^p$. For SGD, $S=\kappa h$ and the modes with $h_i\le S/4$ are the bulk, since $\kappa\ge4$; so $D^\noisesl(\tau)=L_{\mathrm b}e^{-2h\tau}$, $\tau^\noisesl_\eps=\log(1/\phi)/(2h)$, and $\noiseTmin\ge\frac18\kappa\log(1/\phi)$. For $H^p$, $S_P=(\kappa h)^{1-p}$ and $D_P(\tau)\le(1+\rho)L_{\mathrm b}e^{-2h^{1-p}\tau}$, so $\noiseTmin^{H^p}\le\frac12\kappa^{1-p}\log((1+\rho)/\phi)+1$.
+\end{proof}
+
+For the spiked models of \cref{fig:noise:precond} ($\kappa=100$, $k=10$, target $5\%$ of the initial loss), $R$ is $2.39$ for $\rho=1$ and $1.12$ for $\rho=0.1$, against exact small-batch advantages of $p=\frac12$ of $1.83$ and $1.09$; the large-batch advantages are $9.1$ and $9.8$, close to $\kappa^{1/2}=10$, so bound (ii) is pessimistic by a factor of four to five. When the noise lives in the bulk, the bulk is already well conditioned; at large batch sizes the outliers set the stable step size.
+
+\begin{heuristic}[Heuristic derivation of the scaling rules]
+\emph{SGD.} In the noise-limited regime the expected loss after $E$ examples at step size $\eta=\gamma B$ approaches $D(\gamma E)+\frac\gamma4Q(\gamma E)$, the expected loss at time $\tau=\gamma E$ of the Ornstein--Uhlenbeck process $d\theta=-H\theta\,d\tau+\sqrt\gamma\,\Sigma^{1/2}dW_\tau$, which is the \term{stochastic differential equation}\index{stochastic differential equation} of \textcite{LiTaiE2017} for the model. Runs with equal $\eta/B$ have the same loss per example, which is the linear rule, and \cref{thm:noise:critical}(iv) shows that the tuned step size follows it. It fails when $\eta S$ is no longer small: $(1-\eta h_i)^2$ departs from $e^{-2\eta h_i}$, and stability caps $\eta$ below $2/S$.
+
+\emph{Adam.} Take $H$ diagonal in Adam's coordinates, $\beta_1=0$, $\epsilon=0$, and $\beta_2$ close to $1$, over a stretch where the gradient statistics change slowly, so that $\hat v_{t,i}\approx(\partial_i\Loss)^2+c_i/B$. While noise dominates coordinate $i$, $B(\partial_i\Loss)^2\ll c_i$, the step $\eta g_{t,i}/\sqrt{\hat v_{t,i}}$ is about $\eta\sqrt B\,g_{t,i}/\sqrt{c_i}$: preconditioned SGD with $P^{-1}=\diag(c_i^{-1/2})$ and step size $\eta\sqrt B$, which for $\Sigma=\sigma^2H$ is the power $p=\frac12$ up to the factor $\sigma$. The linear rule for it asks for $\eta\sqrt B\propto B$, that is, $\eta\propto\sqrt B$, the \term{square-root scaling rule}\index{square-root scaling rule}. For $\hat v$ to average over a fixed number of examples, $1-\beta_2\propto B$, and likewise $1-\beta_1$; since $\sqrt{\hat v}$ scales like $B^{-1/2}$, so must $\epsilon$. The rule fails once $B(\partial_i\Loss)^2$ is comparable to $c_i$, where the step approaches the sign step of \cref{ch:sign}, whose size does not depend on $B$, and when the effective step approaches $2/S_P$.
+\end{heuristic}
+
+\Textcite{MalladiEtAl2022} derived the square-root rule from a stochastic differential equation for adaptive methods, and \textcite{LiMalladiArora2021} studied when such equations describe SGD.
+
+\section{Reading the theory}\label{sec:noise:reading}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=50mm,xmode=log,xmin=1,xmax=16384,xlabel={batch size $B$},xtick={1,10,100,1000,10000}]
+\nextgroupplot[ymode=log,ymin=5,ymax=20000,ylabel={steps to target $T(B)$},legend style={at={(0.97,0.97)},anchor=north east,font=\scriptsize}]
+\addplot[theory] table[x=B,y=sgd] {figures/data/11-noise-steps.dat};
+\addplot[theory3] table[x=B,y=mom] {figures/data/11-noise-steps-mom.dat};
+\addplot[theory2] table[x=B,y=pre] {figures/data/11-noise-steps.dat};
+\addplot[guide,densely dotted,line width=0.7pt] table[x=B,y=hypsgd] {figures/data/11-noise-steps.dat};
+\addplot[simulation,color=sea,mark options={fill=sea,draw=white,line width=0.2pt}] table[x=B,y=sgd] {figures/data/11-noise-steps-mc.dat};
+\addplot[simulation] table[x=B,y=mom] {figures/data/11-noise-steps-mc.dat};
+\addplot[simulation2] table[x=B,y=pre] {figures/data/11-noise-steps-mc.dat};
+\addplot[guide,densely dotted,line width=0.7pt] table[x=B,y=hyppre] {figures/data/11-noise-steps.dat};
+\legend{SGD,{momentum, $\beta=0.9$},{preconditioned, $H^{-1/2}$},hyperbola $\noiseTmin+\noiseEmin/B$}
+\nextgroupplot[ymode=log,ymin=0.005,ymax=60,ylabel={best step size},legend style={at={(0.97,0.03)},anchor=south east,font=\scriptsize}]
+\addplot[theory] table[x=B,y=etasgd] {figures/data/11-noise-steps.dat};
+\addplot[theory3] table[x=B,y expr=\thisrow{etamom}/0.1] {figures/data/11-noise-steps-mom.dat};
+\addplot[theory2] table[x=B,y=etapre] {figures/data/11-noise-steps.dat};
+\addplot[guide] table[x=B,y=linsgd] {figures/data/11-noise-steps.dat};
+\addplot[guide] table[x=B,y=linpre] {figures/data/11-noise-steps.dat};
+\addplot[guide,domain=1:16384,samples=2] {2};
+\addplot[guide,domain=1:16384,samples=2] {38};
+\legend{$\eta$ for SGD,$\eta/(1-\beta)$ for momentum,$\eta$ for $H^{-1/2}$}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Steps to the target $\eps=0.05\,\Delta_0$ in the harmonic model, at the best constant step size. Left: curves are exact (\cref{thm:noise:nqm} minimized over stable step sizes; the heavy ball by its exact second-moment recursion); points are simulations, the first step at which the average loss of $64$ runs ($256$ for $B\ge128$) at the theory's step size, smoothed over $2\%$ of the predicted time, is below the target (seeds in \texttt{11-noise-steps.py}); all agree within $1.6\%$. Dotted: the hyperbolas $\noiseTmin+\noiseEmin/B$ built from the exact limits. Right: the best step sizes (for momentum, the one minimizing the loss at step $T(B)$), with the linear rules $\gamma^\star B$ of \cref{thm:noise:critical}(iv), the limit $2/S=2/S_P=2$, and momentum's limit $38$ for $\eta/(1-\beta)$ (dashed).}
+\label{fig:noise:steps}
+\end{figure}
+
+\paragraph{Steps against batch size.} \Cref{fig:noise:steps} is the theory's version of \cref{obs:noise:regimes}. For SGD the steps fall like $1/B$ up to $B\approx10$ and level off near $\noiseTmin=177$; the best step size follows the rule $\gamma^\star B$ while $\gamma^\star BS$ is small, falls below it as the rule approaches $1/S$ at $B=1/(\gamma^\star S)\approx15$, and creeps up to $1.975$ at $B=16384$, within $1.3\%$ of $2/S$, so that in the curvature-limited regime the tuned learning rate sits at the edge of stability (\cref{ch:eos}). The critical batch size is $56$. Momentum with $\beta=0.9$ follows SGD at small batch sizes, as \cref{prop:noise:momentum}(ii) requires ($9989$ steps at $B=1$, against $10063$), and levels off at $23$ steps, a critical batch size of $434$. Preconditioning by $H^{-1/2}$ lowers the small-batch line by the factor $2.95$ and the large-batch level to $10$ steps, a critical batch size of $339$. Measured by where $T(B)=2\noiseTmin$, the knee moves from $46$ to $186$, a factor of four rather than six.\sidenote{On the hyperbola $T=\noiseTmin+\noiseEmin/B$ the batch size $\noiseBcrit$ is exactly where $T=2\noiseTmin$ and $E=2\noiseEmin$, so the two definitions of the knee would agree if the hyperbola were exact.}
+
+\paragraph{The hyperbola.} If $T(B)=\noiseTmin+\noiseEmin/B$ held exactly, then McCandlish et al.'s relation would follow. The exact $T(B)$ lies between $0.89$ and $1.04$ times this hyperbola for SGD and between $0.67$ and $1.00$ times it for $H^{-1/2}$, but the product $(T/\noiseTmin-1)(E/\noiseEmin-1)$ is a more sensitive test. With the real-valued crossing times, which $T(B)$ and $\noiseTmin$ round up (rounding moves $E$ by up to $B$, the order the product measures), it rises from $0.42$ as $B\to0$ to $3.5$ at $B=16384$ for SGD, and stays between $0.11$ and $0.25$ for $H^{-1/2}$. As $B\to0$ it tends to $E_1/\noiseTmin$, where $E(B)=\noiseEmin+E_1B+o(B)$ ($E_1\approx75$ for SGD), and the relation assumes $E_1=\noiseTmin$, which nothing in the model enforces. A least-squares fit of the hyperbola gives $\noiseBcrit\approx52$ (Exercise~\ref{ex:noise:simfit}).
+
+\paragraph{Noise scales.} On the noise-free path of gradient flow at the target, McCandlish et al.'s scales are $\noiseBnoise\approx9.5\times10^5$ and $\noiseBsimple\approx1.1\times10^4$, orders of magnitude above $\noiseBcrit=56$: the one-step model lets the step grow to $\eta_{\max}$, close to $1/h$ for the slow modes that still carry loss and far beyond $2/S$ (\cref{prop:noise:onestep}(ii)). Measured as in practice, on the noisy iterates of the tuned run at $B=1$, they are $\noiseBsimple\approx132$ and $\noiseBnoise\approx40$: near the floor the full-batch gradient is dominated by the fluctuations of the stiff modes, and by \cref{prop:noise:onestep}(iii) the measured scales approach $2\tr\Sigma/(\gamma^\star\tr(H\Sigma))=134$ and $2\tr(H\Sigma)/(\gamma^\star\tr(H^2\Sigma))=40$: they measure the inverse of the tuned step size per example. For $H=hI$ the agreement is close: with $\Delta_0/\eps=20$, $\noiseBcrit$ is $1.42$ times $\noiseBsimple$ at loss $\eps$ (Exercise~\ref{ex:noise:onemode}).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[wplot,height=0.5\linewidth,xmode=log,ymode=log,xmin=0.5,xmax=32768,ymin=0.8,ymax=30,xlabel={batch size $B$},ylabel={advantage $T(B)/T^{H^{1/2}}(B)$},xtick={1,10,100,1000,10000},ytick={1,2,5,10,20},yticklabels={1,2,5,10,20},legend style={at={(0.03,0.97)},anchor=north west,font=\scriptsize}]
+\addplot[theory] table[x=B,y=harmonic] {figures/data/11-noise-precond.dat};
+\addplot[theory3] table[x=B,y=spike1] {figures/data/11-noise-precond.dat};
+\addplot[theory2] table[x=B,y=spike01] {figures/data/11-noise-precond.dat};
+\addplot[simulation,color=sea,mark options={fill=sea,draw=white,line width=0.2pt}] table[x=B,y=harmonic] {figures/data/11-noise-precond-mc.dat};
+\addplot[simulation] table[x=B,y=spike1] {figures/data/11-noise-precond-mc.dat};
+\addplot[simulation2] table[x=B,y=spike01] {figures/data/11-noise-precond-mc.dat};
+\addplot[guide,domain=0.5:32768,samples=2] {1};
+\addplot[guide,line width=1pt,unbounded coords=jump] table[x=B,y=harmonic] {figures/data/11-noise-precond-lim.dat};
+\addplot[guide,line width=1pt,unbounded coords=jump] table[x=B,y=spike1] {figures/data/11-noise-precond-lim.dat};
+\addplot[guide,line width=1pt,unbounded coords=jump] table[x=B,y=spike01] {figures/data/11-noise-precond-lim.dat};
+\legend{{harmonic, $h_i=1/i$},{spiked, $\rho=1$},{spiked, $\rho=0.1$}}
+\end{axis}
+\end{tikzpicture}
+\caption{The advantage of preconditioning by $H^{-1/2}$, the ratio of the steps to target of SGD and of preconditioned SGD, with $\Sigma=H$, $\theta_0=(1,\dots,1)$ and the target $5\%$ of the initial loss: the harmonic model, and spiked models with $10$ outliers of curvature $1$ above $m=1000$ ($\rho=1$) or $m=10^4$ ($\rho=0.1$) bulk modes of curvature $0.01$. Curves: exact real-valued first-passage times; short dashes at the ends: the limits of \cref{thm:noise:precond}(ii). Points: simulations as in \cref{fig:noise:steps}, with the crossing located by linear interpolation and the bulk simulated by $500$ representative modes (\texttt{11-noise-precond.py}).}
+\label{fig:noise:precond}
+\end{figure}
+
+\paragraph{The advantage of preconditioning.} \Cref{fig:noise:precond} shows the batch-size dependence that \cref{ch:transformers} uses to compare Adam with SGD. The advantage grows with the batch size from its small-batch limit to about its large-batch limit (two curves overshoot slightly near the knee). The small-batch limit is a property of the problem: $2.95$ for the harmonic spectrum, $1.83$ for the spiked spectrum with $\rho=1$, and $1.09$ for $\rho=0.1$, where the bulk carries $91\%$ of the noise. It depends on the spectrum, the noise, and the initialization through \eqref{eq:noise:Emin}, and tends to $1$ with the outliers' share of the noise (\cref{prop:noise:spiked}).
+
+\paragraph{Where the agreement must fail.} The residual differences in the figures are Monte Carlo error and the bias of locating a first passage on a noisy curve. A single run fluctuates more: at the target of the harmonic model with $B=4$ its loss has a standard deviation of $17\%$ of the target, and since the stiff modes decorrelate within a few steps, one run at the best step size first touches the target well before the expected loss reaches it (median about $2000$ steps in $200$ runs, against $T(4)=2577$). The theory describes the expected loss, or a loss averaged over runs or steps.
+
+\section{What the theory misses}\label{sec:noise:misses}
+
+\paragraph{What was idealized away.} The landscape and the noise are fixed, while in a network the sharpness rises toward the stability threshold (\cref{ch:eos}) and the noise covariance changes with the parameters; near interpolation it shrinks with the loss, which turns the critical batch size into the target-independent effective rank $\tr H/S$ (Exercise~\ref{ex:noise:interp}). The model is online, without epochs or a generalization gap. The step size is constant; with averaged iterates every diagonal preconditioner has the same asymptotic cost $\tr(H^{-1}\Sigma)/(2E)$ \parencite{PolyakJuditsky1992} (Exercise~\ref{ex:noise:averaging}). Adam's preconditioner is estimated from noisy gradients and lags them (\cref{ch:adaptive}).
+
+\paragraph{Where it breaks.} (1) The critical batch size of a real run moves: the noise scale grows during training \parencite{McCandlishEtAl2018}, the critical batch size of language models is a power of the loss \parencite{KaplanEtAl2020}, and in pretraining it grows mainly with the amount of training data, not with the model size \parencite{ZhangEtAl2025CBS}. The model's $1/\eps$ gives the direction of the first two but not their rate, and it cannot express the third. (2) \Textcite{ShallueEtAl2019} found that the optimal learning rate followed neither the linear nor the square-root rule consistently across workloads. (3) Large batches can generalize worse at a fixed number of epochs \parencite{KeskarEtAl2017,HofferHubaraSoudry2017}, which an online model cannot show. (4) At very small batch sizes plain SGD comes close to Adam on language models \parencite{MarekEtAl2025}; with a constant step size the model reproduces this when the noise lives in the bulk of a spiked spectrum (\cref{prop:noise:spiked}) but not in the harmonic model, where the gap stays near $3$, and averaging the iterates closes the gap for small targets in every case (Exercise~\ref{ex:noise:averaging}). Which case describes a transformer, whose Hessian is heterogeneous across blocks \parencite{ZhangEtAl2024Hessian}, is not settled (\cref{ch:transformers}). (5) The diffusion approximation behind the scaling rules has conditions of validity that \textcite{LiMalladiArora2021} test experimentally, and heavy-tailed noise (\cref{ch:spikes}) is outside the model.
+
+\paragraph{Repairs and open problems.} Batch-size schedules exploit the growth of the critical batch size: \textcite{SmithEtAl2018} increase the batch size instead of decaying the learning rate, GPT-3 ramped its batch size up \parencite{BrownEtAl2020},\sidenote{Linearly, from $32$ thousand tokens to the full batch over the first $4$ to $12$ billion tokens, depending on the model size.} and \textcite{MerrillEtAl2025} measure the critical batch size of language models over a run and propose a batch-size warmup.\sidenote{For OLMo models of 1B and 7B parameters they find the critical batch size near zero at initialization, rising quickly and then leveling off; with the warmup, OLMo 1B reached a slightly better loss with $43\%$ fewer gradient steps.} Noise-scale estimators make the critical batch size measurable \parencite{McCandlishEtAl2018}, with the caveat of \cref{prop:noise:onestep}(iii). Parameter-dependent noise gives the interpolation regime its own critical batch size \parencite{MaBassilyBelkin2018,JainEtAl2018}. \Textcite{ZhangEtAl2025CBS} justify the growth of the critical batch size with the data by infinite-width and least-squares analyses. Open: a model of a network that derives the measured dependence on the data-set and model sizes; a theory for normalized optimizers such as sign descent and Muon, whose step does not shrink with the noise (\cref{ch:momentum}); and measurements placing transformer spectra and noise between the harmonic and spiked cases.
+
+\section{Back in the wild}\label{sec:noise:back}
+
+\fieldnotes
+{Scale the learning rate linearly (SGD) or as the square root (Adam) with the batch size, up to a critical batch size; train language models with batches of millions of tokens, ramped up early in training.}
+{The noisy quadratic model: a fixed quadratic, noise of covariance $\Sigma/B$, a constant step size, the expected loss.}
+{Exact loss curves and floors; $T(B)=\noiseTmin$ for large $B$, and $B\,T(B)\to\noiseEmin$ with $\eta\approx\gamma^\star B$ as $B\to0$; $\noiseBcrit\asymp\tr\Sigma/(S\eps)$ up to shape factors; preconditioning raises this scale; when a spiked spectrum's outliers carry little noise, diagonal preconditioners save few examples at small batch sizes.}
+{Perfect scaling below $\noiseBcrit$ and saturation above it, with the step size near $2/S$; a critical batch size growing like $1/\eps$ as the target falls; momentum and preconditioners help mainly above the knee; noise scales measured on a run reflect its own ratio $B/\eta$.}
+{Curvature and noise that change during training, noise that depends on the parameters, finite data and epochs, schedules, heavy tails, generalization.}
+{Scale $\eta\propto B$ below the knee and expect diminishing returns above it (proved in the idealization); expect larger critical batch sizes late in training and for preconditioned optimizers (suggested); expect little gain from preconditioning at very small batch sizes when the noise lives in the bulk (suggested).}
+
+For a practitioner the theory gives the scaling rules a range of validity. The linear rule is a theorem of the model while the step it prescribes is small compared with $1/S$; when the tuned learning rate approaches the stability limit, the rule and the returns of larger batches stop together. The critical batch size is of order $\tr\Sigma/(S\eps)$: it grows as the loss falls, which supports ramping the batch size up, grows with the noise, and falls with the sharpness. The theory supplies neither the constant in front nor the evolution of $\Sigma$ and $S$ in a network, so the batch size is still chosen by measurement; where exactly to sit near the critical batch size depends on the relative cost of steps and examples, and is folklore.
+
+The stability constraint is the threshold $2/S$ of \cref{ch:eos}; the floor is where \cref{ch:schedules} starts, and the equilibrium of \cref{ch:decay} is another floor. The batch-size dependence of the advantage of preconditioning (\cref{thm:noise:precond,prop:noise:spiked}) is one of the explanations that \cref{ch:transformers} offers for why Adam beats SGD on transformers, and the square-root heuristic bears on the choice of $\beta_2$ (\cref{ch:adaptive}).
+
+\begin{exercises}
+\item \consolidation (Momentum's floor.) With $\eta_{\mathrm e}=\eta/(1-\beta)$ fixed and $\eta_{\mathrm e}S<2$, show that the floor of \cref{prop:noise:momentum} decreases in $\beta$ and differs from SGD's floor at $\eta_{\mathrm e}$ by a relative amount at most $\eta_{\mathrm e}S/(2-\eta_{\mathrm e}S)$.\label{ex:noise:momfloor}
+
+\item \consolidation (One mode.) Let $d=1$, with curvature $h$, noise $c$, and $r=\Delta_0/\eps>1$. (a) Show that $\noiseTmin=1$, at $\eta=1/h$, and that $T(B)=1$ if and only if $B>(1-1/r)c/(2h\eps)$. (b) Show that $\noiseEmin=\frac{c}{8h\eps}V_1(r)$ with $V_1(r)=\min_{x>\log r}x(1-e^{-x})/(1-re^{-x})$, and that $V_1(r)=\log r+\log\log r+O(1)$. (c) For $r=20$, where $V_1=5.69$, show that a batch size just above $(1-1/r)c/(2h\eps)$ reaches the target with about two thirds of $\noiseEmin$ examples, so $E\ge\noiseEmin$ can fail. (d) For $H=hI$, show that $\noiseBcrit=\noiseEmin$ is $V_1(r)/4$ times $\noiseBsimple$ at loss $\eps$. \hint{in (b), put $x=\log r+s$.}\label{ex:noise:onemode}
+
+\item \consolidation (A preconditioner that does not commute with $H$.) For an arbitrary $P\succ0$ and the update $\theta_{t+1}=\theta_t-\eta P^{-1}g_t$, show that $P^{1/2}\theta_t$ performs SGD on a noisy quadratic model with Hessian $P^{-1/2}HP^{-1/2}$, whose top eigenvalue is $S_P$, and noise covariance $P^{-1/2}\Sigma P^{-1/2}$, so that \cref{thm:noise:nqm} applies in its eigenbasis.\label{ex:noise:change}
+
+\item \consolidation (The diffusion limit.) Let $\theta_\tau$ solve $d\theta_\tau=-H\theta_\tau\,d\tau+\sqrt\gamma\,\Sigma^{1/2}dW_\tau$, started at $\theta_0$, with $W$ a standard Brownian motion in $\R^d$. Show that $\E\Loss(\theta_\tau)=D(\tau)+\frac\gamma4Q(\tau)$, and that the infimum over $\gamma>0$ of the examples $\tau/\gamma$ after which this is below $\eps$ is $\noiseEmin$. Why does this limit say nothing about step sizes with $\eta S$ near $2$?\label{ex:noise:ou}
+
+\item \variation (Interpolation.) Least squares with inputs $x\sim\cN(0,H)$ and noiseless labels has per-example gradient covariance $\Sigma(\theta)=2\Loss(\theta)H+H\theta\theta^\top H$. (a) Show that $m_t=(\E\theta_{t,i}^2)_i$ satisfies $m_{t+1}=Am_t$ with $A=\diag(a_i)+(\eta^2/B)hh^\top$, $a_i=(1-\eta h_i)^2+\eta^2h_i^2/B$ and $h=(h_1,\dots,h_d)$. (b) Show that $\E\Loss(\theta_t)\to0$ from every $\theta_0$ if and only if $\max_ia_i<1$ and $\frac\eta B\sum_ih_i/(2-\eta h_i(1+1/B))<1$. (c) Deduce that the largest stable step size lies between $\min\{B/\tr H,B/((B+1)S)\}$ and $\min\{2B/\tr H,2B/((B+1)S)\}$, so that the critical batch size is about the effective rank $\tr H/S$, whatever the target. \hint{$A$ is entrywise positive, and its largest eigenvalue $\mu>\max_ia_i$ solves $1=(\eta^2/B)\sum_ih_i^2/(\mu-a_i)$.}\label{ex:noise:interp}
+
+\item \variation (Isotropic noise.) Redo the proof of \cref{prop:noise:spiked}(i) for $\Sigma=\sigma^2I$: show that $\tau\omega_ic_i(1-e^{-u_i})=\frac{\sigma^2}{2h_i}\psi(x_i)$, that the outliers contribute at most $\frac{\sigma^2}{2h}k\kappa^{-p}\chi(x)$ to $\tau Q_P$ for $P=H^p$, and that as $k\kappa/m\to0$ the ratio $\noiseEmin/\noiseEmin^P$ is at most $1+o(1)$ for every diagonal $P$ and tends to $1$ for every power $P=H^p$. Where does $H^{-p}$ now raise the floor?\label{ex:noise:isotropic}
+
+\item \variation\hard (Averaging.) Let $\bar\theta_n$ be the mean of $n$ consecutive stationary iterates of SGD with $\eta<2/S$. (a) Show that $\E\Loss(\bar\theta_n)=\frac1{2nB}\tr(H^{-1}\Sigma)(1+o(1))$ as $n\to\infty$, whatever $\eta$ is, and that the same holds after every diagonal preconditioning. (b) Conclude that with averaging, for small targets, every diagonal preconditioner needs about $\tr(H^{-1}\Sigma)/(2\eps)$ examples, as in \textcite{PolyakJuditsky1992}. What is left for a preconditioner to improve? \hint{each mode is an autoregression of order one; sum its autocovariances.}\label{ex:noise:averaging}
+
+\item \variation (The square-root rule for sign descent.) Let $\theta_{t+1,i}=\theta_{t,i}-\eta\sign(g_{t,i})$ with Gaussian noise, $\mu=\partial_i\Loss(\theta_t)$ and $s^2=c_i/B$. (a) Show that $\E[\sign g_{t,i}\mid\cF_t]=\erf(\mu/(s\sqrt2))=\sqrt{2/\pi}\,\mu/s+O((\mu/s)^3)$. (b) Deduce that to leading order the sign step has the conditional mean of SGD preconditioned by $\omega_i=\sqrt{2B/(\pi c_i)}$, and $\pi/2$ times its conditional variance. (c) For $\Sigma=\sigma^2H$, identify the power $p$, derive $\eta\propto\sqrt B$ in the noise-dominated regime, and explain why the rule fails once $B\mu^2\gtrsim c_i$.\label{ex:noise:sign}
+
+\item \simulation (The momentum coefficient.) In \texttt{11-noise-steps.py}, replace $\beta=0.9$ by $0.5$, $0.8$, $0.85$, and $0.95$. The small-batch part should not move (\cref{prop:noise:momentum}(ii)), and the large-batch level should become $59$, $22$, $21$, and $41$ steps, against $23$. Compare the best $\beta$ with Polyak's choice, about $0.86$ for the condition number $h_1/h_{700}=700$ of the modes that must converge (\cref{ch:momentum}), and explain why too large a $\beta$ hurts.\label{ex:noise:simbeta}
+
+\item \simulation (The outliers' share.) With \texttt{11-noise-precond.py}, compute the small-batch advantage of $H^{-1/2}$ for spiked spectra with $\kappa=100$, $k=10$, and $\rho\in\{1,0.1,0.01\}$, and compare with the bound $R(\rho,\phi)$ of \cref{prop:noise:spiked} at $\phi=0.05(1+\rho)$: you should find $1.83$, $1.09$, and $1.009$ against $2.39$, $1.12$, and $1.012$. With $\kappa=1000$ and $\rho=0.1$, check that the small-batch advantage stays near $1$ ($1.10$) while the large-batch one grows to $31$.\label{ex:noise:simspike}
+
+\item \simulation (Fitting the hyperbola.) Fit $T(B)=a+b/B$ to the exact SGD curve of \cref{fig:noise:steps} by least squares on $\log T$. You should find $a\approx180$ and $b\approx9300$, so $b/a\approx52$, within $8.3\%$ of the curve everywhere, against $\noiseTmin=177$ and $\noiseEmin=9987$. For $H^{-1/2}$ the best fit is off by $31\%$ near the knee; explain why from \cref{fig:noise:steps}.\label{ex:noise:simfit}
+
+\item \research (The critical batch size and the data.) \Textcite{ZhangEtAl2025CBS} report that the critical batch size grows with the amount of data rather than the model size. Formulate a solvable model with a finite data set, such as linear regression on a finite sample trained for several epochs, derive how $\noiseBcrit$ depends on the data and model sizes, and compare with their least-squares analysis. Open: a model of a network whose derived dependence matches the measurements.\label{ex:noise:data}
+\end{exercises}
+
+\notesandrefs
+\Textcite{ZhangEtAl2019NQM} used the noisy quadratic model, with the per-mode recursion of \cref{thm:noise:nqm}, its floor, and the change of variables of \cref{lem:noise:change}, to predict how the critical batch size depends on the optimizer, including preconditioning by powers of $H$ and momentum; their solutions show perfect scaling, its end, and how preconditioning and momentum move the end. A floor proportional to the step size is standard \parencite{BottouCurtisNocedal2018}, and averaging removes it \parencite{PolyakJuditsky1992}. \Textcite{SmithEtAl2018} argued that the ratio of learning rate to batch size controls the noise of SGD.
+
+\Textcite{McCandlishEtAl2018} named and measured the critical batch size and derived the one-step model of \cref{prop:noise:onestep}; \textcite{ShallueEtAl2019} mapped the three regimes across workloads, and \textcite{KaplanEtAl2020} folded the critical batch size into the scaling laws of language models. For least squares in the interpolation regime, \textcite{MaBassilyBelkin2018} and \textcite{JainEtAl2018} found a critical batch size of the order of an effective rank (Exercise~\ref{ex:noise:interp}). The two limits of \cref{thm:noise:critical} with the formula \eqref{eq:noise:Emin}, the bounds of \cref{cor:noise:bcrit}, the spiked-spectrum proposition, and the stationary noise scales of \cref{prop:noise:onestep}(iii) are, as far as we know, not stated in this form elsewhere; the regimes themselves, and the numerical evidence that preconditioning moves the knee, are in \textcite{ZhangEtAl2019NQM}.
+
+\paragraph{Translating the literature.} \Textcite{McCandlishEtAl2018} write $\epsilon$ for the learning rate (our $\eta$), $S$ and $E$ for the steps and examples to a target (our $T$ and $E$; our $S$ is the sharpness), $G$ for the true gradient (our $\nabla\Loss$), and $S_{\min}$, $E_{\min}$ for the limits (our $\noiseTmin$, $\noiseEmin$); their $B_{\mathrm{crit}}=E_{\min}/S_{\min}$, $B_{\mathrm{noise}}$, and $B_{\mathrm{simple}}$ are ours. \Textcite{ZhangEtAl2019NQM} call the noise covariance $C$ (our $\Sigma$), with diagonal entries $c_i$ in the eigenbasis of $H$ as here, and precondition by $P=H^p$, as in \cref{thm:noise:precond}.
+
+\printchapterbib
+\end{refsection}

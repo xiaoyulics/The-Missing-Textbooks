@@ -1,0 +1,443 @@
+% Chapter 6 of Optimizers in the Wild: adaptive preconditioning (AdaGrad, RMSProp, Adam).
+\newcommand{\adaptiveclip}{\operatorname{clip}}
+\newcommand{\adaptiveKL}{\operatorname{KL}}
+
+\casechapter{Adaptive Preconditioning}{AdaGrad, RMSProp and Adam}{Adam's $\beta_2$ and $\epsilon$}{ch:adaptive}
+\begin{refsection}[chapters/06-adaptive.bib]
+
+\begin{chaptersummary}
+Adam divides each coordinate of its step by a running root mean square of that coordinate's gradients; $\beta_2$ sets how fast the running average forgets, and $\epsilon$ the gradient size below which it stops dividing. These methods are steepest descent in a diagonal norm that the gradients choose. We prove that AdaGrad, whose norm never forgets, has a regret bound within a factor $\sqrt2$ of the bound for the best diagonal norm chosen in hindsight, and that its scalar version converges at every step size without knowing the smoothness constant. We then prove what forgetting costs: Adam converges to the worst point of a one-dimensional convex problem when its memory $1/(1-\beta_2)$ is short compared with the period of a rare large gradient, and after a quiet stretch a long memory gives steps of up to $6.6$ step sizes at the default $\beta_1=0.9$, $\beta_2=0.999$, and an excess displacement of about $2\ln2/(1-\beta_2)$ step sizes. Adafactor's factored second moment is the best rank-one approximation in I-divergence. The theory is worst case, and its regret bounds are for convex losses; it does not say why $\beta_2=0.95$ works for language models.
+\end{chaptersummary}
+
+\section{In the wild: Adam's two dials}\label{sec:adaptive:wild}
+
+Adam divides the momentum of each coordinate by a running root mean square of its gradients, and two dials set the denominator: $\beta_2$, how fast the average forgets, and $\epsilon$, a floor below which a gradient is not divided by its own size. Both are rarely tuned; their values have moved.
+
+\begin{practice}[Adam, \textcite{KingmaBa2015}; GPT-3, \textcite{BrownEtAl2020}; LLaMA, \textcite{TouvronEtAl2023}]
+Train with Adam or AdamW (\cref{ch:decay}), $\beta_1=0.9$, bias correction on. Keep $\beta_2=0.999$, the default of Kingma and Ba, except for large language models, which use $\beta_2=0.95$. Keep $\epsilon=10^{-8}$, the default of the original paper and of PyTorch (Keras uses $10^{-7}$). For sparse convex models, such as click prediction, use AdaGrad's per-coordinate learning rate $\eta/(\sum_{s\le t}g_{s,i}^2)^{1/2}$. To save memory, Adafactor replaces $v$ by row and column sums of $G^2$.
+\end{practice}
+
+For language models $\beta_2$ drifted down: RoBERTa lowered it from $0.999$ to $0.98$, reporting better stability with large batches \parencite{LiuEtAl2019}, and GPT-3 and LLaMA used $0.95$. PaLM moved the other way: it used Adafactor without factorization and $\beta_2=1-k^{-0.8}$ at step $k$, which its authors found more stable than $\beta_2=0.99$ because the second moments of rare embedding tokens are poorly estimated over short windows \parencite{ChowdheryEtAl2023}.\sidenote{Schedules that raise $\beta_2$ toward $1$ during training are from \textcite{ShazeerStern2018}, who also showed that a second-moment estimate that decays too slowly can produce larger updates than intended, and proposed to clip the root mean square of each update.}
+
+\begin{observation}[$\beta_2$ and stability; \textcite{LiuEtAl2019}, \textcite{ChowdheryEtAl2023}, \textcite{MolybogEtAl2023}]\label[observation]{obs:adaptive:beta2}
+In the training of large language models (2019--2023), lowering $\beta_2$ from $0.999$ to $0.98$ has been reported to improve stability with large batches, and raising it toward $1$ to help rare tokens; GPT-3 and LLaMA used $0.95$. \Textcite{MolybogEtAl2023} relate divergences in runs of $7$ to $546$ billion parameters to Adam updates that grow large and nearly uncorrelated with the gradient. These are reports from training runs or an unrefereed preprint; none isolates a mechanism by ablations across scales.
+\end{observation}
+
+The reports point both ways, a hint that $\beta_2$ trades one failure for another.
+
+\begin{observation}[\textcite{ReddiKaleKumar2018}; \textcite{ZhangEtAl2022}]\label[observation]{obs:adaptive:reddi}
+For every $\beta_1<\sqrt{\beta_2}<1$ there is an online convex problem on an interval on which Adam's average regret does not tend to zero, and a stochastic convex problem on which Adam does not converge to the minimizer \parencite{ReddiKaleKumar2018}. Adam remained the default; the proposed fix, AMSGrad, did not replace it. \Textcite{ZhangEtAl2022} pointed to the order of choices: the counterexamples are built after the hyperparameters, practitioners tune them after the problem, and with the problem fixed first and $\beta_2$ large enough Adam converges.
+\end{observation}
+
+The dial $\epsilon$ matters more than its size suggests: \textcite{WortsmanEtAl2024} report that the gradient root mean square of their transformers falls toward the default $10^{-8}$ as the models grow and reaches it at their largest scale ($4.8$ billion parameters), where it shrinks the updates and lowering $\epsilon$ to $10^{-15}$ improves the loss.
+
+AdaGrad came first. \Textcite{McMahanStreeter2010} and \textcite{DuchiHazanSinger2011} scaled each coordinate's step by the inverse root of its accumulated squared gradients, and the method spread through large sparse problems such as click prediction \parencite{McMahanEtAl2013}. Its accumulated sum grows without bound, so its steps shrink for good; RMSProp divides instead by an exponential moving average of the squared gradients, which forgets \parencite{TielemanHinton2012},\sidenote{RMSProp was never published as a paper; it appeared in a lecture of Hinton's 2012 online course, which is how it is still cited.} and Adam added momentum and a bias correction \parencite{KingmaBa2015}. The step that never forgets has a guarantee and was abandoned for deep networks; the step that forgets has a counterexample and is the default. Which property of the denominator does each guarantee use, and what do $\beta_2$ and $\epsilon$ control?
+
+\section{The idealization: a norm chosen by the gradients}\label{sec:adaptive:idealization}
+
+A step size per coordinate is a norm. For a symmetric positive definite matrix $P$ write $\norm{u}_P=(u^\top Pu)^{1/2}$.
+
+\begin{lemma}[Preconditioning is steepest descent in a quadratic norm]\label[lemma]{lem:adaptive:quadnorm}
+Let $P\succ0$. The dual norm of $\norm{\cdot}_P$ is $\norm{\cdot}_{P^{-1}}$; for $g\neq0$, $\lmo(g)=-P^{-1}g/\norm{g}_{P^{-1}}$ is unique; and $g^\sharp=P^{-1}g$. So $\theta-\eta P^{-1}g$ is unnormalized steepest descent with respect to $\norm{\cdot}_P$, and for $P=\diag(p)$ it is gradient descent with step size $\eta/p_i$ in coordinate $i$.
+\end{lemma}
+
+\begin{proof}
+By the Cauchy--Schwarz inequality for $P^{-1/2}g$ and $P^{1/2}u$, $\ip{g,u}\ge-\norm{g}_{P^{-1}}\norm{u}_P$, with equality exactly when $u=-cP^{-1}g$ for some $c\ge0$. Over the unit ball the minimum of $\ip{g,u}$ is therefore $-\norm{g}_{P^{-1}}$, attained only at $-P^{-1}g/\norm{g}_{P^{-1}}$, a point of norm one since $\norm{P^{-1}g}_P=\norm{g}_{P^{-1}}$. Then $g^\sharp=-\norm{g}_{P^{-1}}\lmo(g)=P^{-1}g$, which also holds for $g=0$.
+\end{proof}
+
+We take squares, roots and quotients entrywise, count rounds from $t=1$, and call $\eta$ the step size, the practitioners' learning rate.
+
+\begin{definition}[Three adaptive methods]\label[definition]{def:adaptive:methods}
+Let $g_t$ be the (stochastic) gradient at $\theta_t$, $\eta>0$, $\epsilon\ge0$, $0\le\beta_1,\beta_2<1$; accumulators start at $0$; $0/0=0$.
+\begin{enumerate}
+\item \term{AdaGrad}\index{AdaGrad}: $s_t^2=s_{t-1}^2+g_t^2$ and $\theta_{t+1}=\theta_t-\eta\,g_t/(s_t+\epsilon)$. Thus $s_{t,i}=\norm{g_{1:t,i}}_2$, with $g_{1:t,i}=(g_{1,i},\dots,g_{t,i})$ the history of coordinate $i$.
+\item \term{RMSProp}\index{RMSProp}: $v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2$ and $\theta_{t+1}=\theta_t-\eta\,g_t/(\sqrt{v_t}+\epsilon)$.
+\item \term{Adam}\index{Adam}: $m_t=\beta_1m_{t-1}+(1-\beta_1)g_t$, $v_t$ as in RMSProp, the \term{bias-corrected}\index{bias correction} moments $\hat m_t=m_t/(1-\beta_1^t)$, $\hat v_t=v_t/(1-\beta_2^t)$, and $\theta_{t+1}=\theta_t-\eta\,\hat m_t/(\sqrt{\hat v_t}+\epsilon)$.
+\end{enumerate}
+On a constraint set each update is followed by a projection. On a box, the projection in every diagonal quadratic norm is coordinatewise clipping, because $\sum_ip_i(\theta_i-y_i)^2$ separates.
+\end{definition}
+
+By \cref{lem:adaptive:quadnorm}, AdaGrad is unnormalized steepest descent in $\norm{\cdot}_{P_t}$ with $P_t=\diag(s_t+\epsilon)$, RMSProp uses $P_t=\diag(\sqrt{v_t}+\epsilon)$, and Adam uses the bias-corrected matrix and applies it to the moving average $\hat m_t$ of \cref{ch:momentum}. One property decides everything: AdaGrad's $P_t$ is nondecreasing in $t$; those of RMSProp and Adam are not. A moving average with coefficient $\beta_2$ gives the gradient of $k$ steps ago the weight $(1-\beta_2)\beta_2^k$; we call $1/(1-\beta_2)$, the mean lag plus one, its \term{memory}\index{memory of a moving average}: $20$ steps for $\beta_2=0.95$, $1000$ for $0.999$.\sidenote{The half-life of the weights, $\ln2/\ln(1/\beta_2)$, is about $0.69$ memories: $13.5$ steps for $\beta_2=0.95$ and $693$ for $0.999$.}
+
+\begin{fieldguide}{AdaGrad}{\textcite{DuchiHazanSinger2011}; \textcite{McMahanStreeter2010}}
+\fgrow{update}{$s_t^2=s_{t-1}^2+g_t^2$, \ $\theta_{t+1}=\theta_t-\eta\,g_t/(s_t+\epsilon)$}
+\fgrow{norm}{$\norm\cdot_{P_t}$, $P_t=\diag(s_t+\epsilon)$ (\cref{lem:adaptive:quadnorm})}
+\fgrow{preconditioner}{diagonal, nondecreasing; the best diagonal norm in hindsight up to $\sqrt2$ (\cref{prop:adaptive:hindsight})}
+\fgrow{averages}{none: a running sum of $g^2$}
+\fgrow{state}{one number per parameter}
+\fgrow{in the wild}{sparse convex models; AdaGrad-Norm (\cref{thm:adaptive:adagradnorm}); full matrix in \cref{ch:kronecker}}
+\end{fieldguide}
+
+\begin{fieldguide}{RMSProp}{\textcite{TielemanHinton2012}}
+\fgrow{update}{$v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2$, \ $\theta_{t+1}=\theta_t-\eta\,g_t/(\sqrt{v_t}+\epsilon)$}
+\fgrow{norm}{$\norm\cdot_{P_t}$, $P_t=\diag(\sqrt{v_t}+\epsilon)$; $\ell_\infty$ if $\beta_2=\epsilon=0$ (\cref{ch:sign})}
+\fgrow{preconditioner}{diagonal; forgets with memory $1/(1-\beta_2)$}
+\fgrow{averages}{EMA of $g^2$}
+\fgrow{state}{one number per parameter}
+\fgrow{in the wild}{$\beta_2=0.9$ in the lecture that introduced it}
+\end{fieldguide}
+
+\begin{fieldguide}{Adam}{\textcite{KingmaBa2015}}
+\fgrow{update}{$m_t=\beta_1m_{t-1}+(1-\beta_1)g_t$, \ $v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2$, \ $\theta_{t+1}=\theta_t-\eta\,\hat m_t/(\sqrt{\hat v_t}+\epsilon)$, \ $\hat m_t=m_t/(1-\beta_1^t)$, $\hat v_t=v_t/(1-\beta_2^t)$}
+\fgrow{norm}{$\ell_\infty$ if $\beta_1=\beta_2=\epsilon=0$ (\cref{ch:sign}); in general $\norm\cdot_{P_t}$, $P_t=\diag(\sqrt{\hat v_t}+\epsilon)$}
+\fgrow{preconditioner}{diagonal; $\to\diag(\E g^2)^{1/2}$ for stationary gradients as $\beta_2\to1$ (\cref{rem:adaptive:limits})}
+\fgrow{averages}{EMAs of $g$ ($\beta_1$, \cref{ch:momentum}) and of $g^2$ ($\beta_2$), bias-corrected}
+\fgrow{state}{two numbers per parameter}
+\fgrow{step}{bounded per coordinate if $\beta_1^2<\beta_2$ (\cref{ch:sign}); up to $6.6\eta$ after a quiet stretch at $(0.9,0.999)$ (\cref{prop:adaptive:quietloud})}
+\fgrow{in the wild}{$\beta_1=0.9$; $\beta_2=0.999$, or $0.95$ for language models; $\epsilon=10^{-8}$}
+\fgrow{caution}{fails if the memory is short compared with the period of rare large gradients (\cref{prop:adaptive:reddi})}
+\end{fieldguide}
+
+\index{AdamW}\begin{fieldguide}{AdamW}{\textcite{LoshchilovHutter2019}}
+\fgrow{update}{$\theta_{t+1}=(1-\eta\lambda)\theta_t-\eta\,\hat m_t/(\sqrt{\hat v_t}+\epsilon)$}
+\fgrow{preconditioner}{as Adam; the decay is not preconditioned, unlike an $L^2$ penalty added to $\Loss$}
+\fgrow{state}{two numbers per parameter}
+\fgrow{in the wild}{$\lambda=0.1$ in GPT-3 and LLaMA; full entry in \cref{ch:decay}}
+\end{fieldguide}
+
+\index{Adafactor}\begin{fieldguide}{Adafactor}{\textcite{ShazeerStern2018}}
+\fgrow{update}{for $W\in\R^{m\times n}$: $r_t=\beta_2r_{t-1}+(1-\beta_2)G_t^2\mathbf1$, \ $c_t=\beta_2c_{t-1}+(1-\beta_2)(G_t^2)^\top\mathbf1$, \ $\hat V_t=r_tc_t^\top/(\mathbf1^\top r_t)$, step $G_t/\hat V_t^{1/2}$}
+\fgrow{preconditioner}{diagonal; the best rank-one approximation of Adam's $v$ in I-divergence (\cref{prop:adaptive:adafactor})}
+\fgrow{averages}{EMAs of row and column sums of $G^2$, $\beta_2$ raised toward $1$; no momentum}
+\fgrow{state}{$m+n$ numbers per $m\times n$ matrix}
+\fgrow{variants}{update clipping; step sizes relative to the parameter scale}
+\fgrow{in the wild}{PaLM: unfactored, $\beta_1=0.9$, $\beta_2=1-t^{-0.8}$}
+\end{fieldguide}
+
+There are two settings. The first is worst case: convex losses that may change every round, chosen by an adversary who knows the method; the gradients of a training run, which move with the parameters, motivate it.
+
+\begin{assumption}[Online convex optimization on a box]\label[assumption]{ass:adaptive:oco}
+The feasible set is a box $\Theta=\prod_i[a_i,b_i]$ with sides $D_i=b_i-a_i$ and $\ell_\infty$-diameter $D_\infty=\max_iD_i$. In round $t=1,2,\dots$ the learner plays $\theta_t\in\Theta$, a convex $f_t\colon\R^d\to\R$ is revealed (it may depend on $\theta_1,\dots,\theta_t$), and the learner receives $g_t\in\partial f_t(\theta_t)$. The \term{regret}\index{regret} against $\theta^\star\in\Theta$ is $R_T(\theta^\star)=\sum_{t=1}^T(f_t(\theta_t)-f_t(\theta^\star))$.
+\end{assumption}
+
+If $f_t=\ell(\cdot;\xi_t)$ with independent samples and $\Loss=\E\ell$, then $\E f_t(\theta_t)=\E\Loss(\theta_t)$, and Jensen's inequality turns a regret bound into $\E\Loss(\bar\theta_T)-\Loss(\theta^\star)\le\E R_T(\theta^\star)/T$ for the average $\bar\theta_T$ of the iterates. The second setting is a fixed smooth objective.
+
+\begin{assumption}[Smoothness of unknown size]\label[assumption]{ass:adaptive:smooth}
+The objective $\Loss\colon\R^d\to\R$ is bounded below by $\Loss^\star$ and $L$-smooth with respect to a norm $\norm{\cdot}$; the method is not told $L$.
+\end{assumption}
+
+\begin{dictionary}
+the norm $\norm{\cdot}_{P_t}$, $P_t=\diag(\sqrt{\hat v_t})+\epsilon I$ & Adam's denominator; $\eta/(\sqrt{\hat v_{t,i}}+\epsilon)$, the effective learning rate of parameter $i$\\
+the losses $f_t$ and the regret $R_T$ & minibatch losses; summed loss minus that of the best parameters in hindsight\\
+the box and its diameter $D_\infty$ & the range of a parameter, set by initialization and weight decay\\
+the history norm $\norm{g_{1:T,i}}_2$ & $\sqrt T$ times the gradient RMS of parameter $i$, small for rare features\\
+the memory $1/(1-\beta_2)$ & the number of steps that $v$ averages; times $B$, in examples\\
+the period $n$ of a rare gradient & a rare token with a large gradient\\
+a quiet-then-loud coordinate & a rare token's embedding; a reviving unit\\
+an unknown smoothness $L$ & the learning rate one would otherwise tune\\
+$\epsilon$ & the gradient scale of Adam's switch to SGD
+\end{dictionary}
+
+\paragraph{What was thrown away.} In the first setting, nonconvexity and a fixed objective: the bounds hold against an adversary and say nothing about a particular run. The box, which training does not have. Noise, in the theorem of the second setting. And the coordinate system: a diagonal preconditioner adapts to the coordinates in which the parameters are written (\cref{ch:sign,ch:transformers}). What is kept is what all the methods share, a norm chosen from the gradients seen so far, and what separates them: whether that norm forgets.
+
+\paragraph{What one had to notice.} \Textcite{McMahanStreeter2010} and \textcite{DuchiHazanSinger2011} saw that the regret bound of online gradient descent depends on the norm it is run in, so the norm can be chosen online to minimize the bound it is charged; the best norm weights each coordinate by the root of its accumulated squared gradients, so that the step divides by it (\cref{prop:adaptive:hindsight}). RMSProp and Adam keep the choice of norm but not its justification: a forgetting norm minimizes no bound on the whole history.
+
+\section{The theory: AdaGrad and the best norm in hindsight}\label{sec:adaptive:adagrad}
+
+\begin{theorem}[Diagonal AdaGrad; \textcite{DuchiHazanSinger2011}, \textcite{McMahanStreeter2010}]\label{thm:adaptive:adagrad}
+Under \cref{ass:adaptive:oco}, run AdaGrad with $\epsilon=0$ and step size $\eta>0$ from $\theta_1\in\Theta$, projected on $\Theta$. For every $\theta^\star\in\Theta$ and $T\ge1$,
+\begin{equation}\label{eq:adaptive:adagrad}
+  R_T(\theta^\star)\le\sum_{i=1}^d\Bigl(\frac{D_i^2}{2\eta}+\eta\Bigr)\norm{g_{1:T,i}}_2\le\Bigl(\frac{D_\infty^2}{2\eta}+\eta\Bigr)\sum_{i=1}^d\norm{g_{1:T,i}}_2 ,
+\end{equation}
+and with $\eta=D_\infty/\sqrt2$, $R_T(\theta^\star)\le\sqrt2\,D_\infty\sum_i\norm{g_{1:T,i}}_2$.
+\end{theorem}
+
+\begin{proof}
+The plan is to linearize the losses, which splits the regret into $d$ one-dimensional regrets, and to bound each by the argument for online gradient descent with a step size that changes from round to round.
+
+\emph{Splitting.} By the subgradient inequality $f_t(\theta_t)-f_t(\theta^\star)\le\sum_ig_{t,i}(\theta_{t,i}-\theta^\star_i)$. The projection is coordinatewise clipping, so coordinate $i$ evolves by $\theta_{t+1,i}=\adaptiveclip_{[a_i,b_i]}(\theta_{t,i}-\eta g_{t,i}/s_{t,i})$, through its own gradients only. Hence $R_T(\theta^\star)\le\sum_ir_i$ with $r_i=\sum_{t\le T}g_{t,i}(\theta_{t,i}-\theta^\star_i)$, and it suffices to show $r_i\le(D_i^2/(2\eta)+\eta)\norm{g_{1:T,i}}_2$.
+
+\emph{One coordinate.} Fix $i$ and drop it from the notation. A round with $s_t=0$ has $g_t=0$: it contributes nothing and does not move the iterate. If all $g_t$ vanish, $r=0$; otherwise let $\tau$ be the first round with $g_\tau\neq0$, so that $\eta_t=\eta/s_t$ is finite and nonincreasing for $t\ge\tau$. Clipping to an interval containing $\theta^\star$ does not increase the distance to it, so with $e_t=(\theta_t-\theta^\star)^2$ we have $e_{t+1}\le(\theta_t-\eta_tg_t-\theta^\star)^2=e_t-2\eta_tg_t(\theta_t-\theta^\star)+\eta_t^2g_t^2$, that is,
+\[
+  g_t(\theta_t-\theta^\star)\le\frac{e_t-e_{t+1}}{2\eta_t}+\frac{\eta_t}2g_t^2 .
+\]
+We sum over $\tau\le t\le T$ and bound the two sums in turn. Regrouping the first by the $e_t$, dropping $-e_{T+1}/(2\eta_T)\le0$, and using $e_t\le D^2$ and $1/\eta_t-1/\eta_{t-1}\ge0$,
+\[
+  \sum_{t=\tau}^T\frac{e_t-e_{t+1}}{2\eta_t}\le\frac{e_\tau}{2\eta_\tau}+\sum_{t=\tau+1}^Te_t\Bigl(\frac1{2\eta_t}-\frac1{2\eta_{t-1}}\Bigr)\le\frac{D^2}{2\eta_T}=\frac{D^2s_T}{2\eta}.
+\]
+For the second we use the AdaGrad lemma (\cref{lem:toolkit:adagrad}): for $a_t\ge0$ and $S_t=\sum_{u\le t}a_u$, $a_t/\sqrt{S_t}\le2(\sqrt{S_t}-\sqrt{S_{t-1}})$, because $\sqrt{S_t}-\sqrt{S_{t-1}}=a_t/(\sqrt{S_t}+\sqrt{S_{t-1}})$; the sum telescopes. With $a_t=g_t^2$ it gives $\sum_t\frac{\eta_t}2g_t^2=\frac\eta2\sum_tg_t^2/s_t\le\eta s_T$. Adding, $r\le(D^2/(2\eta)+\eta)s_T$ with $s_T=\norm{g_{1:T}}_2$. Finally $D_i\le D_\infty$, and $\eta=D_\infty/\sqrt2$ minimizes $D_\infty^2/(2\eta)+\eta$.
+\end{proof}
+
+Besides its definition, the proof used one property of the step sizes: they never increase. Without it the coefficients $1/\eta_t-1/\eta_{t-1}$ can be negative and the first sum no longer telescopes; this is the property that RMSProp and Adam lack, and where \cref{prop:adaptive:reddi} breaks them. Run with one scalar $s_t=(\sum_{u\le t}\norm{g_u}_2^2)^{1/2}$, Euclidean projections and no splitting, the same proof bounds online gradient descent on a convex set of Euclidean diameter $D_2$:
+\begin{equation}\label{eq:adaptive:ogd}
+  R_T(\theta^\star)\le\Bigl(\frac{D_2^2}{2\eta}+\eta\Bigr)\Bigl(\sum_{t=1}^T\norm{g_t}_2^2\Bigr)^{1/2},
+\end{equation}
+within $\sqrt2$, at $\eta=D_2/\sqrt2$, of the bound $D_2(\sum_t\norm{g_t}_2^2)^{1/2}$ for the best constant step chosen in hindsight (\cref{thm:toolkit:ogd}).\sidenote{This scalar step $D_2/(\sqrt2\,s_t)$ is AdaGrad-Norm. Unlike the classical tuned step $D/(G\sqrt t)$, it needs no bound $G$ on the gradients.} On a cube of side $D_\infty$, $D_2=\sqrt d\,D_\infty$ and $\sum_i\norm{g_{1:T,i}}_2\le\sqrt d\,(\sum_t\norm{g_t}_2^2)^{1/2}$, so at their best step sizes AdaGrad's bound, $\sqrt2\,D_\infty\sum_i\norm{g_{1:T,i}}_2$, is never larger than that of \eqref{eq:adaptive:ogd}, and it is smaller by the factor $\sqrt d$ when all gradients lie on the same coordinate axis.
+
+\begin{proposition}[The best diagonal norm in hindsight]\label[proposition]{prop:adaptive:hindsight}
+Let $g_1,\dots,g_T\in\R^d$ with history norms $s_{T,i}=\norm{g_{1:T,i}}_2$ not all zero, and let $0/0=0$ and $x/0=\infty$ for $x>0$. Then
+\[
+  \min\Bigl\{\sum_{t=1}^T\norm{g_t}^2_{\diag(p)^{-1}}\colon p\in\R^d_{\ge0},\ \sum_ip_i\le1\Bigr\}=\Bigl(\sum_{i=1}^ds_{T,i}\Bigr)^2 ,
+\]
+attained at $p_i=s_{T,i}/\sum_js_{T,j}$, which is AdaGrad's final $P_T$ normalized.
+Consequently online gradient descent in the best fixed diagonal norm with the best constant step, both chosen in hindsight, has the regret bound $D_\infty\sum_is_{T,i}$ on a box of $\ell_\infty$-diameter $D_\infty$, and AdaGrad's bound is $\sqrt2$ times this.
+\end{proposition}
+
+\begin{proof}
+The objective is $\sum_is_{T,i}^2/p_i$. If it is finite, $p_i>0$ wherever $s_{T,i}>0$, and the Cauchy--Schwarz inequality for the products $(s_{T,i}/\sqrt{p_i})\sqrt{p_i}$ over these coordinates gives $\sum_is_{T,i}\le(\sum_is_{T,i}^2/p_i)^{1/2}(\sum_ip_i)^{1/2}$, which is at most $(\sum_is_{T,i}^2/p_i)^{1/2}$. At $p_i=s_{T,i}/\sum_js_{T,j}$ the objective equals $(\sum_is_{T,i})^2$. For the consequence, the proof of \cref{thm:adaptive:adagrad} in the norm $\norm{\cdot}_P$, $P=\diag(p)$, with a constant step gives the regret bound $D_P^2/(2\eta)+\frac\eta2\sum_t\norm{g_t}^2_{P^{-1}}$ with $D_P=\sup_{\Theta}\norm{\theta-\theta'}_P\le D_\infty(\sum_ip_i)^{1/2}$; the best $\eta$ gives $D_P(\sum_t\norm{g_t}^2_{P^{-1}})^{1/2}$, which is invariant under $p\mapsto cp$, and minimizing over $p$ gives $D_\infty\sum_is_{T,i}$.
+\end{proof}
+
+AdaGrad pays a factor $\sqrt2$ for not knowing the future. The choice of norm matters when the coordinates are used at very different rates.
+
+\begin{corollary}[Sparse features]\label[corollary]{cor:adaptive:sparse}
+In \cref{thm:adaptive:adagrad} on a cube of side $D_\infty$, suppose $\abs{g_{t,i}}\le1$, and $g_{t,i}=0$ unless feature $i$ is active in round $t$, which happens with probability $p_i$. With $\eta=D_\infty/\sqrt2$ for AdaGrad and $\eta=D_2/\sqrt2$ in \eqref{eq:adaptive:ogd}, for every $\theta^\star\in\Theta$,
+\begin{gather*}
+  \E R_T^{\mathrm{AdaGrad}}(\theta^\star)\le\sqrt{2T}\,D_\infty\sum_{i=1}^d\sqrt{p_i},\\
+  \E R_T^{\mathrm{OGD}}(\theta^\star)\le\sqrt{2T}\,D_\infty\Bigl(d\sum_{i=1}^dp_i\Bigr)^{1/2}.
+\end{gather*}
+For $p_i=i^{-\alpha}$ the ratio of the right sides tends to a constant if $\alpha<1$, grows like $(1-\frac\alpha2)\zeta(\alpha)^{1/2}d^{(\alpha-1)/2}$ if $1<\alpha<2$, and like $(\pi/\sqrt6)\sqrt d/\ln d$ if $\alpha=2$.
+\end{corollary}
+
+\begin{proof}
+Pathwise $\sum_tg_{t,i}^2$ is at most the number $N_i$ of rounds with feature $i$ active, and $\E N_i=p_iT$. By Jensen's inequality $\E\norm{g_{1:T,i}}_2\le(p_iT)^{1/2}$ and $\E(\sum_t\norm{g_t}_2^2)^{1/2}\le(T\sum_ip_i)^{1/2}$; insert these in \eqref{eq:adaptive:adagrad} and \eqref{eq:adaptive:ogd} with $D_2=\sqrt d\,D_\infty$. The asymptotics follow from $\sum_{i\le d}i^{-s}\sim d^{1-s}/(1-s)$ for $s<1$, $\sum_{i\le d}i^{-1}\sim\ln d$, and $\sum_{i\le d}i^{-s}\to\zeta(s)$ for $s>1$, with $\zeta(2)=\pi^2/6$.
+\end{proof}
+
+The scalar method has a second property, unrelated to regret: it does not need the smoothness constant. \term{AdaGrad-Norm}\index{AdaGrad!AdaGrad-Norm} in a norm $\norm{\cdot}$, started at $\theta_0$ with $b_0>0$, iterates for $t=0,1,\dots$
+\begin{equation}\label{eq:adaptive:adagradnorm}
+  b_{t+1}^2=b_t^2+\norm{\nabla\Loss(\theta_t)}_*^2,\qquad \theta_{t+1}=\theta_t-\frac{\eta}{b_{t+1}}\nabla\Loss(\theta_t)^\sharp ;
+\end{equation}
+in the Euclidean norm this is the method of \textcite{WardWuBottou2019}. Since $b_{t+1}\ge\norm{\nabla\Loss(\theta_t)}_*$, every step has length at most $\eta$.
+
+\begin{theorem}[AdaGrad-Norm adapts to the smoothness; after \textcite{WardWuBottou2019}]\label{thm:adaptive:adagradnorm}
+Under \cref{ass:adaptive:smooth}, let $\eta,b_0>0$, $\Delta_0=\Loss(\theta_0)-\Loss^\star$, $\Lambda=\max\{0,\ln(\eta L/b_0)\}$ and $Q=2\Delta_0/\eta+2\eta L\Lambda$. Then \eqref{eq:adaptive:adagradnorm} satisfies (i) $\Loss(\theta_t)\le\Loss(\theta_0)+\eta^2L\Lambda$ for every $t$, and (ii) for every $T\ge1$
+\[
+  \sum_{t=0}^{T-1}\norm{\nabla\Loss(\theta_t)}_*^2\le\bigl(Q+\max\{b_0,\eta L\}\bigr)^2,
+\]
+so that $\min_{t<T}\norm{\nabla\Loss(\theta_t)}_*^2\le(Q+\max\{b_0,\eta L\})^2/T$.
+\end{theorem}
+
+\begin{proof}
+The plan is to split the run at the first step at which $b_{t+1}$ exceeds $\eta L$: before it the loss can rise, but only as much as $b$ grows; after it every step descends; and together the two phases keep $b_t$ bounded. Write $a_t=\norm{\nabla\Loss(\theta_t)}_*^2=b_{t+1}^2-b_t^2$. The sharp operator has $\ip{\nabla\Loss(\theta_t),\nabla\Loss(\theta_t)^\sharp}=a_t$ and $\norm{\nabla\Loss(\theta_t)^\sharp}=a_t^{1/2}$, for every choice of $\lmo$ when it is not unique, so the descent lemma (\cref{lem:toolkit:descent}) gives
+\begin{equation}\label{eq:adaptive:onestep}
+  \Loss(\theta_{t+1})\le\Loss(\theta_t)-\frac{\eta}{b_{t+1}}\Bigl(1-\frac{\eta L}{2b_{t+1}}\Bigr)a_t .
+\end{equation}
+(A zero gradient causes no difficulty: the iterate stays put.) Let $t_0$ be the first $t$ with $b_{t+1}\ge\eta L$, or $\infty$ if there is none.
+
+\emph{Before $t_0$.} For $t<t_0$, \eqref{eq:adaptive:onestep} gives $\Loss(\theta_{t+1})-\Loss(\theta_t)\le\frac{\eta^2L}2a_t/b_{t+1}^2$, and $a_t/b_{t+1}^2=1-b_t^2/b_{t+1}^2\le\ln(b_{t+1}^2/b_t^2)$ because $1-1/x\le\ln x$. The sum over $t<s$ telescopes to $\ln(b_s^2/b_0^2)\le2\Lambda$ for $1\le s\le t_0$, since $b_s<\eta L$ there. Hence $\Loss(\theta_s)\le\Loss(\theta_0)+\eta^2L\Lambda$ and $\sum_{t<s}a_t=b_s^2-b_0^2\le\max\{0,\eta^2L^2-b_0^2\}$ for $s\le t_0$.
+
+\emph{From $t_0$ on.} For $t\ge t_0$, $b_{t+1}\ge\eta L$, the bracket in \eqref{eq:adaptive:onestep} is at least $\frac12$, and the loss decreases; this proves (i). Summing \eqref{eq:adaptive:onestep} over $t_0\le t<T$ and using $\Loss(\theta_T)\ge\Loss^\star$ gives $\frac\eta2\sum_{t=t_0}^{T-1}a_t/b_{t+1}\le\Delta_0+\eta^2L\Lambda$, so $\sum_{t=t_0}^{T-1}a_t\le b_TQ$ because $b_{t+1}\le b_T$.
+
+\emph{Both phases.} Adding, $b_T^2-b_0^2=\sum_{t<T}a_t\le\max\{0,\eta^2L^2-b_0^2\}+Qb_T$, so $b_T^2\le c+Qb_T$ with $c=\max\{b_0^2,\eta^2L^2\}$. The positive root of $x^2-Qx-c$ is at most $Q+\sqrt c$, so $\sum_{t<T}a_t\le b_T^2\le(Q+\sqrt c)^2$.
+\end{proof}
+
+Gradient descent with a fixed step is guaranteed to converge only for $\eta<2/L$, and attains $\min_t\norm{\nabla\Loss(\theta_t)}_*^2\le2L\Delta_0/T$ at $\eta=1/L$ (\cref{ch:steepest}). AdaGrad-Norm converges at the rate $1/T$ for every $\eta$ and $b_0$; too large a step costs a rise of the loss by at most $\eta^2L\ln(\eta L/b_0)$ and a constant of order $(\eta L)^2\ln^2(\eta L/b_0)$. On a one-dimensional quadratic $b_t$ grows until $\eta/b_t$ is below $2/L$ and then levels off:\sidenote{On $\Loss(\theta)=\frac12\theta^2$ from $\theta_0=1$ with $\eta=100$ and $b_0=10^{-3}$, $b_t$ settles at $99.0$, so that the final step size is $1.01/L$.} the method finds a stable step size, and loses this ability as soon as $b$ forgets (\cref{ex:adaptive:rmsnorm}). With stochastic gradients the step $\eta/b_{t+1}$ depends on the gradient it multiplies; \textcite{WardWuBottou2019} handle this and obtain a rate of order $\ln T/\sqrt T$ under bounded gradients and noise.
+
+\section{The theory: what forgetting costs}\label{sec:adaptive:forgetting}
+
+A moving average with $\beta_2<1$ forgets, and the forgetting has a price in every analysis. It shows first in the AdaGrad lemma.
+
+\begin{lemma}[The AdaGrad lemma with forgetting]\label[lemma]{lem:adaptive:forgetting}
+Let $a_t\ge0$, $0<\beta\le1$, $\epsilon>0$, $v_0\ge0$ and $v_t=\beta v_{t-1}+(1-\beta)a_t$. Then $(1-\beta)\sum_{t=1}^Ta_t/(\epsilon+v_t)\le\ln\frac{\epsilon+v_T}{\epsilon+v_0}+T\ln\frac1\beta$.
+\end{lemma}
+
+\begin{proof}
+Since $\epsilon+v_t\ge\beta(\epsilon+v_{t-1})+(1-\beta)a_t$ and $1-x\le-\ln x$, the term $(1-\beta)a_t/(\epsilon+v_t)$ is at most $1-\beta(\epsilon+v_{t-1})/(\epsilon+v_t)\le\ln\frac{\epsilon+v_t}{\beta(\epsilon+v_{t-1})}$, which telescopes.
+\end{proof}
+
+For constant $a_t$ both sides grow like $T(1-\beta)$ (\cref{ex:adaptive:lemma}), so the term $T\ln(1/\beta)$ is genuine, and negligible only if $1-\beta_2\lesssim1/T$: an analysis that sums Adam's steps over a run pays for forgetting unless the memory is comparable to the run. That a short memory can fail outright is the next proposition, the counterexample of \textcite{ReddiKaleKumar2018} redone for an arbitrary period: a rare large gradient points one way, frequent small ones the other.\sidenote{Reddi, Kale and Kumar use period $3$ with $\beta_2=1/(1+C^2)$ for their first theorem, and a long period for the theorem that covers every $\beta_2$; a general period makes the role of the memory explicit.}
+
+\begin{proposition}[Reddi's counterexample, period $n$]\label[proposition]{prop:adaptive:reddi}
+Let $n\ge3$, $C>n-1$, $\Theta=[-1,1]$, and $f_t(\theta)=C\theta$ if $t\equiv1\pmod n$, $f_t(\theta)=-\theta$ otherwise; every partial sum $\sum_{t\le T}f_t$ is minimized at $-1$. Run Adam with $\beta_1=0$, $\epsilon=0$, $0\le\beta_2<1$, with or without bias correction, projected on $\Theta$, from $\theta_1\in\Theta$, with nonincreasing steps $\eta_t>0$ such that $\eta_t\to0$, $\eta_{t+1}/\eta_t\to1$ and $\sum_t\eta_t=\infty$ (such as $\eta/\sqrt t$). Let $q=(1-\beta_2)/(1-\beta_2^n)$ and
+\begin{equation}\label{eq:adaptive:kappa}
+  \kappa_n(\beta_2,C)=-\frac{C}{\sqrt{1+q(C^2-1)}}+\sum_{k=1}^{n-1}\frac1{\sqrt{1+q\beta_2^k(C^2-1)}} .
+\end{equation}
+\begin{enumerate}
+\item If $\kappa_n(\beta_2,C)>0$, then $\theta_t\to1$ and $R_T/T\to2(C-n+1)/n$; if $\kappa_n(\beta_2,C)<0$, then $\theta_t\to-1$ and $R_T/T\to0$.
+\item The drift at $\beta_2=0$ is $\kappa_n(0,C)=n-2>0$; as $\beta_2\to1$, $\kappa_n(\beta_2,C)$ tends to $(n-1-C)\sqrt{n/(C^2+n-1)}$, which is negative.
+\item For every $\beta_2\in[0,1)$ there are $n$ and $C>n-1$ with $\kappa_n(\beta_2,C)>0$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to show that $v_t$ becomes periodic, so that each period moves the iterate by about $\eta_t\kappa_n$, and that a drift of fixed sign carries the iterate to the corresponding end despite the clipping.
+
+\emph{Periodicity.} For the lag $k\in\{0,\dots,n-1\}$ since the last large gradient let $w_k=1+q\beta_2^k(C^2-1)$. These numbers solve the recursion of $v$: $\beta_2w_{k-1}+1-\beta_2=w_k$ for $k\ge1$, and $\beta_2w_{n-1}+(1-\beta_2)C^2=w_0$ because $q\beta_2^n+1-\beta_2=q$. The difference between $v_t$ and this periodic solution is multiplied by $\beta_2$ at each step, so $v_t$ and $\hat v_t$ approach $w_{k(t)}$, $k(t)$ the lag of round $t$. Since $\abs{g_t}\ge1$, $\hat v_t\ge(1-\beta_2)g_t^2$, so $\Delta_t=g_t/\sqrt{\hat v_t}$ satisfies $\abs{\Delta_t}\le(1-\beta_2)^{-1/2}$ and $\Delta_t-g_t/\sqrt{w_{k(t)}}\to0$. Over period $j$ (rounds $(j-1)n<t\le jn$) the unclipped displacement $U_j=-\sum_t\eta_t\Delta_t$ and the variation $M_j=\sum_t\eta_t\abs{\Delta_t}$ therefore satisfy $M_j\to0$ and $U_j/\eta_{jn}\to\kappa_n$, because $\eta_t/\eta_{jn}\to1$ uniformly over the period.
+
+\emph{Clipping.} Let $\kappa_n>0$ and $j_0$ be such that $U_j\ge\kappa_n\eta_{jn}/2$ and $M_j\le\frac14$ for $j\ge j_0$. A period that starts at $\theta\le1-M_j$ is never clipped at the upper end, and clipping at $-1$ only raises the iterate, so it ends at least at $\theta+\kappa_n\eta_{jn}/2$. A period that starts above $1-M_j$ keeps the iterate above $1-2M_j$, since clipping at $1$ lowers nothing below $1$ minus the movement that follows. Since $\sum_j\eta_{jn}\ge\frac1n\sum_{t>n}\eta_t=\infty$ and $\theta_t\le1$, periods of the second kind occur infinitely often; after one of them, in period $j_1$, every period starts at least at $1-2\sup_{j\ge j_1}M_j$ (a period of the first kind does not lower the start of the next), and every iterate is at least $1-3\sup_{j\ge j_1}M_j$. Hence $\theta_t\to1$. For $\kappa_n<0$, apply the argument to $-\theta_t$.
+
+\emph{Regret and limits.} Every partial sum of the $g_t$ is positive, so $\theta^\star=-1$, $R_T=\sum_{t\le T}g_t(\theta_t+1)$, and (i) follows from $\sum_{t\le T}g_t=(C-n+1)T/n+O(1)$. For (ii): if $\beta_2=0$, then $q=1$, $w_0=C^2$, $w_k=1$ for $k\ge1$, and $\kappa_n=-1+(n-1)$; as $\beta_2\to1$, $q\to1/n$ and $w_k\to1+(C^2-1)/n$. For (iii) let $\beta_2>0$ and $C=n$. Since $1-\beta_2\le q\le1$, the first term of \eqref{eq:adaptive:kappa} is at least $-1/\sqrt q\ge-(1-\beta_2)^{-1/2}$, and the terms with $\beta_2^kn^2\le1$, which are all $k\ge K$ for some $K$ of order $\ln n$, are at least $2^{-1/2}$. So $\kappa_n(\beta_2,n)\ge(n-K)/\sqrt2-(1-\beta_2)^{-1/2}>0$ for large $n$.
+\end{proof}
+
+With $\beta_2=0$ Adam is sign descent (\cref{ch:sign}), which moves by $\eta_t$ whatever the size of the gradient: it counts votes, and the small gradients outvote the large one.\sidenote{RMSProp is Adam with $\beta_1=0$ and no bias correction, so the proposition covers it too.} With a memory much longer than the period, $\hat v_t$ is nearly constant and Adam behaves like AdaGrad. In between, the large gradient inflates $\hat v$ right after it, so its own step is moderate, but by the end of the period $\hat v$ has forgotten it and the small gradients take nearly full steps; for the choice $n=3$, $\beta_2=1/(1+C^2)$ of \textcite{ReddiKaleKumar2018}, $\kappa_3\to2^{-1/2}$ (\cref{ex:adaptive:reddichoice}). Their fix, \term{AMSGrad}\index{AMSGrad}, replaces $v_t$ by its running maximum, which restores the monotonicity that \cref{thm:adaptive:adagrad} used; here it converges to $-1$.
+
+Two published convergence theories of Adam stay on the convergent side of this boundary by tying the memory to the horizon or to the problem. \Textcite{DefossezEtAl2022} assume $L$-smoothness and stochastic gradients bounded almost surely; with $1-\beta_2=1/T$ and steps of order $1/\sqrt T$ they bound the average of $\E\norm{\nabla\Loss(\theta_t)}_2^2$ over the run by a constant times $d\ln T/\sqrt T$, with a factor of order $1/(1-\beta_1)$ for momentum; for fixed $\beta_2$ their bound does not vanish. \Textcite{ZhangEtAl2022} treat finite sums with random reshuffling, without assuming bounded gradients: if $\beta_1<\sqrt{\beta_2}$ and $\beta_2$ exceeds a problem-dependent threshold, Adam reaches a neighborhood of stationary points whose size scales with the gradient variance, and for some small $\beta_2$ it can diverge. \Cref{lem:adaptive:forgetting} shows where such a requirement enters, and \cref{prop:adaptive:reddi} that it cannot be dropped when the problem is chosen after the hyperparameters. \Textcite{LiRakhlinJadbabaie2023} relax other hypotheses: they reach $\eps$-stationary points with $O(\eps^{-4})$ stochastic gradients when the local smoothness may grow with the gradient norm (\cref{ch:spikes}).
+
+Forgetting has a second, opposite cost. A long memory makes the preconditioner slow, and a coordinate whose gradient was small for a long time and then becomes large is divided by an out-of-date $v$. The next proposition is the exact form of this \term{quiet-then-loud}\index{quiet-then-loud} event.
+
+\begin{proposition}[Quiet then loud]\label[proposition]{prop:adaptive:quietloud}
+Consider one coordinate of Adam without bias correction, $0\le\beta_1<1$, $0<\beta_2<1$, $\epsilon\ge0$. Let $\abs{g_s}\le\delta$ for $s<t_0$ and $g_s=\bar g$ for $t_0\le s\le t_0+k$, where $\bar g>0$, $\delta\ge0$ and $\beta_1\delta\le(1-\beta_1)\bar g$, and let $a=\beta_1^{k+1}$, $b=\beta_2^{k+1}$. The step $u_k=\eta\,m_{t_0+k}/(\sqrt{v_{t_0+k}}+\epsilon)$ satisfies
+\begin{equation}\label{eq:adaptive:quiet}
+  \frac{(1-a)\bar g-a\delta}{\sqrt{b\delta^2+(1-b)\bar g^2}+\epsilon}\le\frac{u_k}\eta\le\frac{(1-a)\bar g+a\delta}{\sqrt{1-b}\,\bar g+\epsilon} .
+\end{equation}
+\begin{enumerate}
+\item As $\delta/\bar g\to0$, $u_k/\eta\to\rho_k=(1-\beta_1^{k+1})/(\sqrt{1-\beta_2^{k+1}}+\epsilon/\bar g)$. With $\epsilon=0$ the first loud step is $\rho_0=(1-\beta_1)/\sqrt{1-\beta_2}$, and $\rho_k\to1$.
+\item With $\epsilon=0$ the excess over sign steps, $E(\beta_1,\beta_2)=\sum_{k\ge0}(\rho_k-1)$, is finite, and $E=2\ln2/(1-\beta_2)+O((1-\beta_2)^{-1/2})$ as $\beta_2\to1$, for fixed $\beta_1$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to unroll the two averages over the loud stretch and bound what they inherited. Since $m$ and $v$ start at $0$, they are averages with weights of total at most one, so $\abs{m_{t_0-1}}\le\delta$ and $0\le v_{t_0-1}\le\delta^2$. Over the loud rounds $m_{t_0+k}=a\,m_{t_0-1}+(1-a)\bar g$ and $v_{t_0+k}=b\,v_{t_0-1}+(1-b)\bar g^2$, so $(1-a)\bar g-a\delta\le m_{t_0+k}\le(1-a)\bar g+a\delta$, a nonnegative lower bound because $a\delta\le\beta_1^k(1-\beta_1)\bar g\le(1-a)\bar g$, and $(1-b)\bar g^2\le v_{t_0+k}\le b\delta^2+(1-b)\bar g^2$. Dividing gives \eqref{eq:adaptive:quiet}, and (i) follows. For (ii) let $\nu=\ln(1/\beta_2)$ and $f(x)=(1-e^{-x})^{-1/2}-1$, positive and decreasing, so that \mbox{$\rho_k-1=f((k+1)\nu)-\beta_1^{k+1}(1-\beta_2^{k+1})^{-1/2}$}. Comparing a sum of a decreasing function with its integral, $\int_\nu^\infty f\le\nu\sum_{j\ge1}f(j\nu)\le\int_0^\infty f$, and $\int_0^\infty f=\int_0^12\dd w/(1+w)=2\ln2$ by the substitution $1-e^{-x}=w^2$. Since $1-e^{-x}\ge\min\{x,1\}/2$, $\int_0^\nu f\le2\sqrt{2\nu}$, so that $\sum_{j\ge1}f(j\nu)=2\ln2/\nu+O(\nu^{-1/2})$; the second part is at most $\sum_j\beta_1^j\max\{(2/(j\nu))^{1/2},\sqrt2\}=O(\nu^{-1/2})$. Finally $1/\nu=1/(1-\beta_2)+O(1)$.
+\end{proof}
+
+With $\beta_1=0.9$ the first loud step is $3.16\eta$ for $\beta_2=0.999$, $\eta$ for $0.99$ and $0.45\eta$ for $0.95$; the steps then grow, as the momentum fills up faster than $v$, and peak at $6.57\eta$, $2.13\eta$ and $1.10\eta$ eleven to nineteen rounds after the jump. Each $\rho_k$ is a limit of ratios $\abs{m_t}/\sqrt{v_t}$, so the peaks respect the bound $(1-\beta_1)/\sqrt{(1-\beta_2)(1-\beta_1^2/\beta_2)}$ of \cref{prop:sign:adambound}: $7.27$, $2.35$ and $1.16$. The excess $E$ is the integrated lag of the preconditioner, $1213$ step sizes for $\beta_2=0.999$ and fewer than $2$ for $0.95$. Bias correction changes nothing once $t_0(1-\beta_2)$ is large (\cref{ex:adaptive:bias}).
+
+\begin{remark}[What $\epsilon$ does]\label[remark]{rem:adaptive:eps}
+The step $\eta\hat m_{t,i}/(\sqrt{\hat v_{t,i}}+\epsilon)$ is Adam's if $\sqrt{\hat v_{t,i}}\gg\epsilon$ and momentum SGD's with step size $\eta/\epsilon$ if $\sqrt{\hat v_{t,i}}\ll\epsilon$: $\epsilon$ switches from sign-like to gradient-like behavior at the gradient scale $\epsilon$, and caps every step at $\eta\abs{\hat m_{t,i}}/\epsilon$. In \cref{prop:adaptive:quietloud} it matters once it is comparable with $\sqrt{1-\beta_2}\,\bar g$; on a quadratic it turns the two-cycle of sign descent into convergence once it reaches half the step size times the curvature (\cref{ex:adaptive:eps}). It is set small so that every gradient that carries signal is normalized, and matters when gradients shrink to its size (\cref{sec:adaptive:wild}); \textcite{EverettEtAl2024} remove it by replacing $m/(\sqrt v+\epsilon)$ with $\operatorname{atan2}(m,\sqrt v)$, which is close to $m/\sqrt v$ when the ratio is small, bounded, and unchanged when the gradients are rescaled.
+\end{remark}
+
+\begin{remark}[Adam's two limits]\label[remark]{rem:adaptive:limits}
+With $\beta_1=\beta_2=\epsilon=0$ Adam is sign descent. At the other end, let the gradients at a fixed $\theta$ be i.i.d.\ with $\E g_{t,i}^2=\bar v_i>0$ and finite fourth moments. Then $\E\hat v_{t,i}=\bar v_i$ and $\Var v_{t,i}\le\frac{1-\beta_2}{1+\beta_2}\Var(g_{t,i}^2)$, so $\hat v_{t,i}\to\bar v_i$ in probability as $\beta_2\to1$ with $t(1-\beta_2)\to\infty$, and Adam becomes momentum SGD preconditioned by $\diag(\E g^2)^{-1/2}$. In the noisy quadratic of \cref{ch:noise} (diagonal $H$, gradient $H\theta+\zeta$, $\Cov\zeta=\sigma^2H/B$), $\E g_i^2=h_i^2\theta_i^2+\sigma^2h_i/B$: where noise dominates the preconditioner is proportional to $H^{1/2}$, where signal dominates it is $\abs{\nabla\Loss}$, the sign-descent limit. It is the root of the second moment of the minibatch gradient, not the Hessian or the Fisher information \parencite{KunstnerHennigBalles2019}.
+\end{remark}
+
+Adafactor stores, per weight matrix, moving averages of the row and column sums of $G_t^2$ and multiplies them; this solves a matrix approximation problem exactly. For nonnegative $V$ and $R$ of equal size the \term{I-divergence}\index{I-divergence} (generalized Kullback--Leibler divergence) is $D(V\Vert R)=\sum_{ij}(V_{ij}\ln(V_{ij}/R_{ij})-V_{ij}+R_{ij})$, with $0\ln0=0$, and $D=\infty$ if some $V_{ij}>0=R_{ij}$.
+
+\begin{proposition}[Adafactor's factorization; \textcite{ShazeerStern2018}]\label[proposition]{prop:adaptive:adafactor}
+Let $V\in\R^{m\times n}$ be entrywise nonnegative and nonzero, $S=\mathbf1^\top V\mathbf1$. Among nonnegative rank-one matrices $xy^\top$, $D(V\Vert xy^\top)$ is minimized exactly at $R^\star=(V\mathbf1)(\mathbf1^\top V)/S$, the row sums times the column sums over the total. The minimizer has the row and column sums of $V$, and equals $V$ if $V$ has rank one. Consequently Adafactor's estimate $r_tc_t^\top/(\mathbf1^\top r_t)$ is $R^\star$ for Adam's matrix $V_t$ of moving averages of $G_t^2$.
+\end{proposition}
+
+\begin{proof}
+The plan is to write the excess divergence over $R^\star$ as a sum of three nonnegative terms. Let $r=V\mathbf1$, $c=V^\top\mathbf1$, $X=\sum_ix_i$, $Y=\sum_jy_j$, and assume $D(V\Vert xy^\top)<\infty$, so $x_iy_j>0$ wherever $V_{ij}>0$. Expanding, $D(V\Vert xy^\top)=\sum_{ij}V_{ij}\ln V_{ij}-\sum_ir_i\ln x_i-\sum_jc_j\ln y_j-S+XY$, and $D(V\Vert R^\star)$ is the case $x=r$, $y=c/S$, for which $XY=S$. Subtracting gives $\sum_ir_i\ln(r_i/x_i)+\sum_jc_j\ln(c_j/y_j)-S\ln S+XY-S$. With the Kullback--Leibler divergence $\adaptiveKL(p\Vert q)=\sum_ip_i\ln(p_i/q_i)\ge0$ of probability vectors, $\sum_ir_i\ln(r_i/x_i)=S\adaptiveKL(r/S\Vert x/X)+S\ln(S/X)$, and likewise for $c$ and $y$; collecting the logarithms into $S\ln(S/(XY))$, we find with $\phi(z)=z-1-\ln z\ge0$
+\[
+  D(V\Vert xy^\top)-D(V\Vert R^\star)=S\,\adaptiveKL\Bigl(\frac rS\Big\Vert\frac xX\Bigr)+S\,\adaptiveKL\Bigl(\frac cS\Big\Vert\frac yY\Bigr)+S\,\phi\Bigl(\frac{XY}S\Bigr).
+\]
+All three terms vanish exactly when $x/X=r/S$, $y/Y=c/S$ and $XY=S$, that is, when $xy^\top=rc^\top/S$. The row sums of $R^\star$ are $r(\mathbf1^\top c)/S=r$ and its column sums $c$; if $V=xy^\top$ then $D(V\Vert V)=0$ forces $V=R^\star$. Sums commute with moving averages, so $r_t$, $c_t$ and $\mathbf1^\top r_t$ are those of $V_t$.
+\end{proof}
+
+The optimum has $D(V\Vert R^\star)=S$ times the mutual information of the row and column indices under $V/S$ (\cref{ex:adaptive:adafactor}): the factored second moment is exact when the squared gradient of an entry is a row effect times a column effect, and its error measures their dependence.
+
+\section{Reading the theory}\label{sec:adaptive:reading}
+
+\paragraph{Where the norm matters.} \Cref{fig:adaptive:regret} runs both learners of \cref{cor:adaptive:sparse} on online logistic regression with binary features of frequencies $p_i=i^{-\alpha}$. The corollary predicts an advantage for AdaGrad growing like $d^{1/4}$ for $\alpha=1.5$ and like $\sqrt d/\ln d$ for $\alpha=2$: the scalar step must be small enough for the frequent features and is then too small for the rare ones. The bounds are loose, by factors of $11$ to $12$ for both learners at $d=1000$, so they need not predict the ratio of the regrets; yet the measured ratio follows the ratio of the bounds within $10\%$, over the whole range for $\alpha=1.5$ and up to $d=2000$ for $\alpha=2$. Beyond, for $\alpha=2$, it falls below ($10.0$ against $13.1$ at $d=10^4$). Features beyond $i=\sqrt T$ appear once or never, yet they enlarge OGD's diameter $D_2=2\sqrt d$ and hence its step on the frequent features; its regret then grows more slowly than the $\sqrt d$ of its bound, because clipping caps each move at the side of the box, as it does for most of OGD's updates at $d=10^4$ (\cref{ex:adaptive:sparse}). AdaGrad's bound overcharges these features too, which pushes the other way.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=42mm,xmode=log,xmin=8,xmax=12500]
+\nextgroupplot[xlabel={dimension $d$},ylabel={regret, $T=10^4$},ymode=log,ymin=50,ymax=80000,legend style={at={(0.03,0.97)},anchor=north west,font=\scriptsize},legend columns=2]
+\addplot[theory2] table[x=d,y=bndO20] {figures/data/06-adaptive-regret-bounds.dat};
+\addplot[theory] table[x=d,y=bndA20] {figures/data/06-adaptive-regret-bounds.dat};
+\addplot[simulation2] table[x=d,y=regO20] {figures/data/06-adaptive-regret-sim.dat};
+\addplot[simulation] table[x=d,y=regA20] {figures/data/06-adaptive-regret-sim.dat};
+\legend{OGD bound,AdaGrad bound,OGD,AdaGrad}
+\nextgroupplot[xlabel={dimension $d$},ylabel={regret of OGD / AdaGrad},ymin=0,ymax=14,legend style={at={(0.03,0.97)},anchor=north west,font=\scriptsize}]
+\addplot[theory] table[x=d,y=bratio20] {figures/data/06-adaptive-regret-bounds.dat};
+\addplot[theory3] table[x=d,y=bratio15] {figures/data/06-adaptive-regret-bounds.dat};
+\addplot[simulation] table[x=d,y=ratio20] {figures/data/06-adaptive-regret-sim.dat};
+\addplot[simulation2] table[x=d,y=ratio15] {figures/data/06-adaptive-regret-sim.dat};
+\legend{{bounds, $\alpha=2$},{bounds, $\alpha=1.5$},{measured, $\alpha=2$},{measured, $\alpha=1.5$}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{AdaGrad against online gradient descent (OGD) with the scalar adaptive step on online logistic regression over $[-1,1]^d$: feature $i$ is present with probability $i^{-\alpha}$, labels come from a logistic teacher with weights $\pm1$, and regret is against the best fixed weights in hindsight; $T=10^4$, means over $3$ runs (seeds in \texttt{06-adaptive-regret.py}). Left ($\alpha=2$): regrets (points) and the bounds of \cref{cor:adaptive:sparse} (curves). Right: ratio of the regrets against ratio of the bounds.}
+\label{fig:adaptive:regret}
+\end{figure}
+
+\paragraph{Memory against period.} \Cref{fig:adaptive:reddi} draws the boundary $\kappa_n=0$ of \cref{prop:adaptive:reddi} for a rare gradient twice as large as needed to win, $C=2(n-1)$, with Adam runs on a grid of periods and memories; every run ends on the side that the proposition predicts. The critical memory is $1.46$ at $n=3$ ($\beta_2=0.32$), $40.1$ at $n=100$ and $398$ at $n=1000$, approaching $0.398\,n$ (\cref{ex:adaptive:period}). Read with the practice box: a memory of $20$ steps ($\beta_2=0.95$) is outvoted by such a pattern from a period of about $50$ steps on, and a memory of $1000$ steps from about $2500$. Momentum moves the boundary little ($34$ instead of $40$ at $n=100$ for $\beta_1=0.9$, \cref{ex:adaptive:momentum}); random arrivals move it up, to a memory of about one period (\cref{ex:adaptive:random}). Near the curve the drift is so small that a finite run reaches neither end, and there the comparison must fail.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[wplot,height=0.44\linewidth,xmode=log,ymode=log,xmin=2.5,xmax=3500,ymin=0.8,ymax=13000,xlabel={period $n$ of the rare gradient},ylabel={memory $1/(1-\beta_2)$},legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize},legend columns=2]
+\addplot[theory] table[x=n,y=memcrit] {figures/data/06-adaptive-reddi-boundary.dat};
+\addplot[guide] table[x=n,y=memasym] {figures/data/06-adaptive-reddi-boundary.dat};
+\addplot[simulation] table[x=n,y=ok] {figures/data/06-adaptive-reddi-runs.dat};
+\addplot[simulation2] table[x=n,y=fail] {figures/data/06-adaptive-reddi-runs.dat};
+\addplot[muted,line width=0.4pt,dotted,domain=2.5:3500] {20};
+\addplot[muted,line width=0.4pt,dotted,domain=2.5:3500] {1000};
+\node[font=\scriptsize,text=muted,anchor=south west,inner sep=1pt] at (axis cs:1200,20.5) {$\beta_2=0.95$};
+\node[font=\scriptsize,text=muted,anchor=south west,inner sep=1pt] at (axis cs:1200,1025) {$0.999$};
+\legend{{$\kappa_n=0$},{$0.398\,n$},{runs ending at $-1$},{runs ending at $+1$}}
+\end{axis}
+\end{tikzpicture}
+\caption{Where Adam fails on Reddi's problem with period $n$ and $C=2(n-1)$. Curve: the memory at which the drift \eqref{eq:adaptive:kappa} vanishes; dashed: its asymptote; dotted: the memories of $\beta_2=0.95$ and $0.999$. Points: Adam with $\beta_1=0$, bias correction, $\epsilon=10^{-8}$, $\eta_t=0.5/\sqrt t$, from $0$, for $\max(2\cdot10^5,300n)$ rounds; circles end within $0.02$ of the minimizer $-1$, squares at the worst point $+1$, except one run next to the curve ($n=500$), at $0.78$ after $2\cdot10^5$ rounds and at $+1$ by $4\cdot10^5$ (\texttt{06-adaptive-reddi.py}).}
+\label{fig:adaptive:reddi}
+\end{figure}
+
+\paragraph{The lag of the preconditioner.} \Cref{fig:adaptive:quiet} feeds Adam, as implemented in common libraries, $20000$ quiet gradients of size $10^{-3}$ and then the constant gradient $1$. The steps after the jump follow $\rho_k$ within $0.2\%$, and return to the sign step on the time scale $1/(1-\beta_2)$; $\epsilon=0.01$ lowers the first step from $3.16\eta$ to $2.40\eta$. The excess displacement grows like $2\ln2/(1-\beta_2)$. With $\eta=3\cdot10^{-4}$, a coordinate that wakes up with a constant gradient moves $0.36$ farther than sign steps would at $\beta_2=0.999$, a large change for a weight, and about $5\cdot10^{-4}$ farther at $0.95$. The agreement must fail when the quiet gradients are not small compared with the loud one, when $\epsilon$ is comparable with $\sqrt{1-\beta_2}\,\bar g$, and above all when the loud gradient reacts to the steps, as it does in a network: the excess then sets a scale; it is not a prediction.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=42mm]
+\nextgroupplot[xmode=log,xmin=0.8,xmax=25000,ymin=0,ymax=7.2,xlabel={loud rounds so far, $k+1$},ylabel={step length $\abs{u_k}/\eta$},legend style={at={(0.97,0.97)},anchor=north east,font=\scriptsize}]
+\addplot[guide,domain=0.8:25000] {1};
+\addplot[theory3] table[x=kp1,y=th95] {figures/data/06-adaptive-quiet-theory.dat};
+\addplot[theory2] table[x=kp1,y=th99] {figures/data/06-adaptive-quiet-theory.dat};
+\addplot[theory] table[x=kp1,y=th999] {figures/data/06-adaptive-quiet-theory.dat};
+\addplot[muted,line width=0.9pt,dashdotted,no marks] table[x=kp1,y=th999e] {figures/data/06-adaptive-quiet-theory.dat};
+\addplot[simulation] table[x=kp1,y=sim95] {figures/data/06-adaptive-quiet-sim.dat};
+\addplot[simulation] table[x=kp1,y=sim99] {figures/data/06-adaptive-quiet-sim.dat};
+\addplot[simulation] table[x=kp1,y=sim999] {figures/data/06-adaptive-quiet-sim.dat};
+\addplot[simulation2] table[x=kp1,y=sim999e] {figures/data/06-adaptive-quiet-sim.dat};
+\legend{,{$\beta_2=0.95$},{$\beta_2=0.99$},{$\beta_2=0.999$},{$0.999$, $\epsilon=0.01$}}
+\nextgroupplot[xmode=log,ymode=log,xmin=15,xmax=13000,ymin=1,ymax=30000,xlabel={memory $1/(1-\beta_2)$},ylabel={excess displacement $E$},legend style={at={(0.03,0.97)},anchor=north west,font=\scriptsize}]
+\addplot[guide] table[x=mem,y=lead] {figures/data/06-adaptive-quiet-excess.dat};
+\addplot[theory] table[x=mem,y=exact] {figures/data/06-adaptive-quiet-excess.dat};
+\addplot[simulation] table[x=mem,y=sim] {figures/data/06-adaptive-quiet-excess-sim.dat};
+\legend{{$2\ln2/(1-\beta_2)$},{exact series},{Adam}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Quiet then loud: Gaussian gradients of standard deviation $10^{-3}$ ($20000$ on the left, $200000$ on the right), then the constant gradient $1$; Adam with $\beta_1=0.9$, bias correction and $\epsilon=10^{-8}$ unless stated (seed $0$, \texttt{06-adaptive-quiet.py}). Left: step lengths (points) against $\rho_k$ of \cref{prop:adaptive:quietloud} (curves); the dashed line at $1$ is the sign step. Right: the excess over sign steps, summed over $30/(1-\beta_2)$ rounds (points), against the series of \cref{prop:adaptive:quietloud}(ii) and its leading term.}
+\label{fig:adaptive:quiet}
+\end{figure}
+
+\section{What the theory misses}\label{sec:adaptive:misses}
+
+\paragraph{What was idealized away.} The regret theory holds for every sequence of convex losses, so it uses none of the structure of a fixed nonconvex objective, and it bounds the summed loss along the run, not the final loss; it needs a bounded domain and a projection, and its bounds grow with a diameter nobody knows. The theorem on AdaGrad-Norm is for exact gradients. The propositions about forgetting concern one coordinate with an imposed gradient sequence that does not react to the steps it causes. Throughout, $\epsilon$ is zero or a floor, and the coordinates are fixed.
+
+\paragraph{Where it breaks.} (1) AdaGrad has the best guarantee of the chapter and is rarely used to train deep networks, where the methods that divide by a moving average took its place \parencite{TielemanHinton2012,KingmaBa2015}: its steps decay for good, and against an adversary a decaying step is what one needs, so the worst-case theory cannot see the cost. (2) Adam's convergence theory needs $\beta_2$ near one, in a way tied to the horizon \parencite{DefossezEtAl2022} or to the problem \parencite{ZhangEtAl2022}; language models use $\beta_2=0.95$, a memory of $20$ steps that fails on rare-gradient patterns of period $50$ with $C=2(n-1)$ (\cref{prop:adaptive:reddi,fig:adaptive:reddi}), and yet rare tokens are learned. The theory does not say which gradient patterns occur in a run. (3) The preconditioner is not curvature: it estimates the second moment of the minibatch gradient (\cref{rem:adaptive:limits}), and its close relative, the empirical Fisher, can be a poor model of curvature even in simple problems \parencite{KunstnerHennigBalles2019}. (4) Regret bounds do not rank Adam against SGD on transformers: the gap persists in full batch, and sign descent with momentum closes most of it \parencite{KunstnerEtAl2023}; nothing here predicts that (\cref{ch:transformers}). (5) AMSGrad removes the counterexample and restores the bound, yet no recipe of the practice box uses it: the counterexample is not what limits Adam in practice.
+
+\paragraph{Repairs and open problems.} For convergence: AMSGrad \parencite{ReddiKaleKumar2018}; clipped Adam with a moving average of the iterates, with optimal nonconvex rates and a provable benefit of coordinatewise adaptivity when scales differ across coordinates \parencite{AhnCutkosky2024}; and analyses under smoothness that grows with the gradient \parencite{LiRakhlinJadbabaie2023}. For the preconditioner: Kronecker and full-matrix versions (\cref{ch:kronecker}), and one second moment per block of parameters in Adam-mini \parencite{ZhangEtAl2025}. For $\epsilon$: Adam-atan2 \parencite{EverettEtAl2024}. For $\beta_2$: \textcite{MarekEtAl2025} propose to keep its half-life fixed in tokens across batch sizes, which makes the memory a property of the data. Open: a model of the gradient sequence of a run from which the right memory can be computed; how often quiet-then-loud events occur in large models, and whether they cause the instabilities of \cref{obs:adaptive:beta2}; and why $\beta_2=0.95$ suffices for language models.
+
+\section{Back in the wild}\label{sec:adaptive:back}
+
+\fieldnotes{Adam with $\beta_2\in\{0.95,0.999\}$, $\epsilon=10^{-8}$; AdaGrad for sparse convex problems; Adafactor to save memory.}
+{Steepest descent in a diagonal norm chosen from the gradients; online convex losses on a box; smooth losses with unknown $L$; one coordinate with a periodic or a quiet-then-loud gradient.}
+{AdaGrad's regret bound is within $\sqrt2$ of that of the best diagonal norm in hindsight; AdaGrad-Norm converges at rate $1/T$ for every step size; Adam ends at the worst point if $\kappa_n>0$ and at the minimizer if $\kappa_n<0$; the steps after a quiet stretch; Adafactor is the I-divergence projection of $v$.}
+{A gain in the bound growing like $\sqrt d/\ln d$ for feature frequencies $i^{-2}$; failure below a memory of $0.4$ periods when $C=2(n-1)$; a first loud step of $3.16\eta$ at $\beta_2=0.999$ and $0.45\eta$ at $0.95$; an excess displacement of about $2\ln2/(1-\beta_2)$ step sizes.}
+{Nonconvexity, the structure of real gradient sequences, $\epsilon$ at scale, rotations; why $0.95$ works.}
+{$\beta_2$ sets a memory, long compared with the gaps between rare informative gradients yet short enough to follow changes of scale (proved in the idealizations, suggested for runs). If a run spikes after quiet spells, a lower $\beta_2$ shrinks the excess displacement in proportion to the memory (suggested). For sparse convex problems, AdaGrad (proved).}
+
+The propositions turn two pieces of folklore into statements about time scales. The memory $1/(1-\beta_2)$ must be long compared with the gaps between the rare gradients that carry information, or they are outvoted: that is PaLM's choice for rare tokens and \cref{prop:adaptive:reddi}. And every quiet-then-loud event costs an excess displacement proportional to the memory: that is the case for lowering $\beta_2$, and \cref{prop:adaptive:quietloud} says by how much, a factor of several hundred from $0.999$ to $0.95$. AdaGrad, with infinite memory, meets the first constraint and pays for the second in another currency: its steps shrink for good. Neither says which constraint binds in a given run, and the default $\epsilon$ is a convention, not a result. What the theory establishes is that a step size per coordinate is a choice of norm, made online almost as well as in hindsight, and that each way of forgetting it trades one failure for another.
+
+Adam's other ingredients are elsewhere: sign descent in \cref{ch:sign}, $\beta_1$ in \cref{ch:momentum}, its edge of stability in \cref{ch:eos}, its first steps in \cref{ch:warmup}, quiet-then-loud spikes in \cref{ch:spikes}, the preconditioner $H^{1/2}$ and the critical batch size in \cref{ch:noise}, weight decay in \cref{ch:decay}, and full-matrix and Kronecker AdaGrad in \cref{ch:kronecker}.
+
+\begin{exercises}
+\item \consolidation (The AdaGrad lemma and its price.) (a) Prove $\sum_{t\le T}a_t/\sqrt{S_t}\le2\sqrt{S_T}$ by induction on $T$, for $a_t\ge0$ and $S_t=\sum_{u\le t}a_u$, with $0/0=0$. (b) Show that the constant $2$ cannot be improved. (c) For constant $a_t=a>0$ and $v_0=0$, show that both sides of \cref{lem:adaptive:forgetting} grow like $T(1-\beta)$ up to factors tending to $1$ as $\epsilon/a\to0$, $\beta\to1$.\label{ex:adaptive:lemma}
+
+\item \consolidation (Bias correction.) (a) For independent $g_t$ with mean $\mu$ and second moment $\sigma^2$, show $\E m_t=(1-\beta_1^t)\mu$ and $\E v_t=(1-\beta_2^t)\sigma^2$. (b) Show that with bias correction and $\epsilon=0$ the first step is $-\eta\sign(g_1)$ for all $\beta_1,\beta_2$. (c) Show that in \cref{prop:adaptive:quietloud} bias correction multiplies the step by between $(1-\beta_2^{t_0})^{1/2}$ and $(1-\beta_1^{t_0})^{-1}$.\label{ex:adaptive:bias}
+
+\item \consolidation (Reddi's choice, and AMSGrad.) (a) For $n=3$ and $\beta_2=1/(1+C^2)$, show $\kappa_3\to2^{-1/2}$ as $C\to\infty$. (b) AMSGrad replaces $v_t$ by $\max_{s\le t}v_s$. In \cref{prop:adaptive:reddi} without bias correction, show that the maximum tends to $w_0$, that the drift per period tends to $(n-1-C)/\sqrt{w_0}<0$, and that AMSGrad converges to $-1$.\label{ex:adaptive:reddichoice}
+
+\item \consolidation\hard (Memory against period.) Let $C=c\,(n-1)$ with $c>1$ fixed and let $n\to\infty$ with $(1-\beta_2)n\to x>0$. (a) Show $\kappa_n\sqrt q\to-1+(2/(cx))(e^{x/2}-1)$. (b) Deduce that the critical memory is asymptotic to $n/(2y_c)$, where $y_c>0$ solves $e^y-1=cy$; for $c=2$ it is $0.398\,n$. (c) Explain why it grows faster than $n$ as $c\downarrow1$ (for $C=n$ it is about $n^2/4$). \hint{for lags of order $n$, $q\beta_2^kC^2\to\infty$; the sum over $k$ becomes a Riemann sum of $e^{xs/2}$.}\label{ex:adaptive:period}
+
+\item \consolidation (Adafactor.) (a) For $V=\bigl(\begin{smallmatrix}4&1\\1&1\end{smallmatrix}\bigr)$, compute $R^\star$ and the best rank-one approximation in Frobenius norm, and check that only $R^\star$ has the row sums of $V$. (b) Show that $D(V\Vert R^\star)=S\cdot I$, with $I$ the mutual information of the row and column indices under $V/S$. (c) Show that Adafactor is exact if every $G_t^2=x_ty^\top$ with one $y$.\label{ex:adaptive:adafactor}
+
+\item \variation\hard (Full-matrix AdaGrad.) Let $P_t=(\sum_{s\le t}g_sg_s^\top)^{1/2}$, let $\Theta$ be convex with Euclidean diameter $D_2$, and project in $\norm\cdot_{P_t}$. (a) Show $R_T\le(D_2^2/(2\eta)+\eta)\tr P_T$. (b) Show $\min\{\sum_tg_t^\top S^{-1}g_t\colon S\succ0,\ \tr S\le1\}=(\tr P_T)^2$ if $P_T\succ0$. \hint{use $P_t+\delta I$, $\delta\to0$; $P_t\succeq P_{t-1}$ by \cref{thm:toolkit:loewner}; concavity of $\tr X^{1/2}$ gives $\tr A^{1/2}-\tr(A-gg^\top)^{1/2}\ge\frac12g^\top A^{-1/2}g$.}\label{ex:adaptive:fullmatrix}
+
+\item \variation (Forgetting breaks AdaGrad-Norm.) Replace the sum in \eqref{eq:adaptive:adagradnorm} by $b_{t+1}^2=\beta_2b_t^2+(1-\beta_2)\norm{\nabla\Loss(\theta_t)}_*^2$ and run it on $\Loss(\theta)=\frac h2\theta^2$. (a) Show that $\pm\eta/2$, with $b=h\eta/2$, is an orbit of period two for every $\beta_2<1$. (b) Show that the iterates converge only if some iterate is exactly $0$. (c) Run $\beta_2=0.99$, $\eta=0.3$, $h=1$, $\theta_0=1$, $b_0=10^{-3}$: the loss falls below $10^{-40}$ while $b$ remembers early gradients, then returns to $h\eta^2/8$. Why does $\beta_2=0.999$ seem to converge in double precision?\label{ex:adaptive:rmsnorm}
+
+\item \variation (Adam without memory, with $\epsilon$.) On $\Loss=\frac h2\theta^2$, Adam with $\beta_1=\beta_2=0$ is $\theta\mapsto\theta-\eta h\theta/(h\abs\theta+\epsilon)$. (a) Show that $\theta_t\to0$ from every start if $\epsilon\ge\eta h/2$. (b) Show that for $\epsilon<\eta h/2$ there is an orbit of period two with amplitude $\eta/2-\epsilon/h$, below the amplitude $\eta/2$ of the symmetric two-cycle of sign descent. (c) Relate the threshold to the stability of SGD with step size $\eta/\epsilon$.\label{ex:adaptive:eps}
+
+\item \variation (Momentum in Reddi's problem.) With $\beta_1>0$, show that the periodic first moment at lag $k$ is $-1+(C+1)\beta_1^k(1-\beta_1)/(1-\beta_1^n)$ and the drift per period is $-\sum_km_k/\sqrt{w_k}$. For $\beta_1=0.9$, $C=2(n-1)$ and memories above $1/(1-\beta_1^2)$, find the critical memory for $n=100$ and $1000$ (about $34$ and $392$, against $40$ and $398$ for $\beta_1=0$).\label{ex:adaptive:momentum}
+
+\item \simulation (Sparse features.) (a) Run \texttt{06-adaptive-regret.py} with $\alpha=1$ and $\alpha=3$ (edit \texttt{ALPHAS}); predict the ratio of the bounds of \cref{cor:adaptive:sparse} at $d=10^4$ (about $1.6$ and $42$) and compare with the measured ratio. (b) For $\alpha=2$, run OGD at $d=2000$ with the step it uses at $d=10^4$, compare the regrets, and count the clipped updates of each learner. Explain why the measured ratio falls below the ratio of the bounds for $\alpha=3$ but not for $\alpha=1$.\label{ex:adaptive:sparse}
+
+\item \simulation (Random arrivals.) Let the large gradient of \cref{prop:adaptive:reddi} arrive at each round independently with probability $1/n$, as in the stochastic counterexample of \textcite{ReddiKaleKumar2018}. For $n=10,100,1000$ and $C=2(n-1)$, estimate the stationary drift $-\E[g_t/\sqrt{v_t}]$ for $\beta_1=0$ as the memory varies, find its zero (about one period, against $0.4$ for the periodic case), and explain why random gaps hurt.\label{ex:adaptive:random}
+
+\item \research (Choosing the memory.) Build a model of one coordinate whose gradient has both rare informative spikes (\cref{prop:adaptive:reddi}) and changes of scale (\cref{prop:adaptive:quietloud}), and find the memory that minimizes a natural loss. How does it scale with the batch size, if a step consumes $B$ examples, and is the rule of \textcite{MarekEtAl2025} recovered? Then measure, in a small transformer, how often coordinates are quiet and then loud. As far as we know both questions are open.\label{ex:adaptive:research1}
+
+\end{exercises}
+
+\notesandrefs
+AdaGrad appeared at COLT 2010, in \textcite{McMahanStreeter2010} and in the work of Duchi, Hazan and Singer whose journal version, \textcite{DuchiHazanSinger2011}, also gives the full-matrix version and sparse-data examples like \cref{cor:adaptive:sparse}. Online gradient descent and its regret bound are due to \textcite{Zinkevich2003}. \Textcite{ReddiKaleKumar2018} traced Adam's failure to the quantity that our proof of \cref{thm:adaptive:adagrad} needs to be nonnegative, which started the theory of \cref{sec:adaptive:forgetting}. \Cref{thm:adaptive:adagradnorm} is the deterministic part of \textcite{WardWuBottou2019}, in a general norm with our own constants.
+
+\Textcite{BernsteinNewhouse2024} present Adam without its moving averages as steepest descent in $\ell_\infty$, the view of \cref{ch:sign}; this chapter adds the norm that the averages define. Adafactor's I-divergence factorization is from \textcite{ShazeerStern2018}. We know no reference for the drift $\kappa_n$, the critical memory $0.398\,n$ or the excess $2\ln2/(1-\beta_2)$, which follow from the two models by elementary calculation.
+
+\paragraph{Translating the literature.} \Textcite{DuchiHazanSinger2011} write $x_t$ for our $\theta_t$ and use our $g_{1:t,i}$ and $s_{t,i}$; their $H_t=\delta I+\diag(s_t)$ is our $P_t$ with $\delta$ for $\epsilon$, and their $D_\infty$ bounds the $\ell_\infty$-distance from the comparator to the feasible points, which our diameter does. \Textcite{KingmaBa2015} write $\alpha$ for the step size $\eta$, and otherwise our notation. \Textcite{ReddiKaleKumar2018} write $\alpha_t$ for $\eta_t$ and $V_t=\diag(v_t)$; their $\Gamma_{t+1}=\sqrt{V_{t+1}}/\alpha_{t+1}-\sqrt{V_t}/\alpha_t$ is the increment of our $P_t/\eta_t$. \Textcite{DefossezEtAl2022} write $F$, $N$, $\alpha$ for $\Loss$, $T$, $\eta$, and $R$ for the bound on the gradients. \Textcite{ShazeerStern2018} write $R_t$, $C_t$ for our $r_t$, $c_t$ and $\hat\beta_{2t}$ for the increasing coefficient.
+
+\printchapterbib
+\end{refsection}

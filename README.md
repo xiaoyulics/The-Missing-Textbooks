@@ -10,15 +10,17 @@ A series of textbooks that should exist but don't.
 |---|-------|---------|-----|
 | 1 | *Dissolving Problems: A Casebook of Theory-Building* (333 pp.) | [`dissolving-problems/`](dissolving-problems/) | [`Dissolving-Problems.pdf`](dissolving-problems/Dissolving-Problems.pdf) |
 | 2 | *The Hydrogen Atoms of Deep Learning: Solvable Models and What They Get Wrong* (394 pp.) | [`hydrogen-atoms/`](hydrogen-atoms/) | [`Hydrogen-Atoms-of-Deep-Learning.pdf`](hydrogen-atoms/Hydrogen-Atoms-of-Deep-Learning.pdf) |
+| 3 | *Optimizers in the Wild: Steepest Descent and the Dynamics of Training* (369 pp.) | [`optimizers-in-the-wild/`](optimizers-in-the-wild/) | [`Optimizers-in-the-Wild.pdf`](optimizers-in-the-wild/Optimizers-in-the-Wild.pdf) |
 | 4 | *Deep Learning as an Experimental Science: A Laboratory Manual* (365 pp.) | [`experimental-science/`](experimental-science/) | [`Deep-Learning-as-an-Experimental-Science.pdf`](experimental-science/Deep-Learning-as-an-Experimental-Science.pdf) |
 
 ## Layout
 
 ```
-template/              the series class (missingbook.cls), a short sample, build script, README
-dissolving-problems/   volume 1: main.tex, chapters/, frontmatter/, tools/, STYLE.md, OUTLINE.md
-hydrogen-atoms/        volume 2: main.tex, hydrogen.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
-experimental-science/  volume 4: main.tex, laboratory.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
+template/                the series class (missingbook.cls), a short sample, build script, README
+dissolving-problems/     volume 1: main.tex, chapters/, frontmatter/, tools/, STYLE.md, OUTLINE.md
+hydrogen-atoms/          volume 2: main.tex, hydrogen.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
+optimizers-in-the-wild/  volume 3: main.tex, wild.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
+experimental-science/    volume 4: main.tex, laboratory.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
 ```
 
 A new volume is a sibling folder with its own `main.tex` (`\documentclass{missingbook}`), per-chapter `.tex` and `.bib` files, and a copy of `dissolving-problems/tools/`.
@@ -40,6 +42,15 @@ mkdir -p .tools && /usr/bin/lipo -thin arm64 -output .tools/biber /Library/TeX/t
 ```
 
 The build scripts use `.tools/biber` when it exists. The folder is ignored by git.
+
+*Source Sans on older TeX Live.* The class loads the `sourcesans` font package. Some distributions (for example Debian's and Ubuntu's TeX Live 2023) ship only the older `sourcesanspro`. A local wrapper fixes this without touching the class; put it in your personal tree, for example `~/texmf/tex/latex/sourcesans/sourcesans.sty`:
+
+```latex
+\ProvidesPackage{sourcesans}
+\DeclareOption*{\PassOptionsToPackage{\CurrentOption}{sourcesanspro}}
+\ProcessOptions\relax
+\RequirePackage{sourcesanspro}
+```
 
 ## How a volume is made
 

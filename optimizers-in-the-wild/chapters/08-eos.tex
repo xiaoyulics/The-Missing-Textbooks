@@ -1,0 +1,403 @@
+% Chapter 8 of Optimizers in the Wild: the edge of stability.
+\newcommand{\eosHmin}{\cH_{\min}}
+\newcommand{\eosArea}{\mathcal{J}}
+
+\casechapter{The Edge of Stability}{Thresholds, self-stabilization and central flows}{Learning rates at the stability limit}{ch:eos}
+\begin{refsection}[chapters/08-eos.bib]
+
+\begin{chaptersummary}
+Learning rates are chosen as large as training tolerates, and full-batch training then runs with its curvature held near the optimizer's stability threshold: the sharpness at $2/\eta$ for gradient descent, the preconditioned sharpness at $38/\eta$ for Adam with $\beta_1=0.9$. We derive the thresholds from one stability test and study the cubic model of Damian, Nichani and Lee, in which one direction oscillates and the oscillation pushes the curvature down. In its continuous limit every cycle conserves an energy and closes, and over each cycle the curvature averages exactly $2/\eta$ and the squared oscillation exactly twice the rate of progressive sharpening; for the gradient-descent map we prove that the energy increases at every step, so the cycles spiral slowly outward, and derive the rate. Averaging over cycles gives the central flow, gradient flow projected onto the stable region. Progressive sharpening is an input of the model, not explained by it.
+\end{chaptersummary}
+
+\section{In the wild: the largest learning rate that does not diverge}\label{sec:eos:wild}
+
+Gradient descent on a convex quadratic multiplies the component of $\theta_t-\theta^\star$ along an eigenvector of the Hessian with eigenvalue $\lambda_i$ by $1-\eta\lambda_i$ at every step, so it converges from every initialization exactly when $\eta\lambda_i<2$ for every eigenvalue, as the prologue showed. The largest eigenvalue, $S(\theta)=\lmax(\nabla^2\Loss(\theta))$, is the \term{sharpness}\index{sharpness}, and $\eta S<2$ is the classical stability condition.\sidenote{The learning rate and the step size are the same number $\eta$; we say learning rate in the practice sections and step size in the theory.} Read as advice, the condition says: estimate the curvature, then choose the step. Networks are not trained that way.
+
+\begin{practice}[folklore]
+Choose the learning rate by a sweep on a logarithmic grid, neighboring values a factor of two or three apart, and keep the value with the lowest loss after a fixed budget; it is usually among the largest values that train without diverging, and a run that diverges is restarted with a smaller value. The curvature of the loss is measured neither at initialization nor later. Momentum, and Adam's average of the gradient with $\beta_1=0.9$ \parencite{KingmaBa2015}, stay at their defaults during the sweep.
+\end{practice}
+
+The rule describes how sweeps are commonly run, not a measured regularity; the \emph{Deep Learning Tuning Playbook} \parencite{GodboleEtAl2023} is a systematic guide to running them. What it leaves unsaid is that the curvature is not a fixed property of the loss: it responds to the learning rate.\sidenote{That the step size limits where gradient descent can be stable, and so selects flat minima, is the dynamical-stability argument of \textcite{WuMaE2018}; \textcite{JastrzebskiEtAl2019} observed that the sharpness reached early in training adapts to the step size.}
+
+\begin{observation}[Progressive sharpening and the edge of stability; \textcite{CohenEtAl2021}]\label[observation]{obs:eos:gd}
+Train a network by full-batch gradient descent with a fixed step size $\eta$. (i) While $S(\theta_t)<2/\eta$, the sharpness tends to rise. (ii) Once it reaches $2/\eta$, it stops rising and hovers at or just above $2/\eta$, while the training loss keeps decreasing over long time scales, though not monotonically over short ones. (iii) With heavy-ball momentum $\beta$ the sharpness settles near $(2+2\beta)/\eta$ instead, and with Nesterov momentum near $(2+2\beta)/((1+2\beta)\eta)$: in each case the largest sharpness at which the method is stable on a quadratic.
+\end{observation}
+
+Cohen and coauthors named the two stages \term{progressive sharpening}\index{progressive sharpening} and the \term{edge of stability}\index{edge of stability}, documented them for fully connected, convolutional and transformer networks with the square and the cross-entropy loss, and derived the momentum thresholds in (iii), the maximum stable sharpness (MSS) in their terms, which the sharpness reached and held in their runs with $\beta=0.9$. The observation is robust for full batch, with two limits: progressive sharpening is weaker for wide or shallow networks and easy tasks, and with the cross-entropy loss the sharpness typically falls late in training \parencite{CohenEtAl2021}.
+
+\begin{observation}[The adaptive edge of stability; \textcite{CohenEtAl2022}]\label[observation]{obs:eos:adam}
+Train a network full batch by $\theta_{t+1}=\theta_t-\eta P_t^{-1}m_t$, with $m_t=\beta_1m_{t-1}+(1-\beta_1)\nabla\Loss(\theta_t)$ and a diagonal preconditioner $P_t$: Adam, with $P_t=(1-\beta_1^{t+1})(\diag(\sqrt{\hat v_t})+\epsilon I)$, which absorbs both bias corrections, or RMSProp, with $\beta_1=0$ and no bias correction. The \term{preconditioned sharpness}\index{preconditioned sharpness} $S_P=\lmax(P_t^{-1}\nabla^2\Loss(\theta_t))$ rises until it reaches the stability threshold of the same method with $P_t$ frozen, which is $38/\eta$ for Adam with $\beta_1=0.9$, and then equilibrates there. The sharpness itself is not held at a threshold: the iterates keep moving into regions of higher curvature, and the preconditioner grows to compensate. Similar effects occur with minibatches, the more so the larger the batch.
+\end{observation}
+
+The source is an unrefereed preprint (arXiv 2022; a version appeared at a NeurIPS 2023 workshop), but the claim is easy to check: \cref{fig:eos:network} reproduces it, with \cref{obs:eos:gd}, in a network that trains in half a minute.\sidenote{The number is $(2+2\beta_1)/(1-\beta_1)$ at $\beta_1=0.9$: the threshold of the moving average through which Adam passes its gradients (\cref{prop:eos:thresholds}(iv)).}
+
+\begin{observation}[Minibatches; \textcite{JastrzebskiEtAl2020}, \textcite{AndreyevBeneventano2024}]\label[observation]{obs:eos:sgd}
+With minibatch stochastic gradient descent the full-batch sharpness levels off below $2/\eta$, at a value set by the step size and the batch size. What settles at $2/\eta$ is the expected curvature of a minibatch loss along its own gradient, which Andreyev and Beneventano call the \term{batch sharpness}\index{batch sharpness}.
+\end{observation}
+
+The first sentence goes back to \textcite{JastrzebskiEtAl2019,JastrzebskiEtAl2020}, and \textcite{LeeJang2023} proposed an earlier sharpness adapted to the batch; the second rests on an unrefereed preprint (2024, revised in 2025). This chapter is about full batch; \cref{ch:noise} takes up the noise.
+
+The three observations share a shape: a threshold computed from a frozen quadratic model, and training that drives the relevant curvature up to it and holds it there. Why does the iteration not diverge once the threshold is crossed, as the quadratic model says it must? And what does training do while it sits there? Volume 2 of this series, \emph{The Hydrogen Atoms of Deep Learning}, Chapter 15, answers the first question for a single excursion: in a two-parameter product model, a step size above the threshold makes the loss spike and throws the iterates to a flatter minimizer, the \term{catapult}\index{catapult} of \textcite{LewkowyczEtAl2020}. That model has no progressive sharpening, so after one catapult it stays below the threshold. This chapter adds the sharpening.
+
+\section{The idealization: one oscillating direction}\label{sec:eos:ideal}
+
+The quadratic model freezes the Hessian. To see the curvature respond to the step size we need three ingredients: a direction along which the iterates oscillate when the step is too large, a curvature along it that depends on the other parameters, and a training force that pushes the other parameters toward higher curvature. The following family has exactly these.
+
+\begin{assumption}[One oscillating direction]\label[assumption]{ass:eos:onedir}
+The parameters split as $\theta=(x,w)\in\R\times\R^{d-1}$; the functions $\Loss_0$ and $s$ on $\R^{d-1}$ are twice continuously differentiable, with $s(w)>\lmax(\nabla^2\Loss_0(w))$ for every $w$; and
+\begin{equation}\label{eq:eos:onedir}
+  \Loss(x,w)=\Loss_0(w)+\tfrac12\,s(w)\,x^2 .
+\end{equation}
+\end{assumption}
+
+On the floor $x=0$ of the valley the Hessian is block diagonal, so the sharpness there is $s(w)$, with the $x$-axis as eigenvector. Gradient descent with step size $\eta$ is, exactly,
+\begin{equation}\label{eq:eos:gdonedir}
+  x_{t+1}=\bigl(1-\eta s(w_t)\bigr)x_t,\qquad
+  w_{t+1}=w_t-\eta\nabla\Loss_0(w_t)-\tfrac\eta2\,x_t^2\,\nabla s(w_t).
+\end{equation}
+The first equation is the quadratic picture: the oscillating coordinate decays while $\eta s<2$, and above the threshold it flips sign and grows. The second contains the new force: the oscillation pushes $w$ down the gradient of the curvature, with a strength proportional to $x^2$. Two numbers measure the competition between the training force and the push,
+\begin{equation}\label{eq:eos:alphagamma}
+  \alpha(w)=-\ip{\nabla\Loss_0(w),\nabla s(w)},\qquad \gamma(w)=\norm{\nabla s(w)}_2^2 .
+\end{equation}
+Along gradient flow $\dot w=-\nabla\Loss_0(w)$ the curvature changes at the rate $\dot s=\alpha$, so $\alpha>0$ is progressive sharpening; along the push, the oscillation lowers $s$ at the rate $\frac12\gamma x^2$.
+
+The smallest instance linearizes $\Loss_0$ and $s$ at a point on the threshold: $\Loss_0(w)=\Loss_0(0)+\ip{g,w}$ and $s(w)=2/\eta+\ip{c,w}$ with $c\ne0$ (\cref{ass:eos:onedir} then holds where $s>0$). Then $y=\ip{c,w}$ is the excess of the curvature over $2/\eta$, and \eqref{eq:eos:gdonedir} gives $x_{t+1}=-(1+\eta y_t)x_t$ and $y_{t+1}=y_t-\eta\ip{c,g}-\frac\eta2\norm c_2^2x_t^2$, while the component of $w$ orthogonal to $c$ performs gradient descent and never feels the oscillation. The pair $(\norm c_2x_t,y_t)$ follows the map below with $\alpha=-\ip{g,c}$ (\cref{ex:eos:reduction}).
+
+\begin{definition}[The cubic model]\label[definition]{def:eos:cubic}
+Fix a step size $\eta>0$ and a rate $\alpha>0$. The \term{cubic model}\index{cubic model} is the loss $\Loss(x,y)=\frac12(2/\eta+y)x^2-\alpha y$ on $\R^2$, trained by gradient descent with step size $\eta$:
+\begin{equation}\label{eq:eos:cubicmap}
+  x_{t+1}=-(1+\eta y_t)\,x_t,\qquad y_{t+1}=y_t+\eta\Bigl(\alpha-\tfrac12x_t^2\Bigr).
+\end{equation}
+\end{definition}
+
+The name refers to the cubic coupling $\frac12yx^2$. On the line $x=0$ the sharpness is exactly $2/\eta+y$, and elsewhere it is $2/\eta+y+O(\eta x^2)$. The loss is unbounded below: it models a region in which training raises the curvature, by $\eta\alpha$ per step when $x=0$ and in general as long as $x^2<2\alpha$.
+
+\begin{dictionary}
+the coordinate $x$, flipping sign at every step & the component of $\theta_t$ along the top eigenvector of the Hessian (of $P^{-1}\nabla^2\Loss$ for Adam)\\
+the other coordinates $w$, and $\Loss_0(w)$ & all other parameters, and the loss at the center of the oscillation\\
+the curvature $s(w)=2/\eta+y$ & the sharpness $S(\theta_t)$, at the distance $y$ from the threshold\\
+the rate $\alpha=-\ip{\nabla\Loss_0,\nabla s}$ & the speed of progressive sharpening along gradient flow\\
+the coupling $\gamma=\norm{\nabla s}_2^2$ & how fast an oscillation lowers the sharpness, through the third derivative\\
+the time $\tau=\eta t$ & steps times learning rate, the clock in which gradient flow has unit speed\\
+the time average of $x^2$ & the variance $\sigma^2$ of the oscillation in a central flow\\
+a frozen preconditioner $P$ & Adam's $P_t$ of \cref{obs:eos:adam}, which moves on the time scale $1/(1-\beta_2)$
+\end{dictionary}
+
+\paragraph{What was thrown away.} The oscillating direction is fixed and alone at the threshold; the loss is quadratic and even in $x$; the rates $\alpha$ and $\gamma$ of the cubic model are constant; gradients are exact, without momentum or a preconditioner (\cref{sec:eos:thresholds} restores both for quadratics). What is kept is the pair of forces whose balance is the phenomenon, and it is what a third-order Taylor expansion of a general loss produces near the threshold (\cref{sec:eos:selfstab}).
+
+\paragraph{What one had to notice.} In the quadratic theory a growing oscillation is the beginning of divergence. The insight of \textcite{DamianNichaniLee2023} is that it is also the restoring force: through the third derivative of the loss, the oscillation produces the gradient $\frac12x^2\nabla s$, which lowers the curvature that caused it. This is \term{self-stabilization}\index{self-stabilization}.\sidenote{Damian, Nichani and Lee describe a cycle in four stages: progressive sharpening, blowup, self-stabilization, and return to stability.} A technical observation makes the model solvable: in the variables $A=\log x^2$, which forgets the sign flips, and $y$, a cycle of oscillation is a closed curve.
+
+\section{The theory: stability thresholds}\label{sec:eos:thresholds}
+
+All four thresholds come from one test. A recurrence $e_{t+1}=ae_t-be_{t-1}$ with real $a,b$ has the companion matrix $\bigl(\begin{smallmatrix}a&-b\\1&0\end{smallmatrix}\bigr)$, whose eigenvalues are the roots of $z^2-az+b$; its solutions tend to zero from every pair of initial values if and only if both roots lie in the open unit disk, which by the Schur--Cohn (Jury) test happens if and only if $\abs b<1$ and $\abs a<1+b$ (\cref{lem:toolkit:recurrence}).
+
+\begin{proposition}[Stability thresholds]\label[proposition]{prop:eos:thresholds}\index{stability threshold}
+Let $\Loss(\theta)=\frac12(\theta-\theta^\star)^\top H(\theta-\theta^\star)$ with $H$ symmetric positive semidefinite and $S=\lmax(H)>0$, and let $\eta>0$ and $0\le\beta<1$. Each iteration below converges to a minimizer of $\Loss$ from every initialization ($\theta_0$, and $\theta_{-1}$ or $m_{-1}$) if and only if the stated inequality holds.
+\begin{enumerate}
+\item Gradient descent, $\theta_{t+1}=\theta_t-\eta\nabla\Loss(\theta_t)$: \ $\eta S<2$.
+\item Heavy ball, $\theta_{t+1}=\theta_t-\eta\nabla\Loss(\theta_t)+\beta(\theta_t-\theta_{t-1})$: \ $\eta S<2+2\beta$.
+\item Moving-average momentum, $m_t=\beta m_{t-1}+(1-\beta)\nabla\Loss(\theta_t)$, $\theta_{t+1}=\theta_t-\eta m_t$: \ $\eta S<(2+2\beta)/(1-\beta)$.
+\item Adam with a frozen preconditioner: $m_t$ as in (iii) with $\beta=\beta_1$ and $\theta_{t+1}=\theta_t-\eta P^{-1}m_t$ with a fixed symmetric $P\succ0$: \ $\eta S_P<(2+2\beta_1)/(1-\beta_1)$, where $S_P=\lmax(P^{-1}H)$.
+\end{enumerate}
+For $\beta_1=0.9$ the threshold in (iv) is $\eta S_P<38$.
+\end{proposition}
+
+\begin{proof}
+The plan is to split each iteration into scalar recursions, one for each eigenvector of $H$, and to apply the test to each. Let $Hq_i=\lambda_iq_i$ with orthonormal $q_i$ and $e_{t,i}=\ip{q_i,\theta_t-\theta^\star}$. Since $\nabla\Loss(\theta)=H(\theta-\theta^\star)$, each iteration acts on each $e_{t,i}$ separately, and it converges to a minimizer exactly when every $e_{t,i}$ converges, the minimizers being the points $\theta^\star+v$ with $Hv=0$.
+
+(i) Here $e_{t+1,i}=(1-\eta\lambda_i)e_{t,i}$. The component is constant when $\lambda_i=0$, and for $\lambda_i>0$ it converges from every start (necessarily to $0$) if and only if $\abs{1-\eta\lambda_i}<1$, that is, $\eta\lambda_i<2$.
+
+(ii) Here $e_{t+1,i}=(1+\beta-\eta\lambda_i)e_{t,i}-\beta e_{t-1,i}$. If $\lambda_i=0$, then the roots are $1$ and $\beta$, and $e_{t,i}=c_1+c_2\beta^t$ converges. If $\lambda_i>0$, then a limit $e$ would satisfy $\eta\lambda_ie=0$, so convergence from every start means convergence to zero, which by the test holds if and only if $\abs\beta<1$, true by assumption, and $\abs{1+\beta-\eta\lambda_i}<1+\beta$, that is, $0<\eta\lambda_i<2+2\beta$.
+
+(iii) For $t\ge1$, $\theta_{t+1}-\theta_t=-\eta\beta m_{t-1}-\eta(1-\beta)\nabla\Loss(\theta_t)=\beta(\theta_t-\theta_{t-1})-\eta(1-\beta)\nabla\Loss(\theta_t)$: the heavy ball with step size $\eta(1-\beta)$, started from $\theta_0$ and $\theta_1=\theta_0-\eta\beta m_{-1}-\eta(1-\beta)\nabla\Loss(\theta_0)$. If $\beta>0$, then every $\theta_1$ arises from some $m_{-1}$, so (ii) applies with $\eta(1-\beta)$ in place of $\eta$; for $\beta=0$ the iteration is (i).
+
+(iv) With $\varphi_t=P^{1/2}(\theta_t-\theta^\star)$ and $\mu_t=P^{-1/2}m_t$ the updates become $\mu_t=\beta_1\mu_{t-1}+(1-\beta_1)H_P\varphi_t$ and $\varphi_{t+1}=\varphi_t-\eta\mu_t$, with $H_P=P^{-1/2}HP^{-1/2}$: iteration (iii) on the quadratic with Hessian $H_P$, which is positive semidefinite and similar to $P^{-1}H=P^{-1/2}H_PP^{1/2}$, so $\lmax(H_P)=S_P$; and $\varphi\mapsto\theta^\star+P^{-1/2}\varphi$ maps minimizers to minimizers. Finally $(2+1.8)/0.1=38$.
+\end{proof}
+
+The moving-average form (iii), which Adam uses, is the heavy ball with its step scaled by $1-\beta$, so at a fixed $\eta$ it tolerates $(1+\beta)/(1-\beta)$ times the curvature of gradient descent, $19$ times for $\beta=0.9$. Adam's bias corrections tend to one and its preconditioner moves, so (iv) concerns a snapshot, and \cref{obs:eos:adam} says that the snapshot's threshold is where Adam equilibrates. A threshold says when the quadratic model is unstable, not what happens next. Nesterov's threshold is \cref{ex:eos:nesterov}. One more fact about snapshots: the preconditioner alone can raise $S_P$ only at a speed that $\beta_2$ fixes.
+
+\begin{proposition}[How fast the preconditioner can sharpen]\label[proposition]{prop:eos:speed}
+Let $v_{t+1}=\beta_2v_t+(1-\beta_2)g_{t+1}^2$ coordinatewise, with $0<\beta_2<1$ and $v_t>0$, let $P_t=\diag(\sqrt{v_t})+\epsilon I$ with $\epsilon\ge0$, and let $H$ be symmetric with $\lmax(P_t^{-1}H)>0$. Then $P_{t+1}\succeq\sqrt{\beta_2}\,P_t$ and $\lmax(P_{t+1}^{-1}H)\le\beta_2^{-1/2}\lmax(P_t^{-1}H)$.
+\end{proposition}
+
+\begin{proof}
+Coordinatewise $v_{t+1}\ge\beta_2v_t$ and $\epsilon\ge\sqrt{\beta_2}\,\epsilon$, so $\sqrt{v_{t+1}}+\epsilon\ge\sqrt{\beta_2}(\sqrt{v_t}+\epsilon)$. For $P\succ0$, $\lmax(P^{-1}H)$ is the largest value of $u^\top Hu/u^\top Pu$ over $u\ne0$; it is positive exactly when $u^\top Hu>0$ for some $u$, for every $P$. So $\lmax(P_{t+1}^{-1}H)$ is attained at a $u$ with $u^\top Hu>0$, where the quotient for $P_{t+1}$ is at most $\beta_2^{-1/2}$ times the quotient for $P_t$, which is at most $\lmax(P_t^{-1}H)$.
+\end{proof}
+
+At a fixed Hessian, then, $\log S_P$ grows by at most $\frac12\log(1/\beta_2)\approx\frac12(1-\beta_2)$ per step: a factor $e$ takes at least about $2000$ steps for $\beta_2=0.999$. The bound is attained when the new squared gradients are negligible next to $v_t$. With $\hat v_t=v_t/(1-\beta_2^{t+1})$ in place of $v_t$ the factor becomes $\beta_2^{-1/2}\bigl((1-\beta_2^{t+2})/(1-\beta_2^{t+1})\bigr)^{1/2}$, appreciably larger only for $t\lesssim1/(1-\beta_2)$; the factor $1-\beta_1^{t+1}$ of \cref{obs:eos:adam} grows with $t$ and only slows the climb.
+
+\section{The theory: self-stabilization}\label{sec:eos:selfstab}
+
+\subsection{Where the cubic model comes from}
+
+The cubic model is what a general loss looks like near the threshold, to leading order; the derivation is due to \textcite{DamianNichaniLee2023}.
+
+\begin{heuristic}[Heuristic derivation of the cubic model]
+Let $\Loss$ be three times continuously differentiable, let $S(\bar\theta)=2/\eta$ be a simple eigenvalue with unit eigenvector $u$ at a reference point $\bar\theta$, and let $\ip{\nabla\Loss(\bar\theta),u}=0$. Since $dS=u^\top(dH)u$ for a simple eigenvalue, $\nabla S=\nabla^3\Loss[u,u,\cdot\,]$ at $\bar\theta$. Write $\theta=\bar\theta+xu+\delta$ with $\delta\perp u$, put $y=\ip{\nabla S,\delta}$, and assume $\ip{\nabla S,u}=0$. Expand $\nabla\Loss(\theta)$ to second order around $\bar\theta$. Its component along $u$ is $\frac2\eta x+xy$ after dropping $\frac12x^2\nabla^3\Loss[u,u,u]$ and $\frac12\nabla^3\Loss[u,\delta,\delta]$; its inner product with $\nabla S$ is $-\alpha+\frac12\gamma x^2$, with $\alpha=-\ip{\nabla\Loss,\nabla S}$ and $\gamma=\norm{\nabla S}_2^2$ at $\bar\theta$, after dropping $\ip{\nabla S,\nabla^2\Loss\,\delta}$ and the other terms that involve $\delta$. So one step maps $(x,y)$ to about $\bigl(-(1+\eta y)x,\,y+\eta(\alpha-\frac12\gamma x^2)\bigr)$, which is \eqref{eq:eos:cubicmap} for $(\sqrt\gamma\,x,y)$.
+\end{heuristic}
+
+Some dropped terms describe the drift of the reference point, its eigenvector and the rates, which Damian, Nichani and Lee follow along a constrained trajectory and \cref{sec:eos:central} averages over; others are higher-order terms along the oscillation, which decide what happens over long times (\cref{sec:eos:misses}).
+
+\subsection{Scales, and why two steps}
+
+The map \eqref{eq:eos:cubicmap} flips the sign of $x$ at every step, so it is not close to the identity, and no differential equation describes $x_t$. The squared amplitude does not flip, $x_{t+1}^2=(1+\eta y_t)^2x_t^2$; equivalently, the two-step map $x_t\mapsto(1+\eta y_{t+1})(1+\eta y_t)x_t$ has no sign flip. A continuous limit describes the envelope of the oscillation. In the variables $A=\log x^2$ and $y$ the map reads
+\begin{equation}\label{eq:eos:Amap}
+  A_{t+1}=A_t+2\log(1+\eta y_t),\qquad y_{t+1}=y_t+\eta\Bigl(\alpha-\tfrac12e^{A_t}\Bigr).
+\end{equation}
+If $\alpha$, $y$ and $e^A=x^2$ are of order one, then each step changes $A$ and $y$ by $O(\eta)$, and the natural clock is $\tau=\eta t$, the time of gradient flow; $\eta S-2$ is then of order $\eta$, and a cycle lasts a time of order $1/\sqrt\alpha$ in $\tau$, or $1/(\eta\sqrt\alpha)$ steps. The model has one dimensionless parameter: with $a=A-\log(2\alpha)$, $Y=y/\sqrt\alpha$ and the clock $\sqrt\alpha\,\tau$, the map becomes $a\mapsto a+2\log(1+\eps Y)$, $Y\mapsto Y+\eps(1-e^a)$, with $\eps=\eta\sqrt\alpha$. Its square $\eps^2=\eta^2\alpha$ is the rise of $\eta S$ per step due to sharpening, and the continuous limit $\eps\to0$ is sharpening that is slow on the scale of a step, the regime of \cref{obs:eos:gd}.
+
+\subsection{The theorem}
+
+The limit of \eqref{eq:eos:Amap} is
+\begin{equation}\label{eq:eos:flow}
+  \frac{dA}{d\tau}=2y,\qquad \frac{dy}{d\tau}=\alpha-\tfrac12e^{A}.
+\end{equation}
+Let $\phi(A)=\frac12e^A-\alpha A$ and $\cH(A,y)=y^2+\phi(A)$. The function $\phi$ is strictly convex and tends to $+\infty$ as $A\to\pm\infty$, with its minimum $\eosHmin=\alpha(1-\log2\alpha)$ at $A^*=\log(2\alpha)$. So $\cH$ has the unique minimizer $(A^*,0)$, which corresponds to the orbit $x=\pm\sqrt{2\alpha}$, $y=0$ of period two of gradient descent. For $h>\eosHmin$ let $A_-<A^*<A_+$ be the two solutions of $\phi(A)=h$.
+
+\begin{theorem}[Self-stabilization in the continuous limit]\label{thm:eos:selfstab}\index{self-stabilization!continuous limit}
+Let $\alpha>0$, let $(A(\tau),y(\tau))$ solve \eqref{eq:eos:flow} from a point other than $(A^*,0)$, and let $h=\cH(A(0),y(0))$.
+\begin{enumerate}
+\item The energy $\cH$ is constant along the solution.
+\item The solution is periodic, with period $T(h)=\int_{A_-}^{A_+}dA/\sqrt{h-\phi(A)}<\infty$.
+\item Over each period $\langle y\rangle=0$ and $\langle e^A\rangle=2\alpha$: the curvature along the oscillation averages exactly $2/\eta$, and $x^2$ averages exactly $2\alpha$.
+\item Gradient descent \eqref{eq:eos:cubicmap} from $(x_0,y_0)$ with $\log x_0^2=A(0)$ and $y_0=y(0)$ follows the solution: for every $\tau_{\max}>0$ there are $C$ and $\eta_0>0$, depending on $\alpha$, $A(0)$, $y(0)$ and $\tau_{\max}$ but not on $\eta$, such that for $0<\eta\le\eta_0$ and every integer $0\le t\le\tau_{\max}/\eta$,
+\[
+  \abs{\log x_t^2-A(\eta t)}+\abs{y_t-y(\eta t)}\le C\eta .
+\]
+\end{enumerate}
+\end{theorem}
+
+To leading order in $\eps$, an oscillation at the edge is a closed cycle: the curvature rises above $2/\eta$, the oscillation grows and pushes it below, the oscillation dies, and the cycle repeats with the same energy. Part (iii) is exact: the curvature averages exactly the threshold, and the oscillation carries exactly the energy that cancels progressive sharpening, $\frac12\gamma\langle x^2\rangle=\alpha$ before the coupling is absorbed.
+
+\begin{proof}[Proof of (i)--(iii)]
+The plan is to show that $\cH$ is conserved, that its level sets are closed curves without equilibria, and that the averages of derivatives over a period vanish. (i) Along a solution, $\frac{d}{d\tau}\cH=2y(\alpha-\frac12e^A)+(\frac12e^A-\alpha)\,2y=0$.
+
+(ii) Since $\cH\ge y^2+\eosHmin$ and $\phi$ tends to infinity at both ends, the sublevel sets of $\cH$ are compact; by (i) the solution stays in one and exists for all $\tau$. The level set $\{\cH=h\}$ consists of the arcs $y=\pm\sqrt{h-\phi(A)}$, $A_-\le A\le A_+$, joined at $(A_\pm,0)$, and the vector field vanishes only at $(A^*,0)$, which is not on it. On the upper arc $\dot A=2\sqrt{h-\phi(A)}>0$, so $A$ increases and reaches $A_+$ after the time $\int dA/(2\sqrt{h-\phi(A)})$, which is finite: $\phi$ is convex, so it lies below its chord from $(A^*,\eosHmin)$ to $(A_+,h)$, and for $A^*\le A<A_+$
+\[
+  h-\phi(A)\ge(h-\eosHmin)\,\frac{A_+-A}{A_+-A^*},\quad\text{so}\quad\int_{A^*}^{A_+}\frac{dA}{\sqrt{h-\phi(A)}}\le\frac{2(A_+-A^*)}{\sqrt{h-\eosHmin}},
+\]
+and the same bound holds on $[A_-,A^*]$. At $(A_+,0)$, $\dot y=-\phi'(A_+)<0$, so the solution passes to the lower arc, along which $A$ decreases to $A_-$, and at $(A_-,0)$, $\dot y=-\phi'(A_-)>0$ returns it to the upper arc. After the time $T(h)$ it is back at its starting point, and by uniqueness of solutions it is periodic.
+
+(iii) Over a period $A$ and $y$ return to their values, so integrating \eqref{eq:eos:flow} gives $0=2\int y\,d\tau$ and $0=\int(\alpha-\frac12e^A)\,d\tau$. The curvature along the oscillation is $2/\eta+y$, and $e^A=x^2$.
+\end{proof}
+
+This is the argument that gives the averages of the predator--prey cycles of Lotka and Volterra.\sidenote{The analogy is partial: there both populations are positive and enter through logarithms, while here $y$ changes sign, and \eqref{eq:eos:flow} is the motion of a particle in the potential well $\phi$, since $d^2A/d\tau^2=-2\phi'(A)$.} Small cycles have the period of the linearization, $T(h)\to2\pi/\sqrt{2\alpha}$ as $h\downarrow\eosHmin$ (\cref{ex:eos:period}), about $2\pi/(\eta\sqrt{2\alpha})$ steps; larger cycles are slower, because they spend a long time with an oscillation so small that nothing happens but the climb of the curvature. Part (iv) is an error estimate of the kind used for the Euler method, whose step differs from \eqref{eq:eos:Amap} by $O(\eta^2)$. Its constant grows exponentially with $\tau_{\max}$, so it covers a fixed number of cycles, not the times $\tau$ of order $1/\eta$ of the drift in \cref{prop:eos:drift}.
+
+\begin{lemma}[The continuous limit]\label[lemma]{lem:eos:limit}
+Let $z(\tau)=(A(\tau),y(\tau))$ solve \eqref{eq:eos:flow} on $[0,\tau_{\max}]$, let $K$ be the set of points within $\ell_1$-distance $1$ of its orbit, and let $Y=\max_K\abs y$, $E=\max_Ke^A$, $L=\max\{4,E/2\}$ and $C_1=\alpha+\frac12E+2Y^2+\frac12EY$. Let $z_t=(A_t,y_t)$ follow \eqref{eq:eos:Amap} from $z_0=z(0)$. If $\eta\le1/(2Y)$ and $C_1\eta(e^{L\tau_{\max}}-1)\le L$, then for every integer $0\le t\le\tau_{\max}/\eta$, $z_t\in K$, $x_t\ne0$, and $\norm{z_t-z(\eta t)}_1\le(C_1/L)(e^{L\eta t}-1)\eta$.
+\end{lemma}
+
+\begin{proof}
+The plan is to bound the error of one step along the exact solution, to show that the map $F$ of \eqref{eq:eos:Amap} is $(1+L\eta)$-Lipschitz on $K$, where $\abs{\eta y}\le\frac12$, and to add up the errors with the discrete Grönwall inequality (\cref{thm:toolkit:gronwall}).
+
+\emph{One step.} Along the solution $\abs y\le Y$ and $e^A\le E$, so $\abs{\dot y}\le\alpha+\frac12E$ and $\abs{\dot A}\le2Y$. Fix $\tau\le\tau_{\max}-\eta$. The first component of $z(\tau+\eta)-F(z(\tau))$ is $\int_0^\eta2(y(\tau+r)-y(\tau))\,dr+2(\eta y-\log(1+\eta y))$ with $y=y(\tau)$; the integral is at most $(\alpha+\frac12E)\eta^2$ in absolute value, and the second term lies in $[0,2\eta^2Y^2]$ because $0\le u-\log(1+u)\le u^2$ for $u\ge-\frac12$ (the function $u^2-u+\log(1+u)$ vanishes at $0$ and its derivative $u(1+2u)/(1+u)$ has the sign of $u$). The second component is $-\frac12\int_0^\eta(e^{A(\tau+r)}-e^{A(\tau)})\,dr$, at most $\frac12EY\eta^2$ because $\abs{e^{A(\tau+r)}-e^{A(\tau)}}\le2EYr$. So $\norm{z(\tau+\eta)-F(z(\tau))}_1\le C_1\eta^2$.
+
+\emph{Lipschitz bound.} On a segment in $K$, $\partial_y\,2\log(1+\eta y)=2\eta/(1+\eta y)\le4\eta$ and $\abs{\partial_A\frac12\eta e^A}\le\frac12\eta E$, so $\norm{F(z)-F(z')}_1\le(1+L\eta)\norm{z-z'}_1$.
+
+\emph{Adding up.} Let $r_t=\norm{z_t-z(\eta t)}_1$, and suppose $r_s\le1$ for $s\le t$. Then $z_t$ lies in the $\ell_1$-ball of radius $1$ around $z(\eta t)$, a convex subset of $K$, and $r_{t+1}\le\norm{F(z_t)-F(z(\eta t))}_1+\norm{F(z(\eta t))-z(\eta t+\eta)}_1\le(1+L\eta)r_t+C_1\eta^2$. With $r_0=0$, induction gives
+\[
+  r_{t+1}\le C_1\eta^2\sum_{s=0}^{t}(1+L\eta)^s\le\frac{C_1\eta}L\bigl(e^{L\eta(t+1)}-1\bigr)\le1
+\]
+as long as $\eta(t+1)\le\tau_{\max}$, by the assumption on $\eta$. Finally $z_t\in K$ gives $1+\eta y_t\ge\frac12$, so no step sends $x$ to zero.
+\end{proof}
+
+\begin{proof}[Proof of \cref{thm:eos:selfstab}(iv)]
+Apply \cref{lem:eos:limit} with $C=(C_1/L)(e^{L\tau_{\max}}-1)$ and $\eta_0=\min\{1/(2Y),1/C\}$; by \eqref{eq:eos:Amap}, $A_t=\log x_t^2$.
+\end{proof}
+
+\subsection{What the discrete map does}
+
+For the map itself, three identities hold exactly, at every step size. Write $\cH_t=\cH(A_t,y_t)$.
+
+\begin{lemma}[Exact identities]\label[lemma]{lem:eos:identities}
+Let $(x_t,y_t)$ follow \eqref{eq:eos:cubicmap} from $x_0\ne0$, suppose that $1+\eta y_t>0$ for $0\le t<T$, and write $A_t=\log x_t^2$ and $f_t=\alpha-\frac12x_t^2$. Then
+\begin{enumerate}
+\item $\frac1T\sum_{t<T}x_t^2=2\alpha-2(y_T-y_0)/(\eta T)$;
+\item $\frac1T\sum_{t<T}\log(1+\eta y_t)=(A_T-A_0)/(2T)$, and hence $\frac1T\sum_{t<T}y_t\ge\bigl(e^{(A_T-A_0)/(2T)}-1\bigr)/\eta$;
+\item for $t<T$, with equality if and only if $x_t^2=2\alpha$ and $y_t=0$,
+\begin{equation}\label{eq:eos:dH}
+  \cH_{t+1}-\cH_t=\eta^2f_t^2+\tfrac12\eta^2x_t^2y_t^2+2\alpha\bigl(\eta y_t-\log(1+\eta y_t)\bigr)\ge0 .
+\end{equation}
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to sum the two updates for (i) and (ii), and to expand one step of $\cH$ for (iii). By \eqref{eq:eos:cubicmap}, $x_{t+1}^2=(1+\eta y_t)^2x_t^2>0$ for $t<T$, so \eqref{eq:eos:Amap} holds. Summing the $y$-update gives $y_T-y_0=\eta\sum_{t<T}(\alpha-\frac12x_t^2)$, which is (i). Summing the $A$-update gives the identity in (ii), and the concavity of the logarithm, $\log\bigl(\frac1T\sum_t(1+\eta y_t)\bigr)\ge\frac1T\sum_t\log(1+\eta y_t)$, gives the inequality. For (iii), drop the index $t$ and write $u=\eta y$, so that $e^{A_{t+1}}=(1+u)^2e^A$ and $A_{t+1}-A=2\log(1+u)$. Then
+\[
+  \cH_{t+1}-\cH_t=2\eta yf+\eta^2f^2+\tfrac12e^A(2u+u^2)-2\alpha\log(1+u),
+\]
+and the terms of first order combine, $2\eta yf+e^Au=2u(\alpha-\frac12e^A)+e^Au=2\alpha u$. What remains is \eqref{eq:eos:dH}. Each of its terms is nonnegative, the last because $u-\log(1+u)\ge0$ for $u>-1$ with equality only at $u=0$, and the sum vanishes if and only if $f=0$ and $u=0$.
+\end{proof}
+
+Identity (i) is the discrete $\langle x^2\rangle=2\alpha$, valid along every orbit, up to a boundary term that is small whenever $y$ stays bounded. Identity (ii) says that the geometric mean of $\abs{x_{t+1}/x_t}=\eta S_t-1$, with $S_t=2/\eta+y_t$ the curvature along the oscillation, is $\abs{x_T/x_0}^{1/T}$; if the oscillation neither grows nor decays, then the arithmetic mean of $\eta S_t$ is at least $2$, the ``at or just above $2/\eta$'' of \cref{obs:eos:gd}. Identity (iii) has no counterpart in the flow: the energy that the flow conserves increases at every step of the map.
+
+\begin{proposition}[Gradient descent spirals outward]\label[proposition]{prop:eos:drift}\index{period-two orbit}
+Let $\eta>0$ and $\alpha>0$, and let $F$ be the map \eqref{eq:eos:Amap} on the half-plane $\{1+\eta y>0\}$.
+\begin{enumerate}
+\item The point $p=(A^*,0)$, which is the orbit $x=\pm\sqrt{2\alpha}$, $y=0$ of period two of \eqref{eq:eos:cubicmap}, is a fixed point of $F$, and the Jacobian of $F$ at $p$ has the eigenvalues $1\pm i\eta\sqrt{2\alpha}$, of modulus $\sqrt{1+2\alpha\eta^2}>1$.
+\item As long as an orbit of $F$ stays in the half-plane, $\cH$ is nondecreasing along it, and it increases strictly at every step taken from a point other than $p$.
+\item For every compact set $K$ in the half-plane, every orbit that starts in $K$ at a point other than $p$ leaves $K$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) At $p$, $1+\eta y=1$ and $e^A=2\alpha$, so $F(p)=p$, and the Jacobian $\bigl(\begin{smallmatrix}1&2\eta/(1+\eta y)\\-\eta e^A/2&1\end{smallmatrix}\bigr)$ is $\bigl(\begin{smallmatrix}1&2\eta\\-\eta\alpha&1\end{smallmatrix}\bigr)$, with characteristic polynomial $(1-z)^2+2\alpha\eta^2$. (ii) is \cref{lem:eos:identities}(iii). (iii) If an orbit started at $z_0\in K\setminus\{p\}$ stayed in $K$, then it would stay in the compact set $K'=K\cap\{\cH\ge\cH(z_0)\}$, by (ii), which does not contain $p$ because $\cH(p)=\eosHmin<\cH(z_0)$. The increment $\cH(F(z))-\cH(z)$ is continuous and positive on $K'$, hence at least some $c>0$ there, and $\cH(z_t)\ge\cH(z_0)+ct$ would be unbounded on $K$.
+\end{proof}
+
+So the period-two orbit that exactly balances progressive sharpening is unstable for every step size, and every other orbit drifts to larger cycles.\sidenote{The explicit Euler method does the same to the harmonic oscillator: for $\ddot q=-\omega^2q$ written as a first-order system, one Euler step multiplies the energy by exactly $1+\eta^2\omega^2$. In \eqref{eq:eos:Amap} both variables are updated from the same old values, as in the Euler method.} The drift is slow, and its rate can be computed.
+
+\begin{heuristic}[Heuristic derivation of the area law]\index{area law}
+Let $\eosArea(h)$ be the area enclosed by the level curve $\{\cH=h\}$. Over one cycle, gradient descent stays within $O(\eta)$ of the flow (\cref{lem:eos:limit}) for about $T(h)/\eta$ steps, each raising $\cH$ by $\eta^2Q+O(\eta^3)$ with $Q=f^2+y^2(\alpha+\frac12e^A)$, by \eqref{eq:eos:dH}; the level rises by about $\eta\oint Q\,d\tau$. On the cycle $dy=f\,d\tau$ and $dA=2y\,d\tau$, so $\oint Q\,d\tau=\oint f\,dy+\frac12\oint(\alpha+\frac12e^A)\,y\,dA$; the cycle runs clockwise, and Green's theorem turns these into the integrals of $\frac12e^A$ and of $\frac12(\alpha+\frac12e^A)$ over the region $\{\cH\le h\}$. On every horizontal chord of that region $\cH=h$ at both ends, and $\alpha-\frac12e^A=-\partial_A\cH$, so $\iint(\alpha-\frac12e^A)\,dA\,dy=0$: the average of $e^A$ over the region is $2\alpha$, as over the cycle. Hence $\oint Q\,d\tau=2\alpha\eosArea(h)$. Finally $\eosArea(h)=\int_{A_-}^{A_+}2\sqrt{h-\phi(A)}\,dA$ has the derivative $T(h)$, so the area grows by $T(h)\cdot2\alpha\eta\eosArea(h)$ per cycle, that is, by $2\alpha\eta^2\eosArea$ per step:
+\begin{equation}\label{eq:eos:area}
+  \eosArea(\cH_t)\approx\eosArea(\cH_0)\,e^{2\alpha\eta^2t}.\qedhere
+\end{equation}
+\end{heuristic}
+
+Near the period-two orbit the area law is exact to first order, since the linearization of \cref{prop:eos:drift}(i) has the determinant $1+2\alpha\eta^2$. A small cycle lasts $2\pi/\sqrt{2\alpha}$ in $\tau$ and the area grows by the factor $e$ in the time $1/(2\alpha\eta)$, so the drift needs about $1/(2\sqrt2\,\pi\eps)$ cycles, some $11$ at $\eps=0.01$: invisible over a few cycles, dominant over many.\sidenote{The area $\eosArea$ is $2\pi$ times the action of the cycle in the sense of classical mechanics. Actions are conserved under slow changes of the parameters (adiabatic invariance), so a slow drift of $\alpha$ along a training run does not by itself change the area of the cycles; the discretization does.}
+
+\subsection{What Damian, Nichani and Lee prove}
+
+Their theorem concerns gradient descent on a general loss, three times differentiable. Its hypotheses include progressive sharpening, $\alpha>0$ along the constrained trajectory (their Assumption 1), an eigengap, the second Hessian eigenvalue below $c/\eta$ for an absolute constant $c<2$ (their Assumption 2), and regularity conditions. The constrained trajectory is gradient descent projected onto the stable set $\{S(\theta)\le2/\eta,\ \ip{\nabla\Loss(\theta),u(\theta)}=0\}$, with $u(\theta)$ the top eigenvector. Under these conditions they couple gradient descent with it for $O(\eps^{-1})$ steps, with $\eps$ a small parameter of their analysis (not ours), and the deviation follows a two-dimensional system with time-dependent coefficients, the counterpart of \eqref{eq:eos:cubicmap}.\sidenote{They note that their conditions are not strictly necessary, and that a local coupling of this kind does not suffice to prove global convergence.} The horizon is finite, as in \cref{thm:eos:selfstab}(iv); \cref{prop:eos:drift} and \eqref{eq:eos:area} concern longer times, of order $1/(\alpha\eta^2)$ steps, over which the reduced dynamics itself is unstable; whether real dynamics drifts outward or settles onto a stable period-two orbit is decided by the terms that the reduction drops (\cref{sec:eos:misses}).
+
+\subsection{Central flows}\label{sec:eos:central}
+
+Now average over the cycles. In the family \eqref{eq:eos:onedir}, once $s(w_t)$ has reached $2/\eta$, and as long as $\Loss_0$ and $s$ change little over a cycle, the pair $(\sqrt{\gamma(w)}\,x,\ s(w)-2/\eta)$ approximately follows the cubic model with the local rate $\alpha(w)$ over the cycle.
+
+\begin{heuristic}[Heuristic derivation of the central flow]
+If $\alpha(w)>0$, then $\langle x^2\rangle=2\alpha(w)/\gamma(w)$ over a cycle, by \cref{thm:eos:selfstab}(iii). Averaging the $w$-update of \eqref{eq:eos:gdonedir} over the cycle, with $\tau=\eta t$,
+\begin{equation}\label{eq:eos:central}
+  \frac{dw}{d\tau}=-\nabla\Loss_0(w)-\tfrac12\sigma^2(w)\,\nabla s(w),\qquad
+  \sigma^2(w)=\frac{2\max\{0,\alpha(w)\}}{\gamma(w)},
+\end{equation}
+as long as $s(w)=2/\eta$, with $\alpha$ and $\gamma$ as in \eqref{eq:eos:alphagamma}. When $\alpha(w)\le0$, the curvature falls below $2/\eta$, the oscillation decays, and $w$ follows gradient flow. With $\sigma^2=2\alpha/\gamma$ the velocity in \eqref{eq:eos:central} is $-\nabla\Loss_0$ minus its component along $\nabla s$, tangent to $\{s=2/\eta\}$: \eqref{eq:eos:central} is gradient flow projected onto the region $\{s\le2/\eta\}$. The loss averaged over a cycle is $\Loss_0(w)+\frac12s\langle x^2\rangle=\Loss_0(w)+\sigma^2/\eta$.
+\end{heuristic}
+
+\Textcite{CohenEtAl2025} derived this equation for a general loss, with $\Loss$ and $S$ in place of $\Loss_0$ and $s$, and called it a \term{central flow}\index{central flow}, a differential equation for the time-averaged trajectory at the edge. Here $\sigma^2$ is the value at which the sharpness reduction caused by the oscillation cancels progressive sharpening, and the flow projects $\nabla S$ out of the gradient; they note that this re-derives a main result of \textcite{DamianNichaniLee2023} in a simpler, non-rigorous way, extend it to several eigenvalues at the edge, and report that central flows predict long-term trajectories of neural networks with high numerical accuracy. Here and there the status is the same: derived, not proved. In the cubic model the central flow is the point $y=0$ with $\sigma^2=2\alpha$. For RMSProp and Adam the central flow also moves the preconditioner, and Cohen and coauthors find what they call acceleration via regularization: the adaptive optimizers implicitly move toward regions of low curvature, in which they can take larger steps.
+
+\section{Reading the theory}\label{sec:eos:reading}
+
+\paragraph{Thresholds in numbers.} For moving-average momentum, and for Adam with a frozen preconditioner, the largest stable $\eta S$ (or $\eta S_P$) is $(2+2\beta)/(1-\beta)$: $2$, $6$, $38$, $78$ and $398$ for $\beta$ (or $\beta_1$) equal to $0$, $0.5$, $0.9$, $0.95$ and $0.99$. In the left panel of \cref{fig:eos:network}, the sharpness of full-batch gradient descent on a small network rises, overshoots, and holds at $2/\eta$, within $1.4\%$ on average over the last $1500$ steps for $\eta=0.4$ and within $0.1\%$ for $\eta=0.25$. In the right panel, Adam's preconditioned sharpness climbs to $38/\eta$ and stays near it, slightly below: over the last $1500$ steps it averages $0.98$ and $0.95$ of the threshold, with excursions to $1.03$ times it. The climb runs at about the limit of \cref{prop:eos:speed}, because the gradients are already small: for $\eta=0.003$, $S_P$ grows by the factor $e^{1.80}$ between steps $200$ and $1975$, where the bound at a fixed Hessian, with the bias correction, allows $e^{1.67}$; the excess comes from the change of the Hessian. Meanwhile the sharpness of Adam's iterates stays between $7.4$ and $8.4$ from step $300$ on, far from a threshold of its own (\cref{obs:eos:adam}).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=21mm},wplot,width=80mm,height=50mm,xmin=0,xmax=4000,xtick={0,1000,2000,3000,4000}]
+\nextgroupplot[xlabel={step $t$},ylabel={sharpness $S(\theta_t)$},ymin=0,ymax=10,legend style={at={(0.98,0.04)},anchor=south east,font=\scriptsize},legend columns=2]
+\addplot[theory,domain=0:4000,samples=2] {5};
+\addplot[theory2,domain=0:4000,samples=2] {8};
+\addplot[simulation,mark size=1.0pt] table[x=t,y=gdA] {figures/data/08-eos-network.dat};
+\addplot[simulation2,mark size=0.9pt] table[x=t,y=gdB] {figures/data/08-eos-network.dat};
+\legend{$2/\eta$\,($\eta=0.4$),$2/\eta$\,($\eta=0.25$),$\eta=0.4$,$\eta=0.25$}
+\nextgroupplot[xlabel={step $t$},ylabel={preconditioned sharpness $S_P$},ymode=log,ymin=300,ymax=30000,legend style={at={(0.98,0.04)},anchor=south east,font=\scriptsize},legend columns=2]
+\addplot[theory,domain=0:4000,samples=2] {3800};
+\addplot[theory2,domain=0:4000,samples=2] {12666.67};
+\addplot[simulation,mark size=1.0pt,restrict x to domain=25:4000] table[x=t,y=adA] {figures/data/08-eos-network.dat};
+\addplot[simulation2,mark size=0.9pt,restrict x to domain=25:4000] table[x=t,y=adB] {figures/data/08-eos-network.dat};
+\legend{$38/\eta$\,($\eta=0.01$),$38/\eta$\,($\eta=0.003$),$\eta=0.01$,$\eta=0.003$}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The thresholds of \cref{prop:eos:thresholds} (lines) and the measured curvature (points) in a tanh network $8\to32\to32\to1$ ($1377$ parameters) trained full batch on the square loss, with $256$ Gaussian inputs labeled by a random teacher (seeds fixed in \texttt{08-eos-network.py}). Left: gradient descent; the sharpness, every $25$ steps, by block power iteration with Hessian--vector products. Right: Adam with $\beta_1=0.9$, $\beta_2=0.999$, $\epsilon=10^{-8}$; the preconditioned sharpness $\lmax(P_t^{-1}H_t)$, with $P_t$ as in \cref{obs:eos:adam}, from step $25$ on; over the last $1500$ steps it averages $0.98$ and $0.95$ of $38/\eta$.}
+\label{fig:eos:network}
+\end{figure}
+
+\paragraph{The cubic model, cycle by cycle.} On the left of \cref{fig:eos:cubic}, gradient descent with $\alpha=1$ and $\eta=0.002$ follows the closed level curves of $\cH$ for two cycles each: a medium cycle with $\cH=2$, and a large one started below the edge ($y_0=-0.5$) with a small oscillation $x_0=0.01$, as at the onset of the edge of stability. Each large cycle is a catapult: the curvature climbs to $2/\eta+3.0$, the oscillation grows from $0.01$ to about $5$, the curvature is pushed down to $2/\eta-3.0$, and the oscillation dies back. The overshoot equals the undershoot because $\cH$ is even in $y$; with $\alpha=0$ the same law turns one excursion to $2/\eta+y_0$ into a landing at $2/\eta-y_0$, the reflection law that volume 2 of this series derives for the catapult. A small oscillation at onset means a large cycle, since $\cH\approx y_0^2-\alpha\log x_0^2$. The cycles last $T=5.08$ and $7.56$ in $\tau$ (against $2\pi/\sqrt2=4.44$ for the smallest), the large one $3780$ steps, and its second loop lies visibly outside the first: the drift. In the middle, the running averages of $x^2$ and $y$ converge to $2\alpha=2$ and $0$, with oscillations that decay like $1/\tau$; after five periods gradient descent's average of $x^2$ is $2.04$, the difference being exactly the boundary term of \cref{lem:eos:identities}(i), nonzero because the drifting orbit has fallen slightly out of phase with the flow. On the right, three runs with different $(\alpha,\eta)$ collapse onto the area law \eqref{eq:eos:area} while the area grows by the factor $e^6$; beyond that, $\eta y$ is no longer small and the expansion fails.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=14mm},wplot,width=58mm,height=50mm]
+\nextgroupplot[xlabel={$A=\log x^2$},ylabel={$y=S-2/\eta$},xmin=-11,xmax=4.5,ymin=-3.6,ymax=3.6]
+\addplot[theory] table[x=a2,y=y2] {figures/data/08-eos-cubic-levels.dat};
+\addplot[theory] table[x=a1,y=y1] {figures/data/08-eos-cubic-levels.dat};
+\addplot[simulation,mark size=0.6pt,unbounded coords=discard] table[x=a2,y=y2] {figures/data/08-eos-cubic-phase.dat};
+\addplot[simulation2,mark size=0.6pt,unbounded coords=discard] table[x=a1,y=y1] {figures/data/08-eos-cubic-phase.dat};
+\nextgroupplot[xlabel={time $\tau=\eta t$},ylabel={running averages},xmin=0,xmax=38,ymin=-1.2,ymax=4.2,legend style={at={(0.98,0.97)},anchor=north east,font=\scriptsize}]
+\addplot[guide,domain=0:38,samples=2] {2};
+\addplot[guide,domain=0:38,samples=2] {0};
+\addplot[theory] table[x=tau,y=flowx2] {figures/data/08-eos-cubic-avg.dat};
+\addplot[theory2] table[x=tau,y=flowy] {figures/data/08-eos-cubic-avg.dat};
+\addplot[simulation,mark size=0.7pt] table[x=tau,y=gdx2] {figures/data/08-eos-cubic-avg.dat};
+\addplot[simulation2,mark size=0.6pt] table[x=tau,y=gdy] {figures/data/08-eos-cubic-avg.dat};
+\legend{,,{flow, $x^2$},{flow, $y$},{GD, $x^2$},{GD, $y$}}
+\nextgroupplot[xlabel={$2\alpha\eta^2t$},ylabel={$\log(\eosArea_t/\eosArea_0)$},xmin=0,xmax=6.2,ymin=0,ymax=6.4,legend style={at={(0.03,0.97)},anchor=north west,font=\scriptsize}]
+\addplot[theory,domain=0:6.2,samples=2] {x};
+\addplot[simulation,mark size=1.1pt] table[x=s1,y=r1] {figures/data/08-eos-cubic-area.dat};
+\addplot[simulation2,mark size=1.0pt] table[x=s2,y=r2] {figures/data/08-eos-cubic-area.dat};
+\addplot[only marks,mark=triangle*,mark size=1.4pt,color=sea,mark options={fill=sea,draw=white,line width=0.2pt}] table[x=s3,y=r3] {figures/data/08-eos-cubic-area.dat};
+\legend{area law,{$\alpha=1$, $\eta=0.01$},{$\alpha=1$, $\eta=0.005$},{$\alpha=\frac12$, $\eta=0.02$}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The cubic model: theory (curves) against the gradient-descent map \eqref{eq:eos:cubicmap} (points), with no randomness (script \texttt{08-eos-cubic.py}). Left: two cycles each of a medium and a large orbit, $\alpha=1$, $\eta=0.002$, every $25$th iterate, on the level curves of $\cH$ through their starting points. Middle: running averages of $x^2$ and of $y$ along the large orbit over five periods, for the flow \eqref{eq:eos:flow} and for gradient descent. Right: the area enclosed by the level curve through the current iterate, for three runs started on $y=0$ at $\cH=1$, against the area law \eqref{eq:eos:area}.}
+\label{fig:eos:cubic}
+\end{figure}
+
+\paragraph{Adam's edge without sharpening.} The preconditioned sharpness can reach its threshold with a constant Hessian, because the preconditioner shrinks with the gradients.
+
+\begin{example}[Adam on a parabola]\label[example]{ex:eos:parabola}
+Run Adam with $\beta_1=0.9$, $\beta_2=0.999$ and $\epsilon=0$ on $\Loss(x)=\frac12hx^2$. As $x$ converges toward zero, the gradients become negligible next to $\sqrt{v_t}$, and $S_P=h/P_t$ rises at the limit of \cref{prop:eos:speed}: with $h=1$, $\eta=0.01$ and $x_0=1$ it grows from $\eta S_P=0.066$ at step $1000$ to the threshold $38$ at step $13{,}254$, which is the rate $\frac12\log(1/\beta_2)$ per step corrected for the bias correction of $\hat v_t$. After a transient that overshoots to $57$, it settles into cycles of about $480$ steps between about $31$ and $40$, around an average of $35.4$; the root mean square of $x$ is about $0.03\,\eta$. Adam with $\epsilon=0$ is invariant under rescaling the loss, and rescaling $x$ rescales $\eta$, so the range and the average of $\eta S_P$ do not depend on $h$ or $\eta$, as runs confirm.
+\end{example}
+
+The example isolates a mechanism that the network mixes with the cubic one: Adam sharpens through its preconditioner alone, at a speed fixed by $\beta_2$, and self-stabilizes through $v_t$, since a growing oscillation raises the squared gradients, $v_t$ grows, and $S_P$ falls. The average sits about $7\%$ below the threshold, unlike the cubic model's $2/\eta$, because the oscillation grows fast above the threshold but decays slowly below it: the two roots of the momentum recursion have the product $\beta_1$, so the amplitude decays no faster than $\beta_1^{t/2}$ however far below the threshold $\eta S_P$ is, and the cycle spends most of its time below, about $80\%$ in the example (\cref{ex:eos:adam1d}).
+
+\paragraph{Where the agreement must fail.} The theorem concerns $\eps\to0$ at fixed energy, and large cycles fail first: once $\eta y$ is not small the expansion behind \eqref{eq:eos:area} breaks down. With $\eta=0.01$, $\alpha=1$ and $\cH_0=10$ the drift carries the orbit to cycles in which $x$ falls below $10^{-300}$, and in floating point $x$ underflows to zero after about $4\cdot10^4$ steps, after which the curvature grows without bound.\sidenote{At that point $\cH$ becomes infinite in floating point, because $\log x^2=-\infty$; it is this underflow, not an overflow of $x$, that ends such runs.} Networks do not behave this way, and \cref{sec:eos:misses} says why.
+
+\section{What the theory misses}\label{sec:eos:misses}
+
+\paragraph{What was idealized away.} The rate of progressive sharpening is an input, constant in the cubic model. One direction is at the edge, with a fixed eigenvector and a gap below it, while in networks the eigenvector turns and several eigenvalues can reach $2/\eta$ together. The loss is quadratic and even along the oscillation, without the terms $x^3$ and $x^4$ that decide the long-time behavior. The gradients are exact. The thresholds for momentum and Adam are proved for quadratics with a frozen preconditioner, and self-stabilization for plain gradient descent only.
+
+\paragraph{Where it breaks.} (1) \emph{Long times.} The cubic model has no stable cycle: its period-two orbit repels at the rate $\alpha\eta^2$ per step. A fourth-order term $\frac1{24}\kappa x^4$ changes this at order one in the continuous limit, which becomes $dA/d\tau=2y+\frac13\kappa e^A$, $dy/d\tau=\alpha-\frac12e^A$. For $\kappa<0$, a loss that grows more slowly than quadratically along the oscillation, the cycles spiral in to a stable period-two orbit with $y=-\kappa\alpha/3>0$, a curvature at the center of the oscillation slightly above $2/\eta$ (\cref{ex:eos:quartic}). Near that orbit the area changes at the rate $2\alpha(\eta+\kappa/3)$ per unit of $\tau$, so the orbit of the map is stable for $\kappa<-3\eta$; at $\eta=0.01$ and $\alpha=1$ the measured growth rate of the amplitude vanishes at $\kappa=-0.03$ and matches $\alpha(\eta+\kappa/3)$ to within $1\%$ at $\kappa=-0.04$ and $-0.06$. A cubic term along the oscillation also damps; in one dimension the condition for a stable period-two orbit near the threshold is $3\Loss'''^2-\Loss''\Loss''''>0$ (\cref{ex:eos:quartic}), and \textcite{ChenBruna2023} analyze such orbits, the flip bifurcation of dynamical systems, through the two-step map. Whether a network's cycles are damped depends on higher derivatives along the top eigenvector, which the cubic model sets to zero; the sustained edge of \cref{obs:eos:gd} is what damping predicts. (2) \emph{Progressive sharpening.} The model does not say why the sharpness rises, and with the cross-entropy loss it eventually falls \parencite{CohenEtAl2021}; for logistic regression on separable data, gradient descent converges at every step size after a phase in which the loss oscillates \parencite{WuBravermanLee2023,WuEtAl2024}, so the edge is left for good. (3) \emph{Several eigenvalues.} With two directions at the edge, \cref{lem:eos:identities}(i) becomes a linear system for the two oscillation energies, whose solution can have a negative entry; then one direction cannot stay at the edge (\cref{ex:eos:two}), and the eigengap assumption of \textcite{DamianNichaniLee2023} fails. (4) \emph{Noise.} With minibatches the full-batch sharpness stays below $2/\eta$ (\cref{obs:eos:sgd}); the model has no noise. (5) \emph{Adam's moving preconditioner.} \Cref{ex:eos:parabola} reaches its edge and stabilizes through $v_t$ alone, $7\%$ below the frozen threshold; the theory covers neither the interaction of this mechanism with the cubic one nor the observation that Adam keeps moving into regions of higher sharpness \parencite{CohenEtAl2022}.
+
+\paragraph{Repairs and open problems.} Central flows \parencite{CohenEtAl2025} handle several eigenvalues at the edge and adaptive optimizers, at the level of a derivation. Rod flows \parencite{RegisChewi2026} treat two consecutive iterates as the ends of a rod, an extended one-dimensional object with a center and an extent; their authors report that rod flow matches the accuracy of central flows on representative networks and does better on toy examples, and a second paper extends it to heavy ball, Nesterov, RMSProp, Adam and NAdam \parencite{RegisChewi2026Adam}; both are unrefereed preprints of 2026. Minimalist models give complete proofs of edge-of-stability behavior in low dimension: a two-parameter example \parencite{ZhuEtAl2023}, the learning of threshold neurons \parencite{AhnEtAl2023}, scalar networks \parencite{KreislerEtAl2023}, and a bifurcation analysis \parencite{SongYun2023}; \textcite{AroraLiPanigrahi2022} prove it near a manifold of minimizers for normalized gradient descent and for gradient descent on $\sqrt{\Loss-\Loss^\star}$.\sidenote{\Textcite{KalraHeBarkeshli2025} analyze the fixed points of a low-dimensional model and its route to chaos.} Progressive sharpening has partial explanations, through the growth of the output layer \parencite{LiWangLi2022} and in second-order regression models \parencite{AgarwalaPedregosaPennington2023}. For minibatches the batch sharpness \parencite{AndreyevBeneventano2024} and the measure of \textcite{LeeJang2023} replace $S$. Open: a model in which progressive sharpening is derived and the long phase at the edge is proved; a global-in-time theorem beyond low-dimensional examples; the sign of the damping in networks, which can be measured (\cref{ex:eos:drift}); and a theory of Adam's edge with the preconditioner moving.
+
+\section{Back in the wild}\label{sec:eos:back}
+
+\fieldnotes{Learning rates as large as training tolerates; then the sharpness sits at $2/\eta$ (gradient descent) and the preconditioned sharpness near $38/\eta$ (Adam).}
+{One oscillating direction whose curvature depends on the other parameters; its affine case, the cubic model.}
+{Thresholds $2/\eta$, $(2+2\beta)/\eta$, $(2+2\beta)/((1-\beta)\eta)$, $38/\eta$; closed cycles with $\langle y\rangle=0$, $\langle x^2\rangle=2\alpha$ in the limit; exact identities and an increasing energy for the map.}
+{Sharpness averaging $2/\eta$ or slightly more; $\langle x^2\rangle=2\alpha/\norm{\nabla S}^2$; cycles of $2\pi/(\eta\sqrt{2\alpha})$ steps or more; areas growing by $e$ every $1/(2\alpha\eta^2)$ steps unless damped; the central flow (derived).}
+{Why the sharpness rises; several eigenvalues; noise; a moving preconditioner; higher-order damping.}
+{The step size sets the curvature (observed; explained in the model). Compare learning rates across $\beta$ through $(2+2\beta)/(1-\beta)$ (proved for quadratics). Averaging consecutive iterates removes a loss of about $\sigma^2/\eta$ (derived in the model; suggested).}
+
+The first lesson is a change of viewpoint. The curvature adapts to the learning rate, rising until the step is barely stable and staying there; a sweep that keeps the largest learning rate that does not diverge is choosing the curvature at which training will run, not a point inside a fixed stability region. Training diverges when self-stabilization fails: when the step size grows faster than the curvature can follow, the subject of warmup (\cref{ch:warmup}), or when one cycle grows too large, one anatomy of a loss spike (\cref{ch:spikes}). The second lesson is quantitative but modest: at $\beta=0.9$ moving-average momentum tolerates nineteen times the curvature of gradient descent at the same $\eta$, so a learning rate tuned for one $\beta$ is not right for another (\cref{ch:momentum}). The oscillation is not a malfunction: it carries exactly the energy that progressive sharpening requires, and its cost in loss, about $\sigma^2/\eta$ in the model, is paid by the iterates but not by their average, since $\frac12(x_t+x_{t+1})=-\frac12\eta y_tx_t$ (\cref{ex:eos:average}). This suggests that averaging iterates (\cref{ch:momentum,ch:schedules}) helps at the edge; it is a suggestion, not a result about networks.
+
+The theory does not say why the sharpness rises, so it cannot predict when a run reaches the edge. With noise the edge moves (\cref{obs:eos:sgd}); Adam's edge involves a preconditioner that the frozen threshold ignores; and why Adam beats gradient descent on transformers is a separate question (\cref{ch:transformers}).
+
+\begin{exercises}
+\item \consolidation (Nesterov's threshold.) Nesterov's momentum is $\theta_{t+1}=\vartheta_t-\eta\nabla\Loss(\vartheta_t)$ with $\vartheta_t=\theta_t+\beta(\theta_t-\theta_{t-1})$. (a) On a quadratic, show that the component along an eigenvector with eigenvalue $\lambda_i>0$ obeys $e_{t+1}=(1+\beta)(1-\eta\lambda_i)e_t-\beta(1-\eta\lambda_i)e_{t-1}$. (b) Show that it tends to zero from every start if and only if $0<\eta\lambda_i<(2+2\beta)/(1+2\beta)$, the maximum stable sharpness (times $\eta$) that \textcite{CohenEtAl2021} give for Nesterov's method. (c) Compare with the heavy ball at $\beta=0.9$.\label{ex:eos:nesterov}
+
+\item \consolidation (Small cycles.) (a) Show that the linearization of \eqref{eq:eos:flow} at $(A^*,0)$ has the angular frequency $\sqrt{2\alpha}$. (b) Substitute $\phi(A)=\eosHmin+(h-\eosHmin)\sin^2\vartheta$, with $\vartheta\in[-\frac\pi2,\frac\pi2]$ of the sign of $A-A^*$, in $T(h)$ and show that $T(h)\to2\pi/\sqrt{2\alpha}$ as $h\downarrow\eosHmin$. (c) For $\alpha=1$, compute $T(2)$ numerically and compare with the value $5.08$ of \cref{sec:eos:reading}.\label{ex:eos:period}
+
+\item \consolidation (The reduction.) In the family \eqref{eq:eos:onedir} with $\Loss_0(w)=\Loss_0(0)+\ip{g,w}$ and $s(w)=2/\eta+\ip{c,w}$, show that $(\norm c_2x_t,\ip{c,w_t})$ follows \eqref{eq:eos:cubicmap} with $\alpha=-\ip{g,c}$, and that the component of $w_t$ orthogonal to $c$ moves by $-\eta$ times that of $g$. Deduce that in the continuous limit the central flow \eqref{eq:eos:central} gives its cycle averages exactly.\label{ex:eos:reduction}
+
+\item \consolidation (Two consecutive iterates.) In the cubic model, show that $\Loss(\frac12(x_t+x_{t+1}),y_t)=\frac18\eta^2y_t^2x_t^2(2/\eta+y_t)-\alpha y_t$. In the continuous limit, show that over a cycle the loss of the iterates exceeds that of these averages by $2\alpha/\eta+O(1)$ on average.\label{ex:eos:average}
+
+\item \variation (Higher-order terms.) Add $\frac1{24}\kappa x^4$ to the cubic model. (a) Show that $x_{t+1}=-(1+\eta y_t)x_t-\frac16\eta\kappa x_t^3$, with the same $y$-update, and derive the limit $dA/d\tau=2y+\frac13\kappa e^A$, $dy/d\tau=\alpha-\frac12e^A$. (b) Show that its fixed point $(\log2\alpha,-\kappa\alpha/3)$ is stable for $\kappa<0$ and unstable for $\kappa>0$, a focus when $\kappa^2<18/\alpha$, and that $d\cH/d\tau=\frac13\kappa e^A(\frac12e^A-\alpha)$ averages to a negative number over a cycle of the unperturbed flow when $\kappa<0$ (use $\langle e^A\rangle=2\alpha$ and Jensen's inequality). (c) Combine with the area law to predict stability of the period-two orbit of the map for $\kappa<-3\eta$; check numerically with $\eta=0.01$, $\alpha=1$, $\kappa\in\{-0.02,-0.04\}$. (d) For a one-dimensional loss with $\Loss''=2/\eta$ at a minimum, show that two steps of gradient descent give $x\mapsto x-2(k_2^2+k_3)x^3+O(x^4)$ with $k_2=-\frac12\eta\Loss'''$ and $k_3=-\frac16\eta\Loss''''$, so the period-two orbit born at the threshold is stable when $3\Loss'''^2-\Loss''\Loss''''>0$.\label{ex:eos:quartic}
+
+\item \variation (Momentum does not change the energy.) Run the heavy ball on the cubic model with $2/\eta$ replaced by $(2+2\beta)/\eta$. Show that $\frac1T\sum_{t<T}x_t^2=2\alpha-2\bigl((y_T-y_0)-\beta(y_{T-1}-y_{-1})\bigr)/(\eta T)$, so that $\langle x^2\rangle=2\alpha$ along every orbit on which $y$ stays bounded, and derive the same for moving-average momentum. What does change with momentum?\label{ex:eos:momentum}
+
+\item \variation (Two directions at the edge.) Let $\Loss=\ip{g,w}+\frac12s_1(w)x_1^2+\frac12s_2(w)x_2^2$ with $s_j(w)=2/\eta+\ip{c_j,w}$, so that $y_j=\ip{c_j,w}$ and $\alpha_j=-\ip{g,c_j}$. (a) Show that $y_{j,t+1}=y_{j,t}+\eta(\alpha_j-\frac12\sum_kG_{jk}x_{k,t}^2)$ with $G_{jk}=\ip{c_j,c_k}$, and that if both oscillations and $y$ stay bounded, then $G\langle x^2\rangle=2\alpha$. (b) For unit vectors with $\ip{c_1,c_2}=0.8$ and $\alpha=(1,0.5)$, $G^{-1}2\alpha=(10/3,-5/3)$. With $\eta=0.002$, starting below the edge with small oscillations, show numerically that the second oscillation dies out while the first stays at the edge with $\langle x_1^2\rangle\approx2$, and that with $\alpha=(1,0.9)$ both persist, with averages near $G^{-1}2\alpha=(1.56,0.56)$.\label{ex:eos:two}
+
+\item \simulation (The area law.) Reproduce the right panel of \cref{fig:eos:cubic}, computing the area $\eosArea$ of the level curve through each iterate by quadrature. Then start at $\cH_0=10$ with $\eta=0.01$ and $\alpha=1$, observe that $x$ underflows to zero after about $4\cdot10^4$ steps, repeat in the variables of \eqref{eq:eos:Amap}, which cannot underflow, and describe the cycles.\label{ex:eos:area}
+
+\item \simulation (Adam on a parabola.) Reproduce \cref{ex:eos:parabola}. (a) Measure the rate at which $\log S_P$ grows before the threshold and compare with \cref{prop:eos:speed}, including the bias correction. (b) Repeat with $\beta_2=0.99$ and with $\beta_1=0.95$, whose threshold is $78$. (c) Explain why the average lies below the threshold, by comparing the growth rate of the oscillation when $\eta S_P$ is a few percent above $(2+2\beta_1)/(1-\beta_1)$ with its decay rate when $\eta S_P$ is $20\%$ below.\label{ex:eos:adam1d}
+
+\item \simulation (Momentum in the network.) In the setting of \cref{fig:eos:network}, run Adam with $\eta=0.01$ and $\beta_1\in\{0.8,0.95\}$, and gradient descent with the moving-average momentum of \cref{prop:eos:thresholds}(iii) at $\beta=0.5$ and $\eta=1$. Check that the preconditioned sharpness settles near $18/\eta$ and somewhat below $78/\eta$, and the sharpness of the momentum run at $6$. Then take $\beta=0.9$ and $\eta=4.5$, whose threshold $38/\eta\approx8.4$ is three times the initial sharpness $2.7$, and observe divergence within twenty steps. Which hypothesis of \cref{prop:eos:thresholds} fails in the first steps? (\Cref{ch:warmup} takes up the question.)\label{ex:eos:network}
+
+\item \research\hard (Is the edge damped?) For a network at the edge of stability, estimate the third and fourth derivatives of the loss along the top eigenvector by finite differences of Hessian--vector products, compute the damping of \cref{ex:eos:quartic}(d), and compare it with the discretization's anti-damping $2\alpha\eta$, with $\alpha$ estimated from the sharpening rate before the edge. Does the sign of the total predict whether the oscillation settles onto a period-two orbit? As far as we know this is open. \hint{what enters is the coefficient of $x^2$ in the curvature along the oscillation.}\label{ex:eos:drift}
+
+\item \research (Sharpening as an output.) Find a model in which the rate $\alpha$ is derived from the data and the architecture and the long phase at the edge, with a decreasing loss, can be proved. \Textcite{AgarwalaPedregosaPennington2023} derive progressive sharpening in second-order regression models; a model that solves both is open.\label{ex:eos:sharpening}
+\end{exercises}
+
+\notesandrefs
+\Textcite{WuMaE2018} proposed that stability selects the minima that gradient descent can reach, \textcite{JastrzebskiEtAl2019,JastrzebskiEtAl2020} saw the early sharpness adapt to the step size and the batch size, and \textcite{LewkowyczEtAl2020} described the catapult, solved in volume 2 of this series. \Textcite{CohenEtAl2021} named progressive sharpening and the edge of stability and derived the momentum thresholds; \textcite{CohenEtAl2022} found the adaptive edge.
+
+\Textcite{DamianNichaniLee2023} derived the cubic model, identified self-stabilization, and proved the coupling of \cref{sec:eos:selfstab}; an earlier version appeared at a NeurIPS 2022 workshop. \Textcite{CohenEtAl2025} derived central flows for gradient descent and adaptive optimizers. \Cref{thm:eos:selfstab} is the continuous-limit analysis of the cubic model with the proofs written out; we know no reference for the identities of \cref{lem:eos:identities}, the monotone energy of \cref{prop:eos:drift}, or the area law \eqref{eq:eos:area}, which are elementary consequences of the model.
+
+\paragraph{Translating the literature.} \Textcite{DamianNichaniLee2023} write $x_t$, $y_t$ and $\alpha=-\ip{\nabla\Loss,\nabla S}$ as we do, and call the coefficient of the restoring force, built from $\norm{\nabla S}^2$, $\beta$; it corresponds to our $\gamma$, renamed because $\beta$ is the momentum in this book. Their constrained trajectory $\theta_t^\dagger$ is the discrete counterpart of the central flow. \Textcite{CohenEtAl2025} write $w$ for the parameters and count time in steps, so their flows carry a factor $\eta$ that our $\tau=\eta t$ absorbs; their $\sigma^2(t)$ is the cycle average of $x^2$. Volume 2 of this series writes the reduced dynamics as $dA/dt=2\eps A$, $d\eps/dt=\gamma-\nu A$ in steps; its $(A,\eps,\gamma,\nu)$ are our $(x^2,\eta y,\eta^2\alpha,\frac12\eta^2\gamma)$, so its $A$ is our $e^A$.
+
+\printchapterbib
+\end{refsection}

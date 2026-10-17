@@ -1,0 +1,449 @@
+% Chapter 9 of Optimizers in the Wild: warmup.
+
+\casechapter{Warmup}{Why the step size must start small}{Linear warmup}{ch:warmup}
+\begin{refsection}[chapters/09-warmup.bib]
+
+\begin{chaptersummary}
+Large training runs raise the learning rate from nearly zero to its peak over their first thousands of steps. The smallest idealization that makes this necessary bounds the curvature by an affine function of the loss gap, $S\le K_0+K_1(\Loss-\Loss^\star)$. Under the Polyak--Łojasiewicz inequality we prove that a warmup indexed by the loss reaches accuracy $\eps$ in $(K_0\log(\Delta_0/\eps)+K_1\Delta_0)/\mu$ steps while a constant step pays the initial curvature in every factor of $\eps$; we compute the warmup's profile exactly, and on a model that saturates both hypotheses it is optimal among stable schedules, while a stable linear ramp must be longer by a factor $u_0/(4e)$. We also prove that Adam's first step is a sign step, and derive that a warmup at the edge of stability drives the sharpness down along $2/\eta_t$, as a small network confirms. The curvature bound is not derived for networks, where it fails globally, and the theory misses the catapults through which shorter, unstable warmups succeed and often win.
+\end{chaptersummary}
+
+\section{In the wild: warming up the learning rate}\label{sec:warmup:wild}
+
+The learning rate of a modern training run is a curve, and the curve starts low. An early instance is in the paper that introduced residual networks: \textcite{HeEtAl2016} trained a network with $110$ layers on CIFAR-10 at the learning rate $0.01$ until the training error fell below $80\%$, about $400$ iterations, before switching to $0.1$, which they found slightly too large to start converging.\sidenote{Started at $0.1$, they add, the network began to converge after several epochs and reached a similar accuracy.} \Textcite{GoyalEtAl2017}, training a ResNet-50 on ImageNet with minibatches of $8192$ images, scaled the learning rate with the minibatch (\cref{ch:noise}) and reached it by a linear ramp over five epochs, because the scaling rule fails while the network changes rapidly. The original Transformer \parencite{VaswaniEtAl2017} raised its learning rate linearly for $4000$ steps and then decayed it as the inverse square root of the step; large language models inherited the ramp.\sidenote{In this chapter \emph{learning rate}, the word of the practice sections, and \emph{step size}, the word of the theory, mean the same thing.}
+
+\begin{practice}[GPT-3, \textcite{BrownEtAl2020}; LLaMA, \textcite{TouvronEtAl2023}; Adam's rule of thumb, \textcite{MaYarats2021}]
+Raise the learning rate from (nearly) zero to its peak, linearly over the first $375$ million tokens for GPT-3, and over the first $2000$ steps for LLaMA, whose paper does not give the shape; then decay it along a cosine to $10\%$ of the peak (\cref{ch:schedules}); both runs use Adam with $\beta_2=0.95$. For Adam a rule of thumb sets the length of a linear warmup to $2/(1-\beta_2)$ steps: $2000$ for $\beta_2=0.999$, $40$ for $\beta_2=0.95$. Otherwise the length is inherited or tuned by a sweep; we know of no derivation of these numbers.
+\end{practice}
+
+The observations fall into three groups.
+
+\begin{observation}[Warmup and layer normalization; \textcite{XiongEtAl2020}]\label[observation]{obs:warmup:postln}
+In the original Transformer, which normalizes after each residual addition (Post-LN), the gradients of the parameters near the output are large at initialization, so that a large initial learning rate makes training unstable, and warmup avoids this. With the normalization inside the residual branches (Pre-LN) the gradients are well behaved, and Pre-LN Transformers trained without warmup reach comparable results with less training time and less tuning.
+\end{observation}
+
+The gradient statement is a mean-field calculation at initialization; the rest is experimental.
+
+\begin{observation}[Warmup lowers the sharpness; \textcite{GilmerEtAl2022}, \textcite{KalraBarkeshli2024}]\label[observation]{obs:warmup:sharpness}
+Warmup lets early training avoid or leave regions of high curvature for flatter ones that tolerate larger learning rates, and stabilizes it as much as normalization layers do \parencite{GilmerEtAl2022}. When a network starts in a region sharper than the target learning rate tolerates, its sharpness falls during warmup and stays near $2/\eta_t$, and the main benefit of warmup is that larger target learning rates become trainable \parencite{KalraBarkeshli2024}.
+\end{observation}
+
+The \term{sharpness}\index{sharpness} $S(\theta)=\lmax(\nabla^2\Loss(\theta))$ is the top eigenvalue of the Hessian, and $2/\eta$ is the stability threshold of gradient descent on a quadratic (\cref{ch:eos}). In the small network of \cref{fig:warmup:mlp} the sharpness falls from $132$ to $20$ while the learning rate rises to $0.1$; without warmup the same learning rate diverges in six steps.
+
+\begin{observation}[Explanations specific to Adam]\label[observation]{obs:warmup:adam}
+\textcite{LiuEtAl2020RAdam} attributed Adam's need for warmup to the variance of its adaptive learning rate while the second-moment estimate has averaged few gradients, and proposed RAdam, which rectifies the step; \textcite{MaYarats2021} explained it instead by the size of Adam's early updates and found that an untuned linear warmup over $2/(1-\beta_2)$ steps works as well. \textcite{KossonMessmerJaggi2024} attributed the need in GPT training to large early angular updates of the weights and reduced it by controlling them; \textcite{KalraBarkeshli2024} initialized Adam's second moment with the first squared gradient (GI-Adam), with benefits similar to those of warmup.
+\end{observation}
+
+The groups are not rival theories: a transformer trained with Adam has all three mechanisms. What is robust is that some warmup prevents early divergence at the learning rates that practice wants; what is folklore is the length. In \cref{obs:warmup:sharpness} the curvature falls because the schedule rises; the idealization of this chapter starts from a curvature that falls because the loss does, and asks: why must the step size start small, and how should it grow?
+
+\section{The idealization: curvature bounded by the loss}\label{sec:warmup:ideal}
+
+Gradient descent on a function whose curvature is at most $L$ everywhere decreases the loss at every step if $\eta<2/L$ (\cref{lem:toolkit:descent}). A network has no useful global $L$ (\cref{fig:warmup:mlp}). The idealization replaces the global bound by one that improves as the loss falls.
+
+\begin{assumption}[Loss-dependent curvature]\label[assumption]{ass:warmup:curvature}
+The loss $\Loss\colon\R^d\to\R$ is twice continuously differentiable and bounded below, with $\Loss^\star=\inf\Loss$ and gap $\Delta(\theta)=\Loss(\theta)-\Loss^\star$. For the initial point $\theta_0$ let $\Theta_0=\{\theta\colon\Loss(\theta)\le\Loss(\theta_0)\}$. There are constants $K_0,K_1\ge0$ such that
+\begin{equation}\label{eq:warmup:curvature}
+  S(\theta)\le K_0+K_1\Delta(\theta)\qquad\text{for every }\theta\in\Theta_0 .
+\end{equation}
+\end{assumption}
+
+The \term{loss-dependent curvature}\index{loss-dependent curvature} condition allows the curvature $K_0$ at the bottom and the excess $K_1\Delta$ at a gap $\Delta$, and bounds the Hessian from above only. \Textcite{AlimisisIslamovLucchi2026} state it with $\norm{\nabla^2\Loss}_{\op}$ in place of $S$, which implies \eqref{eq:warmup:curvature}, and \textcite{RiabininEtAl2026} state it in a general norm with an extra term $K_\rho\Delta^\rho$ (\cref{rem:warmup:normalized}).\sidenote{Its relative for the gradient, $\norm{\nabla^2\Loss}\le L_0+L_1\norm{\nabla\Loss}$, is the $(L_0,L_1)$-smoothness of \textcite{ZhangHeSraJadbabaie2020} and \cref{ch:spikes}. \Textcite{AlimisisIslamovLucchi2026} prefer the loss: their condition is closed under finite sums and affine maps, and a bound in the gradient norm can shrink the step early in training, when warmup should raise it.} A quadratic satisfies it with $K_1=0$, and the function
+\begin{equation}\label{eq:warmup:cosh}
+  \Loss_{\mathrm c}(z)=\frac{K_0}{K_1}\Bigl(\cosh\bigl(\sqrt{K_1}\,z\bigr)-1\Bigr),\qquad z\in\R,
+\end{equation}
+with equality, $\Loss_{\mathrm c}''=K_0+K_1\Loss_{\mathrm c}$: its curvature grows as fast as its loss allows ($2\cosh z-2$ is the case $K_0=2$, $K_1=1$). The second hypothesis says that the gradient is large when the loss is.
+
+\begin{assumption}[Polyak--Łojasiewicz inequality]\label[assumption]{ass:warmup:pl}
+There is $\mu>0$ such that $\norm{\nabla\Loss(\theta)}_2^2\ge2\mu\Delta(\theta)$ for every $\theta\in\Theta_0$.
+\end{assumption}
+
+Under the \term{Polyak--Łojasiewicz inequality}\index{Polyak--Lojasiewicz inequality@Polyak--\L{}ojasiewicz inequality} every stationary point in $\Theta_0$ is a global minimizer, and a global curvature bound $L$ gives the rate $1-\mu/L$ (\cref{lem:toolkit:pl}).\sidenote{The inequality is due to Polyak and to Łojasiewicz, both in 1963; for its uses in machine learning see \textcite{KarimiNutiniSchmidt2016}.} Both hypotheses concern the loss: the first says how large a step the current loss allows, the second how much a step of that size achieves. The extremal member of the class has two kinds of coordinates.
+
+\begin{definition}[The warmup model]\label[definition]{def:warmup:model}
+Fix $\mu>0$, $K_0\ge2\mu$ and $K_1>0$. The \term{warmup model}\index{warmup model} is the loss
+\[
+  \Loss(x,z)=q(x)+\tfrac12S(x)\norm{z}_2^2,\qquad q(x)=\tfrac\mu2\norm{x}_2^2,\qquad S(x)=K_0+K_1q(x),
+\]
+on $\theta=(x,z)\in\R^{d_x}\times\R^{d_z}$, trained by gradient descent from a point $(x_0,z_0)$ with $z_0$ small.
+\end{definition}
+
+The slow coordinate $x$ carries the loss, with curvature $\mu$; the stiff coordinate $z$ has the curvature $S(x)$ set by that loss. The model caricatures the start of training, where the loss is high because the network has not fitted the data, and the stiffest curvature is high for the same reason.
+
+\begin{proposition}[The warmup model saturates both hypotheses]\label[proposition]{prop:warmup:model}
+In the warmup model $\Loss^\star=0$, and the following hold.
+\begin{enumerate}
+\item \Cref{ass:warmup:curvature,ass:warmup:pl} hold on all of $\R^{d_x+d_z}$ with the constants $K_0$, $K_1$ and $\mu$, and even $\norm{\nabla^2\Loss(\theta)}_{\op}\le K_0+K_1\Delta(\theta)$.
+\item On the subspace $\{z=0\}$ both hold with equality: $S=K_0+K_1\Delta$ and $\norm{\nabla\Loss}_2^2=2\mu\Delta$.
+\item Gradient descent with steps $\eta_t$ satisfies
+\begin{equation}\label{eq:warmup:modelmap}
+  x_{t+1}=\Bigl(1-\eta_t\mu\bigl(1+\tfrac12K_1\norm{z_t}_2^2\bigr)\Bigr)x_t,\qquad z_{t+1}=\bigl(1-\eta_tS(x_t)\bigr)z_t .
+\end{equation}
+So $\{z=0\}$ is invariant, on it $\Delta_{t+1}=(1-\mu\eta_t)^2\Delta_t$, and a perturbation of the stiff coordinate is amplified at step $t$ exactly when $\eta_tS(x_t)>2$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to compute the gradient and the Hessian and to bound the Hessian on the one plane where its blocks interact. Write $\varepsilon=\frac12K_1\norm{z}_2^2$. Then $\nabla_x\Loss=\mu(1+\varepsilon)x$, $\nabla_z\Loss=S(x)z$, $\Loss=q(1+\varepsilon)+\frac12K_0\norm{z}_2^2$ and $K_0+K_1\Loss=S(1+\varepsilon)$, which gives (iii); at $z=0$ the Hessian is block diagonal with blocks $\mu I$ and $S(x)I$, and $S(x)\ge K_0\ge\mu$, which gives (ii).
+
+For (i), the Hessian has the diagonal blocks $\mu(1+\varepsilon)I$ and $SI$ and the off-diagonal block $K_1\mu\,xz^\top$. On vectors orthogonal to $x$ in the first block or to $z$ in the second it acts as $\mu(1+\varepsilon)$ or $S$, both in $[0,S(1+\varepsilon)]$. If $x,z\ne0$, it remains to bound the $2\times2$ matrix $A$ that it induces on the span of $(x/\norm{x}_2,0)$ and $(0,z/\norm{z}_2)$, with diagonal entries $\mu(1+\varepsilon)$ and $S$ and off-diagonal entry $b=K_1\mu\norm{x}_2\norm{z}_2$, so that $b^2=4\mu K_1q\varepsilon$. The matrix $S(1+\varepsilon)I-A$ has the nonnegative diagonal entries $(S-\mu)(1+\varepsilon)$ and $S\varepsilon$ and determinant at least $\varepsilon\bigl((S-\mu)S-4\mu K_1q\bigr)$, and the bracket is nonnegative: $K_0\ge2\mu$ gives $S-\mu\ge K_0/2+K_1q$, and the inequality of arithmetic and geometric means gives $(K_0/2+K_1q)(K_0+K_1q)\ge2\sqrt2\,K_0K_1q\ge4\mu K_1q$. Hence $\lmax(A)\le S(1+\varepsilon)=K_0+K_1\Loss$. Also $\lmin(A)\ge-b$, and $b=2\sqrt{K_1q\cdot\mu\varepsilon}\le K_1q+\mu\varepsilon\le S(1+\varepsilon)$. Finally, since $S^2\ge K_0^2\ge\mu K_0$,
+\[
+  \norm{\nabla\Loss}_2^2=2\mu q(1+\varepsilon)^2+S^2\norm{z}_2^2\ge2\mu q(1+\varepsilon)+\mu K_0\norm{z}_2^2=2\mu\Loss .\qedhere
+\]
+\end{proof}
+
+On the line $z=0$ the model has the most curvature and the least gradient that the hypotheses allow; gradient descent there is a scalar recursion while the stiff coordinate stays quiet, and its instability is the only way a step can fail. The hypothesis $K_0\ge2\mu$ is a convenience (Exercise~\ref{ex:warmup:threshold}).
+
+\paragraph{What was thrown away.} Gradient noise and the minibatch scaling rule, whose early failure motivated the warmup of \textcite{GoyalEtAl2017}; the response of the sharpness to the step size (\cref{ch:eos}); the geometry of networks, where both hypotheses can hold only near the trajectory (\cref{rem:warmup:symmetry}); and every optimizer but gradient descent, until \cref{sec:warmup:more}. What remains is the mechanism that the hypothesis isolates: the curvature at the start exceeds what the target step tolerates, and it falls as training proceeds. If warmup were not needed here, it would not be needed for this reason in a network.
+
+\paragraph{What one had to notice.} The safe step is a property of the current point, and it can be indexed by the loss, which, unlike the gradient norm, does not increase along safe steps; so a step safe now is safe later, a bound in terms of the loss becomes a bound in terms of time, and an increasing schedule falls out.
+
+\begin{dictionary}
+the gap $\Delta_t$ & the training loss minus its floor, which is unknown in practice\\
+$S\le K_0+K_1\Delta$ & the sharpness falls as the loss falls early in training (measured, not derived)\\
+$K_0$, and the final step $1/K_0$ & the curvature late in training, which limits the peak learning rate\\
+the excess $u_0=K_1\Delta_0/K_0$ & how much sharper the initialization is than the trained network\\
+$\mu$, and $\kappa=K_0/\mu$ & the slowest direction of descent, and a condition number\\
+slow coordinate $x$, stiff coordinate $z$ & the bulk of the parameters, and the top eigenvector of the Hessian\\
+$\eta_tS_t>2$ & the edge of stability (\cref{ch:eos}): a catapult or a divergence
+\end{dictionary}
+
+\section{The theory: a safe step that grows as the loss falls}\label{sec:warmup:theory}
+
+The classical descent lemma integrates a curvature bound along the segment of a step. Under \cref{ass:warmup:curvature} the bound is available only where the loss is below its starting value, and the segment is not known in advance to stay there; a continuity argument closes the gap.
+
+\begin{lemma}[A local descent lemma]\label[lemma]{lem:warmup:descent}
+Let $\Loss$ be twice continuously differentiable, let $\theta,u\in\R^d$ satisfy $\ip{\nabla\Loss(\theta),u}<0$, and let $M>0$ be such that $u^\top\nabla^2\Loss(\theta+su)\,u\le M$ for every $s\ge0$ with $\Loss(\theta+su)\le\Loss(\theta)$. Then for every $s\in\bigl[0,2\abs{\ip{\nabla\Loss(\theta),u}}/M\bigr]$ the segment from $\theta$ to $\theta+su$ lies in $\{\Loss\le\Loss(\theta)\}$, and
+\[
+  \Loss(\theta+su)\le\Loss(\theta)+s\ip{\nabla\Loss(\theta),u}+\tfrac12Ms^2 .
+\]
+\end{lemma}
+
+\begin{proof}
+Let $\varphi(r)=\Loss(\theta+ru)$, $\gamma=-\varphi'(0)>0$ and $\bar s=2\gamma/M$, and fix $s\in(0,\bar s]$; the case $s=0$ is trivial. The plan is to show that $\varphi$ cannot climb back to $\varphi(0)$ before $s$. The set $A$ of $r\in[0,s]$ with $\varphi\le\varphi(0)$ on $[0,r]$ contains $0$, is an interval, and is closed by continuity, so $A=[0,r^*]$. On $A$ the hypothesis gives $\varphi''\le M$, and Taylor's formula with integral remainder gives, for $r\in A$,
+\begin{equation}\label{eq:warmup:taylor}
+  \varphi(r)\le\varphi(0)-\gamma r+\tfrac12Mr^2=\varphi(0)-\gamma r\bigl(1-r/\bar s\bigr).
+\end{equation}
+Suppose that $r^*<s$. If $r^*=0$, then $\varphi'(0)<0$ gives $\varphi<\varphi(0)$ on some interval $(0,\delta)$; if $r^*>0$, then $r^*<\bar s$ and \eqref{eq:warmup:taylor} give $\varphi(r^*)<\varphi(0)$, and by continuity $\varphi<\varphi(0)$ on some $[r^*,r^*+\delta)$. Either way $A$ extends beyond $r^*$, which is absurd. So $r^*=s$, and \eqref{eq:warmup:taylor} at $r=s$ is the claim.
+\end{proof}
+
+For gradient descent at $\theta\in\Theta_0$ with gap $\Delta$ and gradient $g\ne0$, take $u=-g$: points of the ray with $\Loss\le\Loss(\theta)$ have gap at most $\Delta$, so \cref{ass:warmup:curvature} gives $M=(K_0+K_1\Delta)\norm{g}_2^2$, and for $0\le\eta\le2/(K_0+K_1\Delta)$
+\begin{equation}\label{eq:warmup:gd}
+  \Loss(\theta-\eta g)\le\Loss(\theta)-\eta\Bigl(1-\frac{\eta(K_0+K_1\Delta)}2\Bigr)\norm{g}_2^2,
+\end{equation}
+which is at most $\Loss(\theta)-\frac\eta2\norm{g}_2^2$ if $\eta\le1/(K_0+K_1\Delta)$. This \term{local descent lemma}\index{local descent lemma} replaces the global constant by the curvature that the current loss allows. Since the step does not increase the loss, the step certified at the next point is at least as large: the lemma already contains a warmup.
+
+\begin{theorem}[Warmup under loss-dependent curvature]\label{thm:warmup:schedule}
+Let \cref{ass:warmup:curvature,ass:warmup:pl} hold with $K_0>0$, let $\Delta_0=\Delta(\theta_0)>0$, and define $r(D)=\mu D/(K_0+K_1D)$ and the scalar sequence $D_0=\Delta_0$, $D_{t+1}=D_t-r(D_t)$. Then $\mu\le K_0$, and the gaps $\Delta_t=\Delta(\theta_t)$ of gradient descent satisfy the following.
+\begin{enumerate}
+\item \emph{Loss-indexed warmup.} With $\eta_t=1/(K_0+K_1\Delta_t)$, $\Delta_{t+1}\le\Delta_t-r(\Delta_t)$ for every $t$.
+\item \emph{Scheduled warmup.} With $\eta_t=1/(K_0+K_1D_t)$, $\Delta_t\le D_t$ for every $t$. This schedule is nondecreasing, from $1/(K_0+K_1\Delta_0)$ to the limit $1/K_0$.
+\item In both cases, for every $t\ge0$,
+\begin{equation}\label{eq:warmup:time}
+  K_0\log\frac{\Delta_0}{\Delta_t}+K_1(\Delta_0-\Delta_t)\ge\mu t,
+\end{equation}
+so that $\Delta_T\le\eps$ for every $\eps\in(0,\Delta_0]$ and every $T\ge\bigl(K_0\log(\Delta_0/\eps)+K_1(\Delta_0-\eps)\bigr)/\mu$.
+\item \emph{Constant step.} With $\eta_t=\eta\le1/(K_0+K_1\Delta_0)$, $\Delta_t\le(1-\mu\eta)^t\Delta_0$; at the largest such $\eta$ this guarantees $\Delta_T\le\eps$ for $T\ge(K_0+K_1\Delta_0)\log(\Delta_0/\eps)/\mu$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to apply \eqref{eq:warmup:gd} at every step, after checking that the step is admissible there, and to turn the one-step decrease into \eqref{eq:warmup:time} by comparison with an integral. A point with $\Delta_t=0$ is a global minimizer, from which gradient descent does not move; at a point of $\Theta_0$ with $\Delta_t>0$ the gradient is nonzero by \cref{ass:warmup:pl}. We set $\log(\Delta_0/0)=+\infty$.
+
+\emph{Part (i).} If $\theta_t\in\Theta_0$ and $\Delta_t>0$, the step $1/(K_0+K_1\Delta_t)$ is admissible in \eqref{eq:warmup:gd}, and with \cref{ass:warmup:pl}
+\[
+  \Delta_{t+1}\le\Delta_t-\frac{\norm{\nabla\Loss(\theta_t)}_2^2}{2(K_0+K_1\Delta_t)}\le\Delta_t-\frac{\mu\Delta_t}{K_0+K_1\Delta_t}=\Delta_t-r(\Delta_t);
+\]
+in particular $\theta_{t+1}\in\Theta_0$, and (i) follows by induction.
+
+\emph{The inequality $\mu\le K_0$.} The same computation at a point of $\Theta_0$ with gap $\Delta>0$, with $\Loss^\star\le\Loss(\theta-\eta g)$, gives $\mu\le K_0+K_1\Delta$. And $\Theta_0$ contains points of arbitrarily small positive gap: the gaps of (i) satisfy $\Delta_{t+1}\le(1-\mu/(K_0+K_1\Delta_0))\Delta_t$, and if one vanishes, at a first step $T$, then $\Loss$ takes every value in $[\Loss^\star,\Loss(\theta_{T-1})]$ on the segment from $\theta_{T-1}$ to $\theta_T$, which lies in $\Theta_0$ by \cref{lem:warmup:descent}.
+
+\emph{Part (ii).} Since $\mu\le K_0$, the map $D\mapsto D\bigl(1-\mu/(K_0+K_1D)\bigr)$ sends $[0,\infty)$ into itself, so the $D_t$ are nonnegative and nonincreasing, and they tend to $0$ because $D_{t+1}\le(1-\mu/(K_0+K_1\Delta_0))D_t$; hence $\eta_t$ rises to $1/K_0$. Suppose that $\Delta_t\le D_t$, as at $t=0$, and $\Delta_t>0$. Then $\theta_t\in\Theta_0$, since $D_t\le\Delta_0$, and $\eta_t\le1/(K_0+K_1\Delta_t)$ is admissible in \eqref{eq:warmup:gd}, and since $1-\mu\eta_t\ge1-\mu/K_0\ge0$,
+\[
+  \Delta_{t+1}\le\Delta_t-\frac{\eta_t}2\norm{\nabla\Loss(\theta_t)}_2^2\le(1-\mu\eta_t)\Delta_t\le(1-\mu\eta_t)D_t=D_{t+1}.
+\]
+
+\emph{Part (iii).} Let $\Phi(D)=K_0\log D+K_1D$ for $D>0$ and $\Phi(0)=-\infty$; it is increasing, and $\Phi'(D)=(K_0+K_1D)/D$ is decreasing. Let $(E_t)$ be nonnegative with $E_0=\Delta_0$ and $E_{t+1}\le E_t-r(E_t)$, such as the gaps of (i) or the $D_t$ of (ii). If $E_{t+1}>0$, then, since $\Phi'$ is smallest at the right end of $[E_{t+1},E_t]$,
+\[
+  \Phi(E_t)-\Phi(E_{t+1})=\int_{E_{t+1}}^{E_t}\Phi'(s)\,\dd s\ge(E_t-E_{t+1})\,\Phi'(E_t)\ge r(E_t)\,\frac{K_0+K_1E_t}{E_t}=\mu .
+\]
+Summing, $\Phi(E_t)\le\Phi(\Delta_0)-\mu t$, also when some $E_s$ vanishes. In case (ii), $\Phi(\Delta_t)\le\Phi(D_t)$ because $\Phi$ is increasing. So $\Phi(\Delta_t)\le\Phi(\Delta_0)-\mu t$ in both cases, which is \eqref{eq:warmup:time}, and if $T\ge(\Phi(\Delta_0)-\Phi(\eps))/\mu$, then $\Phi(\Delta_T)\le\Phi(\eps)$ and $\Delta_T\le\eps$.
+
+\emph{Part (iv).} If $\Delta_t\le\Delta_0$, then $\eta$ is admissible in \eqref{eq:warmup:gd}, and $\Delta_{t+1}\le(1-\mu\eta)\Delta_t$; induct, and use $(1-\mu\eta)^t\le e^{-\mu\eta t}$.
+\end{proof}
+
+The schedule of (ii) is computed in advance from four numbers; the rule of (i) needs the gap, which in practice is unknown, because $\Loss^\star$ is. The bound \eqref{eq:warmup:time} is additive: the initial excess curvature costs $K_1\Delta_0/\mu$ steps once and the final curvature $K_0/\mu$ steps per factor $e$ of accuracy, whereas the constant step of (iv) pays $(K_0+K_1\Delta_0)/\mu$ per factor $e$.
+
+\begin{corollary}[The warmup profile]\label[corollary]{cor:warmup:profile}
+In the setting of \cref{thm:warmup:schedule} let $K_1>0$ and $u_0=K_1\Delta_0/K_0$, and for real $s$ let $\omega(s)$ be the positive solution $w$ of $w+\log w=s$. The function
+\[
+  D(t)=\frac{K_0}{K_1}\,\omega\Bigl(u_0+\log u_0-\frac{\mu t}{K_0}\Bigr),\qquad t\ge0,
+\]
+solves $\dot D=-r(D)$ with $D(0)=\Delta_0$, and $D_t\le D(t)$ for every $t$. So the scheduled step $1/(K_0+K_1D_t)$ is at least the \term{warmup profile}
+\[
+  \eta(t)=\frac{1}{K_0\bigl(1+\omega(u_0+\log u_0-\mu t/K_0)\bigr)},
+\]
+which reaches $1/(2K_0)$, if $u_0\ge1$, at the time $T_{1/2}=(K_0/\mu)(u_0-1+\log u_0)$.
+\end{corollary}
+
+\begin{proof}
+With $u=K_1D/K_0$, $\Phi(D)=K_0(u+\log u)+K_0\log(K_0/K_1)$, so $D(t)$ is the solution of $\Phi(D(t))=\Phi(\Delta_0)-\mu t$, and differentiating gives $\dot D=-\mu/\Phi'(D)=-r(D)$. The bound $D_t\le D(t)$ is $\Phi(D_t)\le\Phi(\Delta_0)-\mu t$, proved in part (iii) of the theorem. Finally, $\eta(t)=1/(2K_0)$ means $u_0+\log u_0-\mu t/K_0=1$.
+\end{proof}
+
+The function $\omega$ is the \term{Wright omega function}\index{Wright omega function}, $\omega(s)=W(e^s)$ with $W$ the principal branch of the Lambert function.\sidenote{The Lambert function inverts $w\mapsto we^w$, so $w+\log w=s$ means $we^w=e^s$. Both are in SciPy, as \texttt{lambertw} and \texttt{wrightomega}.} While $u=K_1D/K_0$ is large, $u\approx u_0-\mu t/K_0$: the gap falls by about $\mu/K_1$ per step, and the step rises along the hyperbola $\eta(t)\approx1/(K_0+K_1\Delta_0-\mu t)$; once $u$ is small, the gap decays at the rate $\mu/K_0$ and the step approaches $1/K_0$ exponentially. The profile is convex until $\eta=2/(3K_0)$ and concave afterwards, and the discrete schedule follows it up to a relative error $\mu/K_0$ in time (Exercise~\ref{ex:warmup:profile}). The \term{warmup}\index{warmup!length} is the first phase; its length $T_{1/2}$ is the initial excess curvature divided by $\mu$, up to a logarithm.
+
+How much does the warmup buy? A constant step large enough for the late phase overshoots the cosh function at the start, and a quadratic punishes every smaller step.
+
+\begin{proposition}[A constant step pays the initial curvature at every scale]\label[proposition]{prop:warmup:constant}
+Let $0<\mu\le K_0$, $K_1>0$, $\Delta_0>0$ and $0<\eps<\Delta_0/2$, and let $\Loss(x,z)=\frac\mu2x^2+\Loss_{\mathrm c}(z)$ on $\R^2$, with $\Loss_{\mathrm c}$ from \eqref{eq:warmup:cosh}, started at $(x_0,z_0)$ with $\frac\mu2x_0^2=\Loss_{\mathrm c}(z_0)=\Delta_0/2$ and $z_0>0$. Then $\Loss^\star=0$, \cref{ass:warmup:curvature,ass:warmup:pl} hold on $\R^2$ with the constants $K_0$, $K_1$ and $\mu$, and with $a=\sqrt{K_1}z_0$ and $\eta^*=2a/(K_0\sinh a)$, gradient descent with a constant step $\eta>0$ (i) never reaches $\Delta_t\le\eps$ if $\eta\ge\eta^*$, and (ii) needs at least $(1-\eta\mu)\log(\Delta_0/(2\eps))/(2\eta\mu)$ steps to reach it if $\eta<\eta^*$. Hence every constant step needs at least
+\begin{equation}\label{eq:warmup:lowerconst}
+  T\ge\Bigl(\frac{(K_0+K_1\Delta_0/2)\tanh a}{4\mu a}-\frac12\Bigr)\log\frac{\Delta_0}{2\eps}
+\end{equation}
+steps, where $a=\operatorname{arccosh}(1+K_1\Delta_0/(2K_0))\approx\log(2+K_1\Delta_0/K_0)$.
+\end{proposition}
+
+\begin{proof}
+The plan is to show that steps above $\eta^*$ make the stiff coordinate grow forever and that steps below it are slow on the quadratic. The Hessian is diagonal with entries $\mu\le K_0$ and $K_0\cosh(\sqrt{K_1}z)=K_0+K_1\Loss_{\mathrm c}(z)$, both at most $K_0+K_1\Loss$. Since $\sinh^2=(\cosh-1)(\cosh+1)\ge2(\cosh-1)$, $\Loss_{\mathrm c}'^2=(K_0^2/K_1)\sinh^2(\sqrt{K_1}z)\ge2K_0\Loss_{\mathrm c}\ge2\mu\Loss_{\mathrm c}$, and $(\mu x)^2=2\mu\cdot\frac\mu2x^2$, so $\norm{\nabla\Loss}_2^2\ge2\mu\Loss$.
+
+Gradient descent acts on the coordinates separately, $x_{t+1}=(1-\eta\mu)x_t$ and $z_{t+1}=\psi(z_t)$ with the odd map $\psi(z)=z-\eta(K_0/\sqrt{K_1})\sinh(\sqrt{K_1}z)$. Let $\eta^*(z)=2b/(K_0\sinh b)$ with $b=\sqrt{K_1}z$. For $z>0$, $\abs{\psi(z)}\ge z$ holds exactly when $\psi(z)\le-z$, that is, when $\eta\ge\eta^*(z)$, and $\eta^*(z)$ decreases in $z$ because $b/\sinh b$ decreases. For (i), if $\eta\ge\eta^*=\eta^*(z_0)$ and $\abs{z_t}\ge z_0$, then $\eta\ge\eta^*(\abs{z_t})$, so $\abs{z_{t+1}}=\abs{\psi(\abs{z_t})}\ge\abs{z_t}$; by induction $\Delta_t\ge\Loss_{\mathrm c}(z_0)=\Delta_0/2>\eps$ for every $t$. For (ii), $\Delta_t\ge\frac\mu2x_t^2=(1-\eta\mu)^{2t}\Delta_0/2$; if $\eta\mu\ge1$ the bound claimed is not positive, and otherwise $\Delta_T\le\eps$ forces $2T\log(1/(1-\eta\mu))\ge\log(\Delta_0/(2\eps))$, and $\log(1/(1-s))\le s/(1-s)$ gives the claim. Finally, $(1-\eta\mu)/(2\eta\mu)$ decreases in $\eta$, so for $\eta<\eta^*$ it exceeds $1/(2\eta^*\mu)-1/2$, and $K_0\sinh a=(K_0+K_1\Delta_0/2)\tanh a$ gives \eqref{eq:warmup:lowerconst}.
+\end{proof}
+
+For $K_1\Delta_0\gg K_0$ the bound \eqref{eq:warmup:lowerconst} is about $K_1\Delta_0\log(\Delta_0/(2\eps))/(8\mu a)$: up to the logarithm $a$ and constants, a constant step pays the initial excess curvature in every factor $e$ of accuracy, the warmup once. The logarithm is genuine: the cheapest diverging step exceeds the threshold $2/\Loss_{\mathrm c}''(z_0)$ of the initial curvature by the factor $a\coth a$, since the curvature of $\Loss_{\mathrm c}$ falls along a long step. \Textcite{AlimisisIslamovLucchi2026}, with $H_0,H_1$ for $K_0,K_1$, prove bounds of both kinds: for a warmup step under an aiming condition (a weakening of convexity), an upper bound whose $1/\eps$ term involves $H_0$ alone; and lower bounds for constant steps that combine, as ours do, a rapidly growing function, which forces the step to be small, with a slowly growing one, on which a small step is slow. Constants matter: for $K_0=K_1=1$, $\mu=0.02$, $\Delta_0=50$ and $\eps=10^{-6}$, the best constant step on the instance of \cref{prop:warmup:constant} needs $1396$ steps (the bound gives $1392$) and the loss-indexed warmup $1051$, while \cref{thm:warmup:schedule} guarantees only $3386$. The worst cases show the structure; the warmup model shows the size.
+
+\begin{proposition}[Warmup is optimal among stable schedules]\label[proposition]{prop:warmup:stable}
+Consider the warmup model on the line $z=0$, with $\Delta_0=q(x_0)>0$, $S_t=K_0+K_1\Delta_t$ and $\Phi(D)=K_0\log D+K_1D$, and let $0<\eps<\Delta_0$.
+\begin{enumerate}
+\item Every schedule with $0\le\eta_tS_t\le2$ for all $t$, so that no perturbation of the stiff coordinate is ever amplified, needs at least $(1-2\mu/K_0)^2\bigl(\Phi(\Delta_0)-\Phi(\eps)\bigr)/(4\mu)$ steps to reach $\Delta_T\le\eps$.
+\item The loss-indexed schedule $\eta_t=c/S_t$ with $0<c\le2$ reaches it within $\bigl(\Phi(\Delta_0)-\Phi(\eps)\bigr)/\bigl(c\mu(2-c\mu/K_0)\bigr)$ steps.
+\item Every constant step with $\eta S_0\le2$ needs at least $(1-2\mu/S_0)\,S_0\log(\Delta_0/\eps)/(4\mu)$ steps.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to bound the decrease of $\Phi$ per step, from above in (i) and from below in (ii), using $\Delta_{t+1}=(1-\mu\eta_t)^2\Delta_t$ from \cref{prop:warmup:model}(iii). For (i), $\mu\eta_t\le2\mu/S_t\le2\mu/K_0\le1$, strictly when $\Delta_t>0$, so the gaps stay positive and $\Delta_t-\Delta_{t+1}=\Delta_t\mu\eta_t(2-\mu\eta_t)\le4\mu\Delta_t/S_t$. Since $\Phi'(D)=(K_0+K_1D)/D$ is decreasing and $S_{t+1}\le S_t$,
+\[
+  \Phi(\Delta_t)-\Phi(\Delta_{t+1})\le(\Delta_t-\Delta_{t+1})\frac{S_{t+1}}{\Delta_{t+1}}\le\frac{4\mu\Delta_t}{\Delta_{t+1}}=\frac{4\mu}{(1-\mu\eta_t)^2}\le\frac{4\mu}{(1-2\mu/K_0)^2},
+\]
+and summing over $t<T$ with $\Phi(\Delta_T)\le\Phi(\eps)$ gives (i). For (ii), $c\mu/S_t\le1$ and $\Delta_t-\Delta_{t+1}=\Delta_t(c\mu/S_t)(2-c\mu/S_t)\ge c\mu(2-c\mu/K_0)\Delta_t/S_t$, so the integral comparison of part (iii) of \cref{thm:warmup:schedule} gives $\Phi(\Delta_t)\le\Phi(\Delta_0)-c\mu(2-c\mu/K_0)\,t$. For (iii), $\Delta_T=(1-\mu\eta)^{2T}\Delta_0\ge(1-2\mu/S_0)^{2T}\Delta_0$, and $\log(1/(1-s))\le s/(1-s)$ with $s=2\mu/S_0$ finishes as in \cref{prop:warmup:constant}.
+\end{proof}
+
+So on the warmup model the schedule of \cref{thm:warmup:schedule} ($c=1$) is within a factor $2+O(1/\kappa)$ of every stable schedule, riding the stability limit ($c=2$) is optimal among them up to $1+O(1/\kappa)$, and the best stable constant step is slower than the latter, up to the same factors, by between $\frac12$ and $1$ times $\min\{1+u_0,\log(\Delta_0/\eps)\}$ when $\eps\le\Delta_0/e$. Unstable schedules can do better (\cref{sec:warmup:reading}).
+
+\section{The theory: cross-entropy, normalized steps, Adam and the edge}\label{sec:warmup:more}
+
+\subsection{Where loss-dependent curvature comes from}\label{sec:warmup:ce}
+
+The exponential $e^{-\theta}$ has curvature equal to its value ($K_0=0$, $K_1=1$) and violates \cref{ass:warmup:pl}; still, the loss-indexed step $1/\Delta_t=e^{\theta_t}$ gives $\theta_{t+1}=\theta_t+1$, a loss that falls by $e$ per step under a step that grows without bound (Exercise~\ref{ex:warmup:exponential}). For cross-entropy the constant is $2$.
+
+\begin{proposition}[Softmax regression]\label[proposition]{prop:warmup:softmax}
+For an input $a\in\R^{d_{\mathrm{in}}}$, a class $c\in\{1,\dots,K\}$ and weights $W\in\R^{K\times d_{\mathrm{in}}}$, let $p=\softmax(Wa)$ and $\ell(W)=-\log p_c$. Then
+\[
+  \lmax\bigl(\nabla^2_W\ell\bigr)=\norm{a}_2^2\,\lmax\bigl(\diag(p)-pp^\top\bigr)\le2\norm{a}_2^2\,(1-p_c)\le2\norm{a}_2^2\,\ell(W),
+\]
+and the constant $2$ cannot be lowered. So the average $\Loss$ of $\ell$ over data with $\norm{a_i}_2\le R$ satisfies \cref{ass:warmup:curvature} with $K_0=2R^2\Loss^\star$ and $K_1=2R^2$, where $\Loss^\star=0$ for separable data.
+\end{proposition}
+
+\begin{proof}
+The plan is to reduce the Hessian to that of the logits and to apply Gershgorin's theorem. With $s=Wa$, $\ell=-s_c+\log\sum_ke^{s_k}$ has Hessian $M=\diag(p)-pp^\top$ in $s$. Since $s$ is linear in $W$, the second derivative of $\ell$ in a direction $V$ is $(Va)^\top M(Va)$, and as $V$ ranges over the unit ball of the Frobenius norm, $Va$ ranges over the ball of radius $\norm{a}_2$ (take $V=va^\top/\norm{a}_2$); since $M\succeq0$, the largest eigenvalue is $\norm{a}_2^2\lmax(M)$. By Gershgorin's theorem every eigenvalue of $M$ is at most $\max_i\bigl(M_{ii}+\sum_{j\ne i}\abs{M_{ij}}\bigr)=\max_i2p_i(1-p_i)$, which is at most $2(1-p_c)$ for $i=c$ and at most $2p_i\le2(1-p_c)$ for $i\ne c$; and $1-p_c\le-\log p_c$. For $K=2$ the eigenvalue $2p_c(1-p_c)$ of $M$ has ratio to $\ell$ tending to $2$ as $p_c\to1$. Averaging over the data gives $\lmax(\nabla^2\Loss)\le2R^2\Loss=2R^2\Loss^\star+2R^2\Delta$.
+\end{proof}
+
+A bound with $1-p_c$ in place of $2(1-p_c)$ fails for two classes as soon as $p_c>\frac12$; for binary logistic regression with one weight vector the constant is $1$ (Exercise~\ref{ex:warmup:softmax}), the factor $2$ coming from the two rows of $W$ moving in opposite directions. So cross-entropy on a linear model, or on the last layer of a network with frozen features, has curvature bounded by the loss. The rest of a network is another matter.
+
+\begin{remark}[Rescaling symmetries break the global inequality]\label[remark]{rem:warmup:symmetry}
+For the product model $\Loss(u,v)=\frac12(uv-y_\star)^2$ with $y_\star>0$, every point of the hyperbola $uv=y_\star$ is a global minimizer, with sharpness $u^2+v^2$, unbounded on it. Every sublevel set with positive gap contains the hyperbola, so no constants satisfy \cref{ass:warmup:curvature}. The same holds, for the square loss, in every network whose loss is invariant under multiplying one layer by $\alpha$ and the next by $1/\alpha$, as linear and ReLU networks are. There the assumption can hold only on a bounded region, with constants that depend on it, or along a trajectory.
+\end{remark}
+
+The product model is solved in volume 2 of this series, \emph{The Hydrogen Atoms of Deep Learning}, Chapter 15, where a large step leaves a sharp minimizer through a catapult: the dynamics selects the curvature, which no inequality between curvature and loss expresses. \Textcite{AlimisisIslamovLucchi2026} report that the condition holds for common architectures, and \textcite{RiabininEtAl2026} check it along trajectories; both statements concern the region that training visits.
+
+\subsection{Normalized steps}\label{sec:warmup:normalized}
+
+For an optimizer whose update has a fixed length in some norm, such as sign descent or Muon (\cref{ch:sign,ch:spectral}), the learning rate is a length, and the question changes.
+
+\begin{remark}[When normalized steps need warmup]\label[remark]{rem:warmup:normalized}
+Let normalized steepest descent take steps $\eta_t\lmo(\nabla\Loss(\theta_t))$ of length $\eta_t$ in a norm $\norm{\cdot}$ (\cref{ch:steepest}), and suppose that on $\Theta_0$, $u^\top\nabla^2\Loss(\theta)u\le K(\Delta(\theta))\norm{u}^2$ for every $u$, with $K$ nondecreasing, and $\norm{\nabla\Loss(\theta)}_*\ge c\Delta(\theta)^\nu$ with $c>0$, $0<\nu\le1$. By \cref{lem:warmup:descent}, the loss-indexed length $\eta_t=c\Delta_t^\nu/K(\Delta_t)$ gives $\Delta_{t+1}\le\Delta_t-c^2\Delta_t^{2\nu}/(2K(\Delta_t))$, and it rises as the loss falls exactly where $\Delta^\nu/K(\Delta)$ decreases (Exercise~\ref{ex:warmup:normalized}). For $K=K_0+K_1\Delta$ and $\nu=1$ (a convex loss whose sublevel set lies within distance $1/c$ of a minimizer) it never rises; for $K=K_0+K_1\Delta+K_\rho\Delta^\rho$ with $\rho>1$ and $\nu=1$ it rises until $\Delta'=\bigl(K_0/((\rho-1)K_\rho)\bigr)^{1/\rho}$; for $K=K_0+K_1\Delta$ and $\nu=\frac12$ it rises until $K_1\Delta=K_0$. The middle case is the shape that \textcite{RiabininEtAl2026} derive for norm-constrained optimizers such as Muon and Lion, whose learning rate warms up and then decays only when $\rho>1$, turning at $\Delta'$.
+\end{remark}
+
+A normalized method thus needs a warmup only when the curvature falls faster than the gradient's dual norm.
+
+\subsection{Adam's first steps}\label{sec:warmup:adam}
+
+Adam with bias correction \parencite{KingmaBa2015} keeps, from $m_{-1}=v_{-1}=0$, the coordinatewise averages $m_t=\beta_1m_{t-1}+(1-\beta_1)g_t$ and $v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2$, divides them by $1-\beta_1^{t+1}$ and $1-\beta_2^{t+1}$, and steps $\theta_{t+1}=\theta_t-\eta\,\hat m_t/(\sqrt{\hat v_t}+\epsilon)$. The \term{bias correction}\index{bias correction} removes the pull of the zero initial state, and it shapes the first steps.
+
+\begin{proposition}[Adam's first steps]\label[proposition]{prop:warmup:adamfirst}
+Let $\epsilon=0$, with $0/0=0$, and fix a coordinate.
+\begin{enumerate}
+\item The first step is a sign step: $\theta_1-\theta_0=-\eta\sign(g_0)$, whatever the size of $g_0$.
+\item For every $t$, $\hat v_t=\sum_{s=0}^tw_{t,s}g_s^2$ with weights $w_{t,s}=(1-\beta_2)\beta_2^{t-s}/(1-\beta_2^{t+1})$ that sum to $1$ and lie in $[\beta_2^t/(t+1),\beta_2^{-t}/(t+1)]$. If $t(1-\beta_2)\le\delta<1$, then $(1-\delta)\bar v_t\le\hat v_t\le\bar v_t/(1-\delta)$, where $\bar v_t=\frac1{t+1}\sum_{s\le t}g_s^2$.
+\item The effective number of averaged gradients is
+\begin{equation}\label{eq:warmup:neff}
+  n_t=\Bigl(\sum_{s=0}^tw_{t,s}^2\Bigr)^{-1}=\frac{1+\beta_2}{1-\beta_2}\cdot\frac{1-\beta_2^{t+1}}{1+\beta_2^{t+1}},
+\end{equation}
+which increases from $1$ to $(1+\beta_2)/(1-\beta_2)=2/(1-\beta_2)-1$. If the $g_s^2$ are independent with common mean $\sigma^2$ and variance $\varsigma^2$, then $\E\hat v_t=\sigma^2$ and $\Var(\hat v_t)=\varsigma^2/n_t$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+At $t=0$, $\hat m_0=g_0$ and $\hat v_0=g_0^2$, which gives (i). Unrolling, $v_t=(1-\beta_2)\sum_{s\le t}\beta_2^{t-s}g_s^2$ and $\sum_{k\le t}\beta_2^k=(1-\beta_2^{t+1})/(1-\beta_2)$, which gives the weights and their sum; each numerator $\beta_2^{t-s}$ lies in $[\beta_2^t,1]$ and the denominator $\sum_{k\le t}\beta_2^k$ in $[(t+1)\beta_2^t,t+1]$, and Bernoulli's inequality $\beta_2^t\ge1-t(1-\beta_2)\ge1-\delta$ gives the comparison with $\bar v_t$. For (iii), $\sum_sw_{t,s}^2=(1-\beta_2)^2(1-\beta_2^{2t+2})/\bigl((1-\beta_2^2)(1-\beta_2^{t+1})^2\bigr)$, which simplifies to $1/n_t$; the mean and variance follow from linearity and independence.
+\end{proof}
+
+So Adam's first update has size $\eta$ in every coordinate with a nonzero gradient, however small (\cref{ch:sign}), and for $\delta/(1-\beta_2)$ steps its preconditioner is within a factor $(1-\delta)^{-1/2}$ of the root mean square of the gradients seen so far. RAdam \parencite{LiuEtAl2020RAdam} runs momentum SGD for four steps,\sidenote{The four come from the test $\rho_k>4$ of the paper, with $\rho_k$ as in Exercise~\ref{ex:warmup:neffex}; some implementations test $\rho_k>5$.} then damps Adam's step by a factor of about $\sqrt{k(1-\beta_2)/2}$ after $k$ gradients, for $5\ll k\ll1/(1-\beta_2)$ (Exercise~\ref{ex:warmup:neffex}).
+
+\begin{heuristic}[Heuristic derivation: the $2/(1-\beta_2)$ rule]
+Suppose that the gradients of a coordinate in the first steps are independent draws from one distribution, and that a step is safe once the preconditioner is nearly as reliable as it will ever be. By \cref{prop:warmup:adamfirst}(iii) the relative variance of $\hat v_t$ is proportional to $1/n_t$, and
+\[
+  \frac{n_t}{n_\infty}=\tanh\Bigl(\frac{(t+1)\log(1/\beta_2)}2\Bigr),
+\]
+which reaches $\tanh1\approx0.76$ when $t+1=2/\log(1/\beta_2)\approx2/(1-\beta_2)$. A warmup that holds the step down until then lasts $2/(1-\beta_2)$ steps, the rule of thumb of \textcite{MaYarats2021}; RAdam's factor is a square-root warmup on the same time scale.
+\end{heuristic}
+
+This time, about the \term{effective sample size}\index{effective sample size} $n_\infty$ of the second moment and twice its memory $1/(1-\beta_2)$ (\cref{ch:adaptive}), is $2000$ steps for $\beta_2=0.999$ and $40$ for $\beta_2=0.95$. LLaMA uses $\beta_2=0.95$ and warms up for $2000$ steps, so long language-model warmups are not explained by Adam's statistics alone.
+
+\subsection{Warmup at the edge of stability}\label{sec:warmup:edge}
+
+\Cref{ass:warmup:curvature} makes the curvature follow the loss. In networks trained by gradient descent the causality also runs the other way: the sharpness rises to $2/\eta$ and stays there (\cref{ch:eos}). What does a rising $\eta_t$ do to it?
+
+\begin{heuristic}[Heuristic derivation: the sharpness follows $2/\eta_t$]
+Suppose that full-batch gradient descent with a slowly increasing schedule has reached the \term{edge of stability}\index{edge of stability}, $S(\theta_t)=2/\eta_t$, and that from then on the iterates follow the \term{central flow}\index{central flow} of \cref{ch:eos}: in the time $\tau=\sum_s\eta_s$,
+\[
+  \frac{d\theta}{d\tau}=-\nabla\Loss-\tfrac12\sigma^2\nabla S,
+\]
+with $\sigma^2$ the mean square of the oscillation along the top eigenvector of the Hessian, chosen so that the flow stays on the edge. With $\dot\eta=\eta_{t+1}-\eta_t$, the edge moves at the rate $d(2/\eta)/d\tau=-2\dot\eta/\eta^3$, and the flow moves the sharpness at the rate $\ip{\nabla S,d\theta/d\tau}=\alpha-\frac12\sigma^2\norm{\nabla S}_2^2$, where $\alpha=-\ip{\nabla\Loss,\nabla S}$ is the rate of progressive sharpening. Equating the two,
+\[
+  \sigma^2=\frac{2\,(\alpha+2\dot\eta/\eta^3)}{\norm{\nabla S}_2^2}.
+\]
+The edge holds while $\sigma^2>0$, that is, while the threshold $2/\eta_t$ falls faster than the sharpness would fall under gradient flow, and then the sharpness follows $2/\eta_t$ down: the schedule, not the loss, sets the curvature. The oscillation costs an excess loss of about $\sigma^2/\eta$, which grows with the speed of the warmup; if $\sigma^2$ is not small, the cubic expansion behind the central flow fails, and the iterates catapult or diverge. On the warmup model $\alpha=-2\mu(S-K_0)$ and $\norm{\nabla S}_2^2=2\mu K_1(S-K_0)$, so on the edge the condition reads $\dot\eta>\mu\eta^2(2-\eta K_0)$.
+\end{heuristic}
+
+If $\alpha>0$, the edge, once reached, holds for every nondecreasing schedule, and after the warmup the sharpness stays at $2/\eta_{\max}$ (\cref{ch:eos}); if $\alpha<0$, as on the warmup model, it holds only while the warmup outruns the flattening that gradient descent produces on its own. Either way the warmup lowers the curvature that the run will have at its peak learning rate, which is \cref{obs:warmup:sharpness}. The idealizations agree on the direction and differ in the mechanism: in \cref{thm:warmup:schedule} the step waits for the loss to lower the curvature; at the edge the step lowers it, through the oscillation, and the loss pays.
+
+\section{Reading the theory}\label{sec:warmup:reading}
+
+\paragraph{The shape and the length of the warmup.} \Cref{cor:warmup:profile} predicts a hyperbolic rise that turns concave at $2/(3K_0)$ and saturates at $1/K_0$; on the warmup model, where the descent lemma is loose by its factor $2$, $\mu$ becomes $2\mu$. \Cref{fig:warmup:model} (right) compares the profile with gradient descent on the full model for $K_0=K_1=1$, $\mu=0.02$ and $\Delta_0=50$: the step reaches $1/(2K_0)$ at step $1324$, where the continuum predicts $1323$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=44mm]
+\nextgroupplot[xlabel={step $t$},ylabel={gap $\Delta_t$},ymode=log,xmin=0,xmax=4000,ymin=1e-8,ymax=3e4,ytick={1e-8,1e-4,1,1e4},legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize},legend columns=2]
+\addplot[theory] table[x=t,y=adrec] {figures/data/09-warmup-model.dat};
+\addlegendentry{loss-indexed}
+\addplot[theory3] table[x=t,y=corec] {figures/data/09-warmup-model.dat};
+\addlegendentry{constant $1/S_0$}
+\addplot[theory2] table[x=t,y=lcrec] {figures/data/09-warmup-model.dat};
+\addlegendentry{linear, $T_{\mathrm w}=2000$}
+\addplot[guide] table[x=t,y=guarantee] {figures/data/09-warmup-model.dat};
+\addlegendentry{guarantee \eqref{eq:warmup:time}}
+\addplot[forget plot,only marks,mark=triangle*,mark size=1.6pt,color=sea,mark options={fill=sea,draw=white,line width=0.2pt},each nth point=4,filter discard warning=false] table[x=t,y=adsim] {figures/data/09-warmup-model.dat};
+\addplot[forget plot,simulation,each nth point=4,filter discard warning=false] table[x=t,y=cosim] {figures/data/09-warmup-model.dat};
+\addplot[forget plot,simulation2,each nth point=2,filter discard warning=false] table[x=t,y=lcsim] {figures/data/09-warmup-model.dat};
+\nextgroupplot[xlabel={step $t$},ylabel={step size $\eta_t$},xmode=log,ymode=log,xmin=10,xmax=1e4,ymin=1e-3,ymax=4,legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize},legend columns=2]
+\addplot[theory] table[x=t,y=etacont] {figures/data/09-warmup-model.dat};
+\addlegendentry{profile, \cref{cor:warmup:profile}}
+\addplot[theory3] table[x=t,y=etals] {figures/data/09-warmup-model.dat};
+\addlegendentry{linear, $T_{\mathrm w}=6150$}
+\addplot[guide] table[x=t,y=limls] {figures/data/09-warmup-model.dat};
+\addlegendentry{its limit $2/S_t$}
+\addplot[forget plot,only marks,mark=triangle*,mark size=1.6pt,color=sea,mark options={fill=sea,draw=white,line width=0.2pt},each nth point=3,filter discard warning=false] table[x=t,y=etaad] {figures/data/09-warmup-model.dat};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The warmup model with $K_0=K_1=1$, $\mu=0.02$ and $\Delta_0=50$ ($\kappa=u_0=50$), one slow and one stiff coordinate, the stiff one started at $z_0=10^{-6}$; no randomness (script \texttt{09-warmup-model.py}). Left: the gap under the loss-indexed warmup $\eta_t=1/(K_0+K_1\Loss(\theta_t))$, under the constant step $1/S_0=1/(K_0+K_1\Delta_0)$, and under a linear warmup to $1/K_0$ over $2000$ steps; curves are the recursion $\Delta_{t+1}=(1-\mu\eta_t)^2\Delta_t$ of \cref{prop:warmup:model}, points of the same color are gradient descent on the full model. The linear warmup crosses the edge $\eta_tS_t=2$, its stiff coordinate grows, and a catapult lifts the loss to $6\cdot10^3$ (for six steps near $t=230$, between the points shown) before it converges faster than the recursion. Dashed: the guarantee \eqref{eq:warmup:time}, conservative by the factor $2$ of the descent lemma. Without warmup ($\eta=1/K_0$) the loss exceeds $10^{13}$ after six steps. Right, on logarithmic axes: the step of the loss-indexed warmup (points) against the profile of \cref{cor:warmup:profile} with $2\mu$ for $\mu$, and the shortest linear warmup to $1/K_0$ that never crosses the edge, which touches its stability limit at $t\approx400$.}
+\label{fig:warmup:model}
+\end{figure}
+
+\paragraph{What the warmup buys.} On the same model the loss-indexed warmup reaches $\Delta\le10^{-8}$ in $1805$ steps, within the bound $1827$ of \cref{prop:warmup:stable}(ii) (\cref{thm:warmup:schedule} guarantees $3617$); riding the limit, $c=2$, takes $901$, against the lower bound $833$ for every stable schedule. The constant step $1/S_0$ needs $28469$ steps, and the best stable constant step, $2/S_0$, needs $14232$, against the lower bound $14226$. The ratio of the latter to the loss-indexed warmup, $7.9$, is the theory's $(1+u_0)\log(\Delta_0/\eps)/(2(\log(\Delta_0/\eps)+u_0))\approx7.9$, which grows with the excess curvature at initialization and with the accuracy required.
+
+\paragraph{A linear warmup is the wrong shape.} Practice uses straight lines from zero, and the model says how long a straight line must be to stay stable.
+
+\begin{heuristic}[Heuristic derivation: the shortest stable linear warmup]
+Take $\eta_t=t/(K_0T_{\mathrm w})$ for $t\le T_{\mathrm w}$ on the line $z=0$ of the warmup model, and replace the recursion by its continuum $\dot\Delta=-2\mu\eta_t\Delta$, so that $\Delta_t=\Delta_0\exp(-\mu t^2/(K_0T_{\mathrm w}))$. With $s=t/T_{\mathrm w}$ and $\chi=\mu T_{\mathrm w}/K_0$, the condition $\eta_tS_t\le2$ reads $s+u_0se^{-\chi s^2}\le2$ for $s\in[0,1]$. The second term peaks at $s=1/\sqrt{2\chi}$ with the value $u_0/\sqrt{2e\chi}$, and evaluating the condition there gives $(1+u_0/\sqrt e)/\sqrt{2\chi}\le2$, that is,
+\[
+  T_{\mathrm w}\ge\frac{K_0}{8\mu}\Bigl(1+\frac{u_0}{\sqrt e}\Bigr)^2.
+\]
+After the warmup $S_t$ decreases, so the condition holds there too once $u_0e^{-\chi}\le1$, which is weaker if $u_0\ge4$.
+\end{heuristic}
+
+For $\kappa=u_0=50$ the formula gives $6133$ steps and bisection on the exact recursion $6150$; for $u_0$ from $5$ to $200$ they agree within $6\%$. A line from the origin must pass below the limit $2/S_t$, which stays near $2/S_0$ until the loss has fallen, so its stable length is quadratic in $u_0$, while the profile, which starts at the limit, has a length linear in $u_0$. The ratio is about $u_0/(4e)$, here $4.6$, and the stable linear warmup reaches $10^{-8}$ in $2617$ steps instead of $1805$.
+
+\paragraph{Shorter warmups and catapults.} The theory is silent about schedules that cross the edge, and the model shows that they can win. In a scan of linear warmups to $1/K_0$ with spacing $10$, almost all runs shorter than $1500$ steps diverge. Between about $1500$ and $3000$ steps the run crosses the edge, a catapult lifts the loss to between $50$ and $1.5\cdot10^4$, and the run converges in a number of steps that depends erratically on $T_{\mathrm w}$, from $255$ to $1813$ with median $1380$: all these runs beat the recursion of their schedule, almost all beat the loss-indexed warmup, and one in eight beats the lower bound $833$ for stable schedules. From $3000$ steps on the run follows the recursion, although it crosses the edge for every $T_{\mathrm w}<6150$: the factor $\abs{1-\eta_tS_t}$ nearly vanishes when $\eta_tS_t\approx1$ and crushes the stiff coordinate, which has no time to grow back.
+
+\paragraph{The edge in a network.} \Cref{fig:warmup:mlp} trains a small network from a sharp initialization, $S_0\approx132$, to the peak learning rate $0.1$, with threshold $2/\eta=20$; before the edge, the sharpness falls slowly on its own. Once $2/\eta_t$ meets it, after about $190$ steps of the long warmup and $50$ of the short one, the sharpness follows $2/\eta_t$ down, as \cref{sec:warmup:edge} predicts, within $0.90$ to $1.23$ times $2/\eta_t$ in the long warmup and, after the catapult, $0.96$ to $1.35$ in the short one; over the last $500$ steps its means are $20.7$ and $20.4$. The short warmup meets the edge with a catapult: the loss jumps from $0.04$ to $6$ while the sharpness drops from $130$ to $48$. Warmups of $50$ or $100$ steps diverge, $150$ suffice. The network holds the edge where the model overshoots it, presumably because each step of a network feeds its top eigendirection, while the model's stiff coordinate is fed only by its initial value.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=42mm,xmin=0,xmax=2000]
+\nextgroupplot[xlabel={step $t$},ylabel={sharpness $S(\theta_t)$},ymode=log,ymin=10,ymax=400,legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize},legend columns=2]
+\addplot[theory2] table[x=t,y=edgeB] {figures/data/09-warmup-mlp.dat};
+\addlegendentry{$T_{\mathrm w}=1000$}
+\addplot[theory3] table[x=t,y=edgeA] {figures/data/09-warmup-mlp.dat};
+\addlegendentry{$T_{\mathrm w}=250$}
+\addplot[forget plot,simulation2] table[x=t,y=SB] {figures/data/09-warmup-mlp.dat};
+\addplot[forget plot,simulation] table[x=t,y=SA] {figures/data/09-warmup-mlp.dat};
+\nextgroupplot[xlabel={step $t$},ylabel={training loss},ymode=log,ymin=5e-4,ymax=30,legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize},legend columns=3]
+\addplot[simulation2] table[x=t,y=LB] {figures/data/09-warmup-mlp.dat};
+\addlegendentry{$T_{\mathrm w}=1000$}
+\addplot[simulation] table[x=t,y=LA] {figures/data/09-warmup-mlp.dat};
+\addlegendentry{$T_{\mathrm w}=250$}
+\addplot[only marks,mark=triangle*,mark size=1.7pt,color=sea,mark options={fill=sea,draw=white,line width=0.2pt}] table[x=t,y=loss] {figures/data/09-warmup-mlp-nowarm.dat};
+\addlegendentry{no warmup}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Warmup at the edge in a small network: a tanh network with three hidden layers of width $64$ and output multiplier $5$ (a sharp initialization), trained by full-batch gradient descent on the square loss with $256$ Gaussian inputs in $\R^{10}$ labelled by a random tanh teacher, with a linear warmup to $\eta=0.1$ over $250$ or $1000$ steps (seeds fixed in \texttt{09-warmup-mlp.py}). Left: the sharpness by power iteration with Hessian--vector products every $20$ steps (points), and the prediction $2/\eta_t$ of \cref{sec:warmup:edge} (curves of the same color), which holds once the edge is reached. Right: the training loss; without warmup it exceeds $10^9$ after six steps.}
+\label{fig:warmup:mlp}
+\end{figure}
+
+\section{What the theory misses}\label{sec:warmup:misses}
+
+\paragraph{What was idealized away.} A global inequality between curvature and loss, which in networks is measured along trajectories and fails on sublevel sets under rescaling symmetries (\cref{rem:warmup:symmetry}); the Polyak--Łojasiewicz inequality, at best local; full batches, although the minibatch scaling rule is another reason to start small \parencite{GoyalEtAl2017}; a fixed preconditioner, whereas Adam's relevant curvature is a preconditioned sharpness with threshold near $38/\eta$ for $\beta_1=0.9$ \parencite{CohenEtAl2022}; and normalization layers and weight decay, which make the effective learning rate an angular speed far from equilibrium early in training (\cref{ch:decay}).
+
+\paragraph{Where it breaks.} First, the causality runs the other way in networks: the sharpness at the end of a warmup is $2/\eta_{\max}$, set by the schedule rather than by the loss \parencite{CohenEtAl2021,KalraBarkeshli2024}; in \cref{fig:warmup:mlp}, at the same loss of about $0.01$, the sharpness is $21$ after the short warmup and $50$ during the long one, so no function of the loss bounds it tightly along both. Second, instability is not failure: constant steps above $2/S_0$ converge through a catapult in wide networks \parencite{LewkowyczEtAl2020} and in the product model of volume 2; for logistic regression, large steps with a non-monotone loss converge faster than every stable step \parencite{WuEtAl2024}; and on the warmup model almost every warmup that survives a catapult beats the loss-indexed one. The lower bounds proved here concern schedules that never cross the edge. Third, the mechanism need not be curvature: with Pre-LN, transformers train without warmup \parencite{XiongEtAl2020}, and GI-Adam or a control of the angular update recovers much of warmup's benefit \parencite{KalraBarkeshli2024,KossonMessmerJaggi2024}. Finally, practice fixes the length by rules of thumb ($2000$ steps in LLaMA, where $2/(1-\beta_2)=40$ and $K_1\Delta_0/\mu$ is unknown): the theory reproduces the shape of the practice, not its numbers.
+
+\paragraph{Repairs and open problems.} \Textcite{AlimisisIslamovLucchi2026} turn their analysis into a one-parameter warmup that matches a tuned linear warmup on language and vision models; \textcite{RiabininEtAl2026} derive a scheduler that sets the warmup length automatically and, in LLaMA pretraining, matches or beats the best tuned warmups; \textcite{LiuEtAl2025Warmup}, in an unrefereed preprint, bound the curvature by $K_0+K_\rho\Delta^\rho$ and show that in some cases warmup makes gradient descent up to $\Theta(T)$ times faster than a non-increasing schedule (Exercise~\ref{ex:warmup:power}). GI-Adam, Pre-LN and update controls remove much of the need, each for its own reason. Open: the curvature--loss inequality along the trajectories of a network, even a two-layer one (Exercise~\ref{ex:warmup:twolayer}); lower bounds over all schedules, including those that cross the edge, and the fastest schedule on the warmup model; warmup with gradient noise; and a preconditioned version for Adam.
+
+\section{Back in the wild}\label{sec:warmup:back}
+
+\fieldnotes{Linear warmup over a few thousand steps ($2000$ for LLaMA, five epochs for large-batch ImageNet).}
+{Curvature bounded by the loss and the Polyak--Łojasiewicz inequality; the warmup model; Adam's averages; the central flow.}
+{A local descent lemma; a warmup pays the initial curvature once, a constant step at every scale; the exact profile; optimality among stable schedules; softmax curvature at most $2R^2\ell$; Adam's sign-like first step.}
+{A hyperbolic rise of length about $K_1\Delta_0/\mu$; stable linear ramps $u_0/(4e)$ times longer; the sharpness following $2/\eta_t$ at the edge (derived).}
+{The inequality is measured, not derived, and fails globally under rescaling symmetries; catapults; noise, preconditioning, normalization.}
+{Warm up until the curvature allows the peak step, longer for sharper initializations (proved in the idealization); index the warmup by the loss or the sharpness (suggested); long warmups at $\beta_2=0.95$ are not explained by Adam's statistics (derived).}
+
+The theory makes one firm statement and one suggestion. The statement, proved in the idealization, is that a constant step must be safe at the start and then pays for the initial curvature at every scale of accuracy, while a warmup pays once; the gain is large only when the initialization is much sharper than the trained network, which a power iteration at initialization can compare with $2/\eta_{\max}$. The suggestion is the shape: start at the largest step that the current curvature allows and rise as it falls, a hyperbola rather than a line from zero. The theory gives no length for a language-model warmup and does not forbid short ones: at the edge, and through catapults, networks lower their own curvature faster than the stable theory allows.
+
+The chapter sits between the edge of stability of \cref{ch:eos}, which supplies the mechanism of \cref{sec:warmup:edge}, and the clipping of \cref{ch:spikes}, which tames a curvature that grows with the gradient rather than with the loss. Warmup is the first phase of the schedules of \cref{ch:schedules}, and the angular update controlled by \textcite{KossonMessmerJaggi2024} is the effective learning rate of \cref{ch:decay}.
+
+\begin{exercises}
+\item \consolidation (The softmax constant.) (a) Show that $\lmax(\diag(p)-pp^\top)\le2\max_ip_i(1-p_i)\le2(1-p_c)$ for every probability vector $p$ and class $c$. (b) For $K=2$ show that the top eigenvalue is $2p_c(1-p_c)$, so that the constant $2$ of \cref{prop:warmup:softmax} cannot be lowered and $\lmax\le1-p_c$ fails when $p_c>\frac12$. (c) For $\ell(w)=\log(1+e^{-y\ip{w,a}})$ show that $\nabla^2\ell=\sigma(m)\sigma(-m)\,aa^\top\preceq\ell(w)\,aa^\top$, with $m=y\ip{w,a}$ and $\sigma$ the logistic function.\label{ex:warmup:softmax}
+
+\item \consolidation (The profile.) (a) Show that the $D_t$ of \cref{thm:warmup:schedule}(ii) satisfy $D_t\ge D(t/(1-\mu/K_0))$ if $\mu<K_0$. \hint{bound $\Phi(D_t)-\Phi(D_{t+1})$ by $\Phi'(D_{t+1})(D_t-D_{t+1})\le\mu D_t/D_{t+1}$.} (b) Show that $\eta(t)$ is convex while $\eta(t)<2/(3K_0)$ and concave afterwards. \hint{with $u=K_1D/K_0$, $\dot u=-(\mu/K_0)u/(1+u)$, and $\ddot\eta$ has the sign of $2u-1$.} (c) For $K_0=K_1=1$, $\mu=0.01$, $\Delta_0=100$, find when $\eta$ reaches $0.9/K_0$.\label{ex:warmup:profile}
+
+\item \consolidation\hard (The hypothesis $K_0\ge2\mu$.) Show that the warmup model satisfies $\lmax(\nabla^2\Loss)\le K_0+K_1\Loss$ everywhere if and only if $K_0\ge25\mu/16$. \hint{let $\varepsilon\to0$ in the proof of \cref{prop:warmup:model}; $(S-\mu)S\ge4\mu K_1q$ for all $q\ge0$ is quadratic in $K_1q$, with discriminant $25\mu^2-16K_0\mu$.}\label{ex:warmup:threshold}
+
+\item \consolidation (Adam's effective sample size.) (a) Derive the formula for $n_t/n_\infty$ behind the $2/(1-\beta_2)$ rule. (b) Show that RAdam's $\rho_k=\rho_\infty-2k\beta_2^k/(1-\beta_2^k)$, $\rho_\infty=2/(1-\beta_2)-1$, is the length of the uniform average with the same mean age as Adam's weights $w_{k-1,s}$, that $\rho_\infty=n_\infty$, and that $\rho_k/k$ and $n_{k-1}/k$ tend to $1$ as $k(1-\beta_2)\to0$. (c) With $\epsilon=0$, show that every step has size $\eta$ if the gradient is constant, and that the second has size $\eta(1-\beta_1)/(1+\beta_1)$ if $g_1=-g_0$.\label{ex:warmup:neffex}
+
+\item \variation (No curvature floor: the exponential loss.) Let $\Loss(w)=\frac1n\sum_i\exp(-y_i\ip{w,a_i})$ with $\norm{a_i}_2\le R$ and data separable with margin $\gamma$: some unit vector $\bar w$ has $y_i\ip{\bar w,a_i}\ge\gamma$ for all $i$. (a) Show that $\lmax(\nabla^2\Loss(w))\le R^2\Loss(w)$ and $\norm{\nabla\Loss(w)}_2\ge\gamma\Loss(w)$. (b) Show that gradient descent with $\eta_t=1/(R^2\Loss(w_t))$ satisfies $\Loss(w_{t+1})\le(1-\gamma^2/(2R^2))\Loss(w_t)$, with steps that grow geometrically. (c) Contrast with a constant step, under which the loss decays only polynomially (\cref{ch:bias}).\label{ex:warmup:exponential}
+
+\item \variation (Curvature that grows like a power of the gap.) Suppose that $S\le K_0+K_\rho\Delta^\rho$ on $\Theta_0$, the form of \textcite{LiuEtAl2025Warmup}, with $0<\rho\le1$, and \cref{ass:warmup:pl}. Show that the step $1/(K_0+K_\rho\Delta_t^\rho)$ reaches $\eps$ within $\bigl(K_0\log(\Delta_0/\eps)+K_\rho(\Delta_0^\rho-\eps^\rho)/\rho\bigr)/\mu$ steps. Where is $\rho\le1$ used?\label{ex:warmup:power}
+
+\item \variation (Normalized steps.) (a) Prove the claims of \cref{rem:warmup:normalized}. \hint{the length is admissible because $c\Delta_t^\nu\le\norm{\nabla\Loss(\theta_t)}_*$, and the logarithmic derivative of $\Delta^\nu/K(\Delta)$ has the sign of $\nu K-\Delta K'$.} (b) On the line $z=0$ of the warmup model, show that the step length $\eta_t\norm{\nabla\Loss(\theta_t)}_2$ of the loss-indexed warmup rises until $K_1\Delta_t=K_0$ and falls afterwards. (c) Show that sign descent on the stiff coordinate, $z_{t+1}=z_t-h\sign(z_t)$, never diverges and eventually adds at most $\frac12S(x)h^2$ to the loss.\label{ex:warmup:normalized}
+
+\item \simulation (The warmup model.) With \texttt{09-warmup-model.py}: (a) check the heuristic formula for the shortest stable linear warmup for $u_0$ from $5$ to $200$; (b) scan the warmup length and locate the window of catapults ($T_{\mathrm w}$ between about $1500$ and $3000$ by default); (c) run the scheduled warmup of \cref{thm:warmup:schedule}(ii) and the loss-indexed one with $c=2$, and explain their step counts by \cref{prop:warmup:stable}.\label{ex:warmup:simmodel}
+
+\item \simulation (A network at the edge.) With \texttt{09-warmup-mlp.py}: (a) check that $\eta_tS(\theta_t)$ stays near $2$ once the edge is reached; (b) find the shortest warmup that trains for the peaks $0.05$ and $0.2$ (it is between $100$ and $150$ steps for $0.1$); (c) set the output multiplier to $1$ ($S_0\approx5.7$), the peak to $0.2$ and $T_{\mathrm w}$ to $250$, and observe progressive sharpening: the sharpness rises to $2/\eta_{\max}=10$ about a thousand steps after the warmup ends.\label{ex:warmup:simmlp}
+
+\item \research (The inequality for a two-layer network.) \Cref{rem:warmup:symmetry} rules out \cref{ass:warmup:curvature} on sublevel sets of networks with rescaling symmetries. Find conditions (small or balanced initializations, or along trajectories) under which a two-layer network satisfies $S\le K_0+K_1\Delta$ with explicit constants; we know of none.\label{ex:warmup:twolayer}
+
+\end{exercises}
+
+\notesandrefs
+Early warmups sped up runs that were slow to start \parencite{HeEtAl2016}; warmup became a linear ramp for large minibatches \parencite{GoyalEtAl2017} and Transformers \parencite{VaswaniEtAl2017}, and took its modern form in GPT-3 and LLaMA \parencite{BrownEtAl2020,TouvronEtAl2023}. The edge of stability is due to \textcite{CohenEtAl2021}, the central flow to \textcite{CohenEtAl2025}, the catapult to \textcite{LewkowyczEtAl2020}, and Adam's edge to \textcite{CohenEtAl2022}.
+
+The theory of warmup under loss-dependent curvature is recent: \textcite{LiuEtAl2025Warmup}, in a preprint, bound the curvature by a power of the gap, \textcite{AlimisisIslamovLucchi2026} by an affine function of it, and \textcite{RiabininEtAl2026} by both, in a general norm. As far as we know, the warmup model, the Wright-omega profile, \cref{prop:warmup:stable} and the shortest stable linear warmup are new.
+
+\paragraph{Translating the literature.} \Textcite{AlimisisIslamovLucchi2026} write $f$ for $\Loss$, $w$ for $\theta$, $f^*$ for $\Loss^\star$ and $H_0,H_1$ for $K_0,K_1$, and bound $\norm{\nabla^2f(w)}$ by $H_0+H_1(f(w)-f^*)$; their warmup step is $\theta\eta_k$, with $\theta$ the constant of their aiming condition, not the parameters. \Textcite{RiabininEtAl2026} write $x$ for $\theta$ and bound the dual norm of gradient differences by $K(x)\norm{x-y}$ with $K(x)=K_0+K_1(f(x)-f^\star)+K_\rho(f(x)-f^\star)^\rho$; with $K_\rho=0$ and the Euclidean norm their assumption reduces to that of Alimisis et al. \Textcite{LiuEtAl2025Warmup} call the bound $K_0+K_\rho(f(w)-f^*)^\rho$ on the local curvature $(\rho,K_0,K_\rho)$-smoothness.
+
+\printchapterbib
+\end{refsection}

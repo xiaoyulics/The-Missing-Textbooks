@@ -1,0 +1,199 @@
+% Prologue of Optimizers in the Wild.
+\specialchapter{Prologue}{What the textbook proves and what the practitioner decides}{4}\label{ch:prologue}
+\begin{refsection}[chapters/00-prologue.bib]
+
+A course on optimization ends with a theorem like this one: stochastic gradient descent on a smooth function, with a small enough step size, finds a point where the gradient is small. The theorem is true, its proof fits on half a page, and it is silent about almost every decision that determines whether a large neural network trains well. Which optimizer? Adam, or the newer Muon? What learning rate (the practitioner's name for the step size), and should it change with the width of the network? How long a warmup, and why one at all? Cosine decay or a constant rate with a short cooldown? How much weight decay? How large a batch? Should gradients be clipped? These questions are settled every day by rules of thumb, by inherited recipes, and by expensive sweeps. This book is about the theory behind them.
+
+\addsec{What the textbook proves}
+
+The standard guarantee for nonconvex stochastic optimization goes back to \textcite{GhadimiLan2013}; its ancestor for root finding is the stochastic approximation of \textcite{RobbinsMonro1951}. We state it in the form that the rest of the book will generalize. Let $\Loss\colon\R^d\to\R$ be bounded below, with infimum $\Loss^\star$, and $L$-smooth in the Euclidean norm, which means that $\norm{\nabla\Loss(\theta)-\nabla\Loss(\theta')}_2\le L\norm{\theta-\theta'}_2$ for all $\theta,\theta'$. Stochastic gradient descent is the iteration $\theta_{t+1}=\theta_t-\eta g_t$, where $g_t$ is an unbiased estimate of $\nabla\Loss(\theta_t)$ whose noise $\zeta_t=g_t-\nabla\Loss(\theta_t)$ satisfies $\E[\norm{\zeta_t}_2^2\mid\theta_t]\le\sigma^2$.
+
+\begin{theorem*}[Stochastic gradient descent finds approximate stationary points]
+Let $\Delta_0=\Loss(\theta_0)-\Loss^\star$. If $0<\eta\le1/L$, then for every $T\ge1$,
+\[
+  \frac1T\sum_{t=0}^{T-1}\E\norm{\nabla\Loss(\theta_t)}_2^2\le\frac{2\Delta_0}{\eta T}+L\eta\sigma^2.
+\]
+If $\Delta_0>0$, then the step size $\eta=\min\{1/L,\sqrt{2\Delta_0/(L\sigma^2T)}\}$, which is $1/L$ when $\sigma=0$, makes the right side at most $4L\Delta_0/T+2\sigma\sqrt{2L\Delta_0/T}$.
+\end{theorem*}
+
+\begin{proof}
+The plan is to show that each step decreases the loss in expectation by $\frac\eta2\norm{\nabla\Loss}_2^2$, up to a noise term, and to add up the decreases. Smoothness gives the descent inequality $\Loss(\theta')\le\Loss(\theta)+\ip{\nabla\Loss(\theta),\theta'-\theta}+\frac L2\norm{\theta'-\theta}_2^2$ (\cref{lem:toolkit:descent}). Apply it with $\theta=\theta_t$ and $\theta'=\theta_{t+1}=\theta_t-\eta g_t$ and take the conditional expectation given $\theta_t$. Because $\E[g_t\mid\theta_t]=\nabla\Loss(\theta_t)$ and $\E[\norm{g_t}_2^2\mid\theta_t]\le\norm{\nabla\Loss(\theta_t)}_2^2+\sigma^2$, and because $L\eta\le1$ in the second step, this gives
+\[
+\begin{aligned}
+  \E[\Loss(\theta_{t+1})\mid\theta_t]&\le\Loss(\theta_t)-\eta\Bigl(1-\frac{L\eta}2\Bigr)\norm{\nabla\Loss(\theta_t)}_2^2+\frac{L\eta^2\sigma^2}2\\
+  &\le\Loss(\theta_t)-\frac\eta2\norm{\nabla\Loss(\theta_t)}_2^2+\frac{L\eta^2\sigma^2}2.
+\end{aligned}
+\]
+Taking expectations, summing over $t<T$, and using $\E\Loss(\theta_T)\ge\Loss^\star$ gives $\frac\eta2\sum_{t<T}\E\norm{\nabla\Loss(\theta_t)}_2^2\le\Delta_0+\frac{TL\eta^2\sigma^2}2$, which is the first claim after division by $\eta T/2$. For the second, there are two cases. If $\sigma>0$ and $\eta=\sqrt{2\Delta_0/(L\sigma^2T)}\le1/L$, then both terms equal $\sigma\sqrt{2L\Delta_0/T}$. Otherwise $\eta=1/L$ and $\sigma^2<2L\Delta_0/T$ (when $\sigma=0$, because $\Delta_0>0$), so the bound is at most $2L\Delta_0/T+\sigma^2<4L\Delta_0/T$. Each case gives at most the stated sum.
+\end{proof}
+
+Read as a description of practice, the theorem has four gaps. It measures progress in the Euclidean norm, and its only knob is a constant step size below $1/L$, while the optimizers that train large models take steps of a fixed length in other norms, average their gradients, and rescale each coordinate or each matrix by a running estimate of its scale. It assumes a global smoothness constant, while the curvature of a network changes during training and, as we shall see, settles at whatever value the step size allows. It treats the noise as a nuisance to be averaged away, while the noise sets a floor under the loss that the learning-rate schedule is designed to remove. And it asks for a stationary point, while practitioners ask for the lowest loss after a fixed budget of steps, and care which of many minimizers they reach.
+
+\addsec{What the practitioner decides}
+
+Here is a training recipe of the kind that was standard for large language models between 2020 and 2025. Its details come from the published descriptions of GPT-3 \parencite{BrownEtAl2020} and LLaMA \parencite{TouvronEtAl2023}, and the box says which paper gives which.
+
+\begin{practice}[GPT-3, \textcite{BrownEtAl2020}; LLaMA, \textcite{TouvronEtAl2023}]
+Train with Adam, $\beta_1=0.9$, $\beta_2=0.95$, and weight decay $0.1$ (both papers; LLaMA calls the optimizer AdamW, and GPT-3 cites \textcite{LoshchilovHutter2019} for the decay), with $\epsilon=10^{-8}$ (GPT-3; LLaMA does not state it). Warm the learning rate up, linearly over the first $375$ million tokens in GPT-3, and over $2000$ steps of unstated shape in LLaMA; then decay it along a cosine to $10\%$ of its peak (both). Clip the gradient at $1.0$ (both; GPT-3 clips the global norm). Use batches of millions of tokens: $0.5$ to $3.2$ million in GPT-3, by model size, after a ramp from $32$ thousand, and $4$ million in LLaMA. Lower the peak learning rate as the model grows: from $6\times10^{-4}$ to $0.6\times10^{-4}$ across the GPT-3 models.
+\end{practice}
+
+Each clause of this recipe is a decision with an alternative, and each alternative has its advocates. Since 2024 a growing number of runs replace AdamW on the hidden weight matrices by Muon, which orthogonalizes each matrix's momentum before stepping \parencite{JordanEtAl2024Muon,LiuEtAl2025Muon}; many replace the cosine by a warmup--stable--decay schedule that holds the learning rate constant and cools down only at the end (\cref{ch:schedules}); and $\mu$P and its successors prescribe how the learning rate of each layer must scale with width so that a sweep on a small model transfers to a large one (\cref{ch:modular}). The \emph{Deep Learning Tuning Playbook} \parencite{GodboleEtAl2023} is a systematic guide to making these decisions empirically. This book asks what can be said about them mathematically.
+
+The questions, and the chapters that answer them, are these.
+\begin{itemize}
+\item \emph{Why do the update rules look the way they do?} AdamW and Muon, like the other optimizers of this book, are steepest descent under a norm, combined with moving averages and, in AdamW's case, a preconditioner (\cref{ch:steepest,ch:sign,ch:spectral,ch:momentum,ch:adaptive,ch:kronecker}).
+\item \emph{How should the learning rate scale with width?} The norm of a whole network decides it (\cref{ch:modular}).
+\item \emph{Why can the learning rate be so large?} Training runs at the edge of stability, where the curvature adapts to the step size (\cref{ch:eos}).
+\item \emph{Why warm up?} The first steps meet curvature too large for the target learning rate (\cref{ch:warmup}).
+\item \emph{Why clip, and where do loss spikes come from?} Curvature that grows with the gradient, an optimizer state that lags behind the gradient, and directions of growth that the loss cannot see (\cref{ch:spikes}).
+\item \emph{How large a batch?} Up to a critical size set by the noise and the curvature, which preconditioning raises (\cref{ch:noise}).
+\item \emph{Why decay the learning rate, and when?} The noise floor and the geometry of the loss along a ``river valley'' (\cref{ch:schedules}).
+\item \emph{What does weight decay do?} It turns a step of fixed length in a norm into the Frank--Wolfe method on a ball of that norm, and it sets an equilibrium speed of rotation for layers followed by a normalization (\cref{ch:decay}).
+\item \emph{Why Adam rather than SGD for transformers, and where does each optimizer end up?} Heavy-tailed classes, heterogeneous curvature, and large batches; and the maximum margin in the optimizer's norm (\cref{ch:transformers,ch:bias}).
+\end{itemize}
+
+\addsec{Two lines}
+
+The book follows two lines of argument, which meet in its last part.
+
+\paragraph{The unification line.} An optimizer turns a gradient into a step, and the step is rarely the gradient itself. The gradient of a loss is a linear functional on parameter space: it says how fast the loss changes in each direction. To turn it into a direction one needs a way to compare directions, that is, a norm. Given a norm $\norm{\cdot}$, a steepest direction is a unit vector $u$ that makes $\ip{g,u}$ most negative, written $\lmo(g)$, and a \emph{normalized} step of length $\eta$ is $\theta\leftarrow\theta+\eta\lmo(g)$. In the Euclidean norm this is gradient descent with a normalized gradient; in the max norm $\norm{\cdot}_\infty$ it is $\theta\leftarrow\theta-\eta\sign(g)$, sign descent, which is Adam with its moving averages and its $\epsilon$ switched off; for a weight matrix under the spectral norm it is $W\leftarrow W-\eta UV^\top$, where $G=U\diag(\sigma)V^\top$ is a compact singular value decomposition of the gradient, and this is Shampoo without accumulation \parencite{BernsteinNewhouse2024} and Muon without momentum \parencite{JordanEtAl2024Muon}. Two further ingredients complete the picture: moving averages, of the gradient (momentum, Adam's $\beta_1$) or of the iterates; and preconditioners, norms that adapt to the gradients seen so far (Adam's $\beta_2$, AdaGrad, Shampoo, SOAP). \Cref{tab:prologue:ingredients} lists the main optimizers of this book by their three ingredients.
+
+\begin{table}[t]
+\centering\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{19mm}>{\raggedright\arraybackslash}p{29mm}>{\raggedright\arraybackslash}p{30mm}>{\raggedright\arraybackslash}p{29mm}@{}}
+\toprule
+\textsc{optimizer} & \textsc{norm} & \textsc{preconditioner} & \textsc{moving averages}\\
+\midrule
+SGD & $\ell_2$, unnormalized & none & momentum, optional\\
+signSGD & $\ell_\infty$ & none & none\\
+Lion & $\ell_\infty$ & none & one average of $g$, two coefficients\\
+Adam & $\ell_\infty$ when memoryless & diagonal, from $g^2$ & of $g$ ($\beta_1$) and of $g^2$ ($\beta_2$)\\
+AdaGrad & $\norm{\cdot}_{P_t}$, $P_t$ diagonal & diagonal, from the running sum of $g^2$ & none\\
+Shampoo & spectral when memoryless & Kronecker factors, power $-\frac14$ & sums or averages of $GG^\top$ and $G^\top G$\\
+K-FAC & Fisher norm, layer by layer & Kronecker factors, power $-1$ & of both factors\\
+SOAP & $\ell_\infty$ in a rotated basis when memoryless & diagonal, in Shampoo's eigenbasis & as in Adam\\
+Muon & spectral (RMS$\to$RMS) & none & Nesterov momentum\\
+\bottomrule
+\end{tabular}
+\caption{Nine optimizers of Parts I and II, described by their three ingredients. ``Memoryless'' means that only the current gradient is used and that the small constant added for numerical stability is zero; the entries are made precise in the field guides of \cref{ch:steepest,ch:sign,ch:spectral,ch:momentum,ch:adaptive,ch:kronecker}.}
+\label{tab:prologue:ingredients}
+\end{table}
+
+This line of thought has a precise history. Steepest descent in non-Euclidean norms is classical, and it was used to speed up combinatorial algorithms such as maximum flow \parencite{KelnerEtAl2014}. Spectral descent was proposed for neural networks by \textcite{CarlsonEtAl2015}; the observation that the optimizers of deep learning, with their moving averages switched off, are instances of steepest descent, and that the right norm for a network is assembled from norms on its layers, was developed by Jeremy Bernstein, Laker Newhouse, and coauthors \parencite{BernsteinNewhouse2024,LargeEtAl2024,BernsteinNewhouse2025} and is the subject of Newhouse's thesis \parencite{Newhouse2025}. Parts I and II of this book present it as a textbook theory, with complete proofs of the facts it rests on.
+
+\paragraph{The dynamics line.} The second line studies what happens when these optimizers run with the step sizes that practice uses, which are far outside the regime of the theorem above. Full-batch gradient descent on a neural network drives the largest eigenvalue of the Hessian up until the step size is barely stable, and then holds it there \parencite{CohenEtAl2021}: the step size controls the curvature, not the other way around. The first steps of training meet curvature that would make the target step size unstable, which is one reason for warmup. Gradient noise adds to the loss a term proportional to the learning rate; holding the rate high makes fast progress along the flat directions of the landscape, and decaying it removes the noise term, which is what the cooldown of a schedule does. Weight decay, combined with normalization layers, drives the weights to an equilibrium norm, and the equilibrium sets the speed at which the weights rotate, an effective learning rate. Parts III and IV develop these mechanisms, each in the smallest model that exhibits it.
+
+\paragraph{Where the lines meet.} Part V asks two questions that need both lines. Why does Adam train transformers so much faster than gradient descent? In the idealizations of \cref{ch:transformers} the answer involves the coordinatewise geometry of Adam (the first line), the heavy-tailed classes and heterogeneous curvature of the problem, and the regime of curvature and noise that the batch size sets (the second). Where does each optimizer end up? Each norm has its own implicit bias, a maximum-margin solution measured in that norm.
+
+\addsec{A first example: one quadratic, two steps}
+
+A single example already contains both lines. Let $h_1\ge h_2\ge\dots\ge h_d>0$ and consider the quadratic
+\[
+  \Loss(\theta)=\tfrac12\sum_{i=1}^dh_i\theta_i^2,
+\]
+whose Hessian $H=\diag(h_1,\dots,h_d)$ has sharpness $S=h_1$. We compare two steepest-descent steps: gradient descent, $\theta\leftarrow\theta-\eta\nabla\Loss(\theta)$, which is steepest descent in the Euclidean norm with the unnormalized step; and sign descent, $\theta\leftarrow\theta-\eta\sign(\nabla\Loss(\theta))$, which is normalized steepest descent in the max norm. Because $h_i>0$, the sign of the gradient is the sign of $\theta$.
+
+\begin{theorem*}[Two steps on one quadratic]
+Let $\theta_0\in\R^d$.
+\begin{enumerate}
+\item Gradient descent with step size $\eta>0$ gives $\theta_{t,i}=(1-\eta h_i)^t\theta_{0,i}$. It converges from every initialization if and only if $\eta<2/h_1$, and then each coordinate converges at the rate $\abs{1-\eta h_i}$, which is at least $1-2h_i/h_1$.
+\item Sign descent with a constant step size $\eta>0$ moves each coordinate toward zero by exactly $\eta$ per step until it lies in $[0,\eta)$ in absolute value; from then on the coordinate alternates between two values $a_i$ and $a_i-\eta\sign(a_i)$ with $\abs{a_i}<\eta$, unless it is exactly zero. It never diverges and, unless every coordinate of $\theta_0$ is an integer multiple of $\eta$, never converges. For every $t\ge\max_i\abs{\theta_{0,i}}/\eta$, the loss $\Loss(\theta_t)$ is less than $\frac12\eta^2\tr H$.
+\item Sign descent with positive step sizes $\eta_t$ that tend to zero and satisfy $\sum_t\eta_t=\infty$ converges to zero from every initialization.
+\end{enumerate}
+\end{theorem*}
+
+\begin{proof}
+The plan is to reduce to one coordinate and solve each recursion exactly. The coordinates evolve independently in both methods, so it suffices to follow one coordinate, $x_t=\theta_{t,i}$ with curvature $h=h_i$.
+
+For (i), gradient descent gives $x_{t+1}=(1-\eta h)x_t$, a geometric sequence that tends to zero for every $x_0$ exactly when $\abs{1-\eta h}<1$, that is, when $0<\eta h<2$. All coordinates converge exactly when this holds for $h=h_1$, the largest curvature. If $\eta<2/h_1$, then $\eta h_i<2h_i/h_1$, so the rate $\abs{1-\eta h_i}\ge1-\eta h_i>1-2h_i/h_1$.
+
+For (ii), sign descent gives $x_{t+1}=x_t-\eta\sign(x_t)$. If $\abs{x_t}\ge\eta$, then the step does not cross zero and $\abs{x_{t+1}}=\abs{x_t}-\eta$; so after $k=\lfloor\abs{x_0}/\eta\rfloor$ steps $\abs{x_k}=\abs{x_0}-k\eta<\eta$. If $x_k=0$, then the coordinate stays at zero, because $\sign0=0$. Otherwise the next step crosses zero: $x_{k+1}=x_k-\eta\sign(x_k)$ has the opposite sign and $\abs{x_{k+1}}=\eta-\abs{x_k}<\eta$, and the step after that returns to $x_{k+2}=x_{k+1}+\eta\sign(x_k)=x_k$. So the coordinate alternates between $a=x_k$ and $a-\eta\sign(a)$, both of absolute value less than $\eta$. It is eventually constant only when $x_k=0$, that is, when $x_0$ is a multiple of $\eta$. For $t\ge\max_i\abs{\theta_{0,i}}/\eta$ we have $t\ge k$ for every coordinate, so every coordinate is in its cycle or at zero, each term $\frac12h_i\theta_{t,i}^2$ is less than $\frac12h_i\eta^2$, and the loss is less than $\frac12\eta^2\sum_ih_i$.
+
+For (iii), the step $x_{t+1}=x_t-\eta_t\sign(x_t)$ satisfies $\abs{x_{t+1}}=\abs{x_t}-\eta_t$ when $\abs{x_t}\ge\eta_t$, and $\abs{x_{t+1}}<\eta_t$ when $\abs{x_t}<\eta_t$: then $\abs{x_{t+1}}=\eta_t-\abs{x_t}$ if $x_t\ne0$, and $x_{t+1}=0$ if $x_t=0$. Let $\eps>0$ and choose $t_0$ with $\eta_t<\eps$ for all $t\ge t_0$. While $\abs{x_t}\ge\eps$ and $t\ge t_0$, the absolute value falls by $\eta_t$ at each step; since $\sum_t\eta_t=\infty$, it falls below $\eps$ at some step $t_1\ge t_0$. From then on it stays below $\eps$: if $\abs{x_t}<\eps$ and $t\ge t_0$, then either $\abs{x_{t+1}}=\abs{x_t}-\eta_t<\eps$ or $\abs{x_{t+1}}<\eta_t<\eps$. Since $\eps$ was arbitrary, $x_t\to0$.
+\end{proof}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[wplot,xlabel={step $t$},ylabel={loss $\Loss(\theta_t)$},ymode=log,xmin=0,xmax=400,ymin=1e-9,ymax=2,legend pos=south west,legend columns=1]
+\addplot[theory] table[x=t,y=gd_exact] {figures/data/00-prologue-quadratic.dat};
+\addplot[theory3,line width=0.6pt] table[x=t,y=sign_exact] {figures/data/00-prologue-quadratic.dat};
+\addplot[theory2] table[x=t,y=signlin_sim] {figures/data/00-prologue-quadratic.dat};
+\addplot[simulation,each nth point=9] table[x=t,y=gd_sim] {figures/data/00-prologue-quadratic.dat};
+\addplot[simulation,each nth point=9] table[x=t,y=sign_sim] {figures/data/00-prologue-quadratic.dat};
+\addplot[guide,domain=0:400] {1.635*0.0004/6};
+\addplot[guide] coordinates {(74.86,1e-9) (74.86,2)};
+\legend{gradient descent, sign descent, sign descent with linear decay}
+\end{axis}
+\end{tikzpicture}
+\caption{The two steps on $\Loss(\theta)=\frac12\sum_ih_i\theta_i^2$ with $h_i=1/i^2$, $d=100$, and $\theta_{0,i}$ uniform on $[\frac12,\frac32]$ (seed $0$). Gradient descent at $\eta=1.9$, just below its threshold $2/h_1=2$: the normal-mode formula (curve) and the iterates (points) agree to machine precision; the loss is soon dominated by the flat coordinates, whose rates $1-1.9\,h_i$ are close to one. Sign descent at $\eta=0.02$, the closed form of part (ii) of the theorem (curve) and the iterates (points): every coordinate travels at the same speed and reaches its two-cycle by the dashed vertical line $\max_i\abs{\theta_{0,i}}/\eta\approx75$; the loss then alternates between two values (the thin band, $4.1\times10^{-5}$ and $1.9\times10^{-4}$), around the dashed level $\eta^2\tr H/6\approx1.1\times10^{-4}$ expected for remainders $\abs{\theta_{0,i}}\bmod\eta$ spread uniformly over $[0,\eta)$. With the step size decayed linearly from $0.02$ to zero over the $400$ steps (dashed curve, iterates), sign descent goes far below that level, to $9\times10^{-10}$ at the last step.}
+\label{fig:prologue:quadratic}
+\end{figure}
+
+Small as it is, the example contains the first lesson of each part of the book (\cref{fig:prologue:quadratic}). Gradient descent is limited by stability: its step size must stay below $2/h_1$, so the flat directions, with $h_i\ll h_1$, are learned no faster than at the rate $1-2h_i/h_1$, close to one; the condition number $h_1/h_d$ sets the speed. Sign descent is not limited by stability at all, and it treats every coordinate alike, whatever its curvature: on this problem it reaches its floor, a loss of about $10^{-4}$, in about $75$ steps, and gradient descent needs about $6500$ steps to get as low. This is the $\ell_\infty$ geometry of \cref{ch:sign}, and its advantage on badly conditioned, axis-aligned problems is one ingredient of the answer in \cref{ch:transformers}. But at a fixed step size a normalized step does not converge, except from special starting points; it oscillates at an amplitude set by the step, and only a schedule that takes the step to zero removes the oscillation. With noisy gradients a fixed step size leaves every optimizer on a floor set by the step, which is one reason that learning-rate schedules exist (\cref{ch:schedules}); and when the noise is skewed, a normalized step without memory can stall at a gradient of the size of the noise, however small the step, which is why normalized methods need momentum (\cref{ch:momentum}).
+
+\addsec{What the quadratic gets wrong}
+
+The quadratic is to optimization what the harmonic oscillator is to mechanics, and it is wrong in ways that organize the rest of the book. Its Hessian is constant, so the step size cannot change the curvature; in a network it does: gradient descent runs at the edge of stability (\cref{ch:eos}), and the curvature of the first steps, too high for the target step size, calls for a warmup (\cref{ch:warmup}). Its gradients are exact; with noise, every method has a floor that depends on the step size, and the batch size and the schedule become the main controls (\cref{ch:noise,ch:schedules}). It is axis-aligned; rotate it, and sign descent loses its advantage (\cref{ch:sign,ch:transformers}). It has a single minimizer; a model that can fit its training data can fit it in many ways, and the norm of the optimizer decides which one training approaches (\cref{ch:bias}). And its parameters are a single vector; a network's parameters are matrices arranged in layers, which calls for norms on matrices and for a norm on the whole network (\cref{ch:spectral,ch:modular}).
+
+\addsec{How each chapter is built}
+
+Each chapter starts in the wild, with a practice: a default, a rule of thumb, or a regularity seen in training runs, stated in a box with its typical values and its sources, together with the evidence for it. The second section builds the smallest idealization in which the practice can be analyzed, and a dictionary translates between the two. The theory follows, with at least one main theorem proved completely. A section on reading the theory compares its predictions with a simulation; in every chapter at least one figure plots an exact prediction as a curve against simulated points. The chapter then says what the theory misses, in three parts: what was idealized away, where the theory breaks, and which refinements repair it and what remains open. The last section returns to the wild, with field notes that summarize the practice, the idealization, what was proved, what is predicted, what is missed, and what a practitioner might take away.
+
+In Parts I and II each optimizer gets a field-guide entry: its update rule, its norm, its preconditioner, its moving averages, its memory cost, and its typical settings. Status is marked throughout. A theorem with a proof ending in $\blacksquare$ is proved; a proof sketch says what it omits and where to find it; a heuristic derivation, ending in $\Diamond$, is an argument that is not a proof and is marked as such; an observation is an empirical regularity, stated with its evidence; and a rule used without evidence that can be cited is called folklore. Many practices in this book are folklore, and saying so is part of the theory.
+
+Each chapter closes with exercises of four kinds (consolidation, variation, simulation, and research) and with notes that end by translating the notation of the main source papers into the notation of this book.
+
+\addsec{A map of the book}
+
+\Cref{tab:prologue:map} lists the chapters. Part I develops steepest descent: the geometry of a step in a general norm, the $\ell_\infty$ geometry of sign descent and Adam, the spectral geometry of Muon, and the norm of a whole network. Part II adds memory: moving averages, adaptive diagonal preconditioners, and Kronecker-factored ones. Part III is about stability: the edge of stability, warmup, and clipping and loss spikes. Part IV is about noise and time: batch size, schedules, and weight decay. Part V brings the two lines together. The epilogue keeps a ledger of the practices and the verdicts of the chapters on them, and the appendix collects the mathematics the chapters share.
+
+\begin{table}[p]
+\begin{fullwidth}
+\centering\footnotesize
+\renewcommand{\arraystretch}{1.14}
+\begin{tabular}{@{}r>{\raggedright\arraybackslash}p{28mm}>{\raggedright\arraybackslash}p{32mm}>{\raggedright\arraybackslash}p{50mm}>{\raggedright\arraybackslash}p{38mm}@{}}
+\toprule
+& \textsc{in the wild} & \textsc{idealization} & \textsc{main result} & \textsc{misses}\\
+\midrule
+1 & Normalized updates & Steepest descent in a normed space & Duality maps of the norms in use; rates that depend on the norm only through $L$ and $\norm\cdot_*$ & A fixed norm; global smoothness\\
+2 & Adam, signSGD, Lion & $\ell_\infty$ steepest descent & Sign descent wins when the gradient is spread over more coordinates than the curvature has stiff directions; Adam's step is at most $C(\beta_1,\beta_2)$ learning rates & Memory; why the coordinates of a network are good ones\\
+3 & Muon, Shampoo & Spectral steepest descent & The polar factor is the steepest step; Muon's quintic keeps the singular values in a band; spectral beats Frobenius when the gradient's nuclear rank exceeds the inputs' stable rank & Momentum and noise; one matrix, one step\\
+4 & Hyperparameter transfer & The norm of a network & Per-layer learning rates for width-independent feature updates & Alignment after the first step; horizon and batch size\\
+\midrule
+5 & Momentum $0.9$ & Quadratics; noisy normalized steps & Acceleration and stability regions; with noise, momentum is a larger step; without memory, normalized steps keep a bias & A reason for $0.9$\\
+6 & Adam's $\beta_2$; AdaGrad & Online convex optimization & AdaGrad against the best diagonal norm in hindsight; when Adam fails; the memory that $\beta_2$ sets & Nonconvexity; why $0.95$ works\\
+7 & Shampoo, K-FAC, SOAP & Kronecker-structured curvature & The Kronecker bound and Shampoo's regret; which power of the factors conditions the problem & Drifting, non-Kronecker statistics; gains at scale\\
+\midrule
+8 & Training at the stability limit & A cubic model of self-stabilization & Thresholds for GD, momentum and Adam; time averages at the edge & The cause of progressive sharpening\\
+9 & Linear warmup & Curvature bounded by the loss & The safe step grows as the loss falls; a rising step is optimal among stable schedules & The curvature bound is measured, not derived\\
+10 & Clipping, z-loss, QK-norm & $(L_0,L_1)$-smoothness & Clipped descent avoids the large-gradient penalty that every fixed step pays; mechanisms of spikes & Interacting causes of real spikes\\
+\midrule
+11 & Batch-size rules & The noisy quadratic model & Exact loss curves; linear scaling up to a critical batch size; preconditioning raises it & Curvature and noise that change during training\\
+12 & Cosine and WSD & Convex last iterates; the river valley & Bounds for every schedule; the noise floor and the cooldown & A landscape that moves with the schedule\\
+13 & AdamW's weight decay & Frank--Wolfe; scale invariance & Steepest descent with decay is Frank--Wolfe; rotational equilibrium at the angle $\arccos(1-\eta\lambda)$ per step & Layers that are not scale invariant\\
+\midrule
+14 & Adam for transformers & Zipf classes; block curvature; batch regimes & GD slows to logarithmic decay on heavy-tailed classes; the gap grows with batch size & How the mechanisms interact\\
+15 & Adaptive methods and generalization & Separable data & Steepest descent reaches the maximum margin of its norm & Depth; finite training\\
+\bottomrule
+\end{tabular}
+\caption{The chapters, each with the practice it starts from, the idealization it analyzes, its main result, and its most important omission.}
+\label{tab:prologue:map}
+\end{fullwidth}
+\end{table}
+
+\addsec{How to read this book}
+
+The prerequisites are undergraduate analysis, linear algebra, and probability, together with familiarity with gradient descent and with neural networks at the level of an introductory course. Each chapter builds what it uses, and the shared tools (dual norms, the polar decomposition, Kronecker products and the matrix geometric mean, the stability of linear recurrences, the descent lemma, online convex optimization, and martingale and tail bounds) are collected in \cref{ch:toolkit}. \Cref{ch:steepest} fixes the vocabulary of the whole book and should be read first. After it, Parts I and II can be read in order as a course on the unification line, and Parts III and IV as a course on the dynamics line; \cref{ch:momentum} is useful for both. Part V uses both lines.
+
+Three cautions. First, an idealization is not an explanation of training. Each chapter explains one practice in one idealized setting, and whether the same mechanism operates in a large network is an empirical question that the chapter examines separately. Second, practice changes quickly: the recipes quoted in this book are dated and sourced, and some will be out of date when it is read. The mechanisms should last longer than the recipes. Third, the theory is uneven. Some practices, such as the form of the update rules, are explained well; most, such as warmup and the shape of the learning-rate schedule, are explained in part; and some, such as the value $\beta_1=0.9$ or the rise of curvature during training, are not explained at all. The epilogue keeps the account.
+
+\notesandrefs
+
+The convergence theorem for stochastic gradient descent in the nonconvex smooth setting is due to \textcite{GhadimiLan2013}; \textcite{BottouCurtisNocedal2018} survey the theory of stochastic optimization for machine learning as it stood in 2018, before many of the practices in this book became standard, and \textcite{Nesterov2018} and \textcite{Polyak1987} are standard texts on gradient methods and their convergence theory. The training recipes quoted in the prologue are from the papers describing GPT-3 \parencite{BrownEtAl2020} and LLaMA \parencite{TouvronEtAl2023}; the \emph{Deep Learning Tuning Playbook} \parencite{GodboleEtAl2023} is a systematic practical guide to tuning such recipes. Adam is due to \textcite{KingmaBa2015} and its decoupled weight decay to \textcite{LoshchilovHutter2019}; Muon was introduced in a blog post by \textcite{JordanEtAl2024Muon} and scaled to large language models by \textcite{LiuEtAl2025Muon}.
+
+The unification of optimizers as steepest descent under norms is set out in \textcite{BernsteinNewhouse2024}, a workshop paper that reads Adam, Shampoo, and Prodigy with their moving averages switched off as steepest descent in particular norms, and, for whole networks, in \textcite{LargeEtAl2024} and \textcite{BernsteinNewhouse2025}; \textcite{Newhouse2025} gives a connected account in a thesis, and \cref{ch:steepest} gives more of the history. The edge of stability was described by \textcite{CohenEtAl2021}. Benchmarks that compare optimizers under careful tuning are AlgoPerf \parencite{DahlEtAl2023} and the study of \textcite{WenEtAl2026Fantastic}, which found that the speedups of newer optimizers over a well-tuned AdamW shrink as models grow; their results are a useful corrective to every claim in this book that one optimizer is better than another.
+
+\printchapterbib
+\end{refsection}

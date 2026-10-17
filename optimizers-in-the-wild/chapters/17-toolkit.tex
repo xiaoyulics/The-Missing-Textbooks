@@ -1,0 +1,543 @@
+% Appendix A of Optimizers in the Wild: the shared mathematical toolkit.
+\casechapter{A Toolkit}{Duality, matrices, recurrences and online learning}{}{ch:toolkit}
+\begin{refsection}[chapters/17-toolkit.bib]
+
+This appendix collects the mathematics that the chapters share, in the form in which they use it, with a proof wherever one fits in a page; it is a reference, not a chapter to be read in order. Norms and duality (\cref{sec:toolkit:duality}) are the language of \cref{ch:steepest,ch:sign,ch:spectral,ch:modular} and return in \cref{ch:momentum,ch:decay,ch:bias}. Matrix analysis (\cref{sec:toolkit:matrices}) supplies the polar factor of \cref{ch:spectral} and the L\"owner order, Kronecker products, and geometric mean behind the preconditioners of \cref{ch:adaptive,ch:kronecker}. Linear recurrences (\cref{sec:toolkit:recurrences}) give the stability thresholds of \cref{ch:momentum,ch:eos}, the noise floors of \cref{ch:momentum,ch:noise,ch:schedules}, and, through Gr\"onwall's inequality, the local smoothness bounds of \cref{ch:spikes}. The descent lemma and the Polyak--\L{}ojasiewicz inequality (\cref{sec:toolkit:smooth}) start the convergence proofs of the prologue and of \cref{ch:steepest,ch:sign,ch:warmup}; online convex optimization (\cref{sec:toolkit:online}) is the setting of \cref{ch:adaptive,ch:kronecker,ch:schedules}; and martingale and tail bounds (\cref{sec:toolkit:prob}) control the noise in \cref{ch:momentum} and the sign errors in \cref{ch:sign}.
+
+\paragraph{Conventions.} Vectors live in $\R^d$. A linear functional, such as a gradient, is identified with a vector $z$ through the pairing $\ip{z,x}=\sum_iz_ix_i$,\sidenote{The identification uses the pairing, not the norm. Changing the norm changes which step is steepest; it does not change the gradient.} and matrices carry the pairing $\ip{A,B}=\tr(A^\top B)$. An unadorned $\norm{\cdot}$ is an arbitrary norm. For symmetric matrices, $A\preceq B$ means that $B-A$ is positive semidefinite, written $B-A\succeq0$, and $A\prec B$ that it is positive definite.
+
+\section{Norms and duality}\label{sec:toolkit:duality}
+
+A norm measures steps. A gradient turns a step into a rate of change of the loss, and the dual norm measures it by the largest rate it offers per unit step.
+
+\begin{definition}[Dual norm]\label{def:toolkit:dual}
+The \term{dual norm}\index{dual norm} of a norm $\norm{\cdot}$ on $\R^d$ is $\norm{z}_*=\max_{\norm{x}\le1}\ip{z,x}$. The maximum exists because the unit ball is closed and bounded, hence compact.
+\end{definition}
+
+One fact from convex geometry is used twice, here and as the engine of online gradient descent (\cref{thm:toolkit:ogd}). For $P\succ0$ write $\norm{x}_P=\sqrt{x^\top Px}$.
+
+\begin{lemma}[Projection onto a convex set]\label{lem:toolkit:projection}
+Let $P\succ0$ and let $\cK\subseteq\R^d$ be nonempty, closed, and convex. Every $y\in\R^d$ has a unique nearest point $\Pi(y)=\argmin_{x\in\cK}\norm{x-y}_P$, and for every $u\in\cK$,
+\[
+  \ip{P(y-\Pi(y)),u-\Pi(y)}\le0,\qquad\norm{\Pi(y)-u}_P^2\le\norm{y-u}_P^2-\norm{y-\Pi(y)}_P^2 .
+\]
+\end{lemma}
+
+\begin{proof}
+A minimizer $p$ exists because $x\mapsto\norm{x-y}_P$ is continuous and, for a fixed $x_0\in\cK$, the points of $\cK$ with $\norm{x-y}_P\le\norm{x_0-y}_P$ form a compact set. For $u\in\cK$ and $s\in(0,1]$ the point $p+s(u-p)$ lies in $\cK$, so $0\le\norm{y-p-s(u-p)}_P^2-\norm{y-p}_P^2=-2s\ip{P(y-p),u-p}+s^2\norm{u-p}_P^2$; dividing by $s$ and letting $s\downarrow0$ gives the first inequality. Expanding $\norm{y-u}_P^2=\norm{(y-p)+(p-u)}_P^2$ and using the first inequality gives the second, and the second with $u=p'$ shows that every minimizer $p'$ equals $p$.
+\end{proof}
+
+\begin{lemma}[Dual norms]\label{lem:toolkit:dualnorm}
+Let $\norm{\cdot}$ be a norm on $\R^d$ and $\norm{z}_*=\max_{\norm{x}\le1}\ip{z,x}$ its dual (\cref{def:toolkit:dual}).
+\begin{enumerate}
+\item The dual norm is a norm, and \term{H\"older's inequality}\index{Holder's inequality@H\"older's inequality} $\abs{\ip{z,x}}\le\norm{z}_*\norm{x}$ holds for all $z$ and $x$.
+\item (Bidual.) For every $x$, $\norm{x}=\max_{\norm{z}_*\le1}\ip{z,x}$.
+\item Let $1\le p\le\infty$ and $1/p+1/q=1$, with $q=\infty$ for $p=1$ and $q=1$ for $p=\infty$. The dual of $\norm{\cdot}_p$ is $\norm{\cdot}_q$. For $z\ne0$ the maximum of $\ip{z,x}$ over $\norm{x}_p\le1$ is attained at $x=\sign(z)$ if $q=1$, at $x=\sign(z_i)e_i$ with $\abs{z_i}=\norm{z}_\infty$ if $q=\infty$, and at $x_i=\sign(z_i)\abs{z_i}^{q-1}/\norm{z}_q^{q-1}$ if $1<q<\infty$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+Parts (i) and (iii) are computations; for (ii) the plan is to separate a point of the unit sphere from the unit ball by a hyperplane, obtained as a limit of projections. (i) By the equivalence of norms on $\R^d$, $c\norm{x}_2\le\norm{x}\le C\norm{x}_2$ for some $0<c\le C$, so $\norm{z}_2/C\le\norm{z}_*\le\norm{z}_2/c$. The dual norm is positively homogeneous by definition, even because the unit ball is symmetric, and subadditive because a maximum of a sum is at most the sum of the maxima. Applying the definition to $\pm x/\norm{x}$ gives H\"older's inequality.
+
+(ii) H\"older's inequality gives $\max_{\norm{z}_*\le1}\ip{z,x}\le\norm{x}$; for the reverse we may assume $\norm{x}=1$. Let $B$ be the unit ball, let $p_k$ be the Euclidean projection of $y_k=(1+1/k)x\notin B$ onto $B$ (\cref{lem:toolkit:projection} with $P=I$), and let $z_k=(y_k-p_k)/\norm{y_k-p_k}_2$. By the lemma $\ip{z_k,u-p_k}\le0$ for $u\in B$, while $\ip{z_k,y_k-p_k}>0$, so $\ip{z_k,u}<\ip{z_k,y_k}$ for every $u\in B$. A subsequence of the unit vectors $z_k$ converges to a unit vector $z$ with $\ip{z,u}\le\ip{z,x}$ for all $u\in B$, that is, $0<\norm{z}_*\le\ip{z,x}$; so $z/\norm{z}_*$ has dual norm $1$ and pairs with $x$ to at least $1=\norm{x}$.
+
+(iii) For $p\in\{1,\infty\}$, $\abs{\ip{z,x}}\le\sum_i\abs{z_i}\abs{x_i}$, which is at most $\norm{z}_\infty\norm{x}_1$ and at most $\norm{z}_1\norm{x}_\infty$, and the stated vectors attain these bounds. For $1<p<\infty$, the concavity of the logarithm gives Young's inequality $ab\le a^p/p+b^q/q$ for $a,b\ge0$; summed over the coordinates of $x$ and $z$ with $\norm{x}_p=\norm{z}_q=1$ it gives $\abs{\ip{z,x}}\le1$, hence $\abs{\ip{z,x}}\le\norm{z}_q\norm{x}_p$ by homogeneity. Since $(q-1)p=q$, the stated $x$ has $\norm{x}_p^p=\sum_i\abs{z_i}^q/\norm{z}_q^q=1$ and $\ip{z,x}=\norm{z}_q$.
+\end{proof}
+
+For a convex function $f$ on $\R^d$, a vector $z$ is a subgradient of $f$ at $x$ if $f(y)\ge f(x)+\ip{z,y-x}$ for all $y$; the set $\partial f(x)$ of subgradients is the \term{subdifferential}\index{subdifferential}. A convex function is differentiable at $x$ if and only if $\partial f(x)$ has a single element, which is then $\nabla f(x)$ \parencite[Section~25]{Rockafellar1970}.
+
+\begin{lemma}[The subdifferential of a norm and the linear minimization oracle]\label{lem:toolkit:subdiff}
+For every $x\in\R^d$, $\partial\norm{\cdot}(x)=\{z:\norm{z}_*\le1,\ \ip{z,x}=\norm{x}\}$. In particular $\partial\norm{\cdot}(0)$ is the dual unit ball, and every subgradient at $x\ne0$ has dual norm $1$. Applied to the dual norm, this says that for every $g\in\R^d$
+\begin{equation}\label{eq:toolkit:lmo}
+  \argmin_{\norm{u}\le1}\ip{g,u}=-\partial\norm{\cdot}_*(g)=\{u:\norm{u}\le1,\ \ip{g,u}=-\norm{g}_*\}.
+\end{equation}
+Hence every \term{linear minimization oracle}\index{linear minimization oracle} $\lmo(g)$ satisfies $\ip{g,\lmo(g)}=-\norm{g}_*$, and $\norm{\lmo(g)}=1$ when $g\ne0$, while every point of the unit ball is a minimizer when $g=0$. The oracle is unique exactly when $\norm{\cdot}_*$ is differentiable at $g$, and then $\lmo(g)=-\nabla\norm{\cdot}_*(g)$.
+\end{lemma}
+
+\begin{proof}
+If $\norm{z}_*\le1$ and $\ip{z,x}=\norm{x}$, then $\norm{x}+\ip{z,y-x}=\ip{z,y}\le\norm{y}$ for every $y$, so $z$ is a subgradient. Conversely, for a subgradient $z$ the subgradient inequality at $y=0$ and at $y=2x$ gives $\ip{z,x}=\norm{x}$, after which it reads $\ip{z,y}\le\norm{y}$ for all $y$, that is, $\norm{z}_*\le1$; and at $x\ne0$, $\norm{x}=\ip{z,x}\le\norm{z}_*\norm{x}$ forces $\norm{z}_*=1$. By \cref{lem:toolkit:dualnorm}(ii) the norm $\norm{\cdot}$ is the dual of $\norm{\cdot}_*$, so the first part applied to $\norm{\cdot}_*$ at $g$ identifies $\partial\norm{\cdot}_*(g)$ with the maximizers of $\ip{g,u}$ over the unit ball; since the ball is symmetric, the minimizers are their negatives. The last sentence is the criterion for differentiability quoted above.
+\end{proof}
+
+The \term{convex conjugate}\index{convex conjugate} of a function $f$ on $\R^d$ is $f^*(z)=\sup_x\{\ip{z,x}-f(x)\}$: at a gradient, the best first-order gain of a step minus its cost.
+
+\begin{lemma}[The conjugate of half a squared norm, and the sharp operator]\label{lem:toolkit:conjugate}
+The conjugate of $f(x)=\frac12\norm{x}^2$ is $f^*(z)=\frac12\norm{z}_*^2$, and the supremum defining $f^*(z)$ is attained exactly at the points $x=-\norm{z}_*u$ with $u\in\argmin_{\norm{u}\le1}\ip{z,u}$. Consequently the \term{sharp operator}\index{sharp operator}
+\[
+  g^\sharp\in\argmax_{u\in\R^d}\bigl\{\ip{g,u}-\tfrac12\norm{u}^2\bigr\}
+\]
+is $g^\sharp=-\norm{g}_*\lmo(g)$, one value for each choice of the oracle; every value satisfies $\norm{g^\sharp}=\norm{g}_*$ and $\ip{g,g^\sharp}=\norm{g}_*^2$; and for every $L>0$,
+\begin{equation}\label{eq:toolkit:quadmin}
+  \min_{u\in\R^d}\Bigl\{\ip{g,u}+\frac L2\norm{u}^2\Bigr\}=-\frac{\norm{g}_*^2}{2L},\qquad\text{attained at }u=-\frac{g^\sharp}{L}.
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+For every $x$, H\"older's inequality and $ab\le\frac12a^2+\frac12b^2$ give $\ip{z,x}-\frac12\norm{x}^2\le\norm{z}_*\norm{x}-\frac12\norm{x}^2\le\frac12\norm{z}_*^2$, with equality in both steps if and only if $\norm{x}=\norm{z}_*$ and $\ip{z,x}=\norm{z}_*\norm{x}$. If $z=0$, then $x=0$. If $z\ne0$, write $x=-\norm{z}_*u$; the conditions become $\norm{u}=1$ and $\ip{z,u}=-\norm{z}_*$, which by \cref{lem:toolkit:subdiff} describe the minimizers of $\ip{z,u}$ over the unit ball, the set \eqref{eq:toolkit:lmo}. Such minimizers exist, so the supremum is attained and equals $\frac12\norm{z}_*^2$; the claims about $g^\sharp$ are the case $z=g$. For \eqref{eq:toolkit:quadmin}, the substitution $u=-v/L$ gives $\ip{g,u}+\frac L2\norm{u}^2=-\frac1L\bigl(\ip{g,v}-\frac12\norm{v}^2\bigr)$, whose minimum is $-\frac1{2L}\norm{g}_*^2$, attained at $v=g^\sharp$.
+\end{proof}
+
+When the oracle is not unique, $g^\sharp$ stands for each maximizer; all of them have the same norm and the same pairing with $g$, which is all that the convergence proofs use. In the Euclidean norm $g^\sharp=g$, and preconditioning is the same construction for a quadratic norm; \cref{tab:toolkit:duality} lists the duality maps of the norms used in this book.
+
+\begin{example}[Quadratic norms and preconditioning]\label{exa:toolkit:quadnorm}
+Let $P\succ0$. The dual of $\norm{x}_P$ is $\norm{z}_{P^{-1}}$, $g^\sharp=P^{-1}g$, and for $g\ne0$ the oracle is unique, $\lmo(g)=-P^{-1}g/\norm{g}_{P^{-1}}$. Indeed $\ip{z,x}=\ip{P^{-1/2}z,P^{1/2}x}\le\norm{z}_{P^{-1}}\norm{x}_P$ by the Cauchy--Schwarz inequality, with equality exactly when $x$ is a nonnegative multiple of $P^{-1}z$. So preconditioned gradient descent $\theta\leftarrow\theta-\eta P^{-1}g$ is unnormalized steepest descent in $\norm{\cdot}_P$: choosing a preconditioner is choosing a quadratic norm (\cref{ch:adaptive}).
+\end{example}
+
+\begin{table}[t]
+\centering\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{@{}llll@{}}
+\toprule
+norm of a step & dual norm & an oracle $\lmo(g)$ & sharp operator $g^\sharp$\\
+\midrule
+$\norm{u}_2$ & $\norm{g}_2$ & $-g/\norm{g}_2$ & $g$\\
+$\norm{u}_\infty$ & $\norm{g}_1$ & $-\sign(g)$ & $\norm{g}_1\sign(g)$\\
+$\norm{u}_1$ & $\norm{g}_\infty$ & $-\sign(g_i)\,e_i$ & $g_i\,e_i$\\
+$\norm{u}_P$ & $\norm{g}_{P^{-1}}$ & $-P^{-1}g/\norm{g}_{P^{-1}}$ & $P^{-1}g$\\
+$\norm{U}_{\op}$ & $\norm{G}_{\nuc}$ & $-\polar(G)$ & $\norm{G}_{\nuc}\polar(G)$\\
+$\norm{U}_F$ & $\norm{G}_F$ & $-G/\norm{G}_F$ & $G$\\
+$\norm{U}_{\nuc}$ & $\norm{G}_{\op}$ & $-u_1v_1^\top$ & $\sigma_1(G)\,u_1v_1^\top$\\
+\bottomrule
+\end{tabular}
+\caption{Duality maps, for $g\ne0$ and $G\ne0$. In the $\ell_1$ row, $\abs{g_i}=\norm{g}_\infty$; in the nuclear row, $(u_1,v_1)$ is a top singular pair of $G$. The oracle is unique except in four cases, where the table lists one choice: $\ell_\infty$ when some $g_i=0$, $\ell_1$ when the largest $\abs{g_i}$ occurs at two or more coordinates, the spectral norm when $G$ does not have full rank, and the nuclear norm when $\sigma_1(G)=\sigma_2(G)$. Proofs: \cref{lem:toolkit:dualnorm}(iii) and \cref{ch:steepest} for vectors, \cref{exa:toolkit:quadnorm} for $\norm{\cdot}_P$, and \cref{thm:toolkit:vonneumann} with \cref{ch:spectral} for matrices.}
+\label{tab:toolkit:duality}
+\end{table}
+
+\section{Matrix analysis}\label{sec:toolkit:matrices}
+
+\paragraph{Singular values.} Let $G\in\R^{m\times n}$ and $k=\min\{m,n\}$. A singular value decomposition $G=\sum_{i=1}^k\sigma_iu_iv_i^\top$ has $\sigma_1\ge\dots\ge\sigma_k\ge0$ and orthonormal families $(u_i)$ in $\R^m$ and $(v_i)$ in $\R^n$; it exists by the spectral theorem for $G^\top G$ \parencite{HornJohnson2013}, and $\sigma(G)=(\sigma_1,\dots,\sigma_k)$ is the vector of singular values. A function acts on a symmetric $A=\sum_i\lambda_ia_ia_i^\top$, a spectral decomposition, by $f(A)=\sum_if(\lambda_i)a_ia_i^\top$, a polynomial in $A$ that does not depend on the decomposition; this defines $A^s$ for $A\succeq0$ and $s\ge0$, with $A^0=I$, and for $A\succ0$ and all real $s$, and $A^{1/2}$ is the only positive semidefinite square root of $A$ \parencite{HornJohnson2013}. Keeping the $r=\rank G$ terms with $\sigma_i>0$ gives the compact decomposition $G=U\diag(\sigma)V^\top$ with $U^\top U=V^\top V=I_r$, and $\polar(G)=UV^\top$, which does not depend on the decomposition: $\polar(G)=Gf(G^\top G)$ for $f(x)=x^{-1/2}$ ($x>0$) and $f(0)=0$. The \term{Schatten norm}\index{Schatten norm} $\norm{G}_{S_p}=\norm{\sigma(G)}_p$ is the spectral norm for $p=\infty$, the Frobenius norm for $p=2$, and the nuclear norm for $p=1$. A norm is unitarily invariant if $\norm{Q_1GQ_2}=\norm{G}$ for all orthogonal $Q_1,Q_2$; Schatten norms are, and that they are norms is part of the next theorem.
+
+\begin{theorem}[von Neumann's trace inequality and Schatten duality]\label{thm:toolkit:vonneumann}\index{von Neumann's trace inequality}
+For all $A,B\in\R^{m\times n}$,
+\begin{equation}\label{eq:toolkit:vn}
+  \abs{\tr(A^\top B)}\le\sum_{i=1}^k\sigma_i(A)\,\sigma_i(B),
+\end{equation}
+with equality when $A=\sum_ia_iu_iv_i^\top$ and $B=\sum_ib_iu_iv_i^\top$ are singular value decompositions with the same vectors. Consequently, for $1\le p\le\infty$ and $1/p+1/q=1$, $\max_{\norm{B}_{S_p}\le1}\tr(A^\top B)=\norm{A}_{S_q}$: the Schatten functions are norms, and the dual of $\norm{\cdot}_{S_p}$ is $\norm{\cdot}_{S_q}$. In particular the spectral and nuclear norms are dual to each other, the Frobenius norm is its own dual, and $\tr(A^\top\polar(A))=\norm{A}_{\nuc}$ with $\norm{\polar(A)}_{\op}\le1$.
+\end{theorem}
+
+\begin{proof}
+The plan is to reduce \eqref{eq:toolkit:vn} to an inequality between the two vectors of singular values, weighted by a matrix whose rows and columns sum to at most one, and to prove that inequality by summation by parts. Let $a=\sigma(A)$, $b=\sigma(B)$, and take full decompositions $A=U_1D_aV_1^\top$, $B=U_2D_bV_2^\top$ with orthogonal $U_1,U_2,V_1,V_2$, where $D_a\in\R^{m\times n}$ has $a_i$ in position $(i,i)$ and zeros elsewhere, and likewise $D_b$. With the orthogonal matrices $X=U_1^\top U_2$ and $Y=V_2^\top V_1$, the cyclic property of the trace gives
+\[
+  \tr(A^\top B)=\tr(D_a^\top XD_bY)=\sum_{i,j\le k}a_iX_{ij}b_jY_{ji},
+\]
+so $\abs{\tr(A^\top B)}\le\sum_{i,j\le k}a_iw_{ij}b_j$ with $w_{ij}=\frac12(X_{ij}^2+Y_{ji}^2)\ge\abs{X_{ij}Y_{ji}}$. Rows and columns of orthogonal matrices are unit vectors, so every row and every column of $(w_{ij})_{i,j\le k}$ sums to at most $1$. Put $a_{k+1}=b_{k+1}=0$, $\alpha_l=a_l-a_{l+1}\ge0$ and $\gamma_l=b_l-b_{l+1}\ge0$, so that $a_i=\sum_{l\ge i}\alpha_l$ and $b_j=\sum_{l\ge j}\gamma_l$. Exchanging the order of summation,
+\[
+  \sum_{i,j\le k}a_iw_{ij}b_j=\sum_{l,l'\le k}\alpha_l\gamma_{l'}\sum_{i\le l,\,j\le l'}w_{ij}\le\sum_{l,l'\le k}\alpha_l\gamma_{l'}\min\{l,l'\}=\sum_{i\le k}a_ib_i ,
+\]
+because the inner sum is at most $l$ by the row sums and at most $l'$ by the column sums, and because the last identity is the first one with $w$ replaced by the identity. With common singular vectors, $\tr(A^\top B)=\sum_{i,j}a_ib_j(u_i^\top u_j)(v_j^\top v_i)=\sum_ia_ib_i$.
+
+For the duality, \eqref{eq:toolkit:vn} and H\"older's inequality for vectors bound $\tr(A^\top B)$ by $\norm{\sigma(A)}_q\norm{\sigma(B)}_p$. Let $A=\sum_ia_iu_iv_i^\top\ne0$, and let $c$ maximize $\ip{\sigma(A),c}$ over the unit ball of $\ell_p$, as in \cref{lem:toolkit:dualnorm}(iii), with $c=e_1$ if $p=1$. Its entries are nonnegative and nonincreasing, so $B=\sum_ic_iu_iv_i^\top$ has $\sigma(B)=c$ and $\tr(A^\top B)=\norm{\sigma(A)}_q$. Hence $\norm{A}_{S_q}$ is the maximum of the linear functions $A\mapsto\tr(A^\top B)$ over $\{\norm{\sigma(B)}_p\le1\}$, so it is subadditive, hence a norm, and it is the dual of $\norm{\cdot}_{S_p}$. For $p=\infty$, $c=\sign(\sigma(A))$ and $B=\polar(A)$.
+\end{proof}
+
+Applied to the spectral norm, the theorem says that $-\polar(G)$ is a steepest unit step for a matrix gradient $G$, which is the update of Muon (\cref{ch:spectral}).\sidenote{\textcite{vonNeumann1937} proved the inequality for square matrices, in the paper that identified the unitarily invariant norms with the symmetric gauge functions of the singular values.} When $G$ has full rank, the polar factor is also the semi-orthogonal matrix closest to $G$.
+
+\begin{theorem}[The polar factor]\label{thm:toolkit:polar}\index{polar decomposition}
+Let $G\in\R^{m\times n}$ have rank $r$ and compact decomposition $G=U\diag(\sigma)V^\top$.
+\begin{enumerate}
+\item $G=\polar(G)(G^\top G)^{1/2}=(GG^\top)^{1/2}\polar(G)$. The matrix $\polar(G)$ has $r$ singular values equal to $1$ and the others $0$; it is semi-orthogonal ($\polar(G)^\top\polar(G)=I_n$ if $m\ge n$, $\polar(G)\polar(G)^\top=I_m$ if $m\le n$) if and only if $r=\min\{m,n\}$, and then $\polar(G)=G(G^\top G)^{-1/2}$ for $m\ge n$ and $\polar(G)=(GG^\top)^{-1/2}G$ for $m\le n$.
+\item Let $m\ge n$. Every $Q\in\R^{m\times n}$ with $Q^\top Q=I_n$ satisfies
+\[
+  \norm{G-Q}_F^2\ge\sum_{i=1}^r(\sigma_i-1)^2+(n-r),
+\]
+with equality if and only if $QV=U$. If $r=n$, then $\polar(G)$ is the unique nearest semi-orthogonal matrix in the Frobenius norm; if $r<n$, then the nearest ones are the semi-orthogonal $Q$ with $QV=U$. For $m<n$ the same holds with $QQ^\top=I_m$, $U^\top Q=V^\top$, and $m-r$ for $n-r$.
+\item The semi-orthogonal matrices nearest to $G$ in the Frobenius norm are also nearest in every unitarily invariant norm.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}[Proof of (i) and (ii)]
+The plan is to read (i) off the compact decomposition and to reduce (ii) to a trace that the Cauchy--Schwarz inequality bounds term by term. (i) From $G^\top G=V\diag(\sigma^2)V^\top$ we get $(G^\top G)^{1/2}=V\diag(\sigma)V^\top$ and $\polar(G)(G^\top G)^{1/2}=UV^\top V\diag(\sigma)V^\top=G$; the other identity is the same computation with $GG^\top$. The expression $UV^\top$ is a compact decomposition with $r$ singular values $1$, and $\polar(G)^\top\polar(G)=VV^\top$, the projection onto the column span of $V$, equals $I_n$ exactly when $r=n$; then $G(G^\top G)^{-1/2}=U\diag(\sigma)V^\top V\diag(\sigma)^{-1}V^\top=UV^\top$. The case $m\le n$ is the transpose.
+
+(ii) Since $\tr(Q^\top Q)=n$, $\norm{G-Q}_F^2=\norm{G}_F^2-2\tr(G^\top Q)+n$ with $\tr(G^\top Q)=\sum_{i\le r}\sigma_iu_i^\top Qv_i$. Because $\norm{Qv}_2^2=v^\top Q^\top Qv=\norm{v}_2^2$, the Cauchy--Schwarz inequality gives $u_i^\top Qv_i\le1$, with equality if and only if $Qv_i=u_i$. Hence $\norm{G-Q}_F^2\ge\sum_i\sigma_i^2-2\sum_i\sigma_i+n$, which is the bound, with equality if and only if $QV=U$. Such $Q$ exist: complete $(v_i)_{i\le r}$ to an orthonormal basis $(v_i)_{i\le n}$ of $\R^n$ and $(u_i)_{i\le r}$ to an orthonormal family $(u_i)_{i\le n}$ in $\R^m$, possible as $m\ge n$, and put $Q=\sum_{i\le n}u_iv_i^\top$. If $r=n$, then $V$ is orthogonal and $QV=U$ gives $Q=UV^\top$. For $m<n$ apply this to $G^\top$.
+\end{proof}
+
+Part (iii) is due to \textcite{FanHoffman1955} for square matrices; \textcite[Chapter~8]{Higham2008} treats the rectangular case. It is not used in this book.
+
+\paragraph{The L\"owner order.} The \term{L\"owner order}\index{Lowner order@L\"owner order} is preserved by congruence: $A\preceq B$ implies $CAC^\top\preceq CBC^\top$ for every $C$ of compatible size, with the converse when $C$ is invertible. A symmetric $N$ satisfies $N\preceq I$ if and only if $\lmax(N)\le1$, and for every matrix $X$, $\norm{X}_{\op}\le1$ if and only if $X^\top X\preceq I$, if and only if $XX^\top\preceq I$. A function $f$ on $[0,\infty)$ is \term{operator monotone} if $0\preceq A\preceq B$ implies $f(A)\preceq f(B)$ for symmetric matrices of every size.
+
+\begin{theorem}[L\"owner--Heinz inequality]\label{thm:toolkit:loewner}\index{Lowner--Heinz inequality@L\"owner--Heinz inequality}
+Let $0\preceq A\preceq B$ and $0\le r\le1$. Then $A^r\preceq B^r$, and if $A\succ0$, then also $B^{-r}\preceq A^{-r}$. For every $r>1$ the first statement fails for some pair; for $r=2$, $A=\bigl(\begin{smallmatrix}1&1\\1&1\end{smallmatrix}\bigr)\preceq B=\bigl(\begin{smallmatrix}2&1\\1&1\end{smallmatrix}\bigr)$, but $B^2-A^2=\bigl(\begin{smallmatrix}3&1\\1&0\end{smallmatrix}\bigr)$ has determinant $-1$.
+\end{theorem}
+
+\begin{proof}
+The plan is to turn each inequality $A^s\preceq B^s$ into an operator-norm bound, to derive the case $r=\frac12$ from the case $r=1$, and to obtain every $r\in[0,1]$ by repeating that step. Assume first that $B\succ0$. For $s\ge0$, congruence with $B^{-s/2}$ shows that $A^s\preceq B^s$ is equivalent to $B^{-s/2}A^sB^{-s/2}\preceq I$, that is, to $\norm{A^{s/2}B^{-s/2}}_{\op}\le1$. Let $\cS$ be the set of $s\in[0,1]$ for which $A^s\preceq B^s$ for all such pairs, of every size; it contains $0$ and $1$. If $r,s\in\cS$, then $X=A^{r/2}B^{-r/2}$ and $Y=A^{s/2}B^{-s/2}$ have operator norm at most $1$, and so does $X^\top Y=B^{-r/2}A^{(r+s)/2}B^{-s/2}$. This matrix is similar to $N=B^{(r-s)/4}(X^\top Y)B^{(s-r)/4}=B^{-(r+s)/4}A^{(r+s)/2}B^{-(r+s)/4}$, so the eigenvalues of the positive semidefinite $N$ are at most $1$, and $N\preceq I$, which by congruence is $A^{(r+s)/2}\preceq B^{(r+s)/2}$. With $r=0$ and $s=1$ this is the case $\frac12$: $\norm{A^{1/2}B^{-1/2}}_{\op}\le1$ gives $B^{-1/4}A^{1/2}B^{-1/4}\preceq I$. By induction $\cS$ contains the dyadic rationals of $[0,1]$. For $r\in(0,1]$ and positive dyadic $r_j\to r$, $x^{r_j}\to x^r$ for all $x\ge0$, so $A^{r_j}\to A^r$ and $B^{r_j}\to B^r$, and $r\in\cS$ as the positive semidefinite cone is closed. If $B$ is singular, apply the result to $A\preceq B+\eps I$ and let $\eps\downarrow0$.
+
+For the inverses, let $0\prec A\preceq B$, so that $X=A^{1/2}B^{-1/2}$ has $\norm{X}_{\op}\le1$. Then $XX^\top=A^{1/2}B^{-1}A^{1/2}\preceq I$, and congruence with $A^{-1/2}$ gives $B^{-1}\preceq A^{-1}$; applied to $A^r\preceq B^r$, this gives $B^{-r}\preceq A^{-r}$. In the example, $B-A=\diag(1,0)$. The case $r=2$ rules out every $r>1$: if $A^r\preceq B^r$ held for all pairs with $B\succ0$, then so would $A^{r^j}\preceq B^{r^j}$ for all $j$ (apply it repeatedly), and halving, which never used $s\le1$, and continuity would give every exponent in $[0,r^j]$, which contains $2$ for large $j$.
+\end{proof}
+
+So $t\mapsto t^r$ is operator monotone for $0\le r\le1$ and $t\mapsto t^{-r}$ reverses the order; this keeps the square roots and fourth roots of AdaGrad and Shampoo monotone as gradients accumulate (\cref{ch:adaptive,ch:kronecker}).\sidenote{The inequality is due to \textcite{Lowner1934}, who characterized all operator monotone functions, and to \textcite{Heinz1951}. The proof by repeated halving is one of several; \textcite[Chapter~V]{Bhatia1997} gives the general theory.}
+
+\paragraph{Kronecker products.} For $A\in\R^{m\times n}$ and $B\in\R^{p\times q}$, the \term{Kronecker product}\index{Kronecker product} $A\otimes B\in\R^{mp\times nq}$ is the block matrix with blocks $A_{ij}B$, and $\vect\colon\R^{m\times n}\to\R^{mn}$ stacks the columns, $\vect(X)=(X_{11},\dots,X_{m1},X_{12},\dots,X_{mn})^\top$.
+
+\begin{lemma}[Kronecker products and vectorization]\label{lem:toolkit:kron}
+For matrices of compatible sizes:
+\begin{enumerate}
+\item $(A\otimes B)(C\otimes D)=(AC)\otimes(BD)$, $(A\otimes B)^\top=A^\top\otimes B^\top$, and $\tr(A\otimes B)=\tr(A)\tr(B)$; in particular $A\otimes I$ and $I\otimes B$ commute, with product $A\otimes B$.
+\item With column stacking,
+\[
+  \vect(AXB)=(B^\top\otimes A)\vect(X),\qquad\vect(uw^\top)=w\otimes u,
+\]
+and $\ip{\vect(X),\vect(Y)}=\tr(X^\top Y)$. For symmetric $A\in\R^{m\times m}$ and $B\in\R^{n\times n}$, the matrix $B\otimes A$ acts on $\vect(X)$, $X\in\R^{m\times n}$, as $X\mapsto AXB$, and $\vect(X)^\top(B\otimes A)\vect(X)=\tr(X^\top AXB)$.
+\item If $A=\sum_i\lambda_i(A)a_ia_i^\top$ and $B=\sum_j\lambda_j(B)b_jb_j^\top$ are spectral decompositions, then $A\otimes B=\sum_{i,j}\lambda_i(A)\lambda_j(B)(a_i\otimes b_j)(a_i\otimes b_j)^\top$ is one; so the eigenvalues of $A\otimes B$ are the products $\lambda_i(A)\lambda_j(B)$, and $A\otimes B\succeq0$ when $A,B\succeq0$.
+\item For $A,B\succeq0$ and $r>0$, $(A\otimes B)^r=A^r\otimes B^r$; for $A,B\succ0$ this holds for every real $r$.
+\item If $0\preceq A\preceq A'$ and $0\preceq B\preceq B'$, then $A\otimes B\preceq A'\otimes B'$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The idea is to check each identity on blocks or on rank-one matrices and to extend it by linearity. (i) Block $(i,j)$ of $(A\otimes B)(C\otimes D)$ is $\sum_lA_{il}C_{lj}BD$; the transpose is taken blockwise; the diagonal blocks of $A\otimes B$ are $A_{ii}B$. (ii) Column $l$ of $uw^\top$ is $w_lu$, so $\vect(uw^\top)=w\otimes u$. With $X=\sum_jx_je_j^\top$ we have $\vect(X)=\sum_je_j\otimes x_j$ and $AXB=\sum_j(Ax_j)(B^\top e_j)^\top$, so by the mixed product $\vect(AXB)=\sum_j(B^\top e_j)\otimes(Ax_j)=(B^\top\otimes A)\vect(X)$. The last claims follow from $(B\otimes A)\vect(X)=\vect(AXB^\top)$ and $B=B^\top$. (iii) By the mixed product the vectors $a_i\otimes b_j$ are orthonormal and $(a_ia_i^\top)\otimes(b_jb_j^\top)=(a_i\otimes b_j)(a_i\otimes b_j)^\top$; expand $A\otimes B$ bilinearly. (iv) Apply $x\mapsto x^r$ to (iii), using $(xy)^r=x^ry^r$ for $x,y\ge0$. (v) $A'\otimes B'-A\otimes B=(A'-A)\otimes B'+A\otimes(B'-B)$, a sum of products of positive semidefinite matrices.
+\end{proof}
+
+Under column stacking, the matrix that multiplies $X$ from the right comes first: Shampoo's step $L^{-1/4}GR^{-1/4}$, with $L\in\R^{m\times m}$ accumulating $GG^\top$ and $R\in\R^{n\times n}$ accumulating $G^\top G$, is $(R^{-1/4}\otimes L^{-1/4})\vect(G)$.\sidenote{Some papers stack rows. With $\mathrm{rvec}(X)=\vect(X^\top)$ the identity reads $\mathrm{rvec}(AXB)=(A\otimes B^\top)\,\mathrm{rvec}(X)$, and the factors trade places; check the convention before comparing formulas from different sources.}
+
+\paragraph{The matrix geometric mean.} The geometric mean of two positive numbers is the solution $x>0$ of $x\,a^{-1}x=b$. For matrices that do not commute, $AB$ is not even symmetric, and the right generalization keeps the equation. It rests on Schur complements.
+
+\begin{lemma}[Schur complements]\label{lem:toolkit:schur}
+If $A\succ0$ and $C$ is symmetric, then $\bigl(\begin{smallmatrix}A&X\\X^\top&C\end{smallmatrix}\bigr)\succeq0$ if and only if $C\succeq X^\top A^{-1}X$.
+\end{lemma}
+
+\begin{proof}
+For the invertible matrix $E=\bigl(\begin{smallmatrix}I&-A^{-1}X\\0&I\end{smallmatrix}\bigr)$, a direct multiplication gives $E^\top\bigl(\begin{smallmatrix}A&X\\X^\top&C\end{smallmatrix}\bigr)E=\diag\bigl(A,\,C-X^\top A^{-1}X\bigr)$, and congruence by an invertible matrix preserves positive semidefiniteness in both directions.
+\end{proof}
+
+\begin{theorem}[The matrix geometric mean]\label{thm:toolkit:geomean}\index{matrix geometric mean}
+For positive definite $A,B\in\R^{n\times n}$ let $A\#B=A^{1/2}\bigl(A^{-1/2}BA^{-1/2}\bigr)^{1/2}A^{1/2}$.
+\begin{enumerate}
+\item $A\#B$ is the unique positive definite solution $X$ of $XA^{-1}X=B$. Hence $A\#B=B\#A$ and $(sA)\#(sB)=s(A\#B)$ for $s>0$.
+\item (Variational characterization.) $A\#B$ is the largest symmetric $X$, in the L\"owner order, such that
+\[
+  \begin{pmatrix}A&X\\X&B\end{pmatrix}\succeq0 :
+\]
+it satisfies the condition, and every symmetric $X$ that satisfies it has $X\preceq A\#B$. Consequently $A\#B$ is monotone in each argument, and $A\#B\preceq\frac12(A+B)$.
+\item (Joint concavity.) For positive definite $A_1,A_2,B_1,B_2$ and $s\in[0,1]$, $A_1\#B_1+A_2\#B_2\preceq(A_1+A_2)\#(B_1+B_2)$ and
+\[
+  s(A_1\#B_1)+(1-s)(A_2\#B_2)\preceq\bigl(sA_1+(1-s)A_2\bigr)\#\bigl(sB_1+(1-s)B_2\bigr).
+\]
+\item (Commuting case.) If $AB=BA$, then $A\#B=(AB)^{1/2}=A^{1/2}B^{1/2}$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to derive everything from the equation in (i) and from the block test of \cref{lem:toolkit:schur}. (i) Put $C=A^{-1/2}BA^{-1/2}\succ0$. The matrix $X=A^{1/2}C^{1/2}A^{1/2}$ is positive definite with $XA^{-1}X=A^{1/2}CA^{1/2}=B$. Conversely, if $X\succ0$ solves the equation, then $Y=A^{-1/2}XA^{-1/2}\succ0$ satisfies $Y^2=C$, so $Y=C^{1/2}$ and $X=A\#B$. If $Z=B\#A$, then $ZB^{-1}Z=A$; inverting gives $Z^{-1}BZ^{-1}=A^{-1}$, that is, $ZA^{-1}Z=B$, so $Z=A\#B$. And $sX$ solves the equation for $(sA,sB)$.
+
+(ii) By \cref{lem:toolkit:schur} the condition is $XA^{-1}X\preceq B$, which after congruence with $A^{-1/2}$ reads $Y^2\preceq C$ for the symmetric $Y=A^{-1/2}XA^{-1/2}$. Then $(Y^2)^{1/2}\preceq C^{1/2}$ by \cref{thm:toolkit:loewner} with $r=\frac12$, and $Y\preceq(Y^2)^{1/2}$ because each eigenvalue $y$ of $Y$ satisfies $y\le\abs{y}$; so $Y\preceq C^{1/2}$, and congruence with $A^{1/2}$ gives $X\preceq A\#B$. The choice $X=A\#B$, that is $Y=C^{1/2}$, satisfies the condition. If $A\preceq A'$ and $B\preceq B'$, then adding $\diag(A'-A,B'-B)\succeq0$ shows that $A\#B$ satisfies the condition for $(A',B')$, so $A\#B\preceq A'\#B'$. For every admissible $X$ and every $x$, the vector $(x,-x)$ gives $x^\top Ax-2x^\top Xx+x^\top Bx\ge0$, that is, $X\preceq\frac12(A+B)$.
+
+(iii) The block matrices of (ii) for $(A_1,B_1,A_1\#B_1)$ and $(A_2,B_2,A_2\#B_2)$ are positive semidefinite, hence so is their sum, the block matrix for $(A_1+A_2,B_1+B_2,A_1\#B_1+A_2\#B_2)$; now apply (ii). For $0<s<1$ the second inequality follows from the first, applied to $sA_1,sB_1,(1-s)A_2,(1-s)B_2$, and from (i); for $s\in\{0,1\}$ it is an equality.
+
+(iv) The matrices $A^{1/4}$ and $A^{1/2}$ are polynomials in $A$, and $B^{1/2}$ is a polynomial in $B$, so they commute. Hence $X=A^{1/2}B^{1/2}=A^{1/4}B^{1/2}A^{1/4}$ is positive definite and $XA^{-1}X=A^{1/2}B^{1/2}A^{-1/2}B^{1/2}=B$, so $X=A\#B$ by (i); and $X^2=AB$.
+\end{proof}
+
+Part (ii) turns an inequality about square roots, which are hard to handle, into one about a block matrix, which is linear in its entries. The next corollary is the form in which \cref{ch:kronecker} uses it.
+
+\begin{corollary}[Kronecker square roots are jointly concave]\label{cor:toolkit:kronmean}
+For positive semidefinite $A_1,\dots,A_T\in\R^{m\times m}$ and $B_1,\dots,B_T\in\R^{n\times n}$,
+\[
+  \sum_{t=1}^TA_t^{1/2}\otimes B_t^{1/2}\preceq\Bigl(\sum_{t=1}^TA_t\Bigr)^{1/2}\otimes\Bigl(\sum_{t=1}^TB_t\Bigr)^{1/2}.
+\]
+\end{corollary}
+
+\begin{proof}
+Suppose first that all $A_t$ and $B_t$ are positive definite. The matrices $A_t\otimes I$ and $I\otimes B_t$ commute, with product $A_t\otimes B_t$, so by \cref{thm:toolkit:geomean}(iv) and \cref{lem:toolkit:kron}(iv) their geometric mean is
+\[
+  (A_t\otimes I)\#(I\otimes B_t)=(A_t\otimes B_t)^{1/2}=A_t^{1/2}\otimes B_t^{1/2}.
+\]
+Summing over $t$ and using the first inequality of \cref{thm:toolkit:geomean}(iii) $T-1$ times gives $\sum_tA_t^{1/2}\otimes B_t^{1/2}\preceq\bigl((\sum_tA_t)\otimes I\bigr)\#\bigl(I\otimes\sum_tB_t\bigr)$, which is the right side by the same computation. In general, replace $A_t$ and $B_t$ by $A_t+\eps I$ and $B_t+\eps I$ and let $\eps\downarrow0$.
+\end{proof}
+
+For $T=1$ the corollary is an equality; its content is that $(A,B)\mapsto A^{1/2}\otimes B^{1/2}$ is superadditive, a case of a theorem of \textcite{Ando1979}.\sidenote{\textcite{Ando1979} proved the variational characterization of $A\#B$, its joint concavity, and the joint concavity of $(A,B)\mapsto A^{1-s}\otimes B^s$ for $0\le s\le1$. \textcite[Chapter~4]{Bhatia2007} treats matrix means.} It underlies the comparison, in the analysis of Shampoo, between the Kronecker-factored preconditioner and the full-matrix AdaGrad preconditioner \parencite{GuptaKorenSinger2018}, which \cref{ch:kronecker} proves.
+
+\section{Linear recurrences, Lyapunov equations, and Gr\"onwall's inequality}\label{sec:toolkit:recurrences}
+
+On a quadratic, gradient descent, the heavy-ball method, and Adam with a frozen preconditioner are linear recurrences, one for each eigendirection of the (preconditioned) Hessian, of order one or two and possibly driven by noise. Stability thresholds are statements about the roots of their characteristic polynomials, and noise floors are their stationary variances. The \term{spectral radius}\index{spectral radius} $\rho(A)$ of a square matrix is the largest absolute value of its complex eigenvalues.
+
+\begin{lemma}[Stability of linear recurrences]\label{lem:toolkit:recurrence}
+Let $A\in\R^{d\times d}$, and let $a_0$, $a_1$, $a$, and $\beta$ be real numbers.
+\begin{enumerate}
+\item For every $\eps>0$ there is $C_\eps$ with $\norm{A^t}_{\op}\le C_\eps(\rho(A)+\eps)^t$ for all $t\ge0$. Hence $x_{t+1}=Ax_t$ converges to $0$ from every $x_0$ if and only if $\rho(A)<1$, and then geometrically fast; if $\rho(A)\ge1$, then some real $x_0$ gives iterates that do not converge to $0$, and if $\rho(A)>1$, then some real $x_0$ gives unbounded iterates.
+\item (\term{Schur--Cohn--Jury test}\index{Schur--Cohn--Jury test}.) Both roots of $z^2+a_1z+a_0$ lie in the open unit disk if and only if $\abs{a_0}<1$ and $\abs{a_1}<1+a_0$.
+\item (Momentum form.) Both roots of $z^2-(1+\beta-a)z+\beta$ lie in the open unit disk if and only if $\abs{\beta}<1$ and $0<a<2+2\beta$. Equivalently, $y_{t+1}=(1+\beta-a)y_t-\beta y_{t-1}$ converges to $0$ from every initial pair $(y_0,y_{-1})$ if and only if these conditions hold.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+(i) The plan is to make $A$ almost diagonal by a change of basis. By Schur's triangularization $A=QRQ^*$ with $Q$ unitary and $R$ upper triangular with the eigenvalues on its diagonal \parencite{HornJohnson2013}. For $D=\diag(1,\delta,\dots,\delta^{d-1})$ with $\delta\in(0,1]$, the matrix $D^{-1}RD$ has entries $\delta^{j-i}R_{ij}$: the diagonal of $R$, and above it entries of absolute value at most $\delta\abs{R_{ij}}$. So $\norm{D^{-1}RD}_{\op}\le\rho(A)+\delta\norm{R}_F\le\rho(A)+\eps$ for $\delta=\min\{1,\eps/\norm{R}_F\}$ (every $\delta$ works if $R=0$). With $S=QD$, $A^t=S(D^{-1}RD)^tS^{-1}$ and $\norm{A^t}_{\op}\le\norm{S}_{\op}\norm{S^{-1}}_{\op}(\rho(A)+\eps)^t\le\delta^{1-d}(\rho(A)+\eps)^t$, the norms being over complex vectors. If $\rho(A)<1$, take $\rho(A)+\eps<1$. Conversely, let $\lambda_1$ be an eigenvalue with $\abs{\lambda_1}=\rho(A)\ge1$ and eigenvector $v=a+ib\ne0$, $a,b$ real. Then $\norm{A^ta}_2+\norm{A^tb}_2\ge\abs{\lambda_1}^t\norm{v}_2$, so one of the real sequences $A^ta$, $A^tb$ does not tend to $0$, and if $\abs{\lambda_1}>1$, then one of them is unbounded.
+
+(ii) Let $p(z)=z^2+a_1z+a_0=(z-z_1)(z-z_2)$. If $\abs{z_1},\abs{z_2}<1$, then $\abs{a_0}=\abs{z_1z_2}<1$, and $p(1)=(1-z_1)(1-z_2)$ and $p(-1)=(1+z_1)(1+z_2)$ are positive, as products of positive real factors or as $\abs{1\mp z_1}^2$ for a conjugate pair; so $1\pm a_1+a_0>0$, which is $\abs{a_1}<1+a_0$. Conversely, let $\abs{a_0}<1$ and $\abs{a_1}<1+a_0$, so that $p(\pm1)>0$. A conjugate pair has $\abs{z_1}^2=z_1z_2=a_0<1$. Real roots $z_1\le z_2$ lie on either side of the vertex $-a_1/2\in(-1,1)$ (as $\abs{a_1}<2$); since $p$ increases on $[-a_1/2,\infty)$ and $p(1)>0=p(z_2)$, $z_2<1$, and symmetrically $z_1>-1$.
+
+(iii) With $a_0=\beta$ and $a_1=-(1+\beta-a)$ the conditions of (ii) are $\abs{\beta}<1$ and $\abs{1+\beta-a}<1+\beta$, that is, $0<a<2+2\beta$. The recurrence is $x_{t+1}=Ax_t$ for $x_t=(y_t,y_{t-1})$ with the companion matrix $A=\bigl(\begin{smallmatrix}1+\beta-a&-\beta\\1&0\end{smallmatrix}\bigr)$, whose characteristic polynomial is $z^2-(1+\beta-a)z+\beta$, so (i) applies.
+\end{proof}
+
+Part (iii) is the form used in \cref{ch:momentum,ch:eos}. On a mode of curvature $h$, the heavy-ball method $\theta_{t+1}=\theta_t-\eta h\theta_t+\beta(\theta_t-\theta_{t-1})$ is (iii) with $a=\eta h$, so it is stable if and only if $\abs{\beta}<1$ and $0<\eta h<2+2\beta$. The moving-average form, $m_t=\beta m_{t-1}+(1-\beta)h\theta_t$ and $\theta_{t+1}=\theta_t-\eta m_t$, satisfies
+\[
+  \theta_{t+1}-\theta_t=\beta(\theta_t-\theta_{t-1})-\eta(1-\beta)h\theta_t ,
+\]
+which is (iii) with $a=\eta(1-\beta)h$; for $0\le\beta<1$ it is stable if and only if $0<\eta h<(2+2\beta)/(1-\beta)$, a threshold equal to $38$ at $\beta=0.9$.\sidenote{Test (ii) is the quadratic case of the criterion of Schur and Cohn for the roots of a polynomial to lie in the unit disk, which Jury put in the tabular form used in control engineering; his book \parencite{Jury1964} presents it.}
+
+\begin{lemma}[Linear recursions driven by noise]\label{lem:toolkit:lyapunov}\index{Lyapunov equation}
+Let $x_{t+1}=A_tx_t+\xi_t$, with $\E\norm{x_0}_2^2<\infty$, deterministic $A_t$, and noise with $\E[\xi_t\mid\cF_t]=0$ and $\E[\xi_t\xi_t^\top]=Q_t$, where $\cF_t$ is generated by $x_0,\xi_0,\dots,\xi_{t-1}$. Let $C_t=\E[x_tx_t^\top]$.
+\begin{enumerate}
+\item $\E x_{t+1}=A_t\E x_t$ and $C_{t+1}=A_tC_tA_t^\top+Q_t$, and the covariance $C_t-(\E x_t)(\E x_t)^\top$ obeys the same recursion as $C_t$.
+\item If $A_t=A$ with $\rho(A)<1$ and $Q_t=Q$, then the discrete Lyapunov equation $\Sigma=A\Sigma A^\top+Q$ has the unique solution $\Sigma_\infty=\sum_{j\ge0}A^jQ(A^\top)^j\succeq0$, and $C_t-\Sigma_\infty=A^t(C_0-\Sigma_\infty)(A^\top)^t\to0$ geometrically fast.
+\item (Order one.) If $x_{t+1}=a_tx_t+\xi_t$ is scalar and $q_t=\E\xi_t^2$, then
+\[
+  \E x_T^2=\Bigl(\prod_{t<T}a_t^2\Bigr)\E x_0^2+\sum_{s<T}q_s\prod_{s<u<T}a_u^2 ;
+\]
+for constant $\abs{a}<1$ and $q$ this is $a^{2T}\E x_0^2+q(1-a^{2T})/(1-a^2)\to q/(1-a^2)$.
+\item (Order two.) Let $y_{t+1}=c_1y_t+c_2y_{t-1}+e_t$ with square-integrable initial values, $\E[e_t\mid\cF_t]=0$ and $\E e_t^2=s^2$ for a filtration with $y_t,y_{t-1}$ measurable for $\cF_t$, and stable coefficients, $\abs{c_2}<1$ and $\abs{c_1}<1-c_2$. Then $\E y_t^2\to\gamma_0$ and $\E[y_ty_{t-1}]\to\gamma_1$, with
+\begin{equation}\label{eq:toolkit:ar2}
+  \gamma_0=\frac{(1-c_2)\,s^2}{(1+c_2)\bigl((1-c_2)^2-c_1^2\bigr)},\qquad\gamma_1=\frac{c_1\gamma_0}{1-c_2}.
+\end{equation}
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to expand the second moment, in which the noise enters only through its covariance, and to solve the resulting linear recursion. (i) In the expansion of $x_{t+1}x_{t+1}^\top$ the cross terms vanish in expectation, because $x_t$ is $\cF_t$-measurable and so $\E[x_t\xi_t^\top]=\E\bigl[x_t\E[\xi_t\mid\cF_t]^\top\bigr]=0$; the mean and the covariance follow in the same way. (ii) By \cref{lem:toolkit:recurrence}(i), with $\rho(A)+\eps<1$, the terms of the series are bounded in norm by $C_\eps^2(\rho(A)+\eps)^{2j}\norm{Q}_{\op}$, so it converges; it is positive semidefinite and solves the equation. Subtracting the equation from (i) gives $C_{t+1}-\Sigma_\infty=A(C_t-\Sigma_\infty)A^\top$, hence the formula; and two solutions differ by some $Z=AZA^\top=A^tZ(A^\top)^t\to0$. (iii) Unroll (i). (iv) The vector $(y_t,y_{t-1})$ obeys (i) with the companion matrix $A=\bigl(\begin{smallmatrix}c_1&c_2\\1&0\end{smallmatrix}\bigr)$ and $Q=\diag(s^2,0)$; the polynomial $z^2-c_1z-c_2$ has its roots in the open unit disk by \cref{lem:toolkit:recurrence}(ii) with $a_1=-c_1$, $a_0=-c_2$, so (ii) applies. The second row of $A$ is $(1,0)$, so the $(2,2)$ entry of the Lyapunov equation makes both diagonal entries of $\Sigma_\infty$ equal, $\Sigma_\infty=\bigl(\begin{smallmatrix}\gamma_0&\gamma_1\\\gamma_1&\gamma_0\end{smallmatrix}\bigr)$, and its $(1,2)$ and $(1,1)$ entries read $\gamma_1=c_1\gamma_0+c_2\gamma_1$ and $\gamma_0=(c_1^2+c_2^2)\gamma_0+2c_1c_2\gamma_1+s^2$. Substituting the first into the second and using $(1-c_2)(1-c_1^2-c_2^2)-2c_1^2c_2=(1+c_2)\bigl((1-c_2)^2-c_1^2\bigr)$ gives \eqref{eq:toolkit:ar2}; the denominators are positive under the stability conditions.
+\end{proof}
+
+\begin{example}[Heavy ball in noise]\label{exa:toolkit:heavyball}
+Let $\theta_{t+1}=\theta_t-\eta(h\theta_t+\zeta_t)+\beta(\theta_t-\theta_{t-1})$ with $h>0$, $\E[\zeta_t\mid\cF_t]=0$, and $\E\zeta_t^2=\sigma^2$, for a filtration as in \cref{lem:toolkit:lyapunov}(iv). Part (iv) applies with $c_1=1+\beta-\eta h$, $c_2=-\beta$, and $s^2=\eta^2\sigma^2$, and $(1-c_2)^2-c_1^2=\eta h(2+2\beta-\eta h)$; so for $\abs{\beta}<1$ and $0<\eta h<2+2\beta$,
+\[
+  \lim_{t\to\infty}\E\theta_t^2=\frac{\eta\sigma^2(1+\beta)}{h(1-\beta)(2+2\beta-\eta h)} .
+\]
+At $\beta=0$ this is the stationary variance $\eta\sigma^2/(h(2-\eta h))$ of stochastic gradient descent, also given by (iii); to first order in $\eta$, heavy ball has the variance of stochastic gradient descent with step $\eta/(1-\beta)$ (\cref{ch:momentum,ch:noise}).
+\end{example}
+
+\paragraph{Differential and difference inequalities.} The last tool, named after \textcite{Gronwall1919}, compares a function that grows at most linearly in itself with the exponential solving the corresponding equation.
+
+\begin{theorem}[Gr\"onwall's inequality]\label{thm:toolkit:gronwall}\index{Gronwall's inequality@Gr\"onwall's inequality}
+Let $T>0$.
+\begin{enumerate}
+\item (Differential form.) If $u$ is absolutely continuous on $[0,T]$ and $u'\le bu+a$ almost everywhere, for integrable $a$ and $b$, then with $B(t)=\int_0^tb$,
+\[
+  u(t)\le u(0)e^{B(t)}+\int_0^ta(s)e^{B(t)-B(s)}\dd s ;
+\]
+for constants $b>0$ and $a$, $u(t)\le\bigl(u(0)+a/b\bigr)e^{bt}-a/b$.
+\item (Integral form.) If $u$, $a$, and $b$ are continuous on $[0,T]$, $b\ge0$, and $u(t)\le a(t)+\int_0^tb(s)u(s)\dd s$ for all $t$, then $u(t)\le a(t)+\int_0^ta(s)b(s)e^{\int_s^tb}\dd s$; if moreover $a$ is nondecreasing, then $u(t)\le a(t)\exp\bigl(\int_0^tb\bigr)$.
+\item (Discrete form.) If $b_t\ge0$ and $u_{t+1}\le(1+b_t)u_t+a_t$ for all $t\ge0$, then $u_t\le u_0\prod_{s<t}(1+b_s)+\sum_{s<t}a_s\prod_{s<r<t}(1+b_r)$, which is at most $\bigl(u_0+\sum_{s<t}a_s\bigr)\exp\bigl(\sum_{s<t}b_s\bigr)$ when $u_0$ and all $a_s$ are nonnegative.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+(i) The function $v=ue^{-B}$ is absolutely continuous with $v'=(u'-bu)e^{-B}\le ae^{-B}$ almost everywhere; integrate and multiply by $e^{B(t)}$. For constants, $\int_0^tae^{b(t-s)}\dd s=(a/b)(e^{bt}-1)$. (ii) For $R(t)=\int_0^tbu$, $R'=bu\le ba+bR$ because $b\ge0$, and (i) with $R(0)=0$ bounds $R$; then use $u\le a+R$. If $a$ is nondecreasing, then the integral is at most $a(t)\int_0^tb(s)e^{\int_s^tb}\dd s=a(t)\bigl(e^{\int_0^tb}-1\bigr)$. (iii) Induction on $t$, and $1+b\le e^b$.
+\end{proof}
+
+\Cref{ch:spikes} applies the differential form to a function of $s$ built from $\nabla\Loss(\theta+su)$, which is Lipschitz, hence absolutely continuous and differentiable almost everywhere, under a Hessian bound growing with the gradient.
+
+\section{Smoothness and the Polyak--\L{}ojasiewicz inequality}\label{sec:toolkit:smooth}
+
+A differentiable $\Loss\colon\R^d\to\R$ is $L$-smooth with respect to $\norm{\cdot}$, for a constant $L>0$, if $\norm{\nabla\Loss(\theta)-\nabla\Loss(\theta')}_*\le L\norm{\theta-\theta'}$ for all $\theta,\theta'$; the gradient is a functional, so it is measured in the dual norm.
+
+\begin{lemma}[Descent lemma in a general norm]\label{lem:toolkit:descent}\index{descent lemma}
+Let $\Loss$ be $L$-smooth with respect to $\norm{\cdot}$.
+\begin{enumerate}
+\item For all $\theta$ and $u$, $\abs{\Loss(\theta+u)-\Loss(\theta)-\ip{\nabla\Loss(\theta),u}}\le\frac L2\norm{u}^2$; in particular
+\begin{equation}\label{eq:toolkit:descent}
+  \Loss(\theta+u)\le\Loss(\theta)+\ip{\nabla\Loss(\theta),u}+\frac L2\norm{u}^2 .
+\end{equation}
+\item If $\Loss$ is bounded below by $\Loss^\star$, then $\norm{\nabla\Loss(\theta)}_*^2\le2L\bigl(\Loss(\theta)-\Loss^\star\bigr)$ for every $\theta$.
+\item (Converse under convexity.) If $\Loss$ is convex and differentiable and \eqref{eq:toolkit:descent} holds for all $\theta,u$, then $\Loss$ is $L$-smooth with respect to $\norm{\cdot}$, and for all $\theta,\theta'$,
+\[
+  \Loss(\theta')\ge\Loss(\theta)+\ip{\nabla\Loss(\theta),\theta'-\theta}+\frac1{2L}\norm{\nabla\Loss(\theta')-\nabla\Loss(\theta)}_*^2,
+\]
+\[
+  \ip{\nabla\Loss(\theta')-\nabla\Loss(\theta),\theta'-\theta}\ge\frac1L\norm{\nabla\Loss(\theta')-\nabla\Loss(\theta)}_*^2 .
+\]
+In the Euclidean norm the second inequality is called \term{co-coercivity}.
+\item (Hessian test.) A twice continuously differentiable $\Loss$ is $L$-smooth with respect to $\norm{\cdot}$ if and only if $u^\top\nabla^2\Loss(\theta)v\le L$ for all $\theta$ and all $\norm{u},\norm{v}\le1$; where $\nabla^2\Loss(\theta)\succeq0$ it suffices to take $u=v$. For a quadratic with Hessian $H\succeq0$ the best constant is $\max_{\norm{u}\le1}u^\top Hu$: $\lmax(H)$ in the Euclidean norm and $\max_{s\in\{\pm1\}^d}s^\top Hs$ in $\norm{\cdot}_\infty$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to integrate along segments for (i) and (iv) and to minimize the right side of \eqref{eq:toolkit:descent} for (ii) and (iii). (i) Since the gradient is continuous,
+\[
+  \Loss(\theta+u)-\Loss(\theta)-\ip{\nabla\Loss(\theta),u}=\int_0^1\ip{\nabla\Loss(\theta+su)-\nabla\Loss(\theta),u}\dd s ,
+\]
+and by H\"older's inequality and smoothness the integrand is at most $Ls\norm{u}^2$ in absolute value. (ii) By \eqref{eq:toolkit:quadmin}, the right side of \eqref{eq:toolkit:descent} at $u=-g^\sharp/L$, $g=\nabla\Loss(\theta)$, is $\Loss(\theta)-\norm{g}_*^2/(2L)$, and it is at least $\Loss^\star$.
+
+(iii) We apply the argument of (ii) to $\Loss$ minus its linearization. Fix $\theta$ and let $\phi(y)=\Loss(y)-\ip{\nabla\Loss(\theta),y}$, a convex function with $\nabla\phi(\theta)=0$, hence minimized at $\theta$, which satisfies \eqref{eq:toolkit:descent} with the same $L$. For every $y$, by \eqref{eq:toolkit:quadmin},
+\[
+  \phi(\theta)\le\min_u\phi(y+u)\le\phi(y)-\frac1{2L}\norm{\nabla\phi(y)}_*^2 ,
+\]
+which at $y=\theta'$ is the first inequality. Adding it to the same inequality with $\theta$ and $\theta'$ exchanged gives the second, and H\"older's inequality bounds its left side by $\norm{\nabla\Loss(\theta')-\nabla\Loss(\theta)}_*\norm{\theta'-\theta}$, which gives $L$-smoothness.
+
+(iv) For a symmetric $M$, $\norm{Mv}_*=\max_{\norm{u}\le1}u^\top Mv$. If the condition holds, then $\nabla\Loss(\theta')-\nabla\Loss(\theta)=\int_0^1\nabla^2\Loss(\theta+s(\theta'-\theta))(\theta'-\theta)\dd s$ has dual norm at most $L\norm{\theta'-\theta}$; conversely, $\nabla^2\Loss(\theta)v$ is the limit of $(\nabla\Loss(\theta+sv)-\nabla\Loss(\theta))/s$. For $M\succeq0$, the Cauchy--Schwarz inequality gives $u^\top Mv\le\max\{u^\top Mu,v^\top Mv\}$, and the convex function $u\mapsto u^\top Hu$ attains its maximum over the cube at a vertex.
+\end{proof}
+
+Without convexity the converse fails: $-\frac12\norm{\theta}_2^2$ satisfies \eqref{eq:toolkit:descent} for every $L>0$, however small. Two consequences of \eqref{eq:toolkit:descent}, with $g=\nabla\Loss(\theta)$, start the convergence theory of \cref{ch:steepest}: the unnormalized step $-g^\sharp/L$, which minimizes its right side, and the normalized step $\eta\lmo(g)$ of length at most $\eta$ (\cref{lem:toolkit:subdiff}) guarantee
+\[
+\begin{aligned}
+  \Loss\bigl(\theta-g^\sharp/L\bigr)&\le\Loss(\theta)-\frac{\norm{g}_*^2}{2L},\\
+  \Loss\bigl(\theta+\eta\lmo(g)\bigr)&\le\Loss(\theta)-\eta\norm{g}_*+\frac{L\eta^2}2 .
+\end{aligned}
+\]
+The only traces of the norm in these bounds are the constant $L$ and the dual norm of the gradient.
+
+\begin{lemma}[The Polyak--\L{}ojasiewicz inequality]\label{lem:toolkit:pl}\index{Polyak--Lojasiewicz inequality@Polyak--\L{}ojasiewicz inequality}
+Let $\Loss$ be differentiable with $\Loss^\star=\inf\Loss>-\infty$, let $\Delta(\theta)=\Loss(\theta)-\Loss^\star$ and $\mu>0$. The function $\Loss$ satisfies the PL inequality with constant $\mu$ with respect to $\norm{\cdot}$ if $\frac12\norm{\nabla\Loss(\theta)}_*^2\ge\mu\,\Delta(\theta)$ for all $\theta$.
+\begin{enumerate}
+\item If a sequence satisfies $\Loss(\theta_{t+1})\le\Loss(\theta_t)-c_t\norm{\nabla\Loss(\theta_t)}_*^2$ with $c_t\ge0$, then $\Delta_{t+1}\le(1-2\mu c_t)\Delta_t$ and $\Delta_T\le\exp\bigl(-2\mu\sum_{t<T}c_t\bigr)\Delta_0$, where $\Delta_t=\Delta(\theta_t)$.
+\item If $\Loss$ is moreover $L$-smooth with respect to $\norm{\cdot}$ and not constant, then $\mu\le L$, and $\theta_{t+1}=\theta_t-\eta\nabla\Loss(\theta_t)^\sharp$ with $0<\eta<2/L$ satisfies $\Delta_t\le\bigl(1-2\mu\eta(1-L\eta/2)\bigr)^t\Delta_0$, which is $(1-\mu/L)^t\Delta_0$ at $\eta=1/L$. In the Euclidean norm this is gradient descent.
+\item A function that is $\mu$-strongly convex with respect to $\norm{\cdot}$, that is, $\Loss(\theta+u)\ge\Loss(\theta)+\ip{\nabla\Loss(\theta),u}+\frac\mu2\norm{u}^2$ for all $\theta,u$, satisfies the PL inequality with constant $\mu$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+(i) The PL inequality gives $\norm{\nabla\Loss(\theta_t)}_*^2\ge2\mu\Delta_t$, hence the first claim. Since $\Delta_{t+1}\ge0$, either $\Delta_t=0$ or $1-2\mu c_t\ge0$, so $\Delta_{t+1}\le\max\{0,1-2\mu c_t\}\Delta_t\le e^{-2\mu c_t}\Delta_t$; multiply. (ii) At a point with $\Delta>0$, the PL inequality and \cref{lem:toolkit:descent}(ii) give $2\mu\Delta\le\norm{\nabla\Loss}_*^2\le2L\Delta$. By \eqref{eq:toolkit:descent} with $u=-\eta g^\sharp$ and \cref{lem:toolkit:conjugate}, $\Loss(\theta_{t+1})\le\Loss(\theta_t)-\eta(1-L\eta/2)\norm{g}_*^2$, so (i) applies with $c_t=\eta(1-L\eta/2)\le1/(2L)$, and $1-2\mu c_t\ge1-\mu/L\ge0$. (iii) By strong convexity and \eqref{eq:toolkit:quadmin} with $L=\mu$, $\Loss^\star\ge\inf_u\{\Loss(\theta)+\ip{g,u}+\frac\mu2\norm{u}^2\}=\Loss(\theta)-\norm{g}_*^2/(2\mu)$.
+\end{proof}
+
+The PL inequality asks for neither convexity nor a unique minimizer, only that the gradient be large wherever the loss is far from its infimum; least squares satisfies it even when the minimizer is not unique (\cref{ex:toolkit:lsq}). Part (i) applies to every step-size rule that guarantees a decrease proportional to the squared gradient, which is how \cref{ch:warmup} combines it with a curvature bound that grows with the loss.\sidenote{\textcite{Polyak1963} introduced the inequality and proved linear convergence of gradient descent under it; \textcite{Lojasiewicz1963} proved an inequality of this type for real-analytic functions. \textcite{KarimiNutiniSchmidt2016} compared it with other conditions for linear convergence and popularized the name.}
+
+\section{Online convex optimization}\label{sec:toolkit:online}
+
+In online convex optimization a learner picks $x_t$ in a closed convex set $\cK\subseteq\R^d$ at each round $t=1,\dots,T$, then observes a convex function $f_t$ and a subgradient $g_t\in\partial f_t(x_t)$. Its \term{regret} against $u\in\cK$ is $\sum_t(f_t(x_t)-f_t(u))$, which by convexity is at most the linearized regret $\sum_t\ip{g_t,x_t-u}$. The bounds below hold for every sequence of functions, in particular for the stochastic gradients of a training run. Adaptive methods normalize each gradient by the accumulated size of the gradients so far, and the following lemma controls the resulting sums.
+
+\begin{lemma}[Sums of normalized increments]\label{lem:toolkit:adagrad}\index{AdaGrad!sum lemma}
+Let $a_1,\dots,a_T\ge0$, $S_0=0$, and $S_t=\sum_{s\le t}a_s$.
+\begin{enumerate}
+\item $\sum_{t=1}^Ta_t/\sqrt{S_t}\le2\sqrt{S_T}$, where terms with $S_t=0$ are read as $0$.
+\item For $\eps>0$, $\sum_{t=1}^Ta_t/(\eps+S_t)\le\log(1+S_T/\eps)$.
+\item (Matrix form.) If $G_0\succeq0$ and $G_1,\dots,G_T\succ0$, then $\sum_{t=1}^T\tr\bigl((G_t-G_{t-1})G_t^{-1/2}\bigr)\le2\tr(G_T^{1/2})-2\tr(G_0^{1/2})$. In particular, if $G_t=G_{t-1}+g_tg_t^\top$ and $G_0\succ0$, then $\sum_tg_t^\top G_t^{-1/2}g_t\le2\tr(G_T^{1/2})$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+(i) If $a_t>0$, then $a_t/\sqrt{S_t}=(\sqrt{S_t}-\sqrt{S_{t-1}})(\sqrt{S_t}+\sqrt{S_{t-1}})/\sqrt{S_t}\le2(\sqrt{S_t}-\sqrt{S_{t-1}})$, and if $a_t=0$ both sides vanish; the sum telescopes. (ii) Since $1/(\eps+x)\ge1/(\eps+S_t)$ on $[S_{t-1},S_t]$, $a_t/(\eps+S_t)\le\log\frac{\eps+S_t}{\eps+S_{t-1}}$, and the sum telescopes. (iii) For $A\succ0$ and $B\succeq0$, the Cauchy--Schwarz inequality for $\ip{X,Y}=\tr(X^\top Y)$ with $X=A^{-1/4}B^{1/2}$ and $Y=A^{1/4}$, followed by $\sqrt{xy}\le\frac12(x+y)$, gives
+\[
+  \tr(B^{1/2})=\tr(X^\top Y)\le\tr(BA^{-1/2})^{1/2}\tr(A^{1/2})^{1/2}\le\tfrac12\tr(BA^{-1/2})+\tfrac12\tr(A^{1/2}),
+\]
+that is, $\tr\bigl((A-B)A^{-1/2}\bigr)\le2\tr(A^{1/2})-2\tr(B^{1/2})$. Take $A=G_t$ and $B=G_{t-1}$ and sum.
+\end{proof}
+
+The constant $2$ is best possible, as $a_t=1$ gives $\sum_{t\le T}t^{-1/2}\ge2\sqrt{T+1}-2$, and the current term must be included: with $S_{t-1}$ for $S_t$, $a_1=1$ and $a_2=M$ give at least $M$, which no multiple of $\sqrt{S_T}=\sqrt{1+M}$ bounds.\sidenote{The scalar lemma appears in the analysis of self-confident learning rates by \textcite{AuerCesaBianchiGentile2002}. Adaptive per-coordinate steps of this kind were introduced independently by \textcite{McMahanStreeter2010} and by \textcite{DuchiHazanSinger2011}, who named the method AdaGrad and also analyzed its full-matrix version.}
+
+\begin{theorem}[Online gradient descent]\label{thm:toolkit:ogd}\index{online gradient descent}
+Let $\cK\subseteq\R^d$ be nonempty, closed, and convex, $f_1,\dots,f_T$ convex with subgradients $g_t\in\partial f_t(x_t)$, $P_1,\dots,P_T\succ0$, $x_1\in\cK$, and $x_{t+1}=\argmin_{x\in\cK}\norm{x-(x_t-P_t^{-1}g_t)}_{P_t}$.
+\begin{enumerate}
+\item (General preconditioners.) For every $u\in\cK$, with $P_0=0$,
+\[
+\begin{aligned}
+  \sum_{t=1}^T\bigl(f_t(x_t)-f_t(u)\bigr)&\le\sum_{t=1}^T\ip{g_t,x_t-u}\\
+  &\le\frac12\sum_{t=1}^T(x_t-u)^\top(P_t-P_{t-1})(x_t-u)\\
+  &\quad+\frac12\sum_{t=1}^Tg_t^\top P_t^{-1}g_t .
+\end{aligned}
+\]
+\item (Step sizes.) If $P_t=I/\eta_t$ with $\eta_1\ge\dots\ge\eta_T>0$ and $\cK$ has Euclidean diameter $D$, then for every $u\in\cK$
+\[
+  \sum_{t=1}^T\bigl(f_t(x_t)-f_t(u)\bigr)\le\frac{D^2}{2\eta_T}+\frac12\sum_{t=1}^T\eta_t\norm{g_t}_2^2 .
+\]
+If $\norm{g_t}_2\le G$, the constant step $\eta=D/(G\sqrt T)$ gives $DG\sqrt T$ and $\eta_t=D/(G\sqrt t)$ gives $\frac32DG\sqrt T$. With $S_t=\sum_{s\le t}\norm{g_s}_2^2$, the adaptive step $\eta_t=D/\sqrt{2S_t}$ gives $\sqrt2\,D\sqrt{S_T}$, and the constant step $D/\sqrt{S_T}$, which needs $S_T$ in advance, gives $D\sqrt{S_T}$.
+\item (Weighted form.) If $P_t=I/\eta_t$ with arbitrary $\eta_t>0$, then for every $u\in\cK$, with $\cK$ possibly unbounded,
+\[
+  \sum_{t=1}^T\eta_t\bigl(f_t(x_t)-f_t(u)\bigr)\le\frac12\norm{x_1-u}_2^2-\frac12\norm{x_{T+1}-u}_2^2+\frac12\sum_{t=1}^T\eta_t^2\norm{g_t}_2^2,
+\]
+and the corresponding bound on $\sum_t\eta_t\ip{g_t,x_t-u}$ is an equality when $\cK=\R^d$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to bound the progress toward $u$ in one round and to sum. By \cref{lem:toolkit:projection} with $P=P_t$ and $y=x_t-P_t^{-1}g_t$, $\norm{x_{t+1}-u}_{P_t}^2\le\norm{y-u}_{P_t}^2=\norm{x_t-u}_{P_t}^2-2\ip{g_t,x_t-u}+g_t^\top P_t^{-1}g_t$, that is,
+\begin{equation}\label{eq:toolkit:oneround}
+  \ip{g_t,x_t-u}\le\tfrac12\bigl(\norm{x_t-u}_{P_t}^2-\norm{x_{t+1}-u}_{P_t}^2\bigr)+\tfrac12g_t^\top P_t^{-1}g_t .
+\end{equation}
+(i) Summing \eqref{eq:toolkit:oneround} and regrouping the squared distances by the point $x_t$ instead of the matrix, $\sum_t(\norm{x_t-u}_{P_t}^2-\norm{x_{t+1}-u}_{P_t}^2)=\sum_t(x_t-u)^\top(P_t-P_{t-1})(x_t-u)-\norm{x_{T+1}-u}_{P_T}^2$; drop the last term, and use $f_t(x_t)-f_t(u)\le\ip{g_t,x_t-u}$.
+
+(ii) Here $(x_t-u)^\top(P_t-P_{t-1})(x_t-u)=(1/\eta_t-1/\eta_{t-1})\norm{x_t-u}_2^2\le(1/\eta_t-1/\eta_{t-1})D^2$, with $1/\eta_0=0$, and the sum telescopes to $D^2/\eta_T$. For the constant step both terms are $\frac12DG\sqrt T$. For $\eta_t=D/(G\sqrt t)$ the terms are $\frac12DG\sqrt T$ and $\frac12DG\sum_tt^{-1/2}\le DG\sqrt T$, by \cref{lem:toolkit:adagrad}(i) with $a_t=1$. For the adaptive step both terms are at most $D\sqrt{S_T/2}$, by \cref{lem:toolkit:adagrad}(i) with $a_t=\norm{g_t}_2^2$; rounds with $S_t=0$ have $g_t=0$, leave the iterate in place and contribute nothing, so we read $1/\eta_t=0$ for them. The last choice makes both terms $\frac12D\sqrt{S_T}$.
+
+(iii) With $P_t=I/\eta_t$, multiply \eqref{eq:toolkit:oneround} by $\eta_t$ and sum; the distances telescope whatever the steps. When $\cK=\R^d$ there is no projection, and the first inequality of the proof is an equality.
+\end{proof}
+
+The preconditioners pay for their growth through the first sum in (i) and are rewarded through the second. The pieces of this appendix combine as follows for full-matrix AdaGrad, and in the same way for Shampoo in \cref{ch:kronecker}.
+
+\begin{remark}[Full-matrix AdaGrad]\label{rem:toolkit:fullmatrix}
+Let $\eps>0$, $G_t=\eps I+\sum_{s\le t}g_sg_s^\top$, and $P_t=G_t^{1/2}/\eta$ on a set $\cK$ of Euclidean diameter $D$. By \cref{thm:toolkit:loewner}, $P_t-P_{t-1}\succeq0$, so $(x_t-u)^\top(P_t-P_{t-1})(x_t-u)\le D^2\tr(P_t-P_{t-1})$, which sums to $D^2\tr(P_T)$; and $\sum_tg_t^\top P_t^{-1}g_t\le2\eta\tr(G_T^{1/2})$ by \cref{lem:toolkit:adagrad}(iii). So \cref{thm:toolkit:ogd}(i) bounds the regret by $\bigl(\frac{D^2}{2\eta}+\eta\bigr)\tr(G_T^{1/2})$, which is $\sqrt2\,D\tr(G_T^{1/2})$ at $\eta=D/\sqrt2$.
+\end{remark}
+
+Averaging turns regret bounds into bounds for stochastic optimization \parencite{CesaBianchiConconiGentile2004}; part (iii) allows an arbitrary schedule.
+
+\begin{corollary}[Stochastic gradient descent on a convex function]\label{cor:toolkit:sgd}
+Let $\Loss$ be convex on a closed convex $\cK$, $x_1\in\cK$, and $x_{t+1}=\argmin_{x\in\cK}\norm{x-(x_t-\eta_tg_t)}_2$ with deterministic $\eta_t>0$, where $\E[g_t\mid g_1,\dots,g_{t-1}]\in\partial\Loss(x_t)$ and $\E\norm{g_t}_2^2\le G^2$. Then for every $u\in\cK$ and $\bar x_T=\sum_t\eta_tx_t/\sum_t\eta_t$,
+\[
+  \E\Loss(\bar x_T)-\Loss(u)\le\frac{\norm{x_1-u}_2^2+G^2\sum_{t\le T}\eta_t^2}{2\sum_{t\le T}\eta_t}.
+\]
+\end{corollary}
+
+\begin{proof}
+Apply \cref{thm:toolkit:ogd}(iii) to the linear functions $f_t(x)=\ip{g_t,x}$. Since $x_t$ is a function of $g_1,\dots,g_{t-1}$, conditioning on them and the subgradient inequality give $\E\ip{g_t,x_t-u}\ge\E[\Loss(x_t)-\Loss(u)]$. Take expectations and use Jensen's inequality $\Loss(\bar x_T)\le\sum_t\eta_t\Loss(x_t)/\sum_t\eta_t$.
+\end{proof}
+
+\section{Martingales and tail bounds}\label{sec:toolkit:prob}
+
+Gradient noise is a sequence of martingale differences: given the past, a stochastic gradient is unbiased. The theorem below controls sums of such differences; the lemma after it bounds the probability that a noisy estimate has the wrong sign, which is what sign descent pays for noise.
+
+\begin{theorem}[Doob's and the Azuma--Hoeffding inequalities]\label{thm:toolkit:azuma}
+Let $(M_t)_{t=0}^T$ be a martingale with respect to a filtration $(\cF_t)_{t=0}^T$.
+\begin{enumerate}
+\item (\term{Doob's maximal inequality}\index{Doob's maximal inequality}.) If $\E M_T^2<\infty$, then for every $a>0$,
+\[
+  \Pr\Bigl(\max_{t\le T}\abs{M_t}\ge a\Bigr)\le\frac{\E M_T^2}{a^2},\qquad\E\Bigl[\max_{t\le T}M_t^2\Bigr]\le4\,\E M_T^2 .
+\]
+The same holds in $\R^d$, with $\abs{\cdot}$ replaced by $\norm{\cdot}_2$, and then $\E\norm{M_T-M_0}_2^2=\sum_{t=1}^T\E\norm{M_t-M_{t-1}}_2^2$.
+\item (\term{Azuma--Hoeffding inequality}\index{Azuma--Hoeffding inequality}.) If $\abs{M_t-M_{t-1}}\le c_t$ almost surely for constants $c_t>0$, and $V=\sum_{t=1}^Tc_t^2$, then for every $a>0$,
+\[
+  \Pr\Bigl(\max_{t\le T}(M_t-M_0)\ge a\Bigr)\le e^{-a^2/(2V)}
+\]
+and $\Pr(\abs{M_T-M_0}\ge a)\le2e^{-a^2/(2V)}$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to prove a maximal inequality for nonnegative submartingales, processes with $\E[X_{t+1}\mid\cF_t]\ge X_t$, by stopping at the first crossing, and to apply it to $\norm{M_t}_2^2$ and to $e^{\kappa(M_t-M_0)}$. Let $X_t\ge0$ be an integrable submartingale, $X^*=\max_{t\le T}X_t$ and $b>0$. The events $E_t=\{X_t\ge b,\ X_s<b\text{ for }s<t\}$ are disjoint, lie in $\cF_t$ and have union $\{X^*\ge b\}$, and $b\Pr(E_t)\le\E[X_t;E_t]\le\E[X_T;E_t]$. Summing over $t$,
+\begin{equation}\label{eq:toolkit:doob}
+  b\,\Pr(X^*\ge b)\le\E\bigl[X_T;\,X^*\ge b\bigr].
+\end{equation}
+(i) By the conditional Jensen inequality, $\norm{M_t}_2^2\le\E[\norm{M_T}_2^2\mid\cF_t]$ is integrable, and $\norm{M_t}_2$ and $\norm{M_t}_2^2$ are nonnegative submartingales. Then \eqref{eq:toolkit:doob} for $\norm{M_t}_2^2$ with $b=a^2$ gives the first bound. For $X_t=\norm{M_t}_2$, \eqref{eq:toolkit:doob} and the Cauchy--Schwarz inequality give $\E[(X^*)^2]=\int_0^\infty2b\Pr(X^*\ge b)\dd b\le2\E[X_TX^*]\le2(\E X_T^2)^{1/2}(\E(X^*)^2)^{1/2}$, and $\E(X^*)^2\le\sum_t\E X_t^2<\infty$, which gives the second. The increments are orthogonal, $\E\ip{M_t-M_{t-1},M_s-M_{s-1}}=0$ for $s<t$, by conditioning on $\cF_{t-1}$.
+
+(ii) For $\kappa>0$ and $\abs{x}\le c$, convexity gives $e^{\kappa x}\le\cosh(\kappa c)+(x/c)\sinh(\kappa c)$, the chord through $x=\pm c$. As $\E[M_t-M_{t-1}\mid\cF_{t-1}]=0$, this yields $\E[e^{\kappa(M_t-M_{t-1})}\mid\cF_{t-1}]\le\cosh(\kappa c_t)\le e^{\kappa^2c_t^2/2}$, comparing the series of $\cosh y$ and $e^{y^2/2}$ term by term, and conditioning successively gives $\E e^{\kappa(M_T-M_0)}\le e^{\kappa^2V/2}$. The nonnegative submartingale $e^{\kappa(M_t-M_0)}$ and \eqref{eq:toolkit:doob} with $b=e^{\kappa a}$ give $\Pr(\max_t(M_t-M_0)\ge a)\le e^{-\kappa a+\kappa^2V/2}$, and $\kappa=a/V$ gives the first bound; the second applies it to $M$ and $-M$.
+\end{proof}
+
+For independent summands in intervals centered at their means, (ii) is Hoeffding's inequality \parencite{Hoeffding1963}, which \textcite{Azuma1967} extended to martingale differences. Doob's inequalities are from \textcite{Doob1953}; \textcite{Williams1991} gives textbook proofs, and \textcite{BoucheronLugosiMassart2013} develop the exponential method much further.
+
+\begin{lemma}[Sign errors: Markov, Chebyshev, and Gauss]\label{lem:toolkit:gauss}
+Let $Y$ have mean $g\ne0$ and variance $\sigma^2<\infty$, for instance a stochastic estimate of one coordinate $g$ of a gradient.
+\begin{enumerate}
+\item $\Pr(\sign Y\ne\sign g)\le\Pr(\abs{Y-g}\ge\abs{g})\le\min\{\sigma/\abs{g},\sigma^2/g^2\}$, so that $\abs{g}\Pr(\sign Y\ne\sign g)\le\sigma$. If the law of $Y$ is symmetric about $g$, then the first probability is half the second.
+\item (\term{Gauss's inequality}\index{Gauss's inequality}.) Suppose that the law of $Y$ is unimodal about $\nu$: apart from a possible atom at $\nu$, it has a density that is nondecreasing on $(-\infty,\nu)$ and nonincreasing on $(\nu,\infty)$. Let $\tau^2=\E(Y-\nu)^2$. Then for every $k>0$,
+\[
+  \Pr\bigl(\abs{Y-\nu}\ge k\bigr)\le
+  \begin{cases}
+    4\tau^2/(9k^2) & \text{if }k\ge2\tau/\sqrt3,\\
+    1-k/(\sqrt3\,\tau) & \text{if }k\le2\tau/\sqrt3.
+  \end{cases}
+\]
+\item If $Y$ has a density that is symmetric about $g$ and nonincreasing in $\abs{y-g}$, then $\Pr(\sign Y\ne\sign g)$ is at most $2\sigma^2/(9g^2)$ if $\abs{g}\ge2\sigma/\sqrt3$ and at most $\frac12-\abs{g}/(2\sqrt3\,\sigma)$ otherwise. Consequently $\abs{g}\Pr(\sign Y\ne\sign g)\le\frac{\sqrt3}8\sigma$, with equality for the uniform law at $\abs{g}=\frac{\sqrt3}2\sigma$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+Part (i) is Markov's and Chebyshev's inequalities, and (iii) combines (i) and (ii); for (ii) the plan is to slice a unimodal density horizontally into uniform densities on intervals that end at the mode, and to check the inequality for each. (i) Let $g>0$, replacing $Y$ by $-Y$ if necessary. A sign error means $Y-g\le-g$, which implies $\abs{Y-g}\ge g$; apply Markov's inequality with $\E\abs{Y-g}\le\sigma$, and Chebyshev's. Under symmetry the disjoint events $\{Y-g\le-g\}$ and $\{Y-g\ge g\}$ have equal probabilities and make up $\{\abs{Y-g}\ge g\}$.
+
+(ii) Let $\nu=0$, and let $p$ be the density away from $0$. For $s>0$ the set $\{y>0:p(y)>s\}$ is an interval with left end $0$, as $p$ is nonincreasing; let $z(s)$ be its length, finite because $s\,z(s)\le1$. Writing $p(y)=\int_0^\infty\ind\{p(y)>s\}\dd s$, Tonelli's theorem gives $\int_0^\infty\phi\,p=\int_0^\infty\int_0^{z(s)}\phi(y)\dd y\dd s$ for measurable $\phi\ge0$, so that
+\[
+  \Pr(Y\ge k)=\int_0^\infty(z(s)-k)_+\dd s,\qquad\Pr(Y>0)=\int_0^\infty z(s)\dd s,
+\]
+and $\E[Y^2;Y>0]=\int_0^\infty\frac13z(s)^3\dd s$.
+If $\alpha\ge0$ and $\gamma>0$ satisfy $(1-k/z)_+\le\alpha+\gamma z^2$ for all $z>0$, then $(z-k)_+\le\alpha z+\gamma z^3$, and integrating gives $\Pr(Y\ge k)\le\alpha\Pr(Y>0)+3\gamma\E[Y^2;Y>0]$; with the same bound for $-Y$, and since the atom at $0$ contributes to neither side, $\Pr(\abs{Y}\ge k)\le\alpha+3\gamma\tau^2$. Take $z_0=\max\{3k/2,\sqrt3\,\tau\}$, $\gamma=k/(2z_0^3)$ and $\alpha=1-3k/(2z_0)\ge0$. Then $q(z)=\alpha+\gamma z^2$ and $f(z)=1-k/z$ have the same value and slope at $z_0$; as $f$ is concave and $q$ convex, $f\le q$ on $(0,\infty)$, and $q\ge0$, so $(1-k/z)_+\le q(z)$. The bound $\alpha+3\gamma\tau^2=1-3k/(2z_0)+3k\tau^2/(2z_0^3)$ equals $4\tau^2/(9k^2)$ for $z_0=3k/2$, that is, $k\ge2\tau/\sqrt3$, and $1-k/(\sqrt3\,\tau)$ for $z_0=\sqrt3\,\tau$.
+
+(iii) Such a law is unimodal about $g$ with $\tau=\sigma$, and by (i) and (ii) with $k=\abs{g}$ the probability of a sign error is at most half the bound of (ii). With $x=\abs{g}/\sigma$, the function $x(\frac12-x/(2\sqrt3))$ is at most $\frac{\sqrt3}8$, its value at $x=\frac{\sqrt3}2$, and $x\cdot2/(9x^2)\le\frac{\sqrt3}9$ for $x\ge2/\sqrt3$. The uniform law on $[g-\sqrt3\sigma,g+\sqrt3\sigma]$ errs with probability $\frac12-g/(2\sqrt3\sigma)$ for $0<g\le\sqrt3\sigma$, which is $\frac14$ at $g=\frac{\sqrt3}2\sigma$.
+\end{proof}
+
+For Gaussian noise, $\max_g\abs{g}\Pr(\sign Y\ne\sign g)$ is about $0.17\sigma$, against the unimodal bound $\frac{\sqrt3}8\sigma\approx0.22\sigma$ and Markov's $\sigma$.\sidenote{\textcite{Gauss1823} proved the inequality in his work on least squares; \textcite{Pukelsheim1994} reviews it and gives an elementary proof of the Vysochanski\u{\i}--Petunin inequality, its analogue for deviations from the mean, and \textcite{BernsteinEtAl2018} use it for signSGD under unimodal symmetric noise.} Since $\E[g\sign Y]\ge\abs{g}\bigl(1-2\Pr(\sign Y\ne\sign g)\bigr)$, part (i) gives $\E\ip{\nabla\Loss,\sign\tilde g}\ge\norm{\nabla\Loss}_1-2\sum_i\sigma_i$ for a stochastic gradient $\tilde g$ with coordinatewise noise levels $\sigma_i$, the bound of \textcite{BernsteinEtAl2018}, which \cref{ch:sign} sharpens to $\norm{\nabla\Loss}_1-\sum_i\sigma_i$ with Cantelli's inequality; under unimodal symmetric noise, (iii) replaces $2\sum_i\sigma_i$ by $\frac{\sqrt3}4\sum_i\sigma_i$.
+
+\begin{exercises}
+\item \consolidation Let $\theta=(\theta_1,\dots,\theta_N)$ be split into blocks with norms $\norm{\cdot}_{(l)}$, and $\norm{\theta}=\max_l\norm{\theta_l}_{(l)}$. Show that $\norm{z}_*=\sum_l\norm{z_l}_{(l),*}$ and that an oracle can be computed block by block, $\lmo(g)_l=\lmo_{(l)}(g_l)$. What are the dual norm and an oracle of $\sum_l\norm{\theta_l}_{(l)}$?\label{ex:toolkit:product}
+\item \consolidation\hard Show that $g\mapsto g^\sharp$ is single-valued and linear if and only if $\norm{\cdot}=\norm{\cdot}_P$ for some $P\succ0$. \hint{If $g^\sharp=Mg$, then $\norm{g}_*^2=\ip{g,Mg}$ by \cref{lem:toolkit:conjugate}; use \cref{exa:toolkit:quadnorm} and \cref{lem:toolkit:dualnorm}(ii).}
+\item \consolidation For $A,B\succ0$, show that $(A\#B)^{-1}=A^{-1}\#B^{-1}$, and deduce $2(A^{-1}+B^{-1})^{-1}\preceq A\#B\preceq\frac12(A+B)$.\label{ex:toolkit:means}
+\item \consolidation Show that $\Loss(\theta)=\frac12\norm{X\theta-y}_2^2$ satisfies the PL inequality in the Euclidean norm with $\mu$ the smallest nonzero eigenvalue of $X^\top X$, even when $X^\top X$ is singular. \hint{$\Delta(\theta)=\frac12\norm{\Pi(X\theta-y)}_2^2$ for the orthogonal projection $\Pi$ onto the range of $X$.}\label{ex:toolkit:lsq}
+\item \simulation For Gaussian, Laplace, uniform, and Student-$t_3$ noise of variance $1$, compute $\max_{g>0}g\Pr(\sign Y\ne\sign g)$ by quadrature and compare it with $1$, with $\frac12$, and with $\frac{\sqrt3}8$. You should find about $0.170$, $0.130$, $0.217$, and $0.113$; explain why the heavy-tailed law does best at fixed variance.
+\end{exercises}
+
+\notesandrefs
+
+\textcite{Rockafellar1970} is the reference for dual norms, subdifferentials, and conjugates. \textcite[Section~2.1]{Nesterov2018} proves the characterizations of smooth convex functions in the Euclidean norm, and \textcite{Beck2017} works with a general norm and its dual, as this book does; the notation $g^\sharp$ follows \textcite{KelnerEtAl2014}. For matrix analysis, \textcite{Bhatia1997} covers unitarily invariant norms, von Neumann's inequality, and operator monotone functions, \textcite{Bhatia2007} matrix means, and \textcite{HornJohnson2013} everything else; \textcite[Chapter~4]{HornJohnson1991} treats Kronecker products and vectorization.
+
+Online gradient descent is due to \textcite{Zinkevich2003}, whose regret bound with $\eta_t\propto t^{-1/2}$ is a case of \cref{thm:toolkit:ogd}(ii). \textcite{Hazan2016} and \textcite{Orabona2019} are modern introductions to online learning; Orabona's notes treat adaptive and parameter-free methods in the language of this appendix. For martingales and concentration see \textcite{Williams1991} and \textcite{BoucheronLugosiMassart2013}.
+
+\printchapterbib
+\end{refsection}

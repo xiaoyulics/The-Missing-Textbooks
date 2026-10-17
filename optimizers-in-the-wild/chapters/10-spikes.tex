@@ -1,0 +1,395 @@
+% Chapter 10 of Optimizers in the Wild: gradient clipping, generalized smoothness and loss spikes.
+\newcommand{\spikescliff}{\Loss_{\mathrm{cliff}}}
+\newcommand{\spikesplat}{\Loss_{\mathrm{plat}}}
+\newcommand{\spikesclip}{\operatorname{clip}}
+\newcommand{\spikesscript}[1]{\texttt{10-spikes-}\allowbreak\texttt{#1.py}}
+
+\casechapter{Clipping and Spikes}{Generalized smoothness and the anatomy of an instability}{Gradient clipping, z-loss, QK-norm}{ch:spikes}
+\begin{refsection}[chapters/10-spikes.bib]
+
+\begin{chaptersummary}
+Large language models are trained with the gradient norm clipped at $1$, a penalty on the normalizer of the output softmax and normalized queries and keys, and their losses still spike. Under $(L_0,L_1)$-smoothness, curvature bounded by $L_0$ plus $L_1$ times the gradient norm, we prove that clipped steepest descent reaches a gradient of size $\eps$ within $\max\{4L_0\Delta_0/\eps^2,6L_1\Delta_0/\eps\}$ steps while every fixed step size pays almost linearly for the largest gradient on the way, and that normalized updates are clipped by construction. We then take three instabilities apart exactly: a block of weights that wakes up after a quiet period receives Adam steps that peak above $0.2/\sqrt{1-\beta_2}$ learning rates when $\beta_1=0.9$; the cross-entropy has a flat direction along which adaptive updates drift and which the z-loss removes; attention logits grow with the square of the weight scale unless queries and keys are normalized. The theory explains why each defense helps; it does not predict when a spike comes, and real spikes have causes it leaves out.
+\end{chaptersummary}
+
+\section{In the wild: clipped gradients and spiking losses}\label{sec:spikes:wild}
+
+As of 2025, most published recipes for large language models rescale the gradient before using it: if the Euclidean norm of the gradient, computed over all parameters at once, exceeds a threshold, then the gradient is multiplied by the threshold over the norm. The rule comes from recurrent networks, whose losses have \term{cliffs}\index{cliff}, thin regions where the gradient and the curvature are both enormous, so that one gradient step throws the parameters far away.\sidenote{\Textcite{PascanuMikolovBengio2013} proposed clipping the norm of the gradient of recurrent networks and explained the need geometrically, building on the analysis of exploding gradients by \textcite{BengioSimardFrasconi1994}.} Transformers inherited the rule, with a growing list of defenses against the instabilities that clipping does not prevent.
+
+\begin{practice}[GPT-3, \textcite{BrownEtAl2020}; LLaMA, \textcite{TouvronEtAl2023}; PaLM, \textcite{ChowdheryEtAl2023}; ViT-22B, \textcite{DehghaniEtAl2023}; Kimi K2, \textcite{KimiTeam2025}]
+Clip the gradient norm at $1.0$ before the optimizer step (the global norm in GPT-3 and PaLM; also LLaMA). Use Adam with $\beta_2=0.95$ rather than the default $0.999$ (GPT-3, LLaMA). Add $10^{-4}(\log Z)^2$ to the cross-entropy, where $Z$ is the normalizer of the softmax over the vocabulary (the \term{z-loss}\index{z-loss} of PaLM). Apply a LayerNorm to the queries and the keys before their dot product (\term{QK-norm}\index{QK-norm}, ViT-22B). With Muon, after each step rescale the query and key weights of every attention head whose largest logit on the batch exceeds a threshold, $100$ for Kimi K2 (\term{MuonClip}\index{MuonClip}). When the loss spikes anyway, restart from a checkpoint just before the spike and skip the nearby batches (PaLM).
+\end{practice}
+
+The values pass from recipe to recipe; we know no derivation of the threshold $1.0$ or the coefficient $10^{-4}$, so both are folklore. Here is what has been observed.
+
+\begin{observation}[Loss spikes; \textcite{ChowdheryEtAl2023}]\label[observation]{obs:spikes:palm}
+While the $540$-billion-parameter PaLM model was trained, with the gradient norm clipped at $1.0$, the loss spiked roughly $20$ times, at irregular intervals and sometimes late in training. Restarting from a checkpoint about $100$ steps before a spike and skipping about $200$ to $500$ batches avoided it. Replaying the batches around a spike from a different, earlier checkpoint did not produce a spike.
+\end{observation}
+
+So the spike lay in neither the data nor the parameters alone, but in their combination; the report is qualitative and concerns one run. OPT's divergences coincided with a collapse of the dynamic loss scale of mixed precision \parencite{ZhangEtAl2022OPT}.
+
+\begin{observation}[Curvature grows with the gradient; \textcite{ZhangHeSraJadbabaie2020}]\label[observation]{obs:spikes:L0L1}
+Along the training trajectory of an LSTM language model, a local smoothness estimated from the change of the gradient between nearby iterates was positively correlated with the norm of the gradient: where the gradient was large, so was the curvature.
+\end{observation}
+
+The evidence is a correlation along the trajectories of a few networks, not a law; if it holds, then the step size $1/L$ allowed by a global curvature bound is wasted almost everywhere.
+
+\begin{observation}[Two instabilities in small models; \textcite{WortsmanEtAl2024}]\label[observation]{obs:spikes:proxies}
+Small transformers trained at high learning rates reproduce two instabilities first reported for large runs: the growth of the attention logits, which makes the attention weights nearly one-hot \parencite{DehghaniEtAl2023}, and the divergence of the output logits from log-probabilities \parencite{ChowdheryEtAl2023}. QK-norm removes the first, and the z-loss the second.
+\end{observation}
+
+\begin{observation}[Spikes follow a stale second moment; \textcite{WortsmanEtAl2023}]\label[observation]{obs:spikes:stale}
+In training large CLIP models with AdamW, loss spikes followed, within $1$ to $8$ iterations, steps at which the squared gradients were much larger than AdamW's running estimate of them, mainly in the patch-embedding layer: the second-moment estimate was out of date.
+\end{observation}
+
+From language models of $7$ to $546$ billion parameters, \textcite{MolybogEtAl2023} (unrefereed) argue that Adam can enter a state in which its update is large and nearly uncorrelated with the direction of descent.
+
+Each instability is a step too long for the curvature where it lands, made too long by a quantity that grew without the loss registering it: the gradient near a cliff, the lag of Adam's estimate of the gradient's scale, a common shift of the output logits, the size of queries and keys. Why can a fixed step size not cope with curvature that grows with the gradient, what does clipping buy, and how does a well-tuned run take a step that is far too long? We answer the first two questions with theorems and the third with three exact mechanisms; we do not predict when a spike happens.
+
+\section{The idealization: curvature that grows with the gradient}\label{sec:spikes:ideal}
+
+Classical smoothness bounds the curvature by one number everywhere. On a cliff that number is huge, and the step size it allows is wasted on the rest of the landscape. \Textcite{ZhangHeSraJadbabaie2020} let the bound grow with the gradient.\sidenote{They wrote the condition in the Euclidean norm. A general norm costs nothing in the proofs and is what \cref{prop:spikes:normalized} needs: sign descent and Muon are steepest descent in the $\ell_\infty$ and spectral norms (\cref{ch:sign,ch:spectral}).}
+
+\begin{assumption}[$(L_0,L_1)$-smoothness]\label[assumption]{ass:spikes:L0L1}
+Let $\norm{\cdot}$ be a norm on $\R^d$ with dual norm $\norm{\cdot}_*$, and for a symmetric matrix $H$ let $\norm{H}=\max_{\norm u\le1}\norm{Hu}_*$. The objective $\Loss\colon\R^d\to\R$ is twice continuously differentiable and bounded below, $\Loss^\star=\inf\Loss>-\infty$, and there are constants $L_0\ge0$ and $L_1>0$ such that
+\begin{equation}\label{eq:spikes:L0L1}
+  \norm{\nabla^2\Loss(\theta)}\le L_0+L_1\norm{\nabla\Loss(\theta)}_*\qquad\text{for every }\theta\in\R^d .
+\end{equation}
+\end{assumption}
+
+\term{$(L_0,L_1)$-smoothness}\index{generalized smoothness} allows curvature that grows without bound, provided the gradient grows with it: $e^x$ is $(0,1)$-smooth, $\cosh x-1$ is $(1,1)$-smooth, the logistic loss $\log(1+e^{-x})$ is $(0,1)$-smooth and $\frac14$-smooth, $x^4$ is $(L_0,L_1)$-smooth exactly when $L_0L_1^2\ge16$, and a quadratic with Hessian $H$ is $\norm H$-smooth and $(L_0,L_1)$-smooth only if $L_0\ge\norm H$ (\cref{ex:spikes:constants}). The extremal example is the \term{exponential cliff}\index{cliff!exponential}
+\begin{equation}\label{eq:spikes:cliff}
+  \spikescliff(x)=\frac{L_0}{L_1^2}\bigl(e^{L_1\abs x}-1-L_1\abs x\bigr),\qquad x\in\R,
+\end{equation}
+with $\abs{\spikescliff'(x)}=\frac{L_0}{L_1}(e^{L_1\abs x}-1)$ and $\spikescliff''=L_0e^{L_1\abs x}=L_0+L_1\abs{\spikescliff'}$: a valley of curvature $L_0$ whose walls steepen exponentially, the shape of the exploding gradients of recurrent networks \parencite{BengioSimardFrasconi1994,PascanuMikolovBengio2013}.
+
+\paragraph{The method.} Write $g^\sharp=-\norm g_*\lmo(g)$ for the sharp operator (\cref{ch:steepest}; \cref{lem:toolkit:conjugate}), so that $\ip{g,g^\sharp}=\norm g_*^2$ and $\norm{g^\sharp}=\norm g_*$. \term{Clipped steepest descent}\index{gradient clipping} with step size $\eta$ (the learning rate; we use the two words as synonyms) and largest step length $\gamma$ is
+\begin{equation}\label{eq:spikes:clipped}
+  \theta_{t+1}=\theta_t-\eta_t\,g_t^\sharp,\qquad g_t=\nabla\Loss(\theta_t),\qquad \eta_t=\min\Bigl\{\eta,\frac{\gamma}{\norm{g_t}_*}\Bigr\},
+\end{equation}
+with $\eta_t=\eta$ when $g_t=0$. Its step has length $\min\{\eta\norm{g_t}_*,\gamma\}$: below the threshold $\norm{g_t}_*=\gamma/\eta$ it is unnormalized steepest descent with step size $\eta$, above it normalized steepest descent $\theta_{t+1}=\theta_t+\gamma\lmo(g_t)$. In the Euclidean norm $g^\sharp=g$, and \eqref{eq:spikes:clipped} is the rule of the practice box, $\theta_{t+1}=\theta_t-\eta\spikesclip_\tau(g_t)$ with $\spikesclip_\tau(g)=\min\{1,\tau/\norm g_2\}g$ and threshold $\tau=\gamma/\eta$.\sidenote{Clipping each layer separately is the trust-region step for a product of balls, one per layer, the unit ball of a max norm (\cref{ch:modular}); clipping \emph{by value}, coordinate by coordinate, is the trust-region step for a box, and it changes the direction of the step (\cref{ex:spikes:trust}).} Clipping is a trust region\index{trust region}: the clipped step minimizes $\ip{g,u}+\norm u_2^2/(2\eta)$ over $\norm u_2\le\gamma$.
+
+\begin{dictionary}
+$(L_0,L_1)$-smoothness \eqref{eq:spikes:L0L1} & curvature largest where the gradient is: cliffs, the first steps, spikes\\
+$L_0$; $L_1\norm{\nabla\Loss}_*$; $M$ & the curvature of the flat part, which sets the useful learning rate; the extra curvature near a cliff; the largest gradient norm the run meets\\
+step size $\eta$; step length $\gamma$; $\gamma/\eta$ & learning rate; learning rate times threshold; the threshold \texttt{max\_norm}\\
+a silent, then loud coordinate; $a_k$ & an embedding row, head or expert whose gradient was near zero and suddenly is not; its Adam update in learning rates\\
+flat direction $\mathbf1$; $\alpha(\log Z)^2$ & a common shift of all output logits; the z-loss, $\alpha=10^{-4}$\\
+logit $s$; gains $\omega_q,\omega_k$ & an attention logit; the scales in QK-norm
+\end{dictionary}
+
+\paragraph{What was thrown away.} Noise, except in \cref{thm:spikes:heavy}; the network, except for one relation between its curvature and its gradient, with fixed constants that we cannot compute; and finite precision. The failure of fixed step sizes is already present without them, which makes these the right first simplifications.
+
+\paragraph{What one had to notice.} Classical analyses take a global smoothness constant as given. Once the curvature is tied to the gradient, as \textcite{ZhangHeSraJadbabaie2020} saw it is along trajectories, a step whose \emph{length} is bounded is safe everywhere, and bounding the length of the step is what clipping does. For spikes, each defense targets a quantity whose growth the loss cannot see.
+
+\section{The theory: clipping under generalized smoothness}\label{sec:spikes:clipping}
+
+Everything rests on one lemma: under \eqref{eq:spikes:L0L1} the gradient changes at most exponentially along a segment, at a rate set by $L_1$.
+
+\begin{lemma}[Local smoothness]\label[lemma]{lem:spikes:local}
+Let $\Loss$ satisfy \cref{ass:spikes:L0L1}, let $\theta,u\in\R^d$, and put $g=\nabla\Loss(\theta)$ and $r=L_1\norm u$. Then
+\begin{gather}
+  \norm{\nabla\Loss(\theta+u)-g}_*\le\bigl(L_0/L_1+\norm g_*\bigr)\bigl(e^{r}-1\bigr),\label{eq:spikes:gradgrowth}\\
+  \bigl\lvert\Loss(\theta+u)-\Loss(\theta)-\ip{g,u}\bigr\rvert\le\bigl(L_0/L_1+\norm g_*\bigr)\bigl(e^{r}-1-r\bigr)/L_1.\label{eq:spikes:taylor}
+\end{gather}
+Consequently, for $c>0$, with $\varphi_1(c)=(e^c-1)/c$ and $\varphi_2(c)=(e^c-1-c)/c^2$, if $r\le c$, then
+\begin{equation}\label{eq:spikes:local}
+\begin{gathered}
+  \norm{\nabla\Loss(\theta+u)-g}_*\le\varphi_1(c)\,(L_0+L_1\norm g_*)\norm u,\\
+  \Loss(\theta+u)\le\Loss(\theta)+\ip{g,u}+\varphi_2(c)\,(L_0+L_1\norm g_*)\norm u^2 .
+\end{gathered}
+\end{equation}
+For $c=\frac13$, $\varphi_1(c)<1.19$ and $\varphi_2(c)<\frac35$. Both \eqref{eq:spikes:gradgrowth} and \eqref{eq:spikes:taylor} hold with equality for the cliff \eqref{eq:spikes:cliff} at $\theta\ge0$ and $u\ge0$.
+\end{lemma}
+
+As $c\to0$, $\varphi_1\to1$ and $\varphi_2\to\frac12$, and \eqref{eq:spikes:local} becomes the descent lemma (\cref{lem:toolkit:descent}) for the local smoothness constant $L_0+L_1\norm g_*$: that constant may be used as long as the step is short compared with $1/L_1$.\sidenote{These are the functions $\varphi_1,\varphi_2$ of exponential integrators for stiff differential equations, where they arise for the same reason: they integrate the exponential growth of a linear equation over one step.}
+
+\begin{proof}
+The plan is to bound the growth of the gradient along the segment from $\theta$ to $\theta+u$ by a linear differential inequality, solve it with Grönwall's inequality, and integrate. Let $u\ne0$, the case $u=0$ being empty. For $s\in[0,1]$ let $\phi(s)=\nabla\Loss(\theta+su)$, whose derivative $\phi'(s)=\nabla^2\Loss(\theta+su)u$ is continuous, and $\psi(s)=\int_0^s\norm{\phi'(\sigma)}_*\dd\sigma$, a continuously differentiable function with $\psi(0)=0$ and $\norm{\phi(s)-g}_*\le\psi(s)$. By \eqref{eq:spikes:L0L1} at $\theta+su$, the derivative of $\psi$ is bounded by the current gradient, and the current gradient by $\norm g_*+\psi(s)$:
+\[
+  \psi'(s)\le\bigl(L_0+L_1\norm{\phi(s)}_*\bigr)\norm u\le a+r\,\psi(s),\qquad a=(L_0+L_1\norm g_*)\norm u .
+\]
+Hence $(e^{-rs}\psi(s))'\le ae^{-rs}$, and integrating from $0$ to $s$ gives $\psi(s)\le\frac ar(e^{rs}-1)$, the differential form of Grönwall's inequality (\cref{thm:toolkit:gronwall}). Since $a/r=L_0/L_1+\norm g_*$, the case $s=1$ is \eqref{eq:spikes:gradgrowth}. For \eqref{eq:spikes:taylor}, write the remainder of the first-order expansion as an integral and insert the bound on $\psi$:
+\[
+  \Bigl\lvert\int_0^1\ip{\phi(s)-g,u}\dd s\Bigr\rvert\le\norm u\int_0^1\psi(s)\dd s\le\frac ar\norm u\Bigl(\frac{e^r-1}r-1\Bigr),
+\]
+which is the right side of \eqref{eq:spikes:taylor}. The series $\varphi_1(c)=\sum_{k\ge0}c^k/(k+1)!$ and $\varphi_2(c)=\sum_{k\ge0}c^k/(k+2)!$ have positive coefficients, so both functions increase on $(0,\infty)$; for $r\le c$ this gives $e^r-1\le r\varphi_1(c)$ and $e^r-1-r\le r^2\varphi_2(c)$, and $r=L_1\norm u$ turns the two bounds into \eqref{eq:spikes:local}. Numerically, $\varphi_1(\frac13)=3(e^{1/3}-1)=1.187$, and $\varphi_2(\frac13)=9(e^{1/3}-\frac43)<9(\frac75-\frac43)=\frac35$ because $e<(\frac75)^3=2.744$. For the cliff at $\theta\ge0$ and $u\ge0$, both sides of \eqref{eq:spikes:gradgrowth} equal $\frac{L_0}{L_1}e^{L_1\theta}(e^{L_1u}-1)$, and integrating in $u$ gives equality in \eqref{eq:spikes:taylor}.
+\end{proof}
+
+With the lemma, the main theorem is one application per step.
+
+\begin{theorem}[Clipped steepest descent]\label{thm:spikes:clipped}
+Let $\Loss$ satisfy \cref{ass:spikes:L0L1}, let $\Delta_0=\Loss(\theta_0)-\Loss^\star$, and run \eqref{eq:spikes:clipped} with $0<\gamma\le1/(3L_1)$ and $0<\eta\le1/(2L_0)$ (every $\eta>0$ if $L_0=0$). Then:
+\begin{enumerate}
+\item $\Loss(\theta_{t+1})\le\Loss(\theta_t)-\frac12\min\bigl\{\eta\norm{g_t}_*^2,\ \gamma\norm{g_t}_*\bigr\}$ for every $t$;
+\item for every $\eps>0$, the number of steps with $\norm{g_t}_*>\eps$ is at most $2\Delta_0\max\{1/(\eta\eps^2),1/(\gamma\eps)\}$. If $L_0>0$, then with $\eta=1/(2L_0)$ and $\gamma=1/(3L_1)$ it is at most
+\begin{equation}\label{eq:spikes:clippedrate}
+  \max\Bigl\{\frac{4L_0\Delta_0}{\eps^2},\ \frac{6L_1\Delta_0}{\eps}\Bigr\},
+\end{equation}
+which is $4L_0\Delta_0/\eps^2$ whenever $\eps\le2L_0/(3L_1)$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to apply \cref{lem:spikes:local} to one step, whose length is at most $\gamma$, and to check that the quadratic remainder costs at most half of the first-order decrease. If $g_t=0$, then the step is zero and (i) holds. Otherwise put $u=-\eta_tg_t^\sharp$, so that $\ip{g_t,u}=-\eta_t\norm{g_t}_*^2$ and $\norm u=\eta_t\norm{g_t}_*=\min\{\eta\norm{g_t}_*,\gamma\}$. Since $L_1\norm u\le\frac13$, \eqref{eq:spikes:local} with $c=\frac13$ gives
+\begin{align*}
+  \Loss(\theta_{t+1})&\le\Loss(\theta_t)-\eta_t\norm{g_t}_*^2+\tfrac35\bigl(L_0+L_1\norm{g_t}_*\bigr)\eta_t^2\norm{g_t}_*^2\\
+  &=\Loss(\theta_t)-\eta_t\norm{g_t}_*^2\Bigl(1-\tfrac35\bigl(L_0\eta_t+L_1\norm u\bigr)\Bigr).
+\end{align*}
+The two terms in the inner parenthesis are controlled by the two parameters: $L_0\eta_t\le L_0\eta\le\frac12$ and $L_1\norm u\le\frac13$. The large parenthesis is therefore at least $1-\frac35\cdot\frac56=\frac12$, and the decrease is at least $\frac12\eta_t\norm{g_t}_*^2=\frac12\min\{\eta\norm{g_t}_*^2,\gamma\norm{g_t}_*\}$, which is (i).
+
+For (ii), sum (i) over $t<T$; the decreases add up to at most $\Loss(\theta_0)-\Loss(\theta_T)\le\Delta_0$. Since $x\mapsto\eta x^2$ and $x\mapsto\gamma x$ increase, each step with $\norm{g_t}_*>\eps$ contributes more than $\frac12\min\{\eta\eps^2,\gamma\eps\}$, so there are at most $2\Delta_0\max\{1/(\eta\eps^2),1/(\gamma\eps)\}$ of them, whatever $T$ is. Substituting $\eta=1/(2L_0)$ and $\gamma=1/(3L_1)$ gives \eqref{eq:spikes:clippedrate}, whose first entry is the larger exactly when $\eps\le2L_0/(3L_1)$.
+\end{proof}
+
+The bound does not contain the largest gradient met on the way: a clipped step on a cliff is short, but it decreases the loss by $\frac12\gamma\norm{g_t}_*$, more than an unclipped step near the target does. For a fixed step size the largest gradient is the whole story. Let $M=\sup\{\norm{\nabla\Loss(\theta)}_*:\Loss(\theta)\le\Loss(\theta_0)\}$.
+
+\begin{corollary}[Gradient descent with a step set by $M$]\label[corollary]{cor:spikes:gd}
+Under \cref{ass:spikes:L0L1}, let $M<\infty$ and $0<\eta\le\min\{1/(2L_0),1/(3L_1M)\}$. Then $\theta_{t+1}=\theta_t-\eta g_t^\sharp$ stays in the sublevel set and has $\norm{g_t}_*>\eps$ for at most $2\Delta_0/(\eta\eps^2)$ steps, for every $\eps\le M$; with the largest allowed $\eta$ this is $2\Delta_0\max\{2L_0,3L_1M\}/\eps^2$.
+\end{corollary}
+
+\begin{proof}
+Put $\gamma=\eta M\le1/(3L_1)$. As long as $\theta_t$ is in the sublevel set, $\norm{g_t}_*\le\gamma/\eta$, so the step is the clipped step, and \cref{thm:spikes:clipped}(i) gives a decrease of at least $\frac\eta2\norm{g_t}_*^2$, which keeps $\theta_{t+1}$ in the sublevel set; by induction this holds for every $t$, and the count follows as in \cref{thm:spikes:clipped}(ii), since $\gamma\eps\ge\eta\eps^2$.
+\end{proof}
+
+So gradient descent works on the class with a step size of order $1/(L_0+L_1M)$ and then needs of order $(L_0+L_1M)\Delta_0/\eps^2$ steps. Up to a logarithm, no fixed step size does better.
+
+\begin{theorem}[A fixed step pays for the largest gradient]\label{thm:spikes:lower}
+Let $L_0,L_1,M,\Delta_0>0$ and $0<\eps\le M/2$, with $\Delta_0\ge M/L_1$, and fix $x_0\in\R$. Let $\cF$ be the set of twice continuously differentiable, $(L_0,L_1)$-smooth functions $f\colon\R\to\R$ that are bounded below, with $f(x_0)-\inf f\le\Delta_0$ and $\abs{f'(x)}\le M$ whenever $f(x)\le f(x_0)$. For every step size $\eta>0$ there is an $f\in\cF$ on which gradient descent $x_{t+1}=x_t-\eta f'(x_t)$ has $\abs{f'(x_t)}>\eps$ for every $t<N$, with
+\begin{equation}\label{eq:spikes:lower}
+  N=\frac{L_1M}{\log(1+L_1M/L_0)}\cdot\frac{\Delta_0-4\eps^2/(\sqrt3L_0)}{8\eps^2}.
+\end{equation}
+If $\eta\ge\eta^*=2\log(1+L_1M/L_0)/(L_1M)$, then $f$ can be chosen so that $\abs{f'(x_t)}\ge M$ for every $t$.
+\end{theorem}
+
+When $\eps^2\le L_0\Delta_0/4$, the second factor of \eqref{eq:spikes:lower} is at least $\Delta_0/(20\eps^2)$; the first factor exceeds $L_0$, because $\log(1+P)<P$, and is unbounded in $M$. As functions of the first coordinate, the functions of the proof give the same bound in $\R^d$ with the Euclidean norm.
+
+\begin{proof}
+The plan is a dichotomy: a large step diverges on a cliff, a small step crawls on a plateau of slope just above $\eps$. Put $P=L_1M/L_0$ and $y_0=\log(1+P)$, so that $\eta^*=2y_0/(L_1M)$.
+
+\emph{A large step diverges on the cliff.} Let $\eta\ge\eta^*$ and $f(x)=\spikescliff(x-c)$ with $c=x_0-y_0/L_1$. Then $f$ is $(L_0,L_1)$-smooth, $\abs{f'(x_0)}=\frac{L_0}{L_1}(e^{y_0}-1)=M$, the sublevel set $\{f\le f(x_0)\}$ is the interval $\abs{x-c}\le y_0/L_1$, on which $\abs{f'}\le M$, and $f(x_0)-\inf f=\frac{L_0}{L_1^2}(P-\log(1+P))<M/L_1\le\Delta_0$; so $f\in\cF$. In the variable $z_t=L_1(x_t-c)$, gradient descent reads $z_{t+1}=z_t\bigl(1-\eta L_0\varphi_1(\abs{z_t})\bigr)$ with the increasing function $\varphi_1$ of \cref{lem:spikes:local}. At $t=0$, $\eta L_0\varphi_1(y_0)=\eta L_0P/y_0=\eta L_1M/y_0\ge2$, hence $\abs{z_1}=\abs{z_0}(\eta L_0\varphi_1(\abs{z_0})-1)\ge\abs{z_0}$. Since $\varphi_1$ increases, the inequality $\eta L_0\varphi_1(\abs{z_t})\ge2$ propagates, and by induction $\abs{z_t}\ge y_0$, that is, $\abs{f'(x_t)}\ge M>\eps$, for every $t$.
+
+\emph{A small step crawls on the plateau.} Let $\eta<\eta^*$. If $\Delta_0\le4\eps^2/(\sqrt3L_0)$, then $N\le0$ and there is nothing to prove, so assume the opposite. With $\sigma=L_0x/(2\eps)$, let
+\[
+  \spikesplat(x)=\frac{4\eps^2}{L_0}\bigl(\sqrt{1+\sigma^2}-1\bigr),\qquad\text{so that}\qquad
+  \spikesplat'(x)=\frac{2\eps\,\sigma}{\sqrt{1+\sigma^2}} .
+\]
+Then $\abs{\spikesplat'}<2\eps\le M$ and $0<\spikesplat''=L_0(1+\sigma^2)^{-3/2}\le L_0$, so $f(x)=\spikesplat(x-c)$ is $(L_0,L_1)$-smooth; choose $c<x_0$ with $f(x_0)=\Delta_0$, which puts $f$ in $\cF$. With $a=L_0\Delta_0/(4\eps^2)$, solving $f(x_0)=\Delta_0$ gives $x_0-c=\frac{2\eps}{L_0}\sqrt{(1+a)^2-1}\ge\frac{2\eps}{L_0}a=\frac{\Delta_0}{2\eps}$. On the other hand $\abs{f'(x)}>\eps$ exactly when $\abs{x-c}>r_\eps=2\eps/(\sqrt3L_0)$. Each step has length $\eta\abs{f'(x_t)}<2\eta\eps$, so $\abs{x_t-c}\ge x_0-c-2\eta\eps t$, and $\abs{f'(x_t)}>\eps$ for every $t<(x_0-c-r_\eps)/(2\eta\eps)$. This number of steps exceeds $N$:
+\[
+  \frac{x_0-c-r_\eps}{2\eta\eps}\ge\frac{\Delta_0-4\eps^2/(\sqrt3L_0)}{4\eta\eps^2}>\frac{\Delta_0-4\eps^2/(\sqrt3L_0)}{4\eta^*\eps^2}=N.\qedhere
+\]
+\end{proof}
+
+Normalized updates bound their step length by definition, so the same analysis applies to them.
+
+\begin{proposition}[Normalized steps are clipped by construction]\label[proposition]{prop:spikes:normalized}
+Let $\Loss$ satisfy \cref{ass:spikes:L0L1} and $0<\gamma\le1/(3L_1)$.
+\begin{enumerate}
+\item Normalized steepest descent $\theta_{t+1}=\theta_t+\gamma\lmo(g_t)$ satisfies $\Loss(\theta_{t+1})\le\Loss(\theta_t)-\frac45\gamma\norm{g_t}_*+\frac35L_0\gamma^2$. Hence $\frac1T\sum_{t<T}\norm{\nabla\Loss(\theta_t)}_*\le5\Delta_0/(4\gamma T)+3L_0\gamma/4$, and with $\gamma=\min\{1/(3L_1),2\eps/(3L_0)\}$ some $t<T$ has $\norm{\nabla\Loss(\theta_t)}_*\le\eps$ once $T\ge\max\{15L_0\Delta_0/(4\eps^2),15L_1\Delta_0/(2\eps)\}$.
+\item This applies to normalized gradient descent ($\ell_2$), to sign descent ($\ell_\infty$, with \eqref{eq:spikes:L0L1} read as $\norm{\nabla^2\Loss}_{\infty\to1}\le L_0+L_1\norm{\nabla\Loss}_1$) and to orthogonalized descent on a matrix (spectral norm, nuclear dual).
+\item Adam without bias correction, with $\epsilon=0$ and $\beta_1^2<\beta_2$, takes steps with $\norm{\theta_{t+1}-\theta_t}_\infty\le C\eta$, $C=(1-\beta_1)/\sqrt{(1-\beta_2)(1-\beta_1^2/\beta_2)}$; if $\Loss$ satisfies \cref{ass:spikes:L0L1} in $\ell_\infty$ and $C\eta\le c/L_1$, then every Adam step satisfies \eqref{eq:spikes:local}.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to repeat the proof of \cref{thm:spikes:clipped}(i) for a step of fixed length. For (i), $u=\gamma\lmo(g_t)$ has $\norm u\le\gamma$ and $\ip{g_t,u}=-\gamma\norm{g_t}_*$, also when $g_t=0$. \Cref{lem:spikes:local} with $c=\frac13$ gives $\Loss(\theta_{t+1})\le\Loss(\theta_t)-\gamma\norm{g_t}_*+\frac35(L_0+L_1\norm{g_t}_*)\gamma^2$, and $\frac35L_1\gamma\le\frac15$ gives the one-step bound; summing over $t<T$ gives the average. With the stated $\gamma$ both terms are at most $\eps/2$ once $T\ge5\Delta_0/(2\gamma\eps)$, and the smallest gradient norm is at most the average. Part (ii) consists of instances of (i) (\cref{ch:steepest,ch:spectral}). For (iii), the bound on Adam's update of \cref{ch:sign} (\cref{prop:sign:adambound}) gives $\abs{m_{t,i}}/\sqrt{v_{t,i}}\le C$ in every coordinate, so every step has $\ell_\infty$-length at most $C\eta$.
+\end{proof}
+
+Part (iii) does not prove that Adam converges, since its direction need not be a descent direction (\cref{ch:adaptive}); it proves that Adam never steps out of the region where the local curvature bound holds, if $C\eta\lesssim1/L_1$. Here $C=7.27$ for $(\beta_1,\beta_2)=(0.9,0.999)$ and $1.16$ for $(0.9,0.95)$, and \cref{sec:spikes:anatomy} shows that Adam comes close to $C$ when a quiet block of weights wakes up.
+
+The last result concerns noise. Gradient noise in deep networks can have \term{heavy tails}\index{heavy-tailed noise} \parencite{SimsekliSagunGurbuzbalaban2019}; \textcite{ZhangEtAl2020Attention} found them heavier for BERT than for a convolutional network on ImageNet, and proposed them, with clipping as the remedy, as one reason adaptive methods train attention models faster. With infinite variance, SGD fails at once: on $\Loss(\theta)=\frac12\norm\theta_2^2$, $\E\Loss(\theta_1)=\frac12\E\norm{(1-\eta)\theta_0-\eta\zeta_0}_2^2=\infty$ for every $\eta>0$. Clipping restores a rate.
+
+\begin{theorem}[Clipped SGD with heavy-tailed noise]\label{thm:spikes:heavy}
+Let $\Loss$ be $L$-smooth in the Euclidean norm and bounded below, and let the stochastic gradients be unbiased, $\E[g_t\mid\theta_t]=\nabla\Loss(\theta_t)$, with a bounded moment of order $p\in(1,2]$, $\E[\norm{g_t}_2^p\mid\theta_t]\le\Gamma^p$. Clipped SGD $\theta_{t+1}=\theta_t-\eta\spikesclip_\tau(g_t)$ satisfies
+\begin{equation}\label{eq:spikes:heavy}
+  \frac1T\sum_{t<T}\E\norm{\nabla\Loss(\theta_t)}_2^2\le\frac{2\Delta_0}{\eta T}+\frac{\Gamma^{2p}}{\tau^{2(p-1)}}+L\eta\Gamma^p\tau^{2-p}.
+\end{equation}
+If $\Delta_0>0$, then with $\tau=\Gamma T^{1/(3p-2)}$ and $\eta=(2\Delta_0/(L\Gamma^2))^{1/2}T^{-p/(3p-2)}$ the right side is $(2\Gamma\sqrt{2L\Delta_0}+\Gamma^2)\,T^{-2(p-1)/(3p-2)}$, so that $\min_{t<T}\E\norm{\nabla\Loss(\theta_t)}_2\lesssim T^{-(p-1)/(3p-2)}$.
+\end{theorem}
+
+\begin{proof}
+The plan is to bound the bias and the second moment of a clipped gradient by the $p$th moment and then to run the descent lemma. Condition on $\theta_t$ and write $g=g_t$, $\hat g=\spikesclip_\tau(g)$. The two differ only where $\norm g_2>\tau$, by $\norm g_2-\tau<\norm g_2\le\norm g_2^p\tau^{1-p}$, so the bias is $\norm{\E\hat g-\nabla\Loss(\theta_t)}_2\le\E\norm{\hat g-g}_2\le\Gamma^p/\tau^{p-1}\eqqcolon b$. The second moment: $\norm{\hat g}_2^2=\min\{\norm g_2,\tau\}^2\le\norm g_2^p\tau^{2-p}$, as the cases $\norm g_2\le\tau$ and $\norm g_2>\tau$ show, so $\E\norm{\hat g}_2^2\le\Gamma^p\tau^{2-p}$. The descent lemma (\cref{lem:toolkit:descent}) gives $\Loss(\theta_{t+1})\le\Loss(\theta_t)-\eta\ip{\nabla\Loss(\theta_t),\hat g}+\frac L2\eta^2\norm{\hat g}_2^2$, and the bias enters through $\ip{\nabla\Loss,\E\hat g}\ge\norm{\nabla\Loss}_2^2-b\norm{\nabla\Loss}_2\ge\frac12\norm{\nabla\Loss}_2^2-\frac12b^2$. Taking expectations,
+\[
+  \E\Loss(\theta_{t+1})\le\E\Loss(\theta_t)-\frac\eta2\E\norm{\nabla\Loss(\theta_t)}_2^2+\frac\eta2b^2+\frac L2\eta^2\Gamma^p\tau^{2-p}.
+\]
+Summing over $t<T$ and dividing by $\eta T/2$ gives \eqref{eq:spikes:heavy}. With the stated $\tau$ and $\eta$, the first and third terms both equal $\Gamma\sqrt{2L\Delta_0}\,T^{-2(p-1)/(3p-2)}$ and the second equals $\Gamma^2T^{-2(p-1)/(3p-2)}$; the last claim follows from $(\E\norm{\nabla\Loss}_2)^2\le\E\norm{\nabla\Loss}_2^2$.
+\end{proof}
+
+For $p=2$ the rate is $T^{-1/4}$, that of SGD with bounded variance. The threshold must grow with the length of the run, since a fixed threshold leaves the bias $\Gamma^p/\tau^{p-1}$ (\cref{ex:spikes:bias}). \Textcite{ZhangEtAl2020Attention} proved this rate with a matching lower bound, and \textcite{KoloskovaHendrikxStich2023} analyzed fixed thresholds.
+
+\section{The theory: the anatomy of a spike}\label{sec:spikes:anatomy}
+
+A \term{loss spike}\index{loss spike} is a step too long for the curvature it lands in. \Cref{thm:spikes:clipped} says that a step of bounded length is safe; so how does a clipped, well-tuned run produce steps that are too long, or curvature that is too high? We take apart three mechanisms, one for each further defense in the practice box.
+
+\paragraph{The optimizer's state.} After a long stretch of tiny gradients, a coordinate whose gradient jumps receives Adam steps that \cref{ch:adaptive} computes exactly, the quiet-then-loud steps of \cref{prop:adaptive:quietloud}: the first is about $(1-\beta_1)/\sqrt{1-\beta_2}$ learning rates, and the steps then grow. For a spike, what matters is the peak.\sidenote{\Textcite{KingmaBa2015} observed that Adam's step is roughly bounded by the learning rate, and singled out the most severe case of sparsity, a gradient that was zero at all earlier steps, where the step is $(1-\beta_1)/\sqrt{1-\beta_2}$ learning rates.}
+
+\begin{proposition}[A quiet block wakes up]\label[proposition]{prop:spikes:burst}
+Consider one coordinate of Adam without bias correction, with $\beta_1\in[0,1)$, $\beta_2\in(0,1)$ and $\epsilon\ge0$: moments $m_t=\beta_1m_{t-1}+(1-\beta_1)g_t$ and $v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2$ from $m_{-1}=v_{-1}=0$, and step $-\eta\,m_t/(\sqrt{v_t}+\epsilon)$. Let the coordinate be silent, $g_s=0$ for $s<t_0$, and then loud, $g_s=\bar g\ne0$ for $s\ge t_0$. At the $k$th loud step, $t=t_0+k-1$, the step is $-\eta\sign(\bar g)\,a_k$ with
+\begin{equation}\label{eq:spikes:burst}
+  a_k=\frac{1-\beta_1^k}{\sqrt{1-\beta_2^k}+\epsilon/\abs{\bar g}} .
+\end{equation}
+With $\epsilon=0$: $a_1=(1-\beta_1)/\sqrt{1-\beta_2}$; $a_k\to1$ as $k\to\infty$; $a_k\le C=(1-\beta_1)/\sqrt{(1-\beta_2)(1-\beta_1^2/\beta_2)}$ for every $k$ if $\beta_1^2<\beta_2$; and $a_k\ge(1-\beta_1^k)/\sqrt{k(1-\beta_2)}$, so that for $\beta_1=0.9$, $\max_ka_k\ge a_{12}\ge0.207/\sqrt{1-\beta_2}$.
+\end{proposition}
+
+\begin{proof}
+The plan is to take the formula from \cref{ch:adaptive} and then to bound it. Over the loud steps $m_t=(1-\beta_1^k)\bar g$ and $v_t=(1-\beta_2^k)\bar g^2$, so \eqref{eq:spikes:burst} is the case $\delta=0$ of \cref{prop:adaptive:quietloud}, whose two bounds then coincide. Its index counts the loud steps from $0$: its $k$ is our $k-1$, and its $\rho_{k-1}$ is our $a_k$. It takes $\bar g>0$; reversing the sign of every gradient reverses $m_t$ and the step and leaves $v_t$ unchanged. Its part (i) gives $a_1$ and $a_k\to1$. The bound by $C$ is the bound on $\abs{m_t}/\sqrt{v_t}$ of \cref{ch:sign} (\cref{prop:sign:adambound}), valid for every sequence of gradients, here the one that is zero before $t_0$ and $\bar g$ afterwards. Finally $1-\beta_2^k=(1-\beta_2)\sum_{j<k}\beta_2^j\le k(1-\beta_2)$, and $(1-0.9^{12})/\sqrt{12}=0.2071$.
+\end{proof}
+
+In words: after a long silence both moments are empty, and the coordinate goes through a \term{burst}\index{Adam!burst after a quiet period}: $m$ refills in about $1/(1-\beta_1)=10$ steps and $v$ in about $1/(1-\beta_2)$, and in between the step is too large. If $\beta_2$ is close to $1$, then the step grows for about $1.26/\log(1/\beta_1)\approx12$ steps, where the lower bound peaks, and decays to $1$ over about $1/(1-\beta_2)$. For $\beta_1=0.9$ and $\beta_2=0.95$, $0.99$, $0.999$, the first step is $0.45$, $1.00$, $3.16$, the peak $1.10$, $2.13$, $6.57$ (at $k=20$, $13$, $12$), and the worst case $C$ over all gradient sequences $1.16$, $2.35$, $7.27$. A coordinate that was quiet, $\abs{g_s}\le\delta$, rather than silent has its steps between the two bounds of \cref{prop:adaptive:quietloud}, which tend to $a_k$ as $\delta/\abs{\bar g}\to0$. Bias correction counts $t$ from the start of training, and its factors are $1$ once $t\gg1/(1-\beta_2)$: the burst is the transient it removes at the start (\cref{ch:warmup}), recreated for a coordinate whose memory has emptied (\cref{ex:spikes:burst}). Without momentum the burst is one step of $1/\sqrt{1-\beta_2}$, which is $31.6$ learning rates at $\beta_2=0.999$; and $\epsilon$ caps it only for gradients with $\abs{\bar g}\lesssim\epsilon/\sqrt{1-\beta_2^k}$.
+
+Which blocks go silent? Rows of an embedding matrix for tokens absent from recent batches, experts that a router stops choosing, units whose inputs vanish, and, in a milder form, every block whose gradient grows by a large factor within fewer than $1/(1-\beta_2)$ steps (\cref{ex:spikes:jump}). Whether a burst becomes a spike depends on the block's curvature, which the proposition ignores.
+
+\paragraph{The output logits.} The second mechanism is a direction in which the loss does not change at all.
+
+\begin{proposition}[A flat direction and the z-loss]\label[proposition]{prop:spikes:zloss}
+For logits $z\in\R^K$ let $Z(z)=\sum_ke^{z_k}$ and $\pi=\softmax(z)$, and let $\ell(z)=-\sum_ky_kz_k+\log Z(z)$ be the cross-entropy against a probability vector $y$ (a one-hot label, or the label frequencies of a batch).
+\begin{enumerate}
+\item $\ell(z+c\mathbf1)=\ell(z)$ for every $c\in\R$; $\ip{\nabla\ell(z),\mathbf1}=0$ and $\nabla^2\ell(z)\mathbf1=0$.
+\item For an output layer $z=Wh+b$ with $W\in\R^{K\times d_{\mathrm{in}}}$, every batch gradient has $\mathbf1^\top\nabla_W\ell=0$ and $\ip{\mathbf1,\nabla_b\ell}=0$. Hence an update that is a linear combination of gradients multiplied on the right by matrices (gradient descent, momentum, right preconditioning), and also an orthogonalized update $-\eta\polar(G)$, leaves $\mathbf1^\top W$ and $\ip{\mathbf1,b}$ unchanged; a sign step on $b$ changes $\ip{\mathbf1,b}$ by $-\eta\sum_k\sign(\pi_k-y_k)$.
+\item With the z-loss, $\ell_\alpha=\ell+\alpha(\log Z)^2$ with $\alpha>0$, the restriction to the flat line is the parabola $\ell_\alpha(z+c\mathbf1)=\ell(z)+\alpha(\log Z(z)+c)^2$, with second derivative $2\alpha$ in $c$ and minimum at $\log Z=0$. If $y_k>0$ for every $k$, then the only stationary point of $\ell_\alpha$ is $z=\log y$ (coordinatewise), where $\log Z=0$ and $\pi=y$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to compute the gradient and the Hessian of $\ell$ and read everything off them. (i) $Z(z+c\mathbf1)=e^cZ(z)$, so $\log Z$ increases by $c$, as much as $\sum_ky_kz_k$ does. Differentiating, $\nabla\ell=\pi-y$, whose coordinates sum to $1-1=0$, and $\nabla^2\ell=\diag(\pi)-\pi\pi^\top$, which maps $\mathbf1$ to $\pi-\pi=0$. (ii) For one example $\nabla_W\ell=(\pi-y)h^\top$ and $\nabla_b\ell=\pi-y$, so $\mathbf1^\top\nabla_W\ell=0$ by (i), and a batch gradient is an average of such terms. A linear combination $\sum_sc_sG_sR_s$ inherits $\mathbf1^\top G_s=0$. If $\mathbf1^\top G=0$, then $\mathbf1$ is orthogonal to the column space of $G$, which the left singular vectors $U$ span, so $\mathbf1^\top\polar(G)=\mathbf1^\top UV^\top=0$. (iii) The parabola follows from $\log Z(z+c\mathbf1)=\log Z(z)+c$ and (i). A stationary point has $\pi-y+2\alpha\log Z\,\pi=0$, that is, $(1+2\alpha\log Z)\pi=y$; summing the coordinates gives $\log Z=0$, hence $\pi=y$ and $z_k=\log\pi_k+\log Z=\log y_k$.
+\end{proof}
+
+Gradient descent therefore never moves the output layer along this \term{flat direction}\index{flat direction of the softmax}, nor does Muon (\cref{ex:spikes:muonmean}), whereas coordinatewise normalization does: the coordinates of $\pi-y$ sum to zero, their signs need not. Decoupled weight decay shrinks the flat component, and the z-loss adds a spring of stiffness $2\alpha$ that holds $\log Z$ near $0$. In exact arithmetic the drift is harmless; in bfloat16, which keeps $8$ significant bits, logits near $100$ are rounded to multiples of $0.5$, which changes the ratios of the probabilities by factors up to $e^{\pm0.5}$.\sidenote{\Textcite{ZophEtAl2022} proposed a z-loss on the logits of the router of a mixture of experts, motivated by roundoff in the exponentials of large logits. Whether the output-logit divergence of \cref{obs:spikes:proxies} is a precision effect has, as far as we know, not been established.} How strong a spring is needed depends on the speed of the drift, which \cref{sec:spikes:reading} measures in a small model.
+
+\paragraph{The attention logits.} The third mechanism concerns the \term{attention logits}\index{attention logits}.
+
+\begin{proposition}[Attention logits, QK-norm and QK-clip]\label[proposition]{prop:spikes:qknorm}
+For an attention head with query and key weights $W_Q,W_K\in\R^{d_{\mathrm h}\times d_{\mathrm{in}}}$ and inputs $x,x'\in\R^{d_{\mathrm{in}}}$, let $s(x,x')=\ip{W_Qx,W_Kx'}/\sqrt{d_{\mathrm h}}$.
+\begin{enumerate}
+\item The logit is bilinear in $(W_Q,W_K)$: replacing $(W_Q,W_K)$ by $(\rho W_Q,\rho W_K)$ multiplies every logit by $\rho^2$, and $\abs{s(x,x')}\le\norm{W_Q}_{\op}\norm{W_K}_{\op}\norm x_2\norm{x'}_2/\sqrt{d_{\mathrm h}}$.
+\item With QK-norm, $\tilde s(x,x')=\ip{\omega_q\odot\mathcal N(W_Qx),\,\omega_k\odot\mathcal N(W_Kx')}/\sqrt{d_{\mathrm h}}$, where $\mathcal N$ is RMS normalization or a LayerNorm without bias and without $\epsilon$, and $\omega_q,\omega_k\in\R^{d_{\mathrm h}}$ are gains, $\abs{\tilde s(x,x')}\le\sqrt{d_{\mathrm h}}\,\norm{\omega_q}_\infty\norm{\omega_k}_\infty$ whenever the normalizations are defined, with equality when $\mathcal N(W_Qx)=\mathcal N(W_Kx')$ and $\omega_q=\omega_k$ is a constant vector.
+\item If the logits of a row of attention lie in an interval of length $R$, then each of the row's $n_{\mathrm{key}}$ attention weights is at most $1/(1+(n_{\mathrm{key}}-1)e^{-R})$, and the row's entropy is at least $\log(1+(n_{\mathrm{key}}-1)e^{-R})$.
+\item (QK-clip.) If the largest logit of a head on a batch is $s_{\max}>\bar s>0$, then replacing $(W_Q,W_K)$ by $(\rho W_Q,\rho W_K)$ with $\rho=\sqrt{\bar s/s_{\max}}$ multiplies every logit of the head by $\bar s/s_{\max}$, so the largest becomes $\bar s$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to treat the four parts in turn; only (ii) and (iii) need a computation. (i) Bilinearity is immediate, and Cauchy--Schwarz gives $\abs{\ip{W_Qx,W_Kx'}}\le\norm{W_Q}_{\op}\norm x_2\norm{W_K}_{\op}\norm{x'}_2$. (ii) RMS normalization maps $v$ to $\sqrt{d_{\mathrm h}}\,v/\norm v_2$ and the LayerNorm maps it to $\sqrt{d_{\mathrm h}}\,(v-\bar v\mathbf1)/\norm{v-\bar v\mathbf1}_2$, with $\bar v$ the mean of the coordinates; both images have Euclidean norm $\sqrt{d_{\mathrm h}}$. With $a=\mathcal N(W_Qx)$ and $b=\mathcal N(W_Kx')$, Hölder's and the Cauchy--Schwarz inequality give $\abs{\sum_i\omega_{q,i}\omega_{k,i}a_ib_i}\le\norm{\omega_q}_\infty\norm{\omega_k}_\infty\norm a_2\norm b_2=\norm{\omega_q}_\infty\norm{\omega_k}_\infty d_{\mathrm h}$; divide by $\sqrt{d_{\mathrm h}}$. In the stated case every inequality is an equality. (iii) If the logits are $s_1,\dots,s_{n_{\mathrm{key}}}$, then every $s_i$ is at least $s_j-R$, so the weight $e^{s_j}/\sum_ie^{s_i}$ of key $j$ is at most $e^{s_j}/(e^{s_j}+(n_{\mathrm{key}}-1)e^{s_j-R})$, and the entropy $\sum_jp_j\log(1/p_j)$ is at least $\log(1/\max_jp_j)$. (iv) follows from (i).
+\end{proof}
+
+Part (i) is the source of the growth: the logit is quadratic in the scale of $(W_Q,W_K)$, and under Adam the scale can grow linearly in time, since each coordinate moves by at most $C\eta$ per step. After $T$ steps $\norm{W_Q-W_Q^{(0)}}_{\op}\le C\eta T\sqrt{d_{\mathrm h}d_{\mathrm{in}}}$, a bound attained by consistent rank-one sign updates, so for inputs with $\norm x_2=\sqrt{d_{\mathrm{in}}}$ the bound of (i) grows like $(C\eta T)^2d_{\mathrm{in}}^2\sqrt{d_{\mathrm h}}$; under QK-norm the same argument applied to the gains gives $\sqrt{d_{\mathrm h}}(\norm{\omega^{(0)}}_\infty+C\eta T)^2$, smaller by the factor $d_{\mathrm{in}}^2$. QK-norm does not forbid sharp attention (with unit gains and $d_{\mathrm h}=128$ the logits may range over $2\sqrt{128}\approx23$); by (iii), the entropy collapse of \textcite{ZhaiEtAl2023} requires a growth of the logit range, and QK-norm removes the part of it driven by the weight matrices.\sidenote{\Textcite{DehghaniEtAl2023} applied LayerNorms to queries and keys to remove the divergence of ViT-22B; \textcite{WortsmanEtAl2024} found that the same change removes attention-logit growth in small models.} MuonClip applies a rescaling of the kind in (iv) after each Muon step to every head above the threshold \parencite{KimiTeam2025}: the mildest one that brings the batch's largest logit down to $\bar s$.
+
+\section{Reading the theory}\label{sec:spikes:reading}
+
+\paragraph{The price of a fixed step.} \Cref{fig:spikes:separation} puts the two theorems side by side on $f(x,y)=\spikescliff(x)+\spikesplat(y)$ with $L_0=L_1=1$, a cliff and a plateau, $(1,1)$-smooth in the Euclidean norm because its Hessian is diagonal. Gradient descent converges exactly below the threshold $\eta^*$ of the proof of \cref{thm:spikes:lower}, which falls from $1.39$ at $M=1$ to $2.8\cdot10^{-5}$ at $M=10^6$. At $0.9\eta^*$ it crawls along the plateau, and its step count, the gradient-flow time of the plateau divided by the step size to within one step, grows like $M/\log M$, from $81$ to $4.07\cdot10^6$. Clipped descent needs $203$ steps at $M=1$ and $241$ at $M=10^6$: about $2\cdot101$ on the plateau and $3\log\frac{3(1+M)}5$ normalized steps down the cliff. For every start, its largest convergent step size lies between $L_1\gamma/(L_0(e^{L_1\gamma/2}-1))=1.838$, below which it cannot be caught in a two-cycle across the valley, and $2/L_0$. The agreement is exact because the functions are those of the proofs; it checks the arithmetic, not the idealization.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=18mm},wplot,width=82mm,height=43mm,xmode=log,xmin=0.7,xmax=1.5e6]
+\nextgroupplot[ymode=log,xlabel={largest gradient $M$},ylabel={steps to $\norm{\nabla f}_2\le\eps$},ymin=40,ymax=1e7,legend style={at={(0.03,0.97)},anchor=north west,font=\scriptsize}]
+\addplot[theory] table[x=M,y=gdtheory] {figures/data/10-spikes-separation.dat};
+\addplot[simulation] table[x=M,y=gdsim] {figures/data/10-spikes-separation.dat};
+\addplot[theory2] table[x=M,y=cliptheory] {figures/data/10-spikes-separation.dat};
+\addplot[simulation2] table[x=M,y=clipsim] {figures/data/10-spikes-separation.dat};
+\legend{flow time$/\eta$,{GD, $\eta=0.9\eta^*$},flow time$/\eta$ $+$ cliff steps,clipped GD}
+\nextgroupplot[ymode=log,xlabel={largest gradient $M$},ylabel={largest stable step size},ymin=1e-5,ymax=5,legend style={at={(0.03,0.03)},anchor=south west,font=\scriptsize}]
+\fill[seamist] (axis cs:0.7,1.83796) rectangle (axis cs:1.5e6,2);
+\addplot[theory] table[x=M,y=thrtheory] {figures/data/10-spikes-separation.dat};
+\addplot[simulation] table[x=M,y=thrsim] {figures/data/10-spikes-separation.dat};
+\addplot[simulation2] table[x=M,y=clipthr] {figures/data/10-spikes-separation.dat};
+\legend{$\eta^*=2\log(1+M)/M$,GD (bisection),clipped GD (scan)}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Clipped and fixed-step gradient descent on a cliff followed by a plateau, $f(x,y)=\spikescliff(x)+\spikesplat(y)$ with $L_0=L_1=1$ and $\eps=0.05$, started where the cliff's slope is $M$ and the plateau's height is $1$. Left: steps until $\norm{\nabla f}_2\le\eps$ for gradient descent at $0.9\eta^*$ (circles) and clipped descent with $\eta=\frac12$, $\gamma=\frac13$ (squares), against the plateau's gradient-flow time $101.15$ divided by the step size, plus $3\log\frac{3(1+M)}5$ normalized steps down the cliff for clipped descent (curves). Right: the largest step size with which gradient descent does not diverge (circles, bisection) against $\eta^*$, and with which clipped descent converges (squares, scan in steps of $0.0025$) against the band $[1.838,2]$ predicted for every start. Deterministic; \spikesscript{separation}.}
+\label{fig:spikes:separation}
+\end{figure}
+
+\paragraph{Where to clip.} The threshold of \cref{thm:spikes:clipped}, in units of the gradient norm, is $\gamma/\eta=2L_0/(3L_1)$: clipping should start where $L_1\norm{\nabla\Loss}_*$ begins to dominate $L_0$. That is a property of the loss; the theory gives no reason for a universal value such as $1.0$, and global gradient norms change with the normalization of the loss and the number of parameters. It predicts a threshold that is inactive where the landscape is flat and active on cliffs and during spikes, and a cost, the factor $1/(\gamma\eps)$ of \cref{thm:spikes:clipped}(ii), for a threshold set too low. In front of Adam, clipping acts differently: Adam's update is unchanged by a common rescaling of all gradients (up to $\epsilon$) and bounded whatever the gradient (\cref{prop:spikes:normalized}(iii)). Clipping therefore does not bound Adam's step; it bounds the weight that one large gradient receives in $m$ and $v$, which suppresses the loud event of a global jump of the gradient norm. A block that wakes up below the threshold is unaffected: the mechanism of \cref{prop:spikes:burst} survives global clipping.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=18mm},wplot,width=82mm,height=43mm]
+\nextgroupplot[xmode=log,xmin=1,xmax=3000,ymin=0,ymax=7.8,xlabel={steps $k$ since the block woke up},ylabel={Adam step $\abs{\Delta\theta_i}/\eta$},legend style={at={(0.97,0.97)},anchor=north east,font=\scriptsize},legend columns=2]
+\addplot[guide,domain=1:3000] {7.2703};
+\addplot[guide,domain=1:3000] {2.3452};
+\addplot[guide,domain=1:3000] {1.1650};
+\addplot[theory3] table[x=k,y=th999] {figures/data/10-spikes-burst-k.dat};
+\addplot[simulation,each nth point=2] table[x=k,y=sim999] {figures/data/10-spikes-burst-k.dat};
+\addplot[theory2] table[x=k,y=th99] {figures/data/10-spikes-burst-k.dat};
+\addplot[simulation2,each nth point=2] table[x=k,y=sim99] {figures/data/10-spikes-burst-k.dat};
+\addplot[theory] table[x=k,y=th95] {figures/data/10-spikes-burst-k.dat};
+\addplot[simulation,mark=triangle*,mark size=1.8pt,each nth point=2] table[x=k,y=sim95] {figures/data/10-spikes-burst-k.dat};
+\legend{,,,{$a_k$, $\beta_2=0.999$},Adam,{$a_k$, $\beta_2=0.99$},Adam,{$a_k$, $\beta_2=0.95$},Adam}
+\nextgroupplot[xmode=log,ymode=log,x dir=reverse,xmin=7e-5,xmax=0.14,ymin=0.25,ymax=30,xlabel={$1-\beta_2$},ylabel={largest step $/\eta$},legend style={at={(0.03,0.97)},anchor=north west,font=\scriptsize}]
+\addplot[guide] table[x=omb2,y=worst] {figures/data/10-spikes-burst-peak.dat};
+\addplot[theory] table[x=omb2,y=peak] {figures/data/10-spikes-burst-peak.dat};
+\addplot[theory3,densely dotted] table[x=omb2,y=a1] {figures/data/10-spikes-burst-peak.dat};
+\addplot[theory2] table[x=omb2,y=peakeps] {figures/data/10-spikes-burst-peak.dat};
+\addplot[simulation] table[x=omb2,y=sim] {figures/data/10-spikes-burst-peak.dat};
+\addplot[simulation2] table[x=omb2,y=simeps] {figures/data/10-spikes-burst-peak.dat};
+\legend{worst case $C$,peak $\max_ka_k$,first step $a_1$,{peak, $\abs{\bar g}=10\epsilon$},Adam,{Adam, $\abs{\bar g}=10\epsilon$}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Adam's step on a block of $32$ weights of a linear regression whose features are absent for the first $10^5$ steps, so that the block's moments are zero ($\beta_1=0.9$, $\epsilon=10^{-8}$, bias correction counted from the start, batches of $4096$, step size $10^{-6}$, labels $\ip{\theta_\star,x}$ plus unit Gaussian noise, $\theta_\star\in\{\pm1\}^{32}$). Left: the median over the block of $\abs{\Delta\theta_i}/\eta$ at the $k$th step after the features appear (points) against $a_k$ (curves); dashed: the worst case $C$. Right: the largest such step in the first $80$ steps against $1-\beta_2$ (points), with $\max_ka_k$, $a_1$ and $C$ (curves); lower curve and squares: the loss scaled by $10^{-7}$, so that $\abs{\bar g}=10\epsilon$. One run per point; \spikesscript{burst}.}
+\label{fig:spikes:burst}
+\end{figure}
+
+\paragraph{The burst.} In the run of \cref{fig:spikes:burst} the measured steps follow $a_k$ to within $1.5$ percent, with peaks of $6.59$, $2.13$ and $1.09$ learning rates for $\beta_2=0.999$, $0.99$, $0.95$ against the predicted $6.57$, $2.13$, $1.10$; minibatch noise, which enters $v$ but on average not $m$, accounts for the differences. Across $\beta_2$ the peak lies above $0.207/\sqrt{1-\beta_2}$, by $18$ percent at $\beta_2=0.95$ and $0.3$ percent at $0.999$, and is two to two and a half times $a_1$; lowering $\beta_2$ from $0.999$ to $0.95$ shrinks it six-fold. This is a mechanism behind the choice $\beta_2=0.95$ and behind \cref{obs:spikes:stale}; that it is \emph{the} reason for the choice is a suggestion, and a short memory costs a noisier preconditioner (\cref{ch:adaptive}). A larger $\epsilon$ damps the burst only where $\abs{\bar g}$ is not much larger than $\epsilon/\sqrt{1-\beta_2^k}$ (at $\abs{\bar g}=10\epsilon$ the peak roughly halves near $\beta_2=0.999$), and it turns Adam into gradient descent with step size $\eta/\epsilon$ where gradients are far below $\epsilon$.
+
+\paragraph{How fast the logits drift.} \Cref{prop:spikes:zloss} does not say whether $\alpha=10^{-4}$ is enough. Consider a unigram model, a softmax over $K=1000$ classes with Zipf frequencies whose logits are its only parameters, trained on minibatches of $64$ labels (\spikesscript{drift}). SGD keeps the mean logit fixed exactly. Under Adam with $\beta_2=0.95$ the normalizer drifts instead: $\log Z$ falls by $0.12$ step sizes per step while the cross-entropy stays within $0.14$ of its minimum. The direction matches the small transformers of \textcite{WortsmanEtAl2024}, whose output logits become very negative in runs without weight decay. The drift comes from the coordinatewise normalization of the skewed gradient of a rare class, small and positive in most batches and large and negative in the few that contain it; it vanishes in full batch and falls with the batch size ($0.21$, $0.05$, $0.009$ for batches of $16$, $256$, $4096$) and with $\beta_2$ ($0.001$ at $0.999$). A z-loss of $10^{-4}$ leaves it unchanged; a z-loss of $0.1$ stops it, with an excess cross-entropy of $0.38$ instead of $0.14$, and decoupled weight decay of $0.1$ stops it with an excess of $0.03$. In this model $10^{-4}$ is far too weak, and weight decay does the pinning.
+
+\section{What the theory misses}\label{sec:spikes:misses}
+
+\paragraph{What was idealized away.} The main theorems have exact gradients; with noise a fixed threshold biases the clipped gradient (\cref{ex:spikes:bias}), and \cref{thm:spikes:heavy} needs a growing threshold and $L$-smoothness. The constants $L_0,L_1$ are global and fixed, while a network's curvature changes during training, and twice differentiability excludes ReLU networks. The lower bound concerns a class, not a given network; the burst assumes a constant loud gradient after an exact silence; the propositions on logits are about invariances and bounds, not dynamics; and finite precision, a candidate for the step from a drifted logit to a divergence, appears nowhere.
+
+\paragraph{Where it breaks.} (1) \Cref{ass:spikes:L0L1} fails globally for networks with rescaling symmetries. In the product model $\frac12(uv-1)^2$ of volume 2 of this series, \emph{The Hydrogen Atoms of Deep Learning}, Chapter 15, the minimizers $(u,1/u)$ have zero gradient and sharpness $u^2+u^{-2}$, so no constants work (\cref{ex:spikes:product}); the assumption holds only on bounded sets, with an $L_0$ that grows with the bound. \Cref{obs:spikes:L0L1} is a correlation along trajectories, not a derivation. (2) Heavy-tailed noise is not the main reason that adaptive methods train transformers faster: \textcite{KunstnerEtAl2023} found that the gap between SGD and Adam persists in full batch, where there is no noise, and that sign descent with momentum closes most of it (\cref{ch:transformers}); the case for clipping through \cref{thm:spikes:heavy} is weaker than through \cref{thm:spikes:clipped}. (3) Real spikes have interacting causes. In PaLM neither the batches nor the state alone produced a spike (\cref{obs:spikes:palm}); OPT's divergences coincided with a collapse of the loss scale \parencite{ZhangEtAl2022OPT}; \textcite{TakaseEtAl2025} relate spikes to the spectral norms of the sub-layers' Jacobians and remove them through the initialization and the scale of the embeddings, a mechanism of architecture outside all three propositions. (4) In our unigram model the z-loss coefficient of practice does not pin the logits, although it removes the output-logit divergence of \textcite{WortsmanEtAl2024}; its benefit is not explained by \cref{prop:spikes:zloss}. (5) In Kimi K2's experiments attention logits exploded more often with Muon than with AdamW \parencite{KimiTeam2025}; \cref{prop:spikes:qknorm} explains the cure, not the cause. (6) That a threshold of $1.0$ is rarely active late in training, except during spikes, is folklore.
+
+\paragraph{Repairs and open problems.} The theory of generalized smoothness has grown quickly: clipping with momentum and sharper constants \parencite{ZhangJinFangWang2020}; a symmetric form of \eqref{eq:spikes:L0L1} without second derivatives \parencite{ChenZhouLiangLu2023}; curvature bounded by a general function of the gradient norm, under which gradient descent with a small fixed step converges on sublevel sets \parencite{LiQianTianRakhlinJadbabaie2023}; Adam under such assumptions \parencite{LiRakhlinJadbabaie2023}; and generalized sign descent \parencite{CrawshawEtAl2022}. Against the burst the repairs act on the update: clipping it by its root mean square, as Adafactor does \parencite{ShazeerStern2018}, brought to AdamW as StableAdamW \parencite{WortsmanEtAl2023}; and spike-aware variants of Adam that clip gradient entries that are large relative to the second-moment estimate and periodically reset the moments \parencite{HuangEtAl2025SPAM}. Against the logits: z-loss, weight decay, QK-norm, QK-clip, and spectral reparametrizations of the weights that prevent the collapse of attention entropy \parencite{ZhaiEtAl2023}. Open: a solvable model in which spikes arise and recur without being put in by hand (\cref{ex:spikes:spike}); $(L_0,L_1)$-type bounds for a transformer, with constants set by the gains of its normalizations; a principled threshold, for instance $2L_0/(3L_1)$ estimated along the run by regressing local smoothness on the gradient norm, as \textcite{ZhangHeSraJadbabaie2020} did; and why Muon grows attention logits.
+
+\section{Back in the wild}\label{sec:spikes:back}
+
+\fieldnotes{Clip the global gradient norm at $1.0$; $\beta_2=0.95$; z-loss $10^{-4}(\log Z)^2$; QK-norm; MuonClip; after a spike, restart and skip batches.}
+{$(L_0,L_1)$-smoothness $\norm{\nabla^2\Loss}\le L_0+L_1\norm{\nabla\Loss}_*$; Adam's moments after a quiet period; the flat direction of the softmax; the bilinear attention logit.}
+{A sharp local smoothness lemma. Clipped steepest descent: at most $\max\{4L_0\Delta_0/\eps^2,6L_1\Delta_0/\eps\}$ steps with $\norm g_*>\eps$; every fixed step: $\gtrsim L_1M\Delta_0/(\eps^2\log(1+L_1M/L_0))$ on some function of the class. Normalized steps are clipped by construction. Clipped SGD at $T^{-(p-1)/(3p-2)}$ with $p$th moments. Exactly: the burst $a_k$, the pinning by the z-loss, QK-norm's bound by the gains.}
+{GD's safe step falls like $\log M/M$, clipped descent's does not; clip where $L_1\norm{\nabla\Loss}_*\approx L_0$; Adam's burst peaks above $0.2/\sqrt{1-\beta_2}$ learning rates $12$ to $20$ steps after a block wakes up, six times lower at $\beta_2=0.95$ than at $0.999$; global clipping does not stop a block's burst.}
+{When spikes happen; interacting causes (data, state, precision); $(L_0,L_1)$-smoothness fails under rescaling symmetries; why $10^{-4}$ and $1.0$.}
+{Bound the length of every step, by clipping or by normalized updates (proved in the idealization). Prefer a short $\beta_2$ or update clipping when blocks can wake up (suggested). Use z-loss, weight decay and QK-norm to remove directions of growth the loss cannot see (proved as mechanisms; their effect on spikes is observed). The values $1.0$ and $10^{-4}$ are folklore.}
+
+The theory says one thing with confidence: on landscapes whose curvature grows with the gradient, a step of bounded length is safe and a fixed step size is not. That is why clipping works, why normalized updates (\cref{ch:steepest,ch:sign,ch:spectral}) do not need it, and why Adam, whose step is bounded, is less exposed to cliffs than gradient descent; in front of Adam, clipping acts on the moments rather than on the step. It does not place the threshold, and it predicts no spike. What it adds to the folklore of spikes is a set of exact mechanisms that make a step too long: a state that lags its gradient, a direction the loss cannot see, a scale that enters the logits quadratically; each defense removes one of them, none removes all.
+
+Part III ends here. The threshold $2/\eta$ of \cref{ch:eos} bounds the curvature a fixed step can stand; warmup (\cref{ch:warmup}) grows the step as the curvature falls with the loss, and clipping shrinks it as the curvature rises with the gradient, two readings of one idea that both hold for exponential-type losses. Weight decay (\cref{ch:decay}) is a defense of this chapter's kind, pinning the flat direction of the logits and bounding the scales in the attention logits; and heavy tails return in \cref{ch:transformers}, where they turn out not to explain Adam's advantage on transformers.
+
+\begin{exercises}
+\item \consolidation (Constants.) (a) Show that $x^4$ is $(L_0,L_1)$-smooth if and only if $L_0L_1^2\ge16$. (b) Show that $e^x$ is $(0,1)$-smooth and $L$-smooth for no $L$. (c) Show that $\log(1+e^{-x})$ is $\frac14$-smooth and $(0,1)$-smooth. (d) Show that $\sum_ia_i(\cosh\theta_i-1)$ with $a_i>0$ is $(\max_ia_i,1)$-smooth in the Euclidean norm and $(\sum_ia_i,1)$-smooth in $\ell_\infty$. (e) Show that $\frac12\theta^\top H\theta$ with $H\ne0$ is $(L_0,L_1)$-smooth only if $L_0\ge\norm H$. \hint{in (a), minimize $L_0+4L_1x^3-12x^2$ over $x\ge0$.}\label{ex:spikes:constants}
+
+\item \consolidation (The lemma is sharp.) Verify the equality case of \cref{lem:spikes:local} and deduce that $\varphi_1(c)$ and $\varphi_2(c)$ in \eqref{eq:spikes:local} are optimal.\label{ex:spikes:sharp}
+
+\item \consolidation (Clipping is a trust region.) (a) Show that the clipped step minimizes $\ip{g,u}+\norm u_2^2/(2\eta)$ over the ball $\norm u_2\le\gamma$. (b) Show that clipping by value, $u_i=-\sign(g_i)\min\{\eta\abs{g_i},\gamma\}$, minimizes the same function over the box $\norm u_\infty\le\gamma$. (c) Show that clipping by value can change the direction of the step, and global clipping cannot.\label{ex:spikes:trust}
+
+\item \consolidation\hard (The burst.) (a) Show that a correction of the moments by the age of the coordinate, $m_t/(1-\beta_1^k)$ and $v_t/(1-\beta_2^k)$, would make the step of \cref{prop:spikes:burst} with $\epsilon=0$ equal to $\sign(\bar g)$ at every loud step. (b) For $\beta_1=0.9$, show that $(1-\beta_1^k)/\sqrt k$ is largest at $k=12$, and deduce $\max_ka_k\ge6.55$ at $\beta_2=0.999$. (c) For RMSProp, $\beta_1=0$, show that the largest $a_k$ is $a_1$. (d) Show that as $\beta_2\to1$, $\sqrt{1-\beta_2}\max_ka_k\to\max_{k\ge1}(1-\beta_1^k)/\sqrt k$ and $\sqrt{1-\beta_2}\,C\to\sqrt{(1-\beta_1)/(1+\beta_1)}$; for $\beta_1=0.9$ their ratio is $0.903$. \hint{in (d), the maximizing $k$ stays bounded as $\beta_2\to1$, so $1-\beta_2^k\sim k(1-\beta_2)$ there.}\label{ex:spikes:burst}
+
+\item \consolidation (The z-loss.) (a) Show that $\nabla(\log Z)^2=2(\log Z)\pi$ and $\nabla^2(\log Z)^2=2\pi\pi^\top+2(\log Z)(\diag(\pi)-\pi\pi^\top)$. (b) Show that gradient descent on the bias $b$ of a softmax with the loss $\ell+\alpha(\log Z)^2$ changes $\ip{\mathbf1,b}$ by exactly $-2\alpha\eta\log Z$ per step, and that without the z-loss decoupled weight decay $\lambda$ multiplies $\ip{\mathbf1,b}$ by $1-\eta\lambda$ per step.\label{ex:spikes:zgrad}
+
+\item \variation (No $(L_0,L_1)$ for the product model.) Let $\Loss(u,v)=\frac12(uv-1)^2$. (a) Show that no constants $L_0,L_1$ make $\Loss$ $(L_0,L_1)$-smooth in the Euclidean norm. (b) Show that $\norm{\nabla^2\Loss(u,v)}_{\op}\le2R^2+1$ on the disk $u^2+v^2\le R^2$. (c) What does (b) mean for \cref{cor:spikes:gd} on this model?\label{ex:spikes:product}
+
+\item \variation (Clipping with noise is biased.) Let $g=\mu+\zeta$ with $\mu>0$ and $\zeta=\pm s$ with probability $\frac12$ each, $s>\mu$. (a) Compute $\E\spikesclip_\tau(g)$ for every $\tau>0$; show that it is $0$ when $\tau\le s-\mu$ and lies in $[0,\mu]$ always. (b) Deduce that clipped SGD with a fixed threshold can stall where the gradient is not zero, and compare with the bias term of \eqref{eq:spikes:heavy}.\label{ex:spikes:bias}
+
+\item \variation\hard (A loud jump.) Let $0<\beta_2<1$, and suppose that a coordinate's gradient has been $\delta\ne0$ so long that $m=\delta$ and $v=\delta^2$ (take $\epsilon=0$), and then jumps to $F\delta$ with $F>1$. (a) Show that the $k$th step after the jump is $\bigl((1-\beta_1^k)+\beta_1^k/F\bigr)/\sqrt{(1-\beta_2^k)+\beta_2^k/F^2}$, which tends to $a_k$ as $F\to\infty$. (b) Show that the first step exceeds the steady value $1$ for every $F>1$ if $(1-\beta_1)^2\ge1-\beta_2$, and exactly when $F<(\beta_2-\beta_1^2)/((1-\beta_2)-(1-\beta_1)^2)$ otherwise; evaluate for $(0.9,0.95)$. \hint{in (b), $x=1/F$ makes the condition a quadratic inequality with the root $x=1$.}\label{ex:spikes:jump}
+
+\item \variation (Orthogonalized updates keep the logits centered.) (a) Show that the Newton--Schulz iteration $X\mapsto aX+b(XX^\top)X+c(XX^\top)^2X$ of \cref{ch:spectral} preserves $\mathbf1^\top X=0$, so that Muon, applied to an output layer, leaves $\mathbf1^\top W$ unchanged. (b) Find a $G\in\R^{3\times1}$ with $\mathbf1^\top G=0$ and $\mathbf1^\top\sign(G)\ne0$. (c) Show that the mean logit $\frac1K\mathbf1^\top Wh$ can still change when $\mathbf1^\top W$ is fixed, and say through which parameters.\label{ex:spikes:muonmean}
+
+\item \simulation (Heavy tails.) Run SGD and clipped SGD on $\Loss(\theta)=\frac12\norm\theta_2^2$ in $\R^{10}$ with independent symmetric noise coordinates, $\Pr[\abs{\zeta_i}>x]=(1+x)^{-3/2}$, whose $p$th moments are finite exactly for $p<\frac32$. (a) Observe the rare huge excursions of SGD with a constant step. (b) From $\theta_0=(1,\dots,1)$, so $\Delta_0=5$, with the schedule of \cref{thm:spikes:heavy} for $p=1.4$, $L=1$ and $\Gamma=22$ (just above $(\E\norm{g_0}_2^p)^{1/p}\approx21.4$), fit the slope of the average of $\norm{\nabla\Loss(\theta_t)}_2^2$ over $t<T$ against $\log T$ for $T=10^3,\dots,10^6$, and compare with $-2(p-1)/(3p-2)=-0.36$ (our runs: $-0.36$, and $-0.31$ from $\theta_0=e_1$, where $\eta T<1$ in the shortest runs). (c) Explain why the bias term of \eqref{eq:spikes:heavy} is far below its bound here.\label{ex:spikes:simheavy}
+
+\item \simulation (Logit drift.) Run \spikesscript{drift}. (a) Check that SGD keeps the mean logit fixed to rounding error and that Adam's drift vanishes in full batch. (b) Explain the sign of the drift from the distribution of a rare class's gradient and Adam's coordinatewise normalization. (c) Find, by bisection, the smallest z-loss coefficient for which the drift over the second half of the run is below $10^{-3}$ step sizes per step at batch size $64$, and compare it with $10^{-4}$.\label{ex:spikes:simdrift}
+
+\item \research (A solvable spike.) Find a low-dimensional model in which Adam with fixed hyperparameters produces recurring loss spikes without a switch put in by hand, and compute their period and height as functions of $\eta$ and $\beta_2$. The burst of \cref{prop:spikes:burst} and Adam's threshold of \cref{ch:eos} are natural ingredients; open is a model whose quiet periods are produced by the dynamics.\label{ex:spikes:spike}
+\end{exercises}
+
+\notesandrefs
+Clipping passed from recurrent networks \parencite{PascanuMikolovBengio2013} into transformer recipes with a threshold of $1.0$ \parencite{BrownEtAl2020,TouvronEtAl2023,ChowdheryEtAl2023}, in front of Adam, whose step is bounded anyway \parencite{KingmaBa2015}. \Textcite{ZhangHeSraJadbabaie2020} introduced $(L_0,L_1)$-smoothness and proved the first separation between clipped and fixed-step gradient descent: a bound $O(L_0\Delta_0/\eps^2+L_1^2\Delta_0/L_0)$ for clipped descent, with larger constants, and a lower bound of the form \eqref{eq:spikes:lower} with $\log M+1$ in place of our logarithm. \Textcite{ZhangJinFangWang2020} extended their local smoothness lemma to steps of length up to $c/L_1$; their descent inequality has the quadratic term $\frac12(AL_0+BL_1\norm g_*)\norm u^2$ with $B=\varphi_1(c)$ and $A=1+e^c-\varphi_1(c)>B$. Our constants are smaller because integrating \eqref{eq:spikes:gradgrowth} gives $\varphi_2(c)<\frac12\varphi_1(c)$ in the descent inequality, and because counting the steps with $\norm{g_t}_*>\eps$ turns their sum into a maximum, never larger up to a constant: $6L_1/\eps\le4L_0/\eps^2+\frac94L_1^2/L_0$.
+
+The record of spikes lies mostly in technical reports: PaLM's restarts and z-loss \parencite{ChowdheryEtAl2023}, OPT's restarts \parencite{ZhangEtAl2022OPT}, ViT-22B's QK-norm \parencite{DehghaniEtAl2023} and Kimi K2's QK-clip \parencite{KimiTeam2025}. \Textcite{WortsmanEtAl2024} reproduced the logit instabilities in small models and measured stability by the sensitivity of the final loss to the learning rate; \textcite{WortsmanEtAl2023} tied spikes to an out-of-date second moment, \textcite{MolybogEtAl2023} proposed a theory of Adam's instability, and \textcite{ZhaiEtAl2023} tied instability to attention entropy. The burst formula \eqref{eq:spikes:burst} is the silent case of \cref{prop:adaptive:quietloud}, its first step is in \textcite{KingmaBa2015}, and we know no reference for the bound on its peak or for the logit drift of \cref{sec:spikes:reading}.
+
+\paragraph{Translating the literature.} \Textcite{ZhangHeSraJadbabaie2020} write $f$ and $x$ for our $\Loss$ and $\theta$, and clipped gradient descent as $x_{k+1}=x_k-h_c\nabla f(x_k)$ with $h_c=\min\{\eta_c,\gamma\eta_c/\norm{\nabla f(x_k)}\}$: their $\eta_c$ is our $\eta$, their $\gamma$ is a threshold on the gradient norm, our $\gamma/\eta$, and their $\gamma\eta_c$ is our $\gamma$; their $M$ is ours. \Textcite{ZhangEtAl2020Attention} write $\alpha$ for our moment order $p$. PaLM's z-loss is our $\alpha(\log Z)^2$ with $\alpha=10^{-4}$. Kimi K2's report writes $\tau$ for our $\bar s$ and $S^h_{\max}$ for our $s_{\max}$ of head $h$; its factor $\min\{1,\tau/S^h_{\max}\}$ is our $\rho^2$. Practitioners' \texttt{max\_norm} is our $\tau=\gamma/\eta$.
+
+\printchapterbib
+\end{refsection}
