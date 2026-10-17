@@ -1,0 +1,372 @@
+% Chapter 4 of Deep Learning as an Experimental Science: tuning budgets.
+\labchapter{Tuning Budgets}{How an unequal search decides a comparison}{Adaptive gradient methods generalize worse than SGD.}{The received reading of Wilson et al.\ (2017)}{Reversed: tuned over all their hyperparameters with equal budgets, adaptive methods match or beat SGD with momentum.}{ch:budgets}
+\begin{refsection}[chapters/04-budgets.bib]
+
+% styles for the second arm of a comparison in the lab figures
+\pgfplotsset{
+  budgets runB/.style={run,mark=square,color=rubric!75},
+  budgets meanB/.style={only marks,mark=square*,mark size=1.6pt,color=rubric,mark options={fill=rubric,draw=white,line width=0.2pt}},
+  budgets ebarsB/.style={error bars/y dir=both,error bars/y explicit,
+    error bars/error bar style={rubric,line width=0.5pt},
+    error bars/error mark options={rubric,rotate=90,mark size=1.7pt,line width=0.5pt}},
+}
+
+\begin{chaptersummary}
+In 2017 Wilson and colleagues tuned the step size and its decay for five optimizers on four workloads and found that AdaGrad, RMSProp and Adam generalized worse than SGD with and without momentum; the field read this as a property of adaptive methods. Two years later Choi and colleagues reproduced the gap under the same protocol and removed it by also tuning $\epsilon$ and the momentum coefficient: with every hyperparameter searched, adaptive methods were never worse. The method of this chapter treats a training method as an update rule plus a search space plus a budget, compares methods by their budget curves, the expected result of a search of $k$ trials, proves when such curves cross and when a larger search space contains a smaller one, and estimates the curves without bias. In the laboratory, on digits with distractor features, Adam loses to momentum on nine splits of ten under the 2017 protocol and ties it under the 2019 protocol with the same sixteen trials.
+\end{chaptersummary}
+
+\section{The claim: the marginal value of adaptive methods}\label{sec:budgets:claim}
+
+By 2017 Adam had become a default choice in much of deep learning. \Textcite{KingmaBa2015} had proposed it as a method that needs little tuning: it keeps exponential moving averages of the gradient and of its square, divides the first by the square root of the second, coordinate by coordinate, and so gives every parameter its own step size. They recommended defaults, a step size $\alpha=10^{-3}$, decay rates $\beta_1=0.9$ and $\beta_2=0.999$, and a constant $\epsilon=10^{-8}$ added to the denominator to keep it away from zero, and frameworks adopted such values as their defaults, with varying choices of $\epsilon$. AdaGrad and RMSProp, the older \term{adaptive gradient methods}\index{adaptive gradient methods}, work the same way with other averages.
+
+Ashia Wilson, Rebecca Roelofs, Mitchell Stern, Nathan Srebro and Benjamin Recht asked what the adaptivity buys \parencite{WilsonEtAl2017}. Their paper has two parts. The first is a constructed problem: least-squares classification in which the first feature equals the label, two features always equal one, and every training example has features of its own that no other example shares. Gradient descent and SGD converge to the minimum-norm interpolating solution, which, under a mild condition on the class counts, classifies new points correctly; AdaGrad, RMSProp and Adam, under a condition on the signs of the gradients, converge to a solution proportional to the sign vector of $X^\top y$, which weights the label feature and the two constant features equally and labels every new point positive. When positive labels have probability $p$ slightly above one half, its test error $1-p$ is close to one half. The example is a theorem, and it stands: adaptive methods can find different solutions, and worse ones.
+
+The second part is an experiment on four workloads: a VGG network on CIFAR-10, a character-level language model (a two-layer LSTM) on Tolstoy's \emph{War and Peace}, and two LSTM parsers on the Penn Treebank, one discriminative and one generative. Five optimizers were compared: SGD, the \term{heavy ball}\index{momentum (heavy ball)} method, that is SGD with momentum $0.9$, and the three adaptive methods. For each optimizer the authors tuned the initial step size and the schedule by which it decays, and left the other hyperparameters at their defaults.
+
+\begin{finding}[\textcite{WilsonEtAl2017}]\label{fd:budgets:wilson}
+With the initial step size and its decay tuned for each optimizer and all other hyperparameters at their defaults, SGD gave the best result on each of the four workloads, ahead of every adaptive method, although the adaptive methods sometimes fit the training set better. On CIFAR-10 SGD had a test error of $7.65\%$ and the best adaptive method, RMSProp, $9.60\%$ (means over five runs; standard deviations $0.14$ and $0.19$). On the discriminative parser the margin was small, a development F1 of $91.24$ for SGD against $91.11$ for Adam.
+\end{finding}
+
+The authors drew two conclusions. Adaptive methods, contrary to their reputation, had needed as much tuning as SGD; and the paper's abstract suggests that practitioners should \enquote{reconsider the use of adaptive methods to train neural networks}. The paper appeared at NeurIPS 2017, and its observation quickly became a premise. \Textcite{KeskarSocher2017} proposed starting with Adam and switching to SGD, citing Wilson et al.\ for the observation that adaptive methods generalize worse; \textcite{LoshchilovHutter2019} motivated decoupled weight decay (AdamW) by the same gap; AdaBound \parencite{LuoEtAl2019} bounded Adam's step sizes so that it would turn into SGD late in training; and a NeurIPS 2020 paper set out to explain theoretically why SGD generalizes better than Adam \parencite{ZhouEtAl2020}. In this received reading the protocol had dropped out: adaptive methods generalize worse.
+
+What the original work got right is substantial. The constructed example is correct. The measurements were careful for their time, with five runs per selected setting, means and standard deviations, and learning curves, and they reproduce: as we will see, the gap appears again when the protocol is repeated. The observation that adaptive methods need tuning was right too. And the protocol was a common one. Practitioners tuned the learning rate and its schedule; $\epsilon$, there to keep a denominator away from zero, was seldom tuned, and $\beta_1,\beta_2$ were left at the values that every framework shipped.\sidenote{Wilson et al.\ list momentum, $\epsilon$ and the initialization of the accumulators among the hyperparameters they could have tuned, and say that a full grid over them was infeasible.} The question this chapter asks is what such a protocol can and cannot decide.
+
+\section{The experiment: five optimizers, one knob}\label{sec:budgets:experiment}
+
+\begin{experiment}[Wilson et al.\ 2017]
+\field{question}{Do adaptive methods find solutions that generalize worse than those of SGD?}
+\field{units}{Training runs on four workloads: VGG on CIFAR-10, an LSTM language model on \emph{War and Peace}, two LSTM parsers on the Penn Treebank.}
+\field{treatment}{The optimizer: SGD, heavy ball (momentum $0.9$), AdaGrad, RMSProp, Adam.}
+\field{tuned}{The initial step size, on a logarithmic grid of five values extended when the best lay at an edge; the decay scheme.}
+\field{held fixed}{Momentum, $\beta_1$, $\beta_2$, $\epsilon$, accumulator initialization (framework defaults); model, batch size, epochs.}
+\field{selection}{Best development score within the epoch budget; on CIFAR-10, lowest training loss.}
+\field{response}{Test error, test loss, development F1, development perplexity.}
+\field{replicates}{Five runs of each selected setting from random initializations.}
+\field{analysis}{Means and standard deviations over the five runs; learning curves.}
+\end{experiment}
+
+Read as a measurement, the record is sound. Every optimizer received the same kind of search, about five step sizes for each decay scheme, the selected settings were rerun from fresh initializations, and the spread over five runs was reported. Under this protocol, on these workloads, the adaptive methods lost.
+
+Read as evidence for the claim, the record has a gap in the row \textsc{held fixed}. The hyperparameters left at their defaults are not neutral background shared by the arms: they are the ones that distinguish the arms. Momentum is the parameter that separates heavy ball from SGD; $\epsilon$ decides how adaptive Adam is, and $\beta_1,\beta_2$ set the memory of its two averages. With $\epsilon=10^{-8}$, Adam divides by $\sqrt{\hat v}+\epsilon\approx\sqrt{\hat v}$, and every coordinate moves at about the same speed whatever the size of its gradient, the mechanism of the constructed example. With $\epsilon$ large compared with $\sqrt{\hat v}$, the denominator is nearly constant and Adam moves like momentum SGD with a rescaled learning rate. The experiment compared heavy ball at its tuned learning rate with Adam pinned to one end of its own range. The design could show that Adam with its default $\epsilon$ and $\beta$'s generalizes worse than momentum on these workloads; it could not show that the adaptive update rule does.
+
+A second gap is in what \enquote{the same search} meant. Each optimizer got about five trials per decay scheme, but a trial count measures effort, not coverage: five learning rates cover the hyperparameter that matters most for heavy ball, but only a one-dimensional slice of Adam's four-dimensional space. Equal numbers of trials over unequal spaces are an unequal search.\sidenote{\Textcite{BergstraBengio2012} made a related point against grids: when only a few hyperparameters matter, a grid spends most of its trials varying the others.} The post-mortem takes up both.
+
+\section{The post-mortem: the knob that was not turned}\label{sec:budgets:postmortem}
+
+Dami Choi, Christopher Shallue, Zachary Nado, Jaehoon Lee, Chris Maddison and George Dahl studied why published optimizer comparisons disagreed \parencite{ChoiEtAl2019}.\sidenote{The paper has remained an arXiv preprint (first version October 2019, third version June 2020); we cite it as such.} Their central tool is a definition. One optimizer \term{includes}\index{inclusion of optimizers} another if, for every setting of the second's hyperparameters, some sequence of settings of the first produces trajectories that converge to the second's on the same training history. SGD is momentum with momentum zero, momentum is included in RMSProp and in Adam, and Nesterov's method is included in NAdam. For Adam the construction is the one sketched above: take $\epsilon$ large, scale the learning rate with it, and set $\beta_1$ to the momentum coefficient. \Cref{prop:budgets:inclusion} proves the version we need.
+
+Inclusion makes a prediction. If a more general optimizer is tuned over all of its hyperparameters, with a search space that reaches the region where it imitates its special case, then with enough trials it should do at least as well as the special case. A comparison in which Adam loses to momentum is therefore a statement about the search, not about Adam.
+
+\begin{experiment}[Choi et al.\ 2019]
+\field{units}{Seven workloads, from a small CNN on Fashion-MNIST to ResNet-50 on ImageNet and a Transformer on LM1B, with Wilson et al.'s VGG on CIFAR-10 among them.}
+\field{treatment}{SGD, momentum, Nesterov, RMSProp, Adam, NAdam.}
+\field{tuned}{Every optimizer hyperparameter, $\epsilon$, $1-\beta_1$ and $1-\beta_2$ included, on log scales; a linear learning-rate decay; weight decay or label smoothing on some workloads.}
+\field{budget}{Quasi-random search, 10 to 100 feasible trials per optimizer depending on the workload.}
+\field{selection}{Lowest validation error; the test error of that trial.}
+\field{analysis}{Bootstrap over trials for the result of tuning; five reruns in the replication of Wilson et al.}
+\end{experiment}
+
+The numbers in this section are those reported by the papers. Choi et al.\ first repeated Wilson et al.'s VGG experiment with its original protocol, a grid over the learning rate only, and reproduced the gap: RMSProp and Adam had worse test error. Tuning momentum and $\epsilon$ as well made the four optimizers nearly identical; tuning only the learning-rate schedule also brought them within error bars of each other. Across all seven workloads, with every hyperparameter tuned, the adaptive methods never underperformed momentum or SGD within error bars, and on some they were better. The best values of $\epsilon$ spanned ten orders of magnitude across four workloads; the best ResNet-50 result, a validation accuracy of $77.1\%$, came from NAdam with $\epsilon=9475$, a value so large that NAdam behaves almost like Nesterov momentum, its special case.\sidenote{Reported by Choi et al.; we could not check it independently. They compare it with a published momentum result of $76.5\%$, a number from another paper rather than a controlled arm.} They concluded that the search space may be the single most important factor behind conflicting optimizer rankings, and that studies that fix $\epsilon=10^{-8}$ owe their readers a justification.
+
+Choi et al.\ were also candid about their own search. They chose each final search space after an initial round of search over a broader one, checked that the optimum lay away from the boundaries, published both spaces, and noted that the effort that went into choosing them cannot easily be quantified. A search space is itself the result of tuning, and the trial count does not show it.
+
+\paragraph{Benchmarks that charge for tuning.} If tuning must be counted, the result of a comparison depends on how much of it is allowed. \Textcite{SivaprasadEtAl2020} made the budget an axis: for each optimizer they drew hyperparameters from a prior and reported the expected performance of the best of $k$ random-search trials, as a function of $k$, on image, text and synthetic problems, most of them from the DeepOBS benchmark suite. Adam with only its learning rate tuned was the most reliable choice at every budget, and especially at small ones; tuning more of Adam's hyperparameters paid off only at larger budgets.\sidenote{Their priors were calibrated by fitting distributions to the good configurations of a broad random search on the same tasks, a further instance of a search space shaped by earlier tuning.} \Textcite{SchmidtEtAl2021} ran more than fifty thousand runs: fifteen optimizers, eight problems, four schedules, and budgets of one run at the default setting and of 25, 50 and 75 random-search trials. No optimizer dominated, Adam remained a strong contender, rankings moved with the budget and the search space, and trying several optimizers at their defaults did about as well as tuning one.
+
+\paragraph{The same pattern elsewhere.} Layer-wise adaptive optimizers were proposed for very large batches. \Textcite{NadoEtAl2021} (a preprint) tuned Nesterov momentum and Adam as carefully as the published LARS and LAMB pipelines and matched them: on ResNet-50 at batch size $32{,}768$, Nesterov momentum reached a median validation accuracy of $75.97\%$ over 50 runs, the same as LARS, and in BERT pretraining at the same batch size Adam reached a SQuAD F1 of $91.58$ against LAMB's $91.48$. In language-model pretraining, \textcite{WenEtAl2026} tuned AdamW and a set of recent optimizers by coordinate-wise sweeps over all their hyperparameters, at model sizes from $0.1$ to $1.2$ billion parameters: speedups over AdamW that other papers had claimed, $1.4$ to $2\times$, shrank to at most about $1.4\times$, and to about $1.1\times$ at $1.2$ billion parameters. They also found that rankings read at intermediate checkpoints can flip by the end of training, because the learning-rate decay changes the curves late (\cref{ch:protocol} meets the same effect in scaling laws). The AlgoPerf benchmark \parencite{DahlEtAl2023} turned these lessons into rules: an algorithm is scored by its time to reach a target on fixed hardware, and the tuning protocol is part of the submission, either a search space from which a fixed number of trials is drawn or no tuning at all. In its first competition \parencite{KasimbegEtAl2025}, a Distributed Shampoo submission was about $28\%$ faster than the NadamW baseline, by the geometric mean over eight workloads, under five trials per study.\sidenote{The benchmark paper specified twenty trials per study; the competition used five, repeated in five studies, and scored the median.}
+
+\paragraph{The mechanism.} Three features of the protocol combined, and the method of this chapter treats each. First, the knob that was held fixed was the one that decides how adaptive Adam is, so \enquote{Adam at its defaults} was compared with \enquote{momentum tuned}. Second, equal numbers of trials over spaces of different dimension and shape are unequal searches, and which method wins depends on the budget, in a way that can be computed (\cref{prop:budgets:curves}). Third, the result was reported as a property of the update rule, without the budget and the search space that produced it.
+
+The post-mortem literature is not unanimous in its details. Nesterov momentum was a strong alternative on some problems of \textcite{SchmidtEtAl2021}, and SGD variants did best on two problems of \textcite{SivaprasadEtAl2020} at large budgets; theoretical work on why the two families find different solutions continues \parencite{ZhouEtAl2020}; and Wilson et al.'s example remains a correct statement about what an untuned adaptive method can converge to. The verdict concerns the general claim.
+
+\begin{verdict}{reversed}
+Tuned over all of their hyperparameters with equal care, adaptive methods were never worse than momentum or SGD on the workloads of Choi et al., including the one on which the gap was first measured, and a benchmark that charges for tuning found Adam the cheaper method to tune. The gap was produced by the protocol: $\epsilon$ and the moment parameters were held at defaults, which fixes Adam in the corner of its search space where it differs most from momentum. Read as a statement about update rules, the received claim does not survive; where tuned methods still differ, the difference more often favors the adaptive ones.
+\end{verdict}
+
+\section{The method: a method is a protocol}\label{sec:budgets:method}
+
+The first lesson is a change of unit. A comparison of training methods compares procedures, and the procedure includes its tuning.
+
+\begin{definition}[Trial, protocol, training method]\label[definition]{def:budgets:protocol}
+A \term{trial}\index{trial} is one hyperparameter configuration $h$ from a \term{search space}\index{search space} $\cH$, trained with its own seeds and scored. A \term{tuning protocol}\index{tuning protocol} specifies $\cH$; how the configurations of the trials are chosen, for instance independently from a sampling distribution $\nu$ on $\cH$ (\term{random search}\index{random search}); a \term{budget}\index{tuning budget}, a number $k$ of trials or the compute they may use; a selection rule, usually the best validation score; and a reporting rule, usually the test score of the selected configuration retrained with fresh seeds. A \term{training method} is an update rule together with a tuning protocol.
+\end{definition}
+
+Under random search the trials of a method are independent and identically distributed: trial $j$ yields a selection score $V_j$, such as a negative validation error, and a reported score $Y_j$, such as a test accuracy. The result of a search of budget $k$ is $M_k=Y_J$, where $J$ is the trial among the first $k$ with the largest $V$ (ties broken at random). The \term{budget curve}\index{budget curve} of the method is $k\mapsto\E M_k$. When the selection score and the reported score coincide, $M_k$ is the best of $k$ draws, the order statistic of \cref{ch:seeds}; for normal scores with mean $\mu$ and standard deviation $\sigma$, $\E M_k=\mu+\sigma e_k$ (\cref{thm:toolkit:orderstat}). We take scores to be maximized; for an error, apply the results to its negative.\sidenote{The tuning playbook of \textcite{GodboleEtAl2023} calls the hyperparameters that must be retuned for each arm of a comparison its nuisance hyperparameters.}
+
+The budget curve is the object a comparison should report. Its value at $k=1$ is the average quality of the search space; its limit is the best the space contains; and its shape says how fast a search climbs from one to the other. Two methods can trade places along the way.
+
+\begin{proposition}[Budget curves]\label[proposition]{prop:budgets:curves}
+Let the trial scores of two arms have distribution functions $F_1$ and $F_2$ with finite means, and let $M_k^{(a)}$ be the best of $k$ independent trials of arm $a$. Then:
+\begin{enumerate}
+\item for all budgets $k_1,k_2\ge1$,
+\begin{equation}\label{eq:budgets:diff}
+  \E M_{k_1}^{(1)}-\E M_{k_2}^{(2)}=\int_{-\infty}^{\infty}\bigl(F_2(x)^{k_2}-F_1(x)^{k_1}\bigr)\dd x ;
+\end{equation}
+\item for each arm, $k\mapsto\E M_k^{(a)}$ is nondecreasing and converges to the upper end $s_a=\sup\{x\colon F_a(x)<1\}$ of the distribution, which may be $+\infty$;
+\item if $s_1>s_2$, then $\E M_k^{(1)}>\E M_k^{(2)}$ for every sufficiently large $k$. If in addition $\E M_1^{(1)}<\E M_1^{(2)}$, then the budget curves cross.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to write each expected maximum as an integral of its distribution function and then to let $k$ grow.
+
+\emph{Part (i).} For a random variable $Z$ with finite mean and distribution function $G$, Fubini's theorem applied to its positive and negative parts gives $\E Z=\int_0^\infty(1-G(x))\dd x-\int_{-\infty}^0G(x)\dd x$. The best of $k$ independent draws from $F$ is at most $x$ exactly when every draw is, so its distribution function is $F^k$, and its mean is finite because $\abs{M_k}$ is at most the sum of the $k$ absolute values. Write the formula for $M_{k_1}^{(1)}$ and for $M_{k_2}^{(2)}$ and subtract: all four integrals are finite, and on both half-lines the integrands combine to $F_2^{k_2}-F_1^{k_1}$.
+
+\emph{Part (ii).} Realize the trials of an arm as one infinite independent sequence $Y_1,Y_2,\dots$; then $M_k=\max_{j\le k}Y_j$ is nondecreasing in $k$, and so is its mean. Let $M_\infty=\sup_jY_j$. Every $Y_j$ is at most $s_a$ almost surely, so $M_\infty\le s_a$; and for $x<s_a$, $\Prob(M_\infty\le x)\le\Prob(M_k\le x)=F_a(x)^k$ for every $k$, which tends to $0$ because $F_a(x)<1$. Hence $M_\infty=s_a$ almost surely. The variables $M_k-Y_1$ are nonnegative and increase to $M_\infty-Y_1$, so by monotone convergence $\E M_k-\E Y_1$ increases to $s_a-\E Y_1$, where $\E Y_1$ is finite.
+
+\emph{Part (iii).} Since $s_2<s_1$, $s_2$ is finite, and $M_k^{(2)}\le s_2$ almost surely gives $\E M_k^{(2)}\le s_2$ for every $k$. By part (ii) there is a $k_0$ with $\E M_{k_0}^{(1)}>s_2$, and by monotonicity $\E M_k^{(1)}>s_2\ge\E M_k^{(2)}$ for every $k\ge k_0$. If arm 2 is ahead at $k=1$, then the difference changes sign between $k=1$ and $k_0$.
+\end{proof}
+
+The integrand in \eqref{eq:budgets:diff} explains which part of a method the budget sees. For large $k$, $F(x)^k$ is close to $0$ unless $F(x)$ is within about $1/k$ of $1$, so at budget $k$ a method is judged by roughly its best $1/k$ fraction of configurations: its average at $k=1$, its upper tail at large $k$.
+
+\begin{example}[Two curves that cross]\label[example]{exm:budgets:cross}
+Let every configuration of arm 2 reach an accuracy of $b=0.93$, a robust method with a small search space. In arm 1, a fraction $p=0.1$ of configurations reach $a=0.95$ and the rest diverge to $c=0.50$, a broad space with a better corner. The best of $k$ trials of arm 1 is $a$ unless all $k$ trials diverge, so $\E M_k^{(1)}=a-(a-c)(1-p)^k=0.95-0.45\cdot0.9^k$, which is $0.545$ at $k=1$, $0.793$ at $k=10$ and first exceeds $0.93$ at $k=30$. An experiment with 29 trials per arm declares arm 2 the better method; one with 30 declares arm 1. Neither is wrong about its budget, and both are wrong if they omit it.
+\end{example}
+
+\begin{corollary}[Unequal budgets]\label[corollary]{cor:budgets:unequal}
+Let both arms have the same distribution function $F$ with finite mean, and let arm 1 be tuned with $k_1$ trials and arm 2 with $k_2<k_1$. Then
+\[
+  \E M_{k_1}^{(1)}-\E M_{k_2}^{(2)}=\int_{-\infty}^{\infty}F(x)^{k_2}\bigl(1-F(x)^{k_1-k_2}\bigr)\dd x\ \ge\ 0,
+\]
+with equality only if the scores are almost surely constant. For normal scores with standard deviation $\sigma$ the difference is $\sigma(e_{k_1}-e_{k_2})$.
+\end{corollary}
+
+\begin{proof}
+Take $F_1=F_2=F$ in \eqref{eq:budgets:diff} and factor $F^{k_2}$ out of the integrand, which is nonnegative because $0\le F\le1$. The integral vanishes only if $F(x)\in\{0,1\}$ for almost every $x$, which for a right-continuous distribution function means a point mass. For normal scores, $\E M_k=\mu+\sigma e_k$ for each arm.
+\end{proof}
+
+The corollary is the arithmetic of a common reporting practice. A new method tuned with $k_1=50$ trials and a baseline tuned with $k_2=5$ differ by $\sigma(e_{50}-e_5)=1.09\sigma$ when they are the same method, and a baseline given a single trial loses by $\sigma e_{50}=2.25\sigma$, where $\sigma$ is the spread of trial scores over the search space. A difference of this size says nothing about the methods.
+
+\subsection*{Inclusion}
+
+Wilson et al.'s protocol held Adam's $\epsilon$ at $10^{-8}$. The next result shows what that excluded: at large $\epsilon$, with a matched learning rate, Adam is momentum SGD. We state it for the update rules as PyTorch implements them, with the momentum coefficient written $\beta_1$, as in Adam, and operations on vectors taken coordinate by coordinate.
+
+\begin{proposition}[Adam contains momentum]\label[proposition]{prop:budgets:inclusion}
+Fix a number of steps $T\ge1$, a starting point $\theta_0\in\R^d$, coefficients $\beta_1,\beta_2\in[0,1)$ and a learning rate $\eta>0$. Let $g_1,\dots,g_T\colon\R^d\to\R^d$ be the minibatch gradients of the $T$ steps, an L2 term $\lambda\theta$ included if there is one. Momentum SGD sets $b_0=0$ and, for $t=1,\dots,T$, $b_t=\beta_1b_{t-1}+g_t(\theta_{t-1})$ and $\theta_t=\theta_{t-1}-\eta b_t$. For $\epsilon>0$, Adam with coefficients $\beta_1,\beta_2,\epsilon$ starts at $\theta_0^\epsilon=\theta_0$ with $m_0=v_0=0$ and sets
+\begin{gather*}
+  m_t=\beta_1m_{t-1}+(1-\beta_1)g_t,\qquad v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2,\\
+  \theta_t^\epsilon=\theta_{t-1}^\epsilon-\alpha_t\,\frac{m_t/(1-\beta_1^t)}{\sqrt{v_t/(1-\beta_2^t)}+\epsilon},
+\end{gather*}
+with $g_t=g_t(\theta_{t-1}^\epsilon)$ and step sizes
+\begin{equation}\label{eq:budgets:alpha}
+  \alpha_t=\frac{\epsilon\,\eta\,(1-\beta_1^t)}{1-\beta_1}.
+\end{equation}
+If each $g_t$ is continuous at the momentum iterate $\theta_{t-1}$, then $\theta_t^\epsilon\to\theta_t$ as $\epsilon\to\infty$, for $t=1,\dots,T$.
+\end{proposition}
+
+\begin{proof}
+The plan is an induction on $t$ with a stronger hypothesis: as $\epsilon\to\infty$, $\theta_t^\epsilon\to\theta_t$, $m_t\to(1-\beta_1)b_t$, and $v_t$ converges to a finite limit $\bar v_t$. At $t=0$ all three hold, with $\bar v_0=0$. Suppose they hold at $t-1$. By the continuity hypothesis, $g_t(\theta_{t-1}^\epsilon)\to g_t(\theta_{t-1})$, so
+\[
+  m_t\to\beta_1(1-\beta_1)b_{t-1}+(1-\beta_1)g_t(\theta_{t-1})=(1-\beta_1)b_t,
+\]
+and $v_t\to\bar v_t=\beta_2\bar v_{t-1}+(1-\beta_2)g_t(\theta_{t-1})^2$. With the step size \eqref{eq:budgets:alpha} the bias correction $1-\beta_1^t$ cancels, and Adam's step becomes
+\[
+  \frac{\eta}{1-\beta_1}\,m_t\cdot\frac{1}{1+\sqrt{v_t/(1-\beta_2^t)}\,/\epsilon}.
+\]
+The first factor tends to $\eta b_t$. In the second, $\sqrt{v_t/(1-\beta_2^t)}$ converges to the finite limit $\sqrt{\bar v_t/(1-\beta_2^t)}$, so its ratio to $\epsilon$ tends to $0$ and the factor tends to $1$. Hence $\theta_t^\epsilon\to\theta_{t-1}-\eta b_t=\theta_t$.
+\end{proof}
+
+For a ReLU network the continuity hypothesis can fail only if some unit sits exactly at its kink, for some example, at a momentum iterate, which one does not expect under a continuous random initialization. Two remarks qualify the result. With a constant step size $\alpha=\epsilon\eta/(1-\beta_1)$ instead of \eqref{eq:budgets:alpha}, the same argument shows that Adam tends to momentum SGD with the learning rate $\eta/(1-\beta_1^t)$ at step $t$, which starts ten times too large (for $\beta_1=0.9$) and settles within a few dozen steps. Adam's bias correction acts as a schedule. And the inclusion is a limit: a search space whose $\epsilon$ stops at $10^{-8}$ never reaches it, and one that reaches it may still spend most of its trials elsewhere. Inclusion says what a search over Adam's space can find; \cref{prop:budgets:curves} says how many trials finding it costs.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[lplot,xmode=log,ymode=log,log basis x=10,log basis y=10,minor tick num=0,height=0.4\linewidth,xlabel={Adam's $\epsilon$},ylabel={relative distance to momentum},
+  xmin=3e-3,xmax=3e8,ymin=2e-11,ymax=3,xtick={1e-2,1e0,1e2,1e4,1e6,1e8},ytick={1e-10,1e-8,1e-6,1e-4,1e-2,1},
+  legend pos=south west,legend cell align=left]
+\addplot[armA] table[x=eps,y=dsched] {figures/data/04-budgets-inclusion.dat};
+\addlegendentry{step sizes \eqref{eq:budgets:alpha}}
+\addplot[armB] table[x=eps,y=dconst] {figures/data/04-budgets-inclusion.dat};
+\addlegendentry{constant step size}
+\addplot[reference,domain=1e4:3e8,samples=2] {6.7e-3/x};
+\addlegendentry{slope $-1$}
+\end{axis}
+\end{tikzpicture}
+\caption{A numerical check of \cref{prop:budgets:inclusion} (\script{04-budgets-inclusion.py}). Momentum SGD ($\eta=0.03$, $\beta_1=0.9$) and Adam ($\beta_2=0.999$) are trained from the same initial weights on the same minibatches for 900 steps, on split 0 of the task of \cref{lab:budgets:protocols}, in double precision; the vertical axis is $\norm{\theta_T^\epsilon-\theta_T}/\norm{\theta_T}$ for a single run of each, so there are no intervals. With the step sizes \eqref{eq:budgets:alpha} the distance falls to $7\times10^{-11}$, and from $\epsilon=10^2$ on the test error equals momentum's $16.46\%$; with a constant step size the bias correction leaves a distance of $0.12$.}
+\label{fig:budgets:inclusion}
+\end{figure}
+
+\Cref{fig:budgets:inclusion} shows the limit in a real network. With the matched step sizes, the distance between the final weights falls from $0.20$ at $\epsilon=10^{-2}$ to $3.9\times10^{-3}$ at $\epsilon=10^2$ and $6.7\times10^{-11}$ at $\epsilon=10^8$, by exactly a factor of $100$ over the last factor of $100$ in $\epsilon$, the rate of \cref{ex:budgets:rate}; from $\epsilon=10^2$ on, Adam's test error equals momentum's. With a constant step size the distance stops at $0.12$, and the test error settles at $16.12\%$: a different run of about the same quality.
+
+\paragraph{The unit of budget.} Counting trials is fair only when trials cost the same. If a trial of method 1 costs $c_1$ and one of method 2 costs $c_2$, a comparison at total compute $C$ sets $k_a=C/c_a$ and compares $\E M_{C/c_1}^{(1)}$ with $\E M_{C/c_2}^{(2)}$, which by \eqref{eq:budgets:diff} can favor the cheaper method even when the costlier one is better trial for trial. The time to reach a target on fixed hardware, the measure of AlgoPerf \parencite{DahlEtAl2023}, folds the cost per step, the number of steps and the tuning protocol into one number; its external-tuning rules fix the number of trials and let the submitter choose the search space, and its self-tuning rules allow no external search and give a longer time limit. Which unit is right depends on the claim: \enquote{better per trial}, \enquote{better per GPU-hour} and \enquote{better for a practitioner with an afternoon} are three different claims, and \cref{ch:heldfixed} shows how the choice of what to hold fixed decides another famous comparison. The design of the search space belongs in the budget too, although it is rarely counted.
+
+\section{The method: estimating a budget curve}\label{sec:budgets:estimating}
+
+A budget curve is an expectation over searches, and running many searches is expensive. One pool of trials can stand in for all of them. Suppose we have run $K$ independent trials of a method and want $\E M_k$ for every $k\le K$. Order the pool by its selection scores, $V_{(1)}<\dots<V_{(K)}$, and let $Y_{[i]}$ be the reported score of the trial with the $i$th smallest selection score, its \term{concomitant}\index{concomitant}.
+
+\begin{theorem}[An unbiased budget curve]\label{thm:budgets:unbiased}
+Let $(V_1,Y_1),\dots,(V_K,Y_K)$ be independent and identically distributed, with $\E\abs{Y_1}<\infty$ and the $V_j$ almost surely distinct. For $1\le k\le K$, the statistic
+\begin{equation}\label{eq:budgets:unbiased}
+  \hat M_k=\sum_{i=k}^{K}\frac{\binom{i-1}{k-1}}{\binom Kk}\,Y_{[i]}
+\end{equation}
+is the average, over all $\binom Kk$ subsets $S$ of $k$ trials of the pool, of the reported score of the trial in $S$ with the largest selection score, and $\E\hat M_k=\E M_k$.
+\end{theorem}
+
+\begin{proof}
+The plan is to count, for each trial, the subsets that select it, and then to use the fact that every subset is a search of budget $k$.
+
+\emph{The average over subsets.} A subset $S$ selects its member of largest rank in the ordering by $V$. The trial of rank $i$ is selected by exactly the subsets that contain it and $k-1$ trials of smaller rank, and there are $\binom{i-1}{k-1}$ of those, none when $i<k$. Summing the selected scores over all subsets therefore gives $\sum_i\binom{i-1}{k-1}Y_{[i]}$, and dividing by the number of subsets gives \eqref{eq:budgets:unbiased}.
+
+\emph{Unbiasedness.} Fix a subset $S$. Its $k$ pairs are independent with the common law of $(V_1,Y_1)$, and the trial it selects is the same function of them as $J$ is of the first $k$ trials of a search; so its selected score has the law of $M_k$, and in particular a finite mean, because its absolute value is at most $\sum_{j\in S}\abs{Y_j}$. Each of the $\binom Kk$ terms of the average therefore has expectation $\E M_k$, and so has the average.
+\end{proof}
+
+Counting the subsets of $\{1,\dots,K\}$ of size $k$ by their largest element shows that the weights sum to one, $\sum_{i=k}^K\binom{i-1}{k-1}=\binom Kk$. Ties in the selection score are common, since a validation error on 300 images takes only 301 values; a secondary score such as the validation loss, or an independent random number, breaks them and keeps the hypothesis. The statistic is a \term{U-statistic}\index{U-statistic} in the sense of \textcite{Hoeffding1948}, with the selected score of $k$ trials as its kernel; for fixed $k$, and a kernel with finite variance, it is asymptotically normal as $K$ grows.
+
+\Textcite{DodgeEtAl2019} proposed reporting the \term{expected validation performance}\index{expected validation performance}, the expected best validation score as a function of the budget, and estimated it with the expected maximum of $k$ draws from the empirical distribution of the pool, that is, of $k$ draws \emph{with} replacement. In the notation of \eqref{eq:budgets:unbiased}, with $Y=V$, that estimator is
+\[
+  \tilde M_k=\sum_{i=1}^K\Bigl(\Bigl(\frac iK\Bigr)^k-\Bigl(\frac{i-1}K\Bigr)^k\Bigr)Y_{(i)} .
+\]
+\Textcite{TangEtAl2020} showed that it is biased, always toward a worse best.
+
+\begin{proposition}[Drawing with replacement is pessimistic]\label[proposition]{prop:budgets:replacement}
+For real numbers $y_{(1)}\le\dots\le y_{(K)}$ and $1\le k\le K$, let $U_k$ and $W_k$ be the right-hand sides of \eqref{eq:budgets:unbiased} and of the display above, with $y_{(i)}$ in place of $Y_{[i]}$ and $Y_{(i)}$. Then $W_k\le U_k$, with strict inequality if $k\ge2$ and $y_{(1)}<y_{(K)}$. Consequently, for independent scores with a finite mean, $\E\tilde M_k\le\E M_k$.
+\end{proposition}
+
+\begin{proof}
+The plan is to write both statistics as $y_{(K)}$ minus a weighted sum of the gaps between consecutive order statistics, and to compare the weights. Both are averages $\sum_iw_iy_{(i)}$ with weights $w_i=G(i)-G(i-1)$ for a function $G$ that increases from $G(0)=0$ to $G(K)=1$; summation by parts turns such an average into
+\begin{equation}\label{eq:budgets:abel}
+  \sum_{i=1}^Kw_iy_{(i)}=y_{(K)}-\sum_{i=1}^{K-1}G(i)\bigl(y_{(i+1)}-y_{(i)}\bigr).
+\end{equation}
+For $W_k$, $G_W(i)=(i/K)^k$, the probability that $k$ draws with replacement all fall among the $i$ smallest values. For $U_k$, $G_U(i)=\binom ik/\binom Kk$, the probability that a random subset of size $k$ does, by the identity for the weights applied with $i$ in place of $K$. By \eqref{eq:budgets:abel}, $U_k-W_k=\sum_{i=1}^{K-1}\bigl(G_W(i)-G_U(i)\bigr)\bigl(y_{(i+1)}-y_{(i)}\bigr)$, and every gap is nonnegative, so it suffices to show $G_U(i)\le G_W(i)$. If $i<k$, then $G_U(i)=0$. If $i\ge k$, then $G_U(i)=\prod_{r=0}^{k-1}\frac{i-r}{K-r}$, a product of $k$ factors in $[0,1]$, and each is at most $i/K$ because $(i-r)K\le i(K-r)$ amounts to $r(K-i)\ge0$. For strictness, let $k\ge2$ and $1\le i\le K-1$. For $i<k$ we have $G_U(i)=0<G_W(i)$; for $i\ge k$ the factor with $r=1$ is strictly smaller than $i/K$, because $K-i>0$. Every coefficient is then positive, and some gap is positive when $y_{(1)}<y_{(K)}$. For the last claim, take expectations and use \cref{thm:budgets:unbiased} with $Y=V$.
+\end{proof}
+
+The bias is not the whole story. \Textcite{DodgeEtAl2021} compared the estimators by variance and mean squared error as well: in their simulations the unbiased estimator had the largest variance, and the two biased estimators led to the fewest wrong conclusions about which of two models was better. The trade-off is real, and the bias is small when $k$ is a small fraction of $K$; in the main pools of \cref{lab:budgets:curves}, up to $k=K/4$, the two estimates of the best validation error differ by less than $0.1$ points. What matters more is to report $K$, the estimator, and how far the curve is pushed.
+
+How far it can be pushed has a simple answer. The probability that the trial selected from a random $k$-subset is among the $m$ best of the pool is $1-\binom{K-m}k/\binom Kk$, and the same factor-by-factor comparison as in the proof above bounds $\binom{K-m}k/\binom Kk$ by $(1-m/K)^k$. For $m\ge K/k$ this gives at least $1-(1-1/k)^k\ge1-e^{-1}\approx0.63$. At budget $k$, then, $\hat M_k$ rests mostly on the best $K/k$ trials of the pool: at $k=K/4$, on about four. Intervals from the bootstrap, which resamples the pool (\cref{thm:toolkit:bootstrap}), cannot create trials better than the best one observed, and \textcite{TangEtAl2020} found that bootstrap intervals for the expected maximum covered the truth only about $70\%$ of the time at a nominal $95\%$ when $k=20$ and $K=50$. We quote comparisons at $k\le K/10$ and draw curves no further than $K/4$.
+
+\paragraph{The selection score is optimistic.} The best validation score of $k$ trials overstates the selected trial's performance on fresh data, increasingly with $k$: selection on a noisy score picks trials that were lucky on that score, the winner's curse of \cref{ch:seeds}, and \cref{ch:controls} computes the effect exactly for a Gaussian proxy. With a small validation set, more trials can even make the selected trial worse on the test set,\sidenote{With 300 validation images and an error near $15\%$, the binomial standard error of a validation error is about two points (\cref{ch:seeds}).} because the search begins to fit the noise of the validation set \parencite{CawleyTalbot2010}. The budget curve to report is therefore the one for the test score of the selected trial, as in \eqref{eq:budgets:unbiased} with $V\ne Y$, and the configuration that a paper finally reports should be retrained with fresh seeds, since its own run was selected for its luck.
+
+\section{In the laboratory: two protocols on one task}\label{sec:budgets:lab}
+
+On the plain digits, momentum and Adam generalize equally well: in the control of \cref{lab:budgets:curves} below, their budget curves agree within a quarter of a point at every budget from six trials on, in both kinds of search space. To reproduce the original gap in miniature we add the ingredient of Wilson et al.'s constructed example, input coordinates that carry no information about the label but let the network fit its small training set. Each image gets 256 distractor features, independent standard normal numbers drawn once per image, appended to its 64 pixels.
+
+\begin{lab}{Two protocols, one comparison}{04-budgets-protocols}\label{lab:budgets:protocols}
+\labpart{Setup} Digits with 256 distractor features: 300 training images, 300 validation images, and the remaining 1197 as test set. A two-layer MLP of width 64, 100 epochs, batch size 32, constant learning rate. \emph{Protocol 2017}: for each optimizer, a logarithmic grid of 16 learning rates (momentum $10^{-3}$ to $1$; Adam $10^{-4.5}$ to $10^{-1.5}$), momentum $\beta_1=0.9$, Adam's $(\beta_1,\beta_2,\epsilon)=(0.9,0.999,10^{-8})$, no weight decay. \emph{Protocol 2019}: for each optimizer, 16 random-search trials, log-uniform in every coordinate, over the learning rate, $1-\beta_1$ and an L2 weight decay $\lambda$ for momentum, and over the learning rate, $\epsilon\in[10^{-8},10^2]$, $1-\beta_1$, $1-\beta_2$ and $\lambda$ for Adam, whose learning rate is drawn relative to $\max(\epsilon,10^{-2})$. In both, the trial with the lowest validation error is retrained with five fresh seeds and their mean test error is the protocol's result. Everything is replicated on 10 data splits, each with new distractors, search draws and seeds: 840 runs, about three minutes.
+\labpart{Predict first} Under the 2017 protocol, which optimizer has the lower test error, and by how much? With the same sixteen trials searched over all hyperparameters, does the gap survive, shrink or reverse? Which optimizer gains more from the larger search?
+\labpart{Look for} The differences split by split, not only the means; the values of $\epsilon$ and $\lambda$ that the 2019 search selects; retrained runs of a selected configuration that fail.
+\end{lab}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[lplot,height=0.5\linewidth,xmin=0.45,xmax=2.55,ymin=12,ymax=30,
+  xtick={1,2},xticklabels={protocol 2017,protocol 2019},minor x tick num=0,
+  ylabel={test error (\%)},legend pos=north east,legend cell align=left]
+\addplot[run,forget plot] table[x=x,y=err] {figures/data/04-budgets-protocols-runs-momentum.dat};
+\addplot[budgets runB,forget plot] table[x=x,y=err] {figures/data/04-budgets-protocols-runs-adam.dat};
+\addplot[mean,ebars] table[x=x,y=mean,y error=hw] {figures/data/04-budgets-protocols-means-momentum.dat};
+\addlegendentry{momentum}
+\addplot[budgets meanB,budgets ebarsB] table[x=x,y=mean,y error=hw] {figures/data/04-budgets-protocols-means-adam.dat};
+\addlegendentry{Adam}
+\draw[->,inkblue,line width=0.5pt] (axis cs:0.876,28.9) -- (axis cs:0.876,29.9);
+\node[font=\scriptsize,text=inkblue,anchor=west] at (axis cs:0.9,29.35) {87\%};
+\end{axis}
+\end{tikzpicture}
+\caption{\Cref{lab:budgets:protocols}: test error of the configuration selected by each protocol, for momentum (circles) and Adam (squares). Hollow marks: the five retrained runs of the selected configuration on each of 10 data splits (50 per arm and protocol, jittered horizontally); one run, at $87\%$, lies above the scale. Filled marks: the mean over the 10 splits of the five-run means, with a 95\% $t$-interval over splits. Digits with 256 distractor features; 16 trials per optimizer and protocol.}
+\label{fig:budgets:protocols}
+\end{figure}
+
+\Cref{fig:budgets:protocols} shows the result. Under the 2017 protocol Adam had the higher test error on nine of the ten splits (two-sided sign test $p=0.021$), by a median of $3.2$ points. The mean difference, $\pmval{1.69}{4.10}$ points (mean and 95\% $t$-interval over splits, \cref{thm:toolkit:tinterval}), is diluted by one failure: on split 6 the grid selected momentum's learning rate $0.1$, at the edge of stability, on the strength of one good run, and of its five retrained runs one ended at $87\%$ test error and two above $25\%$.\sidenote{At the edge of stability the seed decides whether a run survives; \cref{ch:instability} studies how small differences grow during training.} Under the 2019 protocol, with the same sixteen trials per optimizer, the difference was $\pmval{-0.44}{0.59}$ points, with Adam lower on five splits of ten: the gap vanished. Both optimizers improved, Adam by $\pmval{6.04}{0.49}$ points, to $\pmval{16.11}{0.57}\%$, and momentum to $\pmval{16.55}{0.70}\%$.
+
+The selected hyperparameters show how. The 2019 searches mostly chose a sizable weight decay (median $\lambda=0.027$ for Adam and $0.017$ for momentum), a regularizer that the 2017 protocol held at zero for both arms, and half of Adam's selections had $\epsilon\ge10^{-3}$, three of them above $1$, where Adam moves almost like momentum. Which of the two closes the gap is the subject of \cref{ex:budgets:which}. One more effect is visible in the numbers: the selected trial's own run was better on the test set than its five reruns, by $0.05$ to $1.5$ points depending on the arm, the optimism of selecting on a single run.
+
+\begin{lab}{Budget curves}{04-budgets-curves}\label{lab:budgets:curves}
+\labpart{Setup} Split 0 of the task of \cref{lab:budgets:protocols}. Four pools of $K=200$ random-search trials, one run each: momentum and Adam, each over its 2017 space (the learning rate only, log-uniform over the range of the grid) and its 2019 space (ranges in the scripts). For each pool, the expected test error of the trial that a search of $k$ trials selects, for $k=1,\dots,50$, by \eqref{eq:budgets:unbiased}, with 95\% percentile intervals from 1000 bootstrap resamples of the pool. A control repeats the four pools with $K=100$ on the plain digits. 1200 runs, about four minutes.
+\labpart{Predict first} At $k=1$, which of the four arms is best? Do the curves of the two 2017 spaces cross, and where? Does more search always lower the test error of the selected trial?
+\labpart{Look for} Crossings; the budget beyond which the curves are flat; the distance between the expected best validation error and the expected test error of the selected trial; the control.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=12mm},lplot,
+  width=0.52\linewidth,height=0.38\linewidth,xmode=log,log basis x=10,xmin=1,xmax=50,ymin=15,ymax=34,
+  xtick={1,2,4,8,16,32},xticklabels={$1$,$2$,$4$,$8$,$16$,$32$},minor x tick num=0,
+  xlabel={trials $k$},legend pos=north east,legend cell align=left]
+\nextgroupplot[ylabel={test error of selected trial (\%)},title={(a) 2017 search spaces}]
+\addplot[name path=mlo,draw=none,forget plot] table[x=k,y=m17lo] {figures/data/04-budgets-curves-main.dat};
+\addplot[name path=mhi,draw=none,forget plot] table[x=k,y=m17hi] {figures/data/04-budgets-curves-main.dat};
+\addplot[inkblue!14,forget plot] fill between[of=mlo and mhi];
+\addplot[name path=alo,draw=none,forget plot] table[x=k,y=a17lo] {figures/data/04-budgets-curves-main.dat};
+\addplot[name path=ahi,draw=none,forget plot] table[x=k,y=a17hi] {figures/data/04-budgets-curves-main.dat};
+\addplot[rubric!14,forget plot] fill between[of=alo and ahi];
+\addplot[armA,no marks] table[x=k,y=m17] {figures/data/04-budgets-curves-main.dat};
+\addlegendentry{momentum}
+\addplot[armB,no marks] table[x=k,y=a17] {figures/data/04-budgets-curves-main.dat};
+\addlegendentry{Adam}
+\nextgroupplot[title={(b) 2019 search spaces}]
+\addplot[name path=mlo,draw=none,forget plot] table[x=k,y=m19lo] {figures/data/04-budgets-curves-main.dat};
+\addplot[name path=mhi,draw=none,forget plot] table[x=k,y=m19hi] {figures/data/04-budgets-curves-main.dat};
+\addplot[inkblue!14,forget plot] fill between[of=mlo and mhi];
+\addplot[name path=alo,draw=none,forget plot] table[x=k,y=a19lo] {figures/data/04-budgets-curves-main.dat};
+\addplot[name path=ahi,draw=none,forget plot] table[x=k,y=a19hi] {figures/data/04-budgets-curves-main.dat};
+\addplot[rubric!14,forget plot] fill between[of=alo and ahi];
+\addplot[armA,no marks] table[x=k,y=m19] {figures/data/04-budgets-curves-main.dat};
+\addlegendentry{momentum}
+\addplot[armB,no marks] table[x=k,y=a19] {figures/data/04-budgets-curves-main.dat};
+\addlegendentry{Adam}
+\end{groupplot}
+\end{tikzpicture}
+\caption{\Cref{lab:budgets:curves}: budget curves, the expected test error of the trial selected by a random search of $k$ trials, estimated by \eqref{eq:budgets:unbiased} from pools of $K=200$ trials per arm (one run each; split 0 of the task of \cref{lab:budgets:protocols}). Bands: 95\% percentile intervals from 1000 bootstrap resamples of each pool. (a) Learning rate only, other hyperparameters at their defaults. (b) All hyperparameters. At $k=1$ the momentum curves start at $43\%$, above the scale, because a third of their learning rates diverge.}
+\label{fig:budgets:curves}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:budgets:curves} shows the four curves. In the 2017 spaces they cross. A single trial favors Adam, $26.1\%$ (interval $[25.1,27.1]$) against $43.2\%$ ($[38.8,48.0]$), because a third of momentum's learning-rate range diverges while Adam's range is forgiving; from three trials on momentum is ahead, and at $k=16$ Adam's curve is higher by $2.6$ points (95\% bootstrap interval $[2.0,3.2]$). This is \cref{prop:budgets:curves} at work, with momentum the arm whose space has the higher ceiling and the lower floor. In the 2019 spaces Adam is ahead at every budget, by $0.55$ points at $k=16$ (interval $[0.17,0.90]$): on this split, the comparison reversed rather than vanished. The same proposition appears within Adam: its 2019 space contains far more diverging trials than its 2017 space (33 of 200 against 6) and also better ones, so the two Adam curves cross between $k=1$ and $k=2$, after which the larger space is ahead by $4.9$ points at $k=16$.
+
+Beyond about sixteen trials every curve is nearly flat. The expected best validation error keeps falling, from $15.5\%$ at $k=16$ to $14.8\%$ at $k=50$ for momentum's 2017 space, while the test error of the selected trial stays at about $18.8\%$ (point estimates from the same pool): past this point the search mostly fits the noise of 300 validation images. The with-replacement estimate of the best validation error was larger than the unbiased one in all eight pools at every budget from two on, as \cref{prop:budgets:replacement} requires, but by less than $0.1$ points in the main pools and $0.2$ in the control pools. On the plain digits the control shows no gap: at $k=10$, Adam minus momentum is $-0.02$ points (interval $[-0.23,0.19]$) in the 2017 spaces and $0.01$ points ($[-0.30,0.30]$) in the 2019 spaces.
+
+The miniature reproduces the shape of the story, with one honest qualification. The gap under the 2017 protocol needed the distractor features; without them the two optimizers tie under both protocols. What the lab shows in general is the mechanism: a comparison decided by a protocol that searched one optimizer's distinguishing hyperparameters and not the other's, and a gap that a search of the same size over all of them removes.
+
+\section{Protocol}\label{sec:budgets:protocol}
+
+\begin{protocol}{Comparing two training methods}\label{prot:budgets:compare}
+\item Write down each arm as an update rule plus a search space, a sampling distribution, a budget, a selection rule and a reporting rule, before running anything.
+\item Give the arms equal budgets in the unit of the claim: trials, steps, FLOPs or wall-clock time.
+\item Search every hyperparameter that distinguishes the arms, $\epsilon$, the momentum coefficients and weight decay among them, over ranges wide enough that no optimum lies at an edge; report the ranges and how they were chosen.
+\item Select on validation data; report the test score of the selected configuration retrained with fresh seeds.
+\item Repeat the whole tuning protocol with new search draws, seeds and, where possible, data splits; report the paired differences with an interval.
+\item Report budget curves with the unbiased estimator \eqref{eq:budgets:unbiased} and bootstrap intervals for $k$ up to about $K/4$, and say whether and where they cross.
+\item Treat hyperparameters taken from a paper as tuning done on other data: count them in the budget, or retune.
+\item State the conclusion with its budget: \enquote{A beats B for searches of $k$ trials or more over these spaces}.
+\end{protocol}
+
+The protocol makes a comparison fair to the update rules within the stated budget and spaces, and no further. It does not protect against search spaces designed with hindsight, refined on the very workload by an earlier search, as Choi et al.\ acknowledge for their own, nor against unequal engineering effort in the implementations. Its estimator assumes independent trials: a Bayesian optimizer or a successive-halving scheme chooses trials adaptively, and its budget curve must be estimated by repeating the whole search (\cref{ex:budgets:adaptive}). At the scale of large models even one search per arm can be unaffordable; then tune the hyperparameters that distinguish the arms on a smaller proxy and transfer them with stated rules, or fall back to the weakest honest claim, \enquote{at the settings we could afford}, and report the budget that each arm actually received.
+
+\begin{exercises}
+\item \consolidation (The shape of a budget curve.) Let $F$ have a finite mean. (a) Use \eqref{eq:budgets:diff} to show that $\E M_{k+1}-\E M_k=\int F(x)^k(1-F(x))\dd x$. (b) Deduce that the increments are nonnegative and nonincreasing, so that $k\mapsto\E M_k$ is concave on the integers. (c) Compute the budget curve of the uniform distribution on $[a,b]$, and the number of trials needed to come within $1\%$ of $b-a$ of the top.\label{ex:budgets:shape}
+
+\item \consolidation (Crossing points.) In \cref{exm:budgets:cross}, show that arm 1 is ahead exactly when $k>\ln\bigl((a-c)/(a-b)\bigr)/\ln\bigl(1/(1-p)\bigr)$, and find the crossing budget when the good fraction $p$ is $0.01$. What should a paper that compares the two arms with 100 trials each conclude, and how should it say so?\label{ex:budgets:crossing}
+
+\item \consolidation (The estimator by hand.) For $K=4$ trials whose selection scores are $0.3$, $0.9$, $0.5$ and $0.7$ and whose reported scores are, in the same order, $0.40$, $0.80$, $0.70$ and $0.60$, compute $\hat M_2$ from \eqref{eq:budgets:unbiased} and check it against the average over the six pairs. Then compute $\tilde M_2$ for the validation scores and verify \cref{prop:budgets:replacement}.\label{ex:budgets:byhand}
+
+\item \consolidation\hard (Rates and relatives of inclusion.) (a) In \cref{prop:budgets:inclusion}, assume each $g_t$ is $L$-Lipschitz. Show that $\norm{\theta_T^\epsilon-\theta_T}\le C/\epsilon$ for all large $\epsilon$, with $C$ depending on $T$, $\eta$, $\beta_1$, $\beta_2$, $L$ and the gradients along the momentum path. (b) Show that with $\beta_1=0$ no schedule is needed: Adam with the constant step size $\epsilon\eta$ tends to SGD with learning rate $\eta$. (c) RMSProp with momentum, as implemented in PyTorch, divides the gradient by $\sqrt{v_t}+\epsilon$ before the momentum buffer: show that it contains momentum SGD with no schedule at all. \hint{in (a), carry a bound of order $1/\epsilon$ through the induction, using that the factor $1/(1+x)$ differs from $1$ by at most $x$.}\label{ex:budgets:rate}
+
+\item \labwork (Which knob closes the gap?)\label{ex:budgets:which} Modify \script{04-budgets-protocols.py} so that the 2019 protocol searches Adam's learning rate and weight decay with $\epsilon=10^{-8}$ fixed, and, separately, its learning rate and $\epsilon$ with no weight decay. Which part of the larger search closes the gap of \cref{lab:budgets:protocols}? Is the answer the same for $1-\beta_1$?
+
+\item \labwork (A naive search space.) Sample Adam's learning rate and $\epsilon$ independently, log-uniform on $[10^{-5},1]$ and $[10^{-8},10^2]$, instead of drawing the learning rate relative to $\max(\epsilon,10^{-2})$. Rerun \script{04-budgets-curves.py} for this arm. How many trials does Adam now need to match momentum's 2019 curve? Relate your answer to the fraction of the space where Adam trains at all.\label{ex:budgets:naive}
+
+\item \labwork (Coverage.) Using the 200 trials of one pool of \cref{lab:budgets:curves} as a population, draw 300 subpools of $K=40$ trials, compute the bootstrap interval for $\E M_k$ in each, and estimate its coverage of the population value for $k=2,4,10,20$. Compare with the rule of thumb of \cref{sec:budgets:estimating}.\label{ex:budgets:coverage}
+
+\item \design (Equal compute.) Method A's trials cost twice as much as method B's, and you have 64 GPU-hours, enough for 32 trials of A. Design a comparison that answers \enquote{which method should a practitioner with this budget use?} and one that answers \enquote{which update rule is better per trial?} Say what each reports, how many trials each arm gets, and how the conclusions can differ, using \eqref{eq:budgets:diff}.\label{ex:budgets:compute}
+
+\item \design (A new optimizer for pretraining.) You may run 96 training runs of a 100-million-parameter language model to compare a new optimizer with AdamW. Decide which hyperparameters to search for each arm, how to split the runs between search and replication, how to choose the search spaces without spending the budget on them, and what to plot. Which finding of \textcite{WenEtAl2026} constrains your design?\label{ex:budgets:pretraining}
+
+\item \critique (Recommended settings.) A paper compares its method, tuned by 100 trials of Bayesian optimization, with three baselines run at \enquote{the hyperparameters recommended by their authors}. The method wins by $0.8$ points; the spread of trial scores over its search space has standard deviation about $1$ point. Using \cref{cor:budgets:unequal}, say what this comparison can and cannot show, and what the authors should have run.\label{ex:budgets:recommended}
+
+\item \critique (A table of best results.) A benchmark table lists, for each of six optimizers, the best test accuracy over \enquote{extensive tuning}, without the number of trials or the search spaces, and bolds the largest. List what is missing, rank the omissions by how much they could change the ranking, and propose a replacement figure.\label{ex:budgets:table}
+
+\item \research (Adaptive search.)\label{ex:budgets:adaptive} Bayesian optimization and successive halving choose trials adaptively, so the trials of a search are not independent and \cref{thm:budgets:unbiased} does not apply. Open: an estimator of the budget curve of an adaptive search method from fewer runs than repeating whole searches, with a valid interval; or a proof that none can exist without assumptions on the response surface.
+\end{exercises}
+
+\notesandrefs
+The case for random search over grid search was made by \textcite{BergstraBengio2012}, who showed that it matches or beats grid search at a fraction of the cost, because on a given task few hyperparameters matter, and proposed it as the baseline for adaptive search methods (\cref{ch:controls} makes it the placebo arm of a search). The expected best result as a function of the budget was proposed as a reporting standard by \textcite{DodgeEtAl2019}, with a checklist for reporting hyperparameter searches; \textcite{TangEtAl2020} proved that their estimator is biased and derived the unbiased one, and \textcite{DodgeEtAl2021} weighed bias against variance. \Cref{thm:budgets:unbiased} with concomitants, which turns the curve of the best validation score into the curve of the selected trial's test score, is the form we found most useful in practice. \Textcite{CawleyTalbot2010} analyzed over-fitting in model selection, the reason that curve can rise.
+
+The pattern of this chapter, a gap that closes when the baseline is tuned as hard as the proposal, recurs across the field. \Textcite{MelisEtAl2018} found that standard LSTMs, properly regularized and tuned by large-scale black-box search, outperformed more recent recurrent architectures in language modeling; \textcite{LucicEtAl2018} found that most GAN variants reached similar scores given enough hyperparameter search and random restarts. \Cref{ch:controls} adds the placebo arm, \cref{ch:heldfixed} the question of which budget axis is held fixed, and \cref{ch:protocol} the effect of the learning-rate schedule on curves read before their end.
+
+For practice, the tuning playbook of \textcite{GodboleEtAl2023} classifies hyperparameters as scientific, nuisance and fixed; when optimizers are compared, the optimizer is scientific and its own hyperparameters are nuisance hyperparameters to be tuned separately for each arm. It suggests tuning only Adam's learning rate with fewer than about ten trials, adding $\beta_1$ at 10 to 25, $\epsilon$ beyond 25, and $\beta_2$ with substantially more.
+
+\paragraph{Translating the literature.} \Textcite{DodgeEtAl2019} write $n$ for our budget $k$ and $V^*_n$ for our $M_k$ with $Y=V$; their expected validation performance $\E[V^*_n\mid n]$ is our $\E M_k$, and their estimator is our $\tilde M_k$. \Textcite{TangEtAl2020} write $B$ for our pool size $K$ and $\hat U^B_n$ and $\hat V^B_n$ for our $\hat M_k$ and $\tilde M_k$. \Textcite{ChoiEtAl2019} write $\gamma$ for the momentum coefficient, our $\beta_1$, and $v$ for momentum's buffer, our $b$; their Adam adds $\epsilon$ outside the square root and applies the bias corrections to the step, as TensorFlow does, so their $\epsilon$ is our $\epsilon$ times $\sqrt{1-\beta_2^t}$, the same after a few thousand steps when $\beta_2=0.999$. \Textcite{WilsonEtAl2017} write HB for heavy ball, our momentum SGD with $\beta_1=0.9$, and use \enquote{dev} for validation. \Textcite{SivaprasadEtAl2020} call our 2017 space for Adam \enquote{Adam-LR}.
+
+\printchapterbib
+\end{refsection}

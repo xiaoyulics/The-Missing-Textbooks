@@ -1,0 +1,294 @@
+% Appendix A of Deep Learning as an Experimental Science: the statistical toolkit.
+\labappendix{A Statistical Toolkit}{The statistics the experiments share}{ch:toolkit}
+\begin{refsection}[chapters/17-toolkit.bib]
+
+\begin{chaptersummary}
+A handful of statistical tools recur across the chapters of this book: intervals for a mean and for a difference of means; the bootstrap and the permutation test; paired comparisons of two classifiers on the same test items; corrections for many comparisons; the distribution of the best of several draws; the delta method; nonlinear least squares; variance components and factorial designs; sample sizes; rank statistics; and intervals for proportions near zero. This appendix states what the chapters use and proves what can be proved in a page; for the rest it gives a sketch and a reference.
+\end{chaptersummary}
+
+The appendix is a reference, not a chapter to be read in order. Intervals and tests for means (\cref{sec:toolkit:mean}) are used everywhere; resampling (\cref{sec:toolkit:resampling}) in \cref{ch:seeds,ch:aggregates,ch:budgets,ch:fitting}; multiple comparisons (\cref{sec:toolkit:multiple}) in \cref{ch:aggregates}; order statistics (\cref{sec:toolkit:orderstat}) in \cref{ch:seeds,ch:budgets,ch:controls}; the delta method and nonlinear least squares (\cref{sec:toolkit:delta,sec:toolkit:nls}) in \cref{ch:fitting,ch:protocol,ch:extrapolation}; variance components and factorial designs (\cref{sec:toolkit:design}) in \cref{ch:seeds,ch:confounding,ch:ablations,ch:instruments}; sample sizes (\cref{sec:toolkit:power}) in \cref{ch:seeds}; rank statistics (\cref{sec:toolkit:ranks}) in \cref{ch:aggregates,ch:controls,ch:sharpness}; and binomial intervals (\cref{sec:toolkit:binomial}) in \cref{ch:emergence}.
+
+Throughout, $Y_1,\dots,Y_n$ are outcomes of runs, $\bar Y$ is their mean and $S^2=\frac1{n-1}\sum_i(Y_i-\bar Y)^2$ their sample variance. A $p$-value for a true null hypothesis is \term{valid}\index{p-value!valid} if $\Prob(p\le u)\le u$ for every $u\in[0,1]$.
+
+\section{Intervals for means}\label{sec:toolkit:mean}
+
+If $Y_1,\dots,Y_n$ are independent with mean $\mu$ and variance $\sigma^2$, then $\E\bar Y=\mu$, $\Var\bar Y=\sigma^2/n$ and $\E S^2=\sigma^2$, so that $S/\sqrt n$, the \term{standard error}\index{standard error}, estimates the standard deviation of $\bar Y$.
+
+\begin{theorem}[$t$-intervals and Welch's test]\label{thm:toolkit:tinterval}\index{t-interval}\index{Welch's test}
+\begin{enumerate}
+\item If the $Y_i$ are normal, then $(\bar Y-\mu)/(S/\sqrt n)$ has Student's $t$ distribution with $n-1$ degrees of freedom, and the interval $\bar Y\pm t_{n-1,1-\alpha/2}\,S/\sqrt n$ contains $\mu$ with probability exactly $1-\alpha$.
+\item Without normality, if $\E Y_1^2<\infty$, the coverage of the same interval tends to $1-\alpha$ as $n\to\infty$.
+\item For two independent samples of sizes $n_1,n_2$, means $\mu_1,\mu_2$ and variances $\sigma_1^2,\sigma_2^2$, Welch's statistic
+\[
+W=\frac{\bar Y_1-\bar Y_2-(\mu_1-\mu_2)}{\sqrt{S_1^2/n_1+S_2^2/n_2}}
+\]
+is asymptotically standard normal as $n_1,n_2\to\infty$, and for normal samples it is approximately $t$-distributed with
+$\nu=\bigl(S_1^2/n_1+S_2^2/n_2\bigr)^2\big/\bigl[(S_1^2/n_1)^2/(n_1-1)+(S_2^2/n_2)^2/(n_2-1)\bigr]$
+degrees of freedom.
+\end{enumerate}
+\end{theorem}
+
+\begin{proofsketch}
+Part (i) rests on two facts about normal samples: $\bar Y$ and $S^2$ are independent, and $(n-1)S^2/\sigma^2$ has the $\chi^2$ distribution with $n-1$ degrees of freedom \parencite[Section~5.3]{CasellaBerger2002}. A standard normal divided by the square root of an independent $\chi^2_\nu/\nu$ has, by definition, Student's distribution with $\nu$ degrees of freedom \parencite{Student1908}. Part (ii) follows from the central limit theorem for $\sqrt n(\bar Y-\mu)/\sigma$, the convergence of $S$ to $\sigma$ in probability, Slutsky's lemma, and $t_{n-1,1-\alpha/2}\to z_{1-\alpha/2}$. Part (iii) is proved the same way for the asymptotic statement; the degrees of freedom come from matching the first two moments of $S_1^2/n_1+S_2^2/n_2$ to those of a scaled $\chi^2$ variable \parencite{Satterthwaite1946,Welch1947}, which makes the $t$ distribution an approximation rather than an exact law.
+\end{proofsketch}
+
+When the runs of two arms come in pairs that share a seed, a data order or a set of test items, the comparison should use the differences $D_i=Y_{1i}-Y_{2i}$ and the one-sample interval of part (i) for $\E D$. Since $\Var D=\sigma_1^2+\sigma_2^2-2\Cov(Y_1,Y_2)$, pairing narrows the interval whenever the paired outcomes are positively correlated, which is the usual case.
+
+\section{Resampling}\label{sec:toolkit:resampling}
+
+\begin{definition}[Bootstrap intervals]\label{def:toolkit:bootstrap}\index{bootstrap}
+Let $\hat\theta=\hat\theta(Y_1,\dots,Y_n)$ be a statistic. A \term{bootstrap sample} draws $n$ values uniformly with replacement from $Y_1,\dots,Y_n$; computing $\hat\theta$ on $B$ independent bootstrap samples gives $\hat\theta^*_1,\dots,\hat\theta^*_B$. The \term{percentile interval}\index{bootstrap!percentile interval} at level $1-\alpha$ runs from the $\alpha/2$-quantile to the $(1-\alpha/2)$-quantile of the $\hat\theta^*_b$. When the data fall into strata, for instance tasks with several runs each, the \term{stratified bootstrap}\index{bootstrap!stratified} resamples with replacement within each stratum and keeps the strata fixed.
+\end{definition}
+
+\begin{theorem}[Consistency of the bootstrap]\label{thm:toolkit:bootstrap}
+Let $Y_1,\dots,Y_n$ be independent and identically distributed with finite variance, and let $\hat\theta=g(\bar Y)$ for a function $g$ continuously differentiable at $\mu$ with $g'(\mu)\ne0$. Then, conditionally on the data and for almost every sequence of data, $\sqrt n(\hat\theta^*-\hat\theta)$ has the same normal limit as $\sqrt n(\hat\theta-g(\mu))$, and the percentile interval has asymptotic coverage $1-\alpha$.
+\end{theorem}
+
+\begin{proofsketch}
+\Textcite{BickelFreedman1981} prove the conditional central limit theorem for the bootstrap mean; the delta method (\cref{thm:toolkit:delta}) carries it to $g(\bar Y)$; the symmetry of the normal limit then gives the coverage of the percentile interval \parencite[Chapter~23]{vanderVaart1998}. With few runs the percentile interval tends to be too narrow; the bias-corrected and accelerated interval of \textcite{Efron1987} corrects for bias and skewness, and \textcite{EfronTibshirani1993} is the standard introduction.
+\end{proofsketch}
+
+A permutation test needs no asymptotics. Its null hypothesis is a symmetry: for two arms of runs, that the arm labels are exchangeable, as they are when the two arms have the same run distribution and the runs are independent.
+
+\begin{theorem}[Permutation tests are exact]\label{thm:toolkit:permutation}\index{permutation test}
+Let $G$ be a finite group acting on the data, and suppose that under the null hypothesis $gY$ has the same distribution as $Y$ for every $g\in G$. For a statistic $T$ put $p(Y)=\abs{G}^{-1}\,\#\{h\in G:T(hY)\ge T(Y)\}$. Then, under the null hypothesis, $\Prob(p(Y)\le u)\le u$ for every $u\in[0,1]$.
+\end{theorem}
+
+\begin{proof}
+The plan is to show that in every orbit of the group at most a fraction $u$ of the points have a $p$-value at most $u$, and then to use the symmetry to turn this count into a probability.
+
+Fix a data set $y$ and let $A=\{g\in G:p(gy)\le u\}$. Since $h\mapsto hg$ is a bijection of $G$, the $p$-value of $gy$ is computed from the same values as that of $y$:
+\[
+p(gy)=\abs{G}^{-1}\,\#\{h\in G:T(hgy)\ge T(gy)\}=\abs{G}^{-1}\,\#\{h\in G:T(hy)\ge T(gy)\}.
+\]
+If $A$ is empty there is nothing to prove. Otherwise choose $g^\star\in A$ for which $T(g^\star y)$ is smallest among the elements of $A$. Every $g\in A$ satisfies $T(gy)\ge T(g^\star y)$, so $A$ is contained in $\{h:T(hy)\ge T(g^\star y)\}$, a set with $\abs G\,p(g^\star y)\le u\abs G$ elements. Hence $\abs{A}\le u\abs{G}$ for every $y$.
+
+Now let the data be random. By the null hypothesis $p(gY)$ has the distribution of $p(Y)$ for each $g$, so
+\[
+\Prob(p(Y)\le u)=\frac1{\abs G}\sum_{g\in G}\Prob(p(gY)\le u)=\E\Bigl[\frac{\#\{g:p(gY)\le u\}}{\abs G}\Bigr]\le u.\qedhere
+\]
+\end{proof}
+
+For two arms of $n$ runs, $G$ is the group of permutations of the $2n$ pooled outcomes, acting by reassigning arm labels, and $T$ is for instance the difference of the arm means. When $\abs G$ is too large to enumerate, $M$ random permutations give the valid $p$-value $(1+\#\{b:T_b\ge T_{\mathrm{obs}}\})/(M+1)$; dropping the two ones, as is often done, can produce a $p$-value of zero and is not valid \parencite{PhipsonSmyth2010}.
+
+Two classifiers evaluated on the same test items are a paired design. Its analysis goes back to \textcite{McNemar1947}; \textcite{Dietterich1998} recommended McNemar's test for comparing two learning algorithms when each can be trained only once.
+
+\begin{proposition}[Two classifiers on the same items]\label{thm:toolkit:mcnemar}\index{McNemar's test}
+Two classifiers are evaluated on $m$ test items drawn independently. Let $b$ count the items that the first classifies correctly and the second incorrectly, and $c$ the items with the reverse, and let $\pi_b,\pi_c$ be the probabilities of these two discordances.
+\begin{enumerate}
+\item If $\pi_b=\pi_c$, then conditionally on $b+c=s$ the count $b$ has the binomial distribution $\Bin(s,1/2)$.
+\item The difference of the two accuracies is $(b-c)/m$, with variance $\bigl(\pi_b+\pi_c-(\pi_b-\pi_c)^2\bigr)/m$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+Each item falls, independently of the others, into one of four categories: both correct, only the first correct, only the second correct, both wrong. Conditionally on which items are discordant, each discordant item is of the first kind with probability $\pi_b/(\pi_b+\pi_c)$, independently of the others; under $\pi_b=\pi_c$ this probability is $1/2$, which proves (i). For (ii), write the difference of accuracies as $\frac1m\sum_iX_i$ with $X_i=1$ for a discordance of the first kind, $-1$ for one of the second kind and $0$ otherwise. Then $\E X_i=\pi_b-\pi_c$ and $\E X_i^2=\pi_b+\pi_c$, so $\Var X_i=\pi_b+\pi_c-(\pi_b-\pi_c)^2$, and the mean of $m$ independent copies has $1/m$ of this variance.
+\end{proof}
+
+Two classifiers of similar accuracy usually agree on most items, so $\pi_b+\pi_c$ is small and the paired variance in (ii) is far below the unpaired $\bigl(p_1(1-p_1)+p_2(1-p_2)\bigr)/m$.
+
+\section{Many comparisons}\label{sec:toolkit:multiple}
+
+Let $H_1,\dots,H_m$ be null hypotheses with valid $p$-values $p_1,\dots,p_m$, let $I_0$ be the set of true nulls and $m_0=\abs{I_0}$. A procedure rejects some of the hypotheses; let $R$ be the number of rejections and $V$ the number of true nulls among them. The \term{family-wise error rate}\index{family-wise error rate} is $\Prob(V\ge1)$, and the \term{false discovery rate}\index{false discovery rate} is $\E[V/\max(R,1)]$.
+
+\begin{proposition}[Bonferroni]\label{thm:toolkit:bonferroni}
+Rejecting $H_i$ when $p_i\le\alpha/m$ gives a family-wise error rate at most $m_0\alpha/m\le\alpha$, whatever the dependence between the $p$-values.
+\end{proposition}
+
+\begin{proof}
+By the union bound and validity, $\Prob(V\ge1)\le\sum_{i\in I_0}\Prob(p_i\le\alpha/m)\le m_0\alpha/m$.
+\end{proof}
+
+\begin{theorem}[Holm's procedure]\label{thm:toolkit:holm}\index{Holm's procedure}
+Order the $p$-values as $p_{(1)}\le\dots\le p_{(m)}$. Let $j$ be the smallest index with $p_{(j)}>\alpha/(m-j+1)$, reject the hypotheses with the $j-1$ smallest $p$-values, and reject all of them if there is no such index. Then the family-wise error rate is at most $\alpha$, whatever the dependence between the $p$-values.
+\end{theorem}
+
+\begin{proof}
+If $m_0=0$ there is no true null to reject. Otherwise consider the event $E$ that every true null has $p_i>\alpha/m_0$; by the union bound its probability is at least $1-m_0\cdot\alpha/m_0=1-\alpha$. On $E$, let $j_0$ be the first position in the ordering that holds a true null. The positions before it hold false nulls only, so $j_0\le m-m_0+1$, that is $m-j_0+1\ge m_0$, and therefore
+\[
+p_{(j_0)}>\alpha/m_0\ge\alpha/(m-j_0+1).
+\]
+The procedure stops at or before position $j_0$ and rejects no true null. The family-wise error rate is at most $\Prob(E^c)\le\alpha$.
+\end{proof}
+
+\begin{theorem}[Benjamini and Hochberg]\label{thm:toolkit:bh}\index{Benjamini--Hochberg procedure}
+Let $R=\max\{k\ge1:p_{(k)}\le\alpha k/m\}$, or $R=0$ if no such $k$ exists, and reject the $R$ hypotheses with the smallest $p$-values. If each true-null $p$-value is valid and independent of all the other $p$-values, then the false discovery rate is at most $m_0\alpha/m\le\alpha$.
+\end{theorem}
+
+\begin{proof}
+The plan is to write the false discovery rate as a sum over true nulls, and to decouple each true null's $p$-value from the number of rejections by setting it to zero.
+
+Write $N(k)=\#\{j:p_j\le\alpha k/m\}$. Since $p_{(k)}\le\alpha k/m$ exactly when $N(k)\ge k$, we have $R=\max\{k:N(k)\ge k\}$. A hypothesis $H_i$ is rejected exactly when $p_i\le\alpha R/m$: the rejected $p$-values are at most $p_{(R)}\le\alpha R/m$, and a $p$-value $p_i\le\alpha R/m$ outside the $R$ smallest would give $p_{(R+1)}\le\alpha(R+1)/m$, against the maximality of $R$. Hence
+\begin{equation}\label{eq:toolkit:fdr}
+\E\Bigl[\frac{V}{\max(R,1)}\Bigr]=\sum_{i\in I_0}\sum_{k=1}^m\frac1k\,\Prob\bigl(p_i\le\alpha k/m,\ R=k\bigr).
+\end{equation}
+
+Fix $i\in I_0$ and let $R^{(i)}$ and $N^{(i)}$ be computed with $p_i$ replaced by $0$; then $N^{(i)}(k)=N(k)+\ind\{p_i>\alpha k/m\}$, and $R^{(i)}\ge1$ always. We claim that on the event $\{p_i\le\alpha k/m\}$ the equalities $R=k$ and $R^{(i)}=k$ are equivalent. On that event $N^{(i)}(k')=N(k')$ for every $k'\ge k$. If $R=k$, then $N^{(i)}(k)=N(k)\ge k$, and for $k'>k$, $N^{(i)}(k')=N(k')<k'$, so $R^{(i)}=k$. If $R^{(i)}=k$, then $N(k)=N^{(i)}(k)\ge k$, and for $k'>k$, $N(k')\le N^{(i)}(k')<k'$, so $R=k$.
+
+The variable $R^{(i)}$ depends only on the $p$-values other than $p_i$, which are independent of $p_i$. By the claim and validity,
+\[
+\Prob\bigl(p_i\le\alpha k/m,\ R=k\bigr)=\Prob\bigl(p_i\le\alpha k/m\bigr)\,\Prob\bigl(R^{(i)}=k\bigr)\le\frac{\alpha k}m\,\Prob\bigl(R^{(i)}=k\bigr).
+\]
+Substituting into \eqref{eq:toolkit:fdr}, the inner sum is at most $\frac\alpha m\sum_k\Prob(R^{(i)}=k)=\alpha/m$, and the outer sum over the $m_0$ true nulls gives $m_0\alpha/m$.
+\end{proof}
+
+Under arbitrary dependence the same procedure run at level $\alpha/\sum_{k=1}^m k^{-1}$ controls the false discovery rate at $\alpha$ \parencite{BenjaminiYekutieli2001}. The original papers are \textcite{Holm1979} and \textcite{BenjaminiHochberg1995}.
+
+\section{The best of several draws}\label{sec:toolkit:orderstat}
+
+\begin{proposition}[Order statistics]\label{thm:toolkit:orderstat}\index{order statistics}\index{expected maximum}
+Let $Y_1,\dots,Y_k$ be independent with distribution function $F$ and $\E\abs{Y_1}<\infty$, and let $M_k=\max_iY_i$.
+\begin{enumerate}
+\item $\Prob(M_k\le x)=F(x)^k$; when $F$ is continuous, the $q$-quantile of $M_k$ is the $q^{1/k}$-quantile of $F$.
+\item $\E M_k=\int_0^\infty\bigl(1-F(x)^k\bigr)\dd x-\int_{-\infty}^0F(x)^k\dd x$.
+\item For standard normal draws, $e_k=\E M_k$ satisfies $e_k\le\sqrt{2\ln k}$ for every $k\ge1$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+Part (i) is independence: $\{M_k\le x\}$ is the intersection of the $k$ events $\{Y_i\le x\}$. If $F$ is continuous, then $F(x)^k=q$ exactly when $F(x)=q^{1/k}$. Part (ii) is the identity $\E Z=\int_0^\infty\Prob(Z>x)\dd x-\int_{-\infty}^0\Prob(Z\le x)\dd x$, valid for every integrable $Z$, applied to $Z=M_k$, which is integrable because $\abs{M_k}\le\sum_i\abs{Y_i}$. For (iii) the case $k=1$ is $e_1=0$. For $k\ge2$ and $t>0$, Jensen's inequality and the bound of a maximum by a sum give
+\[
+e^{te_k}\le\E e^{tM_k}\le\sum_{i=1}^k\E e^{tY_i}=k\,e^{t^2/2},
+\]
+so $e_k\le(\ln k)/t+t/2$; the choice $t=\sqrt{2\ln k}$ gives $e_k\le\sqrt{2\ln k}$.
+\end{proof}
+
+The bound is tight to leading order: $e_k/\sqrt{2\ln k}\to1$, and after centering by $b_k$ and scaling by $a_k=1/\sqrt{2\ln k}$ the maximum of $k$ standard normals converges to the Gumbel distribution $\exp(-e^{-x})$, with $b_k=\sqrt{2\ln k}-(\ln\ln k+\ln4\pi)/(2\sqrt{2\ln k})$ \parencite[Theorem~1.5.3]{LeadbetterLindgrenRootzen1983}. The convergence is slow, and for the small $k$ of practice the exact values of $e_k$ should be computed from (ii) by numerical integration; \textcite{DavidNagaraja2003} treat order statistics in general.
+
+\section{The delta method}\label{sec:toolkit:delta}
+
+\begin{theorem}[Delta method]\label{thm:toolkit:delta}\index{delta method}
+Let $\hat\theta_n$ be estimators of $\theta\in\R^p$ with $\sqrt n(\hat\theta_n-\theta)$ converging in distribution to $\cN(0,\Sigma)$, and let $g:\R^p\to\R$ be differentiable at $\theta$. Then $\sqrt n\bigl(g(\hat\theta_n)-g(\theta)\bigr)$ converges in distribution to $\cN\bigl(0,\nabla g(\theta)^\top\Sigma\,\nabla g(\theta)\bigr)$.
+\end{theorem}
+
+\begin{proof}
+The plan is a first-order expansion whose remainder the factor $\sqrt n$ cannot rescue. Differentiability at $\theta$ means that $g(\theta+h)=g(\theta)+\nabla g(\theta)^\top h+\norm h\,\rho(h)$ for a function $\rho$ with $\rho(0)=0$ that is continuous at $0$. With $h_n=\hat\theta_n-\theta$,
+\[
+\sqrt n\bigl(g(\hat\theta_n)-g(\theta)\bigr)=\nabla g(\theta)^\top\sqrt n\,h_n+\norm{\sqrt n\,h_n}\,\rho(h_n).
+\]
+The first term converges in distribution to $\cN(0,\nabla g^\top\Sigma\nabla g)$ by the continuous mapping theorem. In the second, $\norm{\sqrt nh_n}$ is bounded in probability because $\sqrt nh_n$ converges in distribution, and $\rho(h_n)\to0$ in probability because $h_n=(\sqrt nh_n)/\sqrt n\to0$ in probability and $\rho$ is continuous at $0$. Their product tends to $0$ in probability, and Slutsky's lemma completes the proof.
+\end{proof}
+
+For example, the compute-optimal allocation exponent of \cref{ch:fitting} is $a=\alpha_D/(\alpha_N+\alpha_D)$, with gradient $(-\alpha_D,\alpha_N)/(\alpha_N+\alpha_D)^2$ in $(\alpha_N,\alpha_D)$. If the fitted exponents have covariance $\Sigma$, the delta method gives
+\[
+\Var\hat a\approx\frac{\alpha_D^2\Sigma_{NN}-2\alpha_N\alpha_D\Sigma_{ND}+\alpha_N^2\Sigma_{DD}}{(\alpha_N+\alpha_D)^4},
+\]
+so a positive correlation between the two fitted exponents makes $\hat a$ more precise than either exponent alone.
+
+\section{Nonlinear least squares}\label{sec:toolkit:nls}
+
+In a nonlinear regression $y_i=f(x_i;\beta)+\varepsilon_i$, $i=1,\dots,n$, with parameters $\beta\in\R^p$ and independent errors of mean zero and variance $\sigma^2$, the least-squares estimate $\hat\beta$ minimizes $\sum_i(y_i-f(x_i;\beta))^2$. Let $J$ be the $n\times p$ Jacobian with entries $\partial f(x_i;\beta)/\partial\beta_j$.
+
+\begin{theorem}[Asymptotics of nonlinear least squares]\label{thm:toolkit:nls}\index{nonlinear least squares}
+Suppose that $\beta$ is identifiable, that $f$ is twice continuously differentiable in $\beta$ with suitably bounded derivatives, and that $J^\top J/n$ converges to a positive definite matrix $V$. Then $\hat\beta$ is consistent and $\sqrt n(\hat\beta-\beta)$ converges in distribution to $\cN(0,\sigma^2V^{-1})$. In practice the covariance of $\hat\beta$ is estimated by $\hat\sigma^2(\hat J^\top\hat J)^{-1}$, with $\hat\sigma^2$ the residual sum of squares divided by $n-p$ and $\hat J$ the Jacobian at $\hat\beta$.
+\end{theorem}
+
+\begin{proofsketch}
+Expanding the normal equations $\hat J^\top(y-f(\hat\beta))=0$ to first order around $\beta$ gives $\hat\beta-\beta\approx(J^\top J)^{-1}J^\top\varepsilon$, a linear function of the errors to which the central limit theorem applies; the regularity conditions control the remainder. \Textcite{Jennrich1969} gives the proof, and \textcite{SeberWild1989} the practice.
+\end{proofsketch}
+
+Three practical consequences are used in \cref{ch:fitting}. First, if $J^\top J$ is nearly singular, some combination of parameters is barely identified and its variance is large; the condition number of $J^\top J$ measures this. Second, the objective is not convex, so a fit should be started from a grid of initial values and checked for convergence. Third, with a robust loss such as Huber's \parencite{Huber1964}, which is quadratic for small residuals and linear for large ones, the covariance becomes the sandwich $A^{-1}BA^{-1}$, with $A$ the expected Hessian of the loss and $B$ the covariance of its gradient \parencite[Chapter~5]{vanderVaart1998}, and the formula above no longer applies. When in doubt, bootstrap the runs (\cref{sec:toolkit:resampling}).
+
+\section{Variance components and designed experiments}\label{sec:toolkit:design}
+
+In the \term{one-way random-effects model}\index{random effects}\index{variance components}, $Y_{ij}=\mu+a_i+e_{ij}$ for $I$ groups and $J$ runs per group, with all $a_i$ and $e_{ij}$ independent, the $a_i$ of mean zero and variance $\sigma_a^2$, and the $e_{ij}$ of mean zero and variance $\sigma_e^2$. A group may be an initialization seed with $J$ data orders, or a hardware configuration with $J$ seeds. The mean squares are
+\[
+\mathrm{MS}_A=\frac{J}{I-1}\sum_{i=1}^I(\bar Y_{i\cdot}-\bar Y_{\cdot\cdot})^2,\qquad
+\mathrm{MS}_E=\frac1{I(J-1)}\sum_{i=1}^I\sum_{j=1}^J(Y_{ij}-\bar Y_{i\cdot})^2.
+\]
+
+\begin{theorem}[Variance components]\label{thm:toolkit:anova}
+In the one-way random-effects model with $I,J\ge2$, $\E\,\mathrm{MS}_E=\sigma_e^2$ and $\E\,\mathrm{MS}_A=\sigma_e^2+J\sigma_a^2$. Hence $\hat\sigma_e^2=\mathrm{MS}_E$ and $\hat\sigma_a^2=(\mathrm{MS}_A-\mathrm{MS}_E)/J$ are unbiased.
+\end{theorem}
+
+\begin{proof}
+Both statements follow from one fact: for independent $Z_1,\dots,Z_r$ with common variance $v$, $\E\sum_l(Z_l-\bar Z)^2=(r-1)v$. Within group $i$, $Y_{ij}-\bar Y_{i\cdot}=e_{ij}-\bar e_{i\cdot}$, so the inner sum in $\mathrm{MS}_E$ is the sum of squared deviations of $J$ independent errors and has expectation $(J-1)\sigma_e^2$; summing over the $I$ groups and dividing by $I(J-1)$ gives $\sigma_e^2$. The group means $\bar Y_{i\cdot}=\mu+a_i+\bar e_{i\cdot}$ are independent with common variance $\sigma_a^2+\sigma_e^2/J$, so $\E\sum_i(\bar Y_{i\cdot}-\bar Y_{\cdot\cdot})^2=(I-1)(\sigma_a^2+\sigma_e^2/J)$, and multiplying by $J/(I-1)$ gives $J\sigma_a^2+\sigma_e^2$.
+\end{proof}
+
+The estimate $\hat\sigma_a^2$ can be negative when the true component is small; it is then reported as zero, or the components are estimated by restricted maximum likelihood \parencite{SearleCasellaMcCulloch1992}. The crossed two-way design used for seeds in \cref{ch:seeds} is analyzed in the same way.
+
+In a \term{two-level factorial design}\index{factorial design}, each of $k$ factors is set to a low level, coded $-1$, or a high level, coded $+1$, every one of the $2^k$ combinations is run $r$ times, and $N=r2^k$. For a nonempty set $S$ of factors and a run with levels $x_1,\dots,x_k$, put $c_S=\prod_{j\in S}x_j$. The \term{effect} of $S$ is estimated by the mean outcome over the runs with $c_S=+1$ minus the mean over the runs with $c_S=-1$: a main effect when $S$ has one factor, an interaction when it has more \parencite{BoxHunterHunter2005}.
+
+\begin{proposition}[Factorial contrasts]\label{thm:toolkit:factorial}
+If the runs of a full two-level factorial design are independent with common variance $\sigma^2$, the $2^k-1$ effect estimates are uncorrelated and each has variance $4\sigma^2/N$.
+\end{proposition}
+
+\begin{proof}
+Each sign $c_S$ takes the value $+1$ on half of the runs, so the estimate of the effect of $S$ is $\hat\theta_S=\frac2N\sum_nc_S(n)Y_n$, where $n$ runs over all runs. Its variance is $\frac4{N^2}\sum_nc_S(n)^2\sigma^2=4\sigma^2/N$. For two different sets $S$ and $T$, $c_S c_T=c_{S\triangle T}$ because $x_j^2=1$, and the symmetric difference $S\triangle T$ is nonempty; in a full factorial design every nonempty sign takes each value on exactly half of the runs, so
+\[
+\Cov(\hat\theta_S,\hat\theta_T)=\frac{4\sigma^2}{N^2}\sum_nc_{S\triangle T}(n)=0.\qedhere
+\]
+\end{proof}
+
+Two further principles of design, due to \textcite{Fisher1935}, complete the toolkit. \emph{Randomize} the order and placement of runs (which machine, which time, which batch of the queue), so that drifts and hidden nuisance variables cannot line up with the treatment. \emph{Block} on known nuisance variables, comparing treatments within blocks: running both arms with the same seeds, or evaluating both on the same test items, is blocking, and its analysis is the paired one of \cref{sec:toolkit:mean}. \Textcite{Montgomery2017} is a standard textbook.
+
+\section{Sample sizes and power}\label{sec:toolkit:power}
+
+\begin{proposition}[Runs needed for a comparison]\label{thm:toolkit:power}\index{power}\index{sample size}
+Two arms have independent normal outcomes with common known standard deviation $\sigma$ and $n$ runs each. The two-sided level-$\alpha$ test that rejects $\Delta=0$ when $\abs{Z}>z_{1-\alpha/2}$, with $Z=(\bar Y_1-\bar Y_2)/(\sigma\sqrt{2/n})$, has power
+\[
+\Phi(\delta-z_{1-\alpha/2})+\Phi(-\delta-z_{1-\alpha/2}),\qquad \delta=\abs\Delta\sqrt{n/2}/\sigma,
+\]
+at the effect $\Delta$. In particular, power at least $\pi$ is guaranteed by $n\ge2\sigma^2(z_{1-\alpha/2}+z_\pi)^2/\Delta^2$.
+\end{proposition}
+
+\begin{proof}
+The statistic $Z$ is normal with variance $1$ and mean $\Delta\sqrt{n/2}/\sigma$, so
+$\Prob(\abs Z>z_{1-\alpha/2})=\Phi(\delta-z_{1-\alpha/2})+\Phi(-\delta-z_{1-\alpha/2})$, an expression that depends on $\Delta$ only through $\delta$. The second term is nonnegative, so the power is at least $\Phi(\delta-z_{1-\alpha/2})$, which is at least $\pi$ when $\delta\ge z_{1-\alpha/2}+z_\pi$; solving for $n$ gives the stated bound.
+\end{proof}
+
+For example, to detect a gain of $\Delta=0.3$ points with a run-to-run standard deviation of $\sigma=0.2$ points at level $0.05$ with power $0.8$ ($z_{0.975}\approx1.960$, $z_{0.8}\approx0.842$), $n\ge2\cdot0.04\cdot2.802^2/0.09\approx6.98$, so seven runs per arm suffice. With $\sigma$ estimated from the runs, the $t$ quantiles replace the normal ones and the answer rises slightly; with paired runs, $2\sigma^2$ is replaced by $\Var(Y_1-Y_2)$. \Textcite{Cohen1988} is the classic reference on power.
+
+\section{Rank statistics}\label{sec:toolkit:ranks}
+
+For $n$ pairs $(X_i,Y_i)$ without ties, a pair of indices $i<j$ is \term{concordant} if $(X_i-X_j)(Y_i-Y_j)>0$ and discordant otherwise. With $C$ concordant and $D$ discordant pairs, \term{Kendall's $\tau$}\index{Kendall's tau} is $\hat\tau=(C-D)/\binom n2\in[-1,1]$. It depends on the data only through their ranks, so it is unchanged by monotone transformations of either variable.
+
+\begin{proposition}[Kendall's $\tau$ under independence]\label{thm:toolkit:kendall}
+If $X$ and $Y$ are independent with continuous distributions, then $\E\hat\tau=0$ and $\Var\hat\tau=2(2n+5)/(9n(n-1))$.
+\end{proposition}
+
+\begin{proofsketch}
+For $i\ne j$ the differences $X_i-X_j$ and $Y_i-Y_j$ are independent, continuous and symmetric about zero, so each pair is concordant with probability $1/2$ and $\E\hat\tau=0$. The variance is a computation with the dependence between pairs that share an index; see \textcite{Kendall1938} and \textcite{Kendall1970}.
+\end{proofsketch}
+
+When the runs of a sweep fall into strata, a correlation computed within each stratum and then averaged, the \emph{granulated} coefficient of \textcite{JiangEtAl2020}, removes the part of the pooled correlation that the stratifying variable creates (\cref{ch:sharpness}).
+
+The \term{probability of improvement}\index{probability of improvement} of one arm over another is $\theta=\Prob(X>Y)+\frac12\Prob(X=Y)$ for independent outcomes $X$ and $Y$ of the two arms.
+
+\begin{proposition}[Mann--Whitney estimate]\label{thm:toolkit:mannwhitney}
+For independent samples $X_1,\dots,X_{n_1}$ and $Y_1,\dots,Y_{n_2}$ of the two arms,
+\[
+\hat\theta=\frac1{n_1n_2}\sum_{i=1}^{n_1}\sum_{j=1}^{n_2}\Bigl(\ind\{X_i>Y_j\}+\tfrac12\ind\{X_i=Y_j\}\Bigr)
+\]
+is unbiased for $\theta$. If the two arms have the same continuous distribution, then $\theta=1/2$ and $\Var\hat\theta=(n_1+n_2+1)/(12n_1n_2)$.
+\end{proposition}
+
+\begin{proof}
+Each pair $(X_i,Y_j)$ has the distribution of $(X,Y)$, so each summand has expectation $\theta$, and so has their average. Under a common continuous distribution, $X$ and $Y$ are exchangeable and tie with probability zero, so $\theta=1/2$. The variance is that of the Mann--Whitney statistic $U=n_1n_2\hat\theta$, computed by \textcite{MannWhitney1947}.
+\end{proof}
+
+\section{Proportions near zero}\label{sec:toolkit:binomial}
+
+Let $X\sim\Bin(m,p)$ count the successes on $m$ independent test items. For $x<m$ let $p_U(x)$ be the solution $q$ of $\Prob_q(X\le x)=\alpha/2$, and put $p_U(m)=1$; for $x>0$ let $p_L(x)$ be the solution $q$ of $\Prob_q(X\ge x)=\alpha/2$, and put $p_L(0)=0$.
+
+\begin{proposition}[Binomial intervals near zero]\label{thm:toolkit:clopper}\index{Clopper--Pearson interval}\index{rule of three}
+\begin{enumerate}
+\item The interval $[p_L(X),p_U(X)]$ of \textcite{ClopperPearson1934} contains $p$ with probability at least $1-\alpha$, for every $p$.
+\item If $X=0$, then the one-sided upper confidence bound at level $1-\alpha$, which is the solution $q$ of $(1-q)^m=\alpha$, equals $1-\alpha^{1/m}$; it is at most $\ln(1/\alpha)/m$, about $3/m$ at $\alpha=0.05$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+For (i), fix $p$. For $x<m$ the probability $\Prob_q(X\le x)$ is continuous and strictly decreasing in $q$, so $p_U(x)<p$ holds exactly when $\Prob_p(X\le x)<\alpha/2$. Let $x^\star$ be the largest $x$ with $\Prob_p(X\le x)<\alpha/2$, or $-1$ if there is none; the cumulative probabilities increase in $x$, so the event $\{p_U(X)<p\}$ is contained in $\{X\le x^\star\}$, whose probability is less than $\alpha/2$. The same argument with $\Prob_q(X\ge x)$, which increases in $q$ for $x>0$, gives $\Prob_p(p_L(X)>p)<\alpha/2$, and the union bound gives the coverage. For (ii), $(1-q)^m$ decreases from $1$ to $0$ on $[0,1]$ and equals $\alpha$ at $q=1-\alpha^{1/m}=1-e^{-\ln(1/\alpha)/m}$, which is at most $\ln(1/\alpha)/m$ because $1-e^{-t}\le t$; and $\ln20\approx3.0$.
+\end{proof}
+
+The rule of three is the subject of a short paper by \textcite{HanleyLippmanHand1983}. The Clopper--Pearson interval is conservative; the interval of \textcite{Wilson1927} is shorter and has close to nominal coverage, and the usual normal-approximation interval $\hat p\pm z_{1-\alpha/2}\sqrt{\hat p(1-\hat p)/m}$ fails badly near $0$ and $1$, where it can even have zero width \parencite{BrownCaiDasGupta2001}.
+
+\notesandrefs
+
+The tools of this appendix are classical, and each has a standard source. For the $t$ distribution and the theory of tests, \textcite{CasellaBerger2002} and \textcite{LehmannRomano2005}; for the bootstrap, \textcite{Efron1979} and \textcite{EfronTibshirani1993}; for asymptotics, including the delta method and M-estimators, \textcite{vanderVaart1998}; for designed experiments, \textcite{Fisher1935}, \textcite{BoxHunterHunter2005} and \textcite{Montgomery2017}; for variance components, \textcite{SearleCasellaMcCulloch1992}; for extremes, \textcite{LeadbetterLindgrenRootzen1983}.
+
+\paragraph{Translating the literature.} Statistics texts write $\bar X$, $s$ and $n$ where this book writes $\bar Y$, $S$ and $n$, and call the arms of an experiment treatments or groups. Machine learning papers often report ``mean $\pm$ standard deviation''; the standard deviation describes the spread of runs, while the half-width of an interval describes the uncertainty of the mean, and the two differ by a factor of about $\sqrt n$ for large $n$. What \textcite{DodgeEtAl2019} call expected validation performance is the expected maximum $\E M_k$ of \cref{thm:toolkit:orderstat}.
+
+\printchapterbib
+\end{refsection}

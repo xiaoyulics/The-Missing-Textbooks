@@ -1,0 +1,411 @@
+% Chapter 2 of Deep Learning as an Experimental Science: why a fixed seed does not fix a run.
+\newcommand{\instabilityfl}{\operatorname{fl}}
+
+\labchapter{Instability}{Why a fixed seed does not fix a run}{Fixing the random seed makes a training run reproducible.}{Common practice in code and papers; framework documentation promises less}{Narrowed: a seed repeats a run only on an identical stack of code, kernels, and hardware, and where training is unstable, a one-bit change reproduces most of the seed-to-seed variability.}{ch:instability}
+\begin{refsection}[chapters/02-instability.bib]
+
+\begin{chaptersummary}
+Setting every random seed is the standard recipe for a reproducible training run, and on one machine with deterministic kernels it does repeat a run bit for bit. Another GPU, library version, batch size, or order of summation can change the last bits of the arithmetic, and \textcite{SummersDinneen2021} found that moving one initial weight of a ResNet by the smallest representable amount produces as much run-to-run variability as all sources of randomness together. We prove how far a reordered floating-point sum can move, that training which contracts forgets such differences while training which expands amplifies them, and what a perturbed twin of a run measures about the run distribution. In the laboratory a fixed seed repeats a digits network exactly; a one-bit twin stays identical in function when the labels are clean and becomes largely a new draw when a fifth of them are noisy.
+\end{chaptersummary}
+
+\section{The claim: set every seed}\label{sec:instability:claim}
+
+Training code begins by seeding every random number generator it touches, and frameworks add switches for deterministic kernels: in PyTorch, one call makes operations with nondeterministic implementations use deterministic ones or raise an error, and a flag stops the convolution library from timing several algorithms and keeping the fastest \parencite{PyTorchReproducibility}.\sidenote{The call is \texttt{torch.\allowbreak use\_\allowbreak deterministic\_\allowbreak algorithms(True)}, the flag \texttt{torch.\allowbreak backends.\allowbreak cudnn.\allowbreak benchmark = False}.} A paper then states that all seeds were fixed, and its reader takes the reported number to be a reproducible fact about the method.
+
+The documentation promises less. PyTorch does not guarantee reproducible results across releases, commits, or platforms, nor between CPU and GPU with identical seeds, and warns that deterministic operations are often slower \parencite{PyTorchReproducibility}. NVIDIA's matrix library cuBLAS repeats its results bit for bit only within one toolkit version, on GPUs of one architecture with the same number of multiprocessors \parencite{NvidiaCuBLAS}, and the convolution library cuDNN lists routines, among them algorithms for the backward pass of convolution and of max pooling, whose atomic operations make the rounding differ from run to run \parencite{NvidiaCuDNN}.\sidenote{An atomic addition lets many threads add into one memory location without losing updates. The additions happen in the order in which the threads arrive, which changes from run to run.}
+
+The strongest version of the case was made carefully. \Textcite{NagarajanEtAl2018}, in a preprint, built a deterministic implementation of deep Q-learning, with a seeded generator for each source of randomness and PyTorch's deterministic GPU mode on, and released one source at a time.
+
+\begin{finding}[\textcite{NagarajanEtAl2018}]\label[finding]{fd:instability:dqn}
+Five runs of deep Q-learning on the game Breakout, 20 million steps each, with every seed fixed and deterministic GPU operations, produced identical learning curves. With one source of randomness released and five runs per source, the standard deviation of the final score relative to its mean was 12.4\% for nondeterministic GPU operations, 6.7\% for the sampling of minibatches, 16.9\% for exploration, 37.7\% for a stochastic environment, and 43.6\% for the initial weights.
+\end{finding}
+
+The authors separated \emph{replicability}, repeating an experiment exactly, from \emph{reproducibility}, obtaining the same results with minor differences, and called deterministic implementations necessary but not sufficient for the first: in their supplementary material, the same deterministic implementation produced different learning curves on two machines with different GPUs, operating systems, and library versions, while on each machine it repeated itself exactly.
+
+The field received the shorter version: fix the seeds, and the result is reproducible. In a survey of 901 researchers and practitioners, \textcite{PhamEtAl2020} found that 83.8\% were unaware of, or unsure about, variability introduced by the deep learning libraries themselves, and only 10.4\% expected two runs with the same seeds to differ in accuracy by 2 points or more; of 225 recent papers that trained deep networks, 19.5\% (margin 3 points) reported several runs of one configuration.
+
+Much of the practice is right. On a fixed stack of code, libraries, and hardware, exact repetition is possible and valuable: a changed number means changed code, which makes debugging possible, and a model or a published number can be regenerated for an audit. The labs of this book rely on it. Two questions remain: does the repetition survive a change of machine, library, or batch layout, and is the repeated number representative of the method? The first is about arithmetic, the second about the dynamics of training.
+
+\section{The experiment: six groups of five runs}\label{sec:instability:experiment}
+
+The design of \textcite{NagarajanEtAl2018} is the cleanest experiment behind the practice: it builds a pipeline in which nothing varies and then lets one source of randomness vary at a time.
+
+\begin{experiment}[Nagarajan, Warnell and Stone 2018]
+\field{question}{How much of the variability of a deep Q-learning agent does each source of randomness produce?}
+\field{units}{training runs of deep Q-learning on Atari Breakout, 20 million steps each}
+\field{treatment}{the one source of randomness left uncontrolled}
+\field{levels}{none; GPU operations; sticky actions in the environment; exploration; initial weights; minibatch sampling}
+\field{held fixed}{all other seeds; one machine (GeForce GTX 1080, PyTorch 0.3.0, CUDA 8.0, cuDNN 7.0); hyperparameters}
+\field{response}{mean score over 100 greedy evaluation episodes from fixed start states, at the end of training and at the best checkpoint}
+\field{replicates}{five runs per group}
+\field{analysis}{standard deviation and relative standard deviation in each group; tests of equal variance between groups at level 0.1}
+\end{experiment}
+
+The design establishes that determinism can be reached on one machine and that releasing a single source spreads the outcome. It cannot show that the deterministic numbers recur on another machine, and the authors' own comparison of two machines shows that they do not. It ranks the sources only coarsely: for normal scores, the 95\% interval for $\sigma$ from a sample standard deviation $S$ of five runs extends from $0.60S$ to $2.87S$ (\cref{ex:instability:sdinterval}), so the GPU and minibatch groups, at 12.4\% and 6.7\%, cannot be told apart, and the one difference in variance that the authors report at level 0.1 is between the GPU group and the initialization group.
+
+Most important, the design cannot tell a source from the training that amplifies it. Each row of \cref{fd:instability:dqn} varies a source and, with it, the size and the time of its first effect: the initial weights differ at step zero by a full random draw, while the runs of the GPU group start from last-bit differences and, as the authors observed, share identical experiences for tens of thousands of steps. If training amplifies every perturbation, then each row measures the amplification as much as the source. The post-mortem separates the two.
+
+\section{The post-mortem: the stack and the dynamics}\label{sec:instability:postmortem}
+
+A fixed seed fixes the random numbers. It does not fix the arithmetic, which depends on the stack, and it does not fix the outcome, which depends on what training does with small differences.
+
+\paragraph{The stack.} Floating-point addition is not associative, so a change in the order in which a reduction adds its terms can change the last bits of the result (\cref{sec:instability:arithmetic}). On parallel hardware the order changes often: atomic additions complete in the order in which threads arrive, autotuning can choose a different algorithm in each run \parencite{PhamEtAl2020}, libraries choose the blocking of a matrix product by the shapes of the matrices and hence by the batch size, and data-parallel training adds the gradients of several devices in an order set by their number. \Textcite{PhamEtAl2020} trained a WideResNet-28-10 on CIFAR-100 sixteen times on one GPU, with the same libraries and every algorithmic source of randomness fixed: the test accuracies ranged from 77.3\% to 80.2\%, and the accuracy on one class, camel, from 38.1\% to 90.5\%.
+
+\Textcite{ZhuangEtAl2022} separated the randomness that seeds control from that of the tooling: for ResNet-50 on ImageNet, two runs disagreed on 14.68\% of the test predictions with tooling noise alone and on 14.89\% with seed noise alone. Tensor processing units, deterministic by design, removed the tooling noise,\sidenote{A TPU multiplies matrices with systolic arrays under a single-threaded, deterministic model of computation \parencite{ZhuangEtAl2022}.} but a different order of the examples inside a batch still changed the trained models, even when the whole training set formed one batch, because that order is the order in which the gradient is accumulated. Deterministic GPU kernels took up to 7.46 times the GPU time of the default ones.\sidenote{On a P100 with $7\times7$ convolutions; on a V100 and a T4 the largest factors were 2.41 and 1.96.} Even a kernel without atomic operations can return different bits for the same input in batches of different sizes. \Textcite{He2025}, in a blog post, traced the nondeterminism of language-model inference servers to this missing \term{batch invariance}\index{batch invariance}: at temperature zero, 1000 completions of one prompt gave 80 distinct texts, and batch-invariant kernels made all 1000 identical.
+
+\paragraph{The dynamics.} \Textcite{SummersDinneen2021} designed the experiment that separates a source from its amplification. They trained a ResNet-14 on CIFAR-10 for 500 epochs (cosine schedule from a learning rate of 0.4, batch size 512, momentum 0.9), 100 runs for each source of randomness with the others held fixed: the initialization, the shuffling of the data, the data augmentation, and the nondeterministic cuDNN kernels, alone and in combinations. Then they added a source of their own: in each run, one randomly chosen initial weight was moved to the next representable number, a change of the order of $10^{-10}$.
+
+\begin{finding}[\textcite{SummersDinneen2021}]\label[finding]{fd:instability:bit}
+ResNet-14 on CIFAR-10, 100 runs per source: every source of randomness, alone or combined with others, gave a standard deviation of test accuracy between 0.21 and 0.26 percentage points, and two runs disagreed on 10.5\% to 10.7\% of the test images. Moving one initial weight to the next representable number gave 0.21 points and 10.6\%.
+\end{finding}
+
+They called the phenomenon the \term{instability}\index{instability of training} of training, by analogy with numerical stability: viewed end to end, training is ill-conditioned, so that, as they argued, every source of randomness that changes the weights at all inherits at least the variability of a one-bit change. When they released a source only after $N$ deterministic epochs, the variability of accuracy was nearly as large for $N=50$ as for $N=0$ and fell only gradually as the onset moved later.
+
+The paper also narrows its own claim. In a linear model a one-bit change altered no test prediction, and in a network with one convolutional hidden layer and in a small network on MNIST it reproduced about half of the disagreement that all sources produced together (\cref{tab:instability:bitratio}); the authors suggested that the degree of instability depends on the model, the data, and the degree of overfitting. \Textcite{Jordan2024} replicated the effect by multiplying a single weight by 1.001: in CIFAR-10 trainings of 128 epochs this alone produced an average disagreement of 5.14\%, against 5.19\% between runs with entirely different seeds, and in short trainings 7.0--7.5\% against about 8.5\%.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}llS[table-format=2.2]S[table-format=2.1]S[table-format=1.2]@{}}
+\toprule
+data & model & {all sources} & {one bit} & {ratio}\\
+\midrule
+CIFAR-10 & linear & 5.5 & 0.0 & 0.00\\
+CIFAR-10 & one convolutional hidden layer & 12.7 & 6.4 & 0.50\\
+MNIST & small convolutional network & 0.56 & 0.30 & 0.54\\
+CIFAR-10 & one fully connected hidden layer & 24.9 & 23.4 & 0.94\\
+CIFAR-10 & VGG-11 & 6.6 & 6.5 & 0.98\\
+CIFAR-10 & ResNet-14 & 10.7 & 10.6 & 0.99\\
+ImageNet & ResNet-18 & 20.7 & 20.6 & 1.00\\
+Penn Treebank & QRNN language model & 17.4 & 17.7 & 1.02\\
+\bottomrule
+\end{tabular}
+\caption{Disagreement between two runs, in percent of test images (of tokens for Penn Treebank), when every source of randomness varies and when only one initial weight moves by one unit in the last place; from Tables 2, 3, 4, 6, and 7 of \textcite{SummersDinneen2021}, 100 runs per row except 20 for ImageNet. The ratio of the two columns is ours.}
+\label{tab:instability:bitratio}
+\end{table}
+
+A related notion of stability concerns where training ends rather than what the network predicts. \Textcite{FrankleEtAl2020} trained two copies of a network from its state at step $k$ with different data orders and asked whether the error rises along the straight line between the end points: only LeNet on MNIST was stable in this sense from initialization, ResNet-20 on CIFAR-10 after 3\% of its training, and ResNet-50 on ImageNet after 20\%. \Textcite{FortEtAl2020} found that a chaotic early phase of two to three epochs determines the linearly connected basin in which training ends. Neither finding contradicts the onset experiment of Summers and Dinneen: two networks in one basin can still disagree on many test images. Stability in this sense returns in the lottery-ticket experiments of \cref{ch:ablations}.
+
+\begin{verdict}{narrowed}
+Fixing every seed does repeat a run bit for bit, but only with the same code, library versions, kernels, and hardware, as the documentation of PyTorch, cuBLAS, and cuDNN says. Where it holds, the repetition is fragile. In the deep networks of Summers and Dinneen, moving one initial weight by one unit in the last place reproduced nearly all of the disagreement between independently seeded runs, while in a linear model it changed nothing and in two small models it reproduced about half. A fixed seed selects one draw from the run distribution and makes it repeatable; it does not make it representative.
+\end{verdict}
+
+\section{The method: repeatable runs and reproducible results}\label{sec:instability:levels}
+
+Three different things go by the name of reproducibility, and a seed controls only the first.
+
+\begin{definition}[Three levels of reproducibility]\label[definition]{def:instability:levels}
+Fix a training procedure (code, data, and hyperparameters) and an \term{environment}\index{environment of a run} $\cE$: the hardware, the library versions, the kernels selected, the numbers of devices and threads, and the layout of the batches. A run with seeds $s$ in $\cE$ produces an outcome $Y(s,\cE)$.
+\begin{enumerate}
+\item The procedure is \term{repeatable}\index{reproducibility!bitwise (repeatability)} in $\cE$ if two runs with the same seeds in $\cE$ produce the same bits, for every $s$.
+\item It is \term{distributionally reproducible}\index{reproducibility!distributional} between $\cE$ and $\cE'$ if, with seeds drawn at random, $Y(s,\cE)$ and $Y(s,\cE')$ have the same distribution.
+\item A conclusion of an experiment, a decision computed from its runs such as ``method~1 beats method~2'', is \term{reproducible}\index{reproducibility!of a conclusion} if an independent replicate of the experiment, with fresh seeds and possibly in another environment, reaches the same decision with high probability.
+\end{enumerate}
+\end{definition}
+
+Repeatability is a property of a pipeline on a machine, distributional reproducibility a property of the run distribution, and the reproducibility of a conclusion a property of the design: the size of the effect, the number of runs, and the test (\cref{ch:seeds}). None implies the next: a repeatable pipeline can repeat an unrepresentative run, and a pipeline with nondeterministic kernels is not repeatable but can be distributionally reproducible. The three levels are close to what \textcite{GoodmanEtAl2016} call methods, results, and inferential reproducibility.\sidenote{The words are used inconsistently across fields, sometimes with the meanings of \emph{reproducible} and \emph{replicable} swapped \parencite{GoodmanEtAl2016}. \Textcite{NagarajanEtAl2018} use replicability for our repeatability.}
+
+\begin{remark}[What a seed buys]\label[remark]{rem:instability:seed}
+A repeatable pipeline makes three things possible. Debugging: a changed number means a changed input, which bisection over versions of the code finds. Audit: a reported model can be regenerated. Pairing: two arms of a comparison run with the same seeds share their initialization and data order, and if their outcomes are positively correlated, the variance $\Var(Y_1)+\Var(Y_2)-2\Cov(Y_1,Y_2)$ of their difference is smaller than with independent seeds (\cref{ch:seeds}); the correlation lasts only as long as the two runs stay close, which in unstable training is not long (\cref{sec:instability:dynamics}). A seed does not buy evidence: the number it repeats is one draw from the run distribution.
+\end{remark}
+
+\subsection{The arithmetic beneath a run}\label{sec:instability:arithmetic}
+
+A binary floating-point format with \term{precision}\index{floating-point arithmetic} $p$ represents a nonzero number as $\pm m\,2^{e}$, with an integer significand $2^{p-1}\le m<2^p$ and an integer exponent $e$ in a fixed range. Between 1 and 2 the representable numbers are $2^{1-p}$ apart; this spacing is one \term{unit in the last place}\index{unit in the last place (ulp)} (ulp) of 1, and half of it is the \term{unit roundoff}\index{unit roundoff} $u=2^{-p}$, about $6.0\times10^{-8}$ in binary32 (single precision), where $p=24$, and $3.9\times10^{-3}$ in the 16-bit format bfloat16. The IEEE 754 standard \parencite{IEEE2019} requires that, in its default mode, a sum be rounded to a nearest representable number, which gives the model from which rounding-error analysis starts \parencite[Chapter~2]{Higham2002}.
+
+\begin{assumption}[Standard model of floating-point addition]\label[assumption]{ass:instability:model}
+For floating-point numbers $a$ and $b$ whose sum does not overflow, the computed sum is $\instabilityfl(a+b)=(a+b)(1+\delta)$ for some $\delta$ with $\abs\delta\le u$.
+\end{assumption}
+
+The exact sum of two floating-point numbers is in general not representable, the rounded sum of several depends on which are added first, and so floating-point addition is not associative.
+
+\begin{example}[Three numbers]\label[example]{ex:instability:three}
+In binary32 let $x=(1,2^{-24},2^{-24})$. The exact sum $1+2^{-24}$ lies halfway between the neighbors $1$ and $1+2^{-23}$; the tie goes to the neighbor whose last bit is even, which is $1$, and adding the second $2^{-24}$ gives $1$ again. Added the other way, $2^{-24}+2^{-24}=2^{-23}$ exactly, and $1+2^{-23}$ is representable. The two orders give $1$ and $1+2^{-23}$: they differ in the last bit, by $2^{-23}=2u$.
+\end{example}
+
+Over a chain of operations the standard model compounds into products of factors $1+\delta$. For integers $m\ge0$ with $mu<1$ define $\gamma_m=mu/(1-mu)$.
+
+\begin{lemma}[Products of rounding factors]\label[lemma]{lem:instability:gamma}
+Let $m\ge1$ with $mu<1$. If $\abs{\delta_k}\le u$ for $k=1,\dots,m$, then $\prod_{k=1}^m(1+\delta_k)=1+\theta$ with $\abs\theta\le\gamma_m$.
+\end{lemma}
+
+\begin{proof}
+Each factor lies in $[1-u,1+u]$, an interval of positive numbers because $u\le mu<1$, so the product lies between $(1-u)^m$ and $(1+u)^m$. For the upper end, $1+u\le e^u$, and $e^{mu}\le1/(1-mu)$ because $e^{-x}\ge1-x$ for $x=mu\in[0,1)$; hence $(1+u)^m-1\le1/(1-mu)-1=\gamma_m$. For the lower end, Bernoulli's inequality, valid since $-u\ge-1$, gives $(1-u)^m\ge1-mu\ge1-\gamma_m$.
+\end{proof}
+
+A \term{summation tree}\index{summation!tree} for $x_1,\dots,x_n$ is a binary tree whose leaves are the $x_i$ and whose internal nodes add the values of their two children; evaluated in floating point, it computes a sum $\hat s_T$. The depth $d_i$ of the leaf $x_i$ is the number of internal nodes on its path to the root, and the depth of the tree is $h=\max_id_i$. \term{Recursive summation}\index{summation!recursive} in the order $x_1,\dots,x_n$ computes $\hat s_1=x_1$ and $\hat s_k=\instabilityfl(\hat s_{k-1}+x_k)$ for $k=2,\dots,n$; its tree has depth $n-1$. \term{Pairwise summation}\index{summation!pairwise} adds neighbors in a balanced tree of depth $\ceil{\log_2n}$. The reductions of parallel hardware use trees of this kind, whose shape depends on how the work is divided among threads.
+
+\begin{proposition}[Error of a floating-point sum]\label[proposition]{prop:instability:sum}
+Under \cref{ass:instability:model}, let $n\ge2$, let $s=\sum_ix_i$, and let $T$ be a summation tree of depth $h$ with $hu<1$.
+\begin{enumerate}
+\item The computed sum is $\hat s_T=\sum_{i=1}^nx_i(1+\theta_i)$ with $\abs{\theta_i}\le\gamma_{d_i}$, so that $\abs{\hat s_T-s}\le\gamma_h\sum_i\abs{x_i}$.
+\item Two summation trees of depths $h$ and $h'$ give sums that differ by at most $(\gamma_h+\gamma_{h'})\sum_i\abs{x_i}$. For recursive summation in two orders the bound is $2\gamma_{n-1}\sum_i\abs{x_i}=2(n-1)u\sum_i\abs{x_i}+O(u^2)$, and for pairwise summation in two orders it is $2\gamma_{\ceil{\log_2n}}\sum_i\abs{x_i}$.
+\item Recursive summation satisfies $\abs{\hat s_n-s}\le\frac u{1-u}\sum_{k=2}^n\abs{\hat s_k}$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is an induction over the tree for (i), the triangle inequality for (ii), and a telescoping sum for (iii).
+
+\emph{Part (i).} For a node $v$ let $\hat v$ be its computed value, so that $\hat v=x_i$ when $v$ is the leaf $x_i$. For an internal node $v$ let $\delta_v$ be the rounding error of its addition, and for a leaf $x_i$ below $v$ let $P(i,v)$ be the set of internal nodes on the path from $x_i$ up to $v$, with $v$ included and $P(i,x_i)$ empty. We show, by induction over the nodes with children before parents, that
+\begin{equation}\label{eq:instability:node}
+  \hat v=\sum_{x_i\text{ below }v}x_i\prod_{w\in P(i,v)}(1+\delta_w).
+\end{equation}
+For a leaf the product is empty and \eqref{eq:instability:node} reads $x_i=x_i$. For an internal node $v$ with children $a$ and $b$, the standard model gives $\hat v=(\hat a+\hat b)(1+\delta_v)$; inserting \eqref{eq:instability:node} for $a$ and $b$, and using $P(i,v)=P(i,a)\cup\{v\}$ for the leaves below $a$ and likewise for $b$, gives \eqref{eq:instability:node} for $v$. At the root the product for $x_i$ has $d_i$ factors, with $d_i\ge1$ because $n\ge2$ and $d_iu\le hu<1$; \cref{lem:instability:gamma} turns it into $1+\theta_i$ with $\abs{\theta_i}\le\gamma_{d_i}\le\gamma_h$, since $\gamma_m$ increases with $m$. Hence $\abs{\hat s_T-s}=\abs{\sum_ix_i\theta_i}\le\gamma_h\sum_i\abs{x_i}$.
+
+\emph{Part (ii).} The exact sum $s$ is the same for both trees, so the triangle inequality and part (i) give the first bound. The recursive tree has depth $n-1$, the balanced tree depth $\ceil{\log_2n}$, and $\gamma_{n-1}=(n-1)u+O(u^2)$.
+
+\emph{Part (iii).} For $k\ge2$ the standard model gives $\hat s_{k-1}+x_k=\hat s_k/(1+\delta_k)$, that is, $\hat s_k-\hat s_{k-1}-x_k=\hat s_k\,\delta_k/(1+\delta_k)$. Summing over $k=2,\dots,n$ and using $\hat s_1=x_1$, the left side telescopes to $\hat s_n-s$, and $\abs{\delta_k/(1+\delta_k)}\le u/(1-u)$.
+\end{proof}
+
+In \cref{ex:instability:three} the two orders differ by $2u$, while part~(ii) allows $2\gamma_2(1+2^{-23})\approx4u$. For long sums the worst case is far from typical, and part~(iii) says why: the error is controlled by the partial sums, and a sum of terms of mixed sign, such as the sum of per-example gradients over a minibatch, keeps them small; with rounding errors modeled as independent with mean zero, bounds with $\sqrt n\,u$ in place of $nu$ hold with high probability \parencite{HighamMary2019}. Training computes such sums over the examples of a minibatch, the inner dimension of a matrix product, and the devices of data-parallel training, and every change of their order moves the result by an amount that \cref{prop:instability:sum} makes tiny. The question is what training does with it.
+
+\section{The method: how training amplifies a bit}\label{sec:instability:dynamics}
+
+Let $\theta_t$ be the state of a run after $t$ steps, its parameters together with the optimizer's buffers, and write one step in exact arithmetic as $\theta\mapsto\Phi_t(\theta)$. The map $\Phi_t$ depends on the minibatch of step $t$, its learning rate, and the random numbers of dropout or augmentation; fixed seeds fix the sequence $\Phi_0,\Phi_1,\dots$. A \term{twin}\index{twin run} of a run uses the same seeds and differs by a perturbation: another initial state, as when one weight moves by an ulp, or other rounding errors, as when a minibatch is summed in another order. In floating point the run computes $\theta_{t+1}=\Phi_t(\theta_t)+\rho_t$ and its twin $\theta'_{t+1}=\Phi_t(\theta'_t)+\rho'_t$, with rounding errors $\rho_t$ and $\rho'_t$; with $e_t=\theta'_t-\theta_t$ and $r_t=\rho'_t-\rho_t$,
+\begin{equation}\label{eq:instability:twin}
+  e_{t+1}=\Phi_t(\theta_t+e_t)-\Phi_t(\theta_t)+r_t .
+\end{equation}
+
+\begin{lemma}[Propagation of a difference]\label[lemma]{lem:instability:propagation}
+Suppose that $\norm{\Phi_t(\theta'_t)-\Phi_t(\theta_t)}\le L_t\norm{e_t}$ and $\norm{r_t}\le\eps_t$ for every $t\ge0$. Then, for every $t$,
+\[
+  \norm{e_t}\le\Bigl(\prod_{k=0}^{t-1}L_k\Bigr)\norm{e_0}+\sum_{j=0}^{t-1}\Bigl(\prod_{k=j+1}^{t-1}L_k\Bigr)\eps_j .
+\]
+In particular, if $L_t\le L<1$ and $\eps_t\le\eps$ for every $t$, then $\norm{e_t}\le L^t\norm{e_0}+\eps/(1-L)$.
+\end{lemma}
+
+\begin{proof}
+By \eqref{eq:instability:twin} and the hypotheses, $\norm{e_{t+1}}\le L_t\norm{e_t}+\eps_t$. The bound holds for $t=0$, where the product is empty and the sum has no terms, and inserting it for $t$ into this inequality gives it for $t+1$. In the special case the sum is at most $\eps\sum_{j\ge0}L^j=\eps/(1-L)$.
+\end{proof}
+
+If every step contracts, then a perturbation is forgotten and the rounding differences stay bounded. If steps expand, then the product of the factors grows exponentially. Gradient descent on a strongly convex loss is the first case.
+
+\begin{proposition}[Contraction forgets]\label[proposition]{prop:instability:contraction}
+Let $f\colon\R^d\to\R$ be twice continuously differentiable with $\mu I\preceq\nabla^2f(\theta)\preceq MI$ for every $\theta$, where $0<\mu\le M$, and let $0<\eta\le2/(\mu+M)$. Then the step $\Phi(\theta)=\theta-\eta\nabla f(\theta)$ satisfies $\norm{\Phi(\theta)-\Phi(\theta')}\le(1-\eta\mu)\norm{\theta-\theta'}$, and two runs of gradient descent on $f$ whose rounding errors differ by at most $\eps$ per step stay within $(1-\eta\mu)^t\norm{e_0}+\eps/(\eta\mu)$ of each other at every step $t$.
+\end{proposition}
+
+\begin{proof}
+The plan is to write the difference of two gradients with an averaged Hessian. For $\theta,\theta'\in\R^d$, the fundamental theorem of calculus applied to $s\mapsto\nabla f(\theta'+s(\theta-\theta'))$, whose derivative is continuous because $f$ is twice continuously differentiable, gives $\nabla f(\theta)-\nabla f(\theta')=\bar H(\theta-\theta')$ with $\bar H=\int_0^1\nabla^2f(\theta'+s(\theta-\theta'))\dd s$. As an average of such matrices, $\bar H$ is symmetric with $\mu I\preceq\bar H\preceq MI$. Hence $\Phi(\theta)-\Phi(\theta')=(I-\eta\bar H)(\theta-\theta')$, and every eigenvalue of $I-\eta\bar H$ lies in $[1-\eta M,1-\eta\mu]$. The condition $\eta\le2/(\mu+M)$ gives $\eta M-1\le1-\eta\mu$, and, since $2/(\mu+M)\le1/\mu$, also $1-\eta\mu\ge0$; so every eigenvalue has absolute value at most $1-\eta\mu$, which bounds the norm of the symmetric matrix $I-\eta\bar H$. The second statement is \cref{lem:instability:propagation} with $L_t=1-\eta\mu<1$, for which $1-L_t=\eta\mu$.
+\end{proof}
+
+Softmax regression with weight decay $\lambda$ is $\lambda$-strongly convex on every minibatch, so stochastic gradient descent on it with a small enough step, and the same minibatches in both runs, forgets a one-ulp change; convexity is the reason \textcite{SummersDinneen2021} gave for the stability of their linear models. The bound $\eps/(\eta\mu)$ can far exceed $\eps$, but it does not grow with $t$.
+
+\begin{proposition}[Expansion amplifies]\label[proposition]{prop:instability:expansion}
+Let $f(\theta)=\frac12\theta^\top H\theta$ with $H$ symmetric, let $v$ be a unit eigenvector of $H$ with eigenvalue $\lambda$, and let $\eta>0$. Two runs of gradient descent on $f$ in exact arithmetic, started at $\theta_0$ and $\theta_0+e_0$, differ at step $t$ by $e_t=(I-\eta H)^te_0$, and $\ip{v,e_t}=(1-\eta\lambda)^t\ip{v,e_0}$. If $\abs{1-\eta\lambda}>1$, which happens exactly when $\lambda<0$ or $\eta\lambda>2$, and $\ip{v,e_0}\ne0$, then $\norm{e_t}\ge\abs{1-\eta\lambda}^t\abs{\ip{v,e_0}}$; in particular, for every $\Delta>\abs{\ip{v,e_0}}$, $\norm{e_t}\ge\Delta$ from the step $\ceil{\ln(\Delta/\abs{\ip{v,e_0}})/\ln\abs{1-\eta\lambda}}$ on.
+\end{proposition}
+
+\begin{proof}
+The step $\Phi(\theta)=(I-\eta H)\theta$ is linear, so $e_{t+1}=(I-\eta H)e_t$ and, by induction, $e_t=(I-\eta H)^te_0$. Because $H$ is symmetric and $Hv=\lambda v$, we have $\ip{v,(I-\eta H)w}=(1-\eta\lambda)\ip{v,w}$ for every $w$, which gives the formula for $\ip{v,e_t}$, and the Cauchy--Schwarz inequality gives $\norm{e_t}\ge\abs{\ip{v,e_t}}$. The step count follows by taking logarithms in $\abs{1-\eta\lambda}^t\abs{\ip{v,e_0}}\ge\Delta$, which is legitimate because $\abs{1-\eta\lambda}>1$.
+\end{proof}
+
+A one-ulp change of a weight in binary32 has relative size about $2^{-24}$, and growing to the size of the weights takes about $24\ln2/\ln\abs{1-\eta\lambda}\approx17/\ln\abs{1-\eta\lambda}$ steps: about 175 when $\abs{1-\eta\lambda}=1.1$, and 24 when it is 2. Both causes of expansion occur in deep learning: saddle points have directions of negative curvature, and \textcite{CohenEtAl2021} found that full-batch gradient descent on neural networks typically runs at the \emph{edge of stability}, with the largest eigenvalue of the Hessian hovering just above $2/\eta$. A quadratic with an expanding direction diverges outright, however, and a run that stays bounded while separating from its twin needs nonlinearity. Gradient descent on a double well with a large step is exactly chaotic (\cref{ex:instability:doublewell}), and \textcite{KongTao2020} showed that deterministic gradient descent with a large learning rate on a multiscale objective can behave like a stochastic method. For a network, the linear picture becomes a heuristic.\sidenote{The butterfly of chaos theory entered in 1972, in the title that the convener of a session chose for a talk by Lorenz, whose 1963 model of convection had shown the effect \parencite{Lorenz1963}.}
+
+\begin{heuristic}[Heuristic derivation: the divergence time]
+While the twins are close, \eqref{eq:instability:twin} is linear to first order: $e_{t+1}\approx J_te_t+r_t$, where $J_t=D\Phi_t(\theta_t)$ is the Jacobian of the step along the run; for gradient descent $J_t=I-\eta\nabla^2\Lhat_t(\theta_t)$, with $\Lhat_t$ the loss on the minibatch of step $t$. Define the \term{cumulative exponent}\index{Lyapunov exponent} $\Lambda(t)=\ln\bigl(\norm{J_{t-1}\cdots J_0e_0}/\norm{e_0}\bigr)$. Then $\norm{e_t}\approx\norm{e_0}e^{\Lambda(t)}$, plus the rounding differences $r_j$ carried forward by the later Jacobians, until the linearization fails at a distance $\Delta$ of the order of the distance between runs that share the initialization but not the subsequent noise. If $\Lambda(t)\approx\ell t$ with a positive rate $\ell$, a finite-time Lyapunov exponent, then the twins separate exponentially, and the \term{divergence time}\index{divergence time} is
+\[
+  t^\star\approx\frac{\ln(\Delta/\norm{e_0})}{\ell} .
+\]
+Three predictions follow: the logarithm of the distance grows linearly before it saturates near $\Delta$; each factor of ten in the initial perturbation advances the divergence by $\ln(10)/\ell$ steps; and no perturbation acts as if it were smaller than the rounding differences that every step adds, so that below that floor a one-ulp change and a reordered sum are the same experiment. If the rate varies over training, then $t^\star$ solves $\Lambda(t^\star)=\ln(\Delta/\norm{e_0})$, and the twins separate where $\Lambda$ rises steeply. If $\Lambda$ stays bounded, as under \cref{prop:instability:contraction}, then they never separate.
+\end{heuristic}
+
+A network with ReLU activations is only piecewise smooth: when a perturbation pushes a pre-activation across zero, the Jacobian changes abruptly, and the difference between the twins can jump. \Textcite{ShamirEtAl2020}, in a preprint, found that smooth activations improve the trade-off between accuracy and the reproducibility of predictions.
+
+\subsection{What a twin measures}
+
+The heuristic says when twins separate, not how different they end. The run distribution answers that question.
+
+\begin{proposition}[What a twin measures]\label[proposition]{prop:instability:twin}
+Let $Y$ and $Y'$ be the outcomes of a run and of its twin, with $\E Y^2<\infty$, and let $\cG$ be a $\sigma$-field, the information that the two runs share. Suppose that, conditionally on $\cG$, the outcomes $Y$ and $Y'$ are independent and have the same distribution, and that $\Var Y>0$. Let $Y''$ be the outcome of an independent run with the distribution of $Y$. Then
+\[
+  \Cov(Y,Y')=\Var\bigl(\E[Y\mid\cG]\bigr),\qquad\E(Y-Y')^2=2\,\E\Var(Y\mid\cG),
+\]
+so that $\rho=\Corr(Y,Y')=\Var(\E[Y\mid\cG])/\Var Y$ lies in $[0,1]$, and
+\[
+  \frac{\E(Y-Y')^2}{\E(Y-Y'')^2}=1-\rho .
+\]
+\end{proposition}
+
+\begin{proof}
+The plan is to condition on $\cG$. Write $m=\E[Y\mid\cG]$. Because $Y'$ has the conditional distribution of $Y$, $\E[Y'\mid\cG]=m$ and $\E[Y'^2\mid\cG]=\E[Y^2\mid\cG]$; taking expectations, $Y'$ has the mean and the variance of $Y$. Conditional independence gives $\E[YY'\mid\cG]=m^2$, so $\Cov(Y,Y')=\E m^2-(\E m)^2=\Var m$. Since the means are equal,
+\[
+  \E(Y-Y')^2=\Var Y+\Var Y'-2\Cov(Y,Y')=2(\Var Y-\Var m)=2\,\E\Var(Y\mid\cG),
+\]
+the last step by the law of total variance. For the independent run, $\Cov(Y,Y'')=0$, and the same computation gives $\E(Y-Y'')^2=2\Var Y$. Dividing, and using $\Var Y'=\Var Y$ in the definition of $\rho$, gives the ratio. Finally $0\le\Var m\le\Var Y$ by the law of total variance, so $\rho\in[0,1]$.
+\end{proof}
+
+For a twin, $\cG$ holds the shared initialization, the data order, and the trajectory up to the divergence. If the twin separates at once and keeps nothing that matters, then $\rho=0$ and the twin is a new draw from the run distribution. If it never separates, then $\rho=1$ and the twin is a copy. In both cases $Y'$ has the distribution of $Y$, so a two-sample test of twins against runs with fresh seeds cannot tell a copy from a new draw; the paired quantities can. Applied to the prediction on one test example, the same argument shows that twins disagree on it at most as often as independent runs (\cref{ex:instability:churn}); the fraction of test examples on which two runs disagree is called \term{churn}\index{churn} \parencite{MilaniFardEtAl2016}.
+
+\section{In the laboratory: twins of a digits network}\label{sec:instability:lab}
+
+A GPU is not needed to see the phenomena of this chapter: on a CPU we can create the perturbations that a GPU creates by accident, a moved bit and a reordered sum, on purpose and one at a time. The labs use the digits network of the book's kit, a perceptron with two hidden layers of 64 ReLU units and 8970 parameters.
+
+\begin{lab}{What a fixed seed repeats}{02-instability-sums}\label{lab:instability:sums}
+\labpart{Setup} Binary32 arithmetic on a laptop CPU: the three numbers of \cref{ex:instability:three}; for each $n$ from 10 to $10^5$, twenty vectors of $n$ standard normal numbers, each summed in 50 random orders, recursively and pairwise; the logits of a trained network for the 539 test images, computed in batches of 539, 64, and 1; and three runs with the same seeds, one of them on one thread instead of two. A few seconds.
+\labpart{Predict first} How many of 50 random orders of $10^5$ numbers give the same sum? Do the logits of an image depend on how many other images share its batch?
+\labpart{Look for} The number of distinct sums and their spread against \cref{prop:instability:sum}; the images whose logits change in some bit; whether the hashes of the final weights agree.
+\end{lab}
+
+The two orders of \cref{ex:instability:three} gave 1 and $1+2^{-23}$. In \cref{tab:instability:sums}, recursive summation of $10^5$ numbers in 50 random orders gave 46 distinct results on average, spread over 1.6 units of $u\sum_i\abs{x_i}$, where part~(ii) of \cref{prop:instability:sum} allows $2\times10^5$; the mean error stayed near $0.27\,u\sum_i\abs{x_i}$ for every $n$, and the largest ratio of an error to the bound of part~(iii), over all 5000 recursive sums, was 0.57. The logits of a trained network did not change when the same batch was recomputed, but in batches of 64 those of 5.0\% of the test images changed in some bit, and one image at a time those of every image changed, by at most $7.6\times10^{-6}$; no predicted class changed. The three runs with the same seeds gave weights with one hash: on this machine (PyTorch 2.13 with Apple's Accelerate library) the thread count did not change the order of the sums, which need not hold elsewhere.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}S[table-format=6.0]S[table-format=2.1]S[table-format=1.2]S[table-format=6.0]S[table-format=2.1]S[table-format=1.2]S[table-format=2.0]@{}}
+\toprule
+{} & \multicolumn{3}{c}{recursive} & \multicolumn{3}{c}{pairwise}\\
+\cmidrule(lr){2-4}\cmidrule(l){5-7}
+{$n$} & {distinct} & {spread} & {bound} & {distinct} & {spread} & {bound}\\
+\midrule
+10 & 5.5 & 1.39 & 18 & 5.0 & 1.24 & 8\\
+100 & 15.5 & 1.69 & 198 & 7.9 & 0.65 & 14\\
+1000 & 23.6 & 1.58 & 1998 & 7.5 & 0.25 & 20\\
+10000 & 37.6 & 1.52 & 20010 & 9.1 & 0.09 & 28\\
+100000 & 46.2 & 1.64 & 201197 & 10.7 & 0.03 & 34\\
+\bottomrule
+\end{tabular}
+\caption{Sums of $n$ standard normal binary32 numbers in 50 random orders (\cref{lab:instability:sums}; 20 vectors per $n$, seed 20261017). Distinct: number of different results among the 50 orders, averaged over the vectors. Spread: largest minus smallest result, in units of $u\sum_i\abs{x_i}$, averaged over the vectors. Bound: $2\gamma_h/u$, the worst case of \cref{prop:instability:sum}(ii) in the same units, with $h=n-1$ for recursive and $h=\ceil{\log_2n}$ for pairwise summation.}
+\label{tab:instability:sums}
+\end{table}
+
+\begin{lab}{Twin runs}{02-instability-twins}\label{lab:instability:twins}
+\labpart{Setup} The digits network trained by SGD with momentum 0.9, learning rate 0.1, and batch size 64 for 50 epochs (950 steps), in two regimes that differ only in the labels: clean, and with 20\% of the training labels replaced by random labels. For each of ten seeds per regime: the run, a repeat, a one-ulp twin (one random initial weight moved to its neighbor by \texttt{torch.nextafter}), a reorder twin (the examples inside every minibatch permuted), an order twin (a new data-order seed), and an independent run, with the distance between parameter vectors every 5 steps. With noisy labels, also twins moved in a random direction by $10^{-7}$ to $10^{-2}$ of the initial weight norm. About 30 seconds.
+\labpart{Predict first} With clean labels, will a one-ulp twin end with a different test error? With noisy labels? At which step will the distance between twins reach 1?
+\labpart{Look for} The floor at which every twin sits after a few dozen steps; whether and when the distance leaves it; where it saturates; how the step of divergence depends on the size of the initial change.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=16mm},lplot,scale only axis,
+  width=40mm,height=32mm,unbounded coords=jump,every axis title/.append style={font=\small}]
+\nextgroupplot[ymode=log,xmin=0,xmax=950,ymin=1e-12,ymax=1e2,xlabel={step},ylabel={distance between twins},
+  ytick={1e-9,1e-6,1e-3,1},minor ytick={},xtick={0,300,600,900},title={(a) clean labels},
+  legend pos=south east,legend style={font=\scriptsize,inner sep=1pt}]
+\addplot[inkblue!45,line width=0.4pt,no marks] table[x=step,y=c_ulp0] {figures/data/02-instability-twins-dist.dat};
+\addlegendentry{one ulp}
+\pgfplotsinvokeforeach{1,...,9}{\addplot[inkblue!45,line width=0.4pt,no marks,forget plot] table[x=step,y=c_ulp#1] {figures/data/02-instability-twins-dist.dat};}
+\addplot[rubric,line width=1pt,dashed,no marks] table[x=step,y=c_reo_med] {figures/data/02-instability-twins-dist.dat};
+\addlegendentry{reorder}
+\addplot[black!65,line width=1pt,densely dotted,no marks] table[x=step,y=c_ord_med] {figures/data/02-instability-twins-dist.dat};
+\addlegendentry{order}
+\nextgroupplot[ymode=log,xmin=0,xmax=950,ymin=1e-12,ymax=1e2,xlabel={step},
+  ytick={1e-9,1e-6,1e-3,1},minor ytick={},xtick={0,300,600,900},title={(b) 20\% noisy labels}]
+\addplot[reference] coordinates {(285,1e-12) (285,1e2)};
+\pgfplotsinvokeforeach{0,...,9}{\addplot[inkblue!45,line width=0.4pt,no marks] table[x=step,y=n_ulp#1] {figures/data/02-instability-twins-dist.dat};}
+\addplot[rubric,line width=1pt,dashed,no marks] table[x=step,y=n_reo_med] {figures/data/02-instability-twins-dist.dat};
+\addplot[black!65,line width=1pt,densely dotted,no marks] table[x=step,y=n_ord_med] {figures/data/02-instability-twins-dist.dat};
+\nextgroupplot[xmode=log,xmin=1e-9,xmax=1,ymin=0,ymax=650,xlabel={initial distance},ylabel={divergence step},
+  xtick={1e-8,1e-6,1e-4,1e-2,1},title={(c) size of the change}]
+\addplot[run] table[x=d0,y=t_div] {figures/data/02-instability-twins-sizes.dat};
+\addplot[fit] table[x=d0,y=t] {figures/data/02-instability-twins-sizefit.dat};
+\addplot[mean,error bars/y dir=both,error bars/y explicit,error bars/error bar style={inkblue,line width=0.5pt},
+  error bars/error mark options={inkblue,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x=d0,y=t,y error plus=ehi,y error minus=elo] {figures/data/02-instability-twins-sizemed.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Twin runs of the digits network (8970 parameters; SGD with momentum 0.9, learning rate 0.1, batch size 64, 950 steps); seeds $i=0,\dots,9$, run $i$ with initialization and order seeds $i$. (a)~Clean labels and (b)~20\% random training labels: Euclidean distance between the parameters of a run and of its twin. Thin lines: one-ulp twins, one per seed; dashed: median over seeds of reorder twins; dotted: median of order twins. Gaps mark a distance of exactly zero; a repeat with identical seeds is at zero throughout and is not drawn. The vertical line in (b) is the median step at which the runs have fitted half of their 237 mislabeled training examples. (c)~Noisy labels: first step at which the distance exceeds 1, against the initial distance, for one-ulp twins (left) and for twins moved in a random direction by $10^{-7},\dots,10^{-2}$ of the initial weight norm. Circles: seeds; filled: medians with 95\% percentile-bootstrap intervals; line: least-squares fit to the four largest sizes.}
+\label{fig:instability:twins}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:instability:twins} shows the result. A repeat with identical seeds stayed identical at all 950 steps in both regimes, and the script's own training loop, which adds the perturbations, reproduced the kit's runs bit for bit. Within 50 steps every twin, one-ulp or reorder, sat at a distance of about $10^{-6}$, a few units of $u$ relative to the norm of the weights: the rounding floor of the heuristic, at which a moved bit and a reordered sum are indistinguishable. In one pair of the ten the moved bit was rounded away within fifteen steps, and that twin stayed bitwise identical to its run in both regimes.\sidenote{A difference can vanish only by rounding: once the perturbed weight rounds to the same number as the original, every later computation is identical.}
+
+With clean labels nothing more happened. The distance drifted to about $10^{-5}$, at most $2.5\times10^{-4}$, while order twins ended about 3.3 apart; no one-ulp or reorder twin disagreed with its run on a single test image, while order twins disagreed on 1.15\% and independent runs on 1.91\% of them. The difference stayed near the rounding floor, as it would under \cref{prop:instability:contraction}, although the loss is not convex.
+
+With noisy labels the twins stayed near the floor for several hundred steps and then separated within a few dozen: the logarithm of the distance grew at a median rate of 0.012 per step until the distance reached $10^{-4}$, and of 0.093 per step from there to 1. The one-ulp twins crossed a distance of 1 at a median step of 535 (range 345--585) and the reorder twins at 512 (230--590), and both saturated near 11, while order twins ended about 25 apart. At the end, one-ulp twins disagreed with their runs on 20.9\% of the test images and reorder twins on 23.4\%, against 26.8\% for order twins and 28.1\% for independent runs. The burst came after a run had fitted half of its 237 mislabeled training examples (median step 285); at the divergence step a run had fitted a median 76\% of them (range 59--81\%). The instability lives in the phase in which the network memorizes wrong labels. In panel~(c), initial changes of $10^{-5}$ to $10^{-2}$ of the weight norm diverged in the early phase, at median steps from 145 down to 92, a slope of 7.4 steps per unit of $\ln$ or an exponent of 0.135 per step, while changes of one ulp and $10^{-7}$ waited for the late burst, near steps 535 and 520, and $10^{-6}$ fell in between (median 250). The exponent is not constant, and the divergence time follows the cumulative exponent $\Lambda$ rather than a single rate, as the last sentence of the heuristic allows.
+
+\begin{lab}{Twins against new seeds}{02-instability-draws}\label{lab:instability:draws}
+\labpart{Setup} The network, optimizer, and regimes of \cref{lab:instability:twins}. In each regime, 100 runs with seeds $i=0,\dots,99$, their one-ulp twins, and 100 runs with new seeds $1000+i$; with noisy labels also 100 early twins, moved by 1\% of the initial weight norm, which diverge near step 90. Then 20 pairs for each of five learning rates from 0.0125 to 0.15. About 2.5 minutes.
+\labpart{Predict first} Will a two-sample test tell twins from runs with new seeds? Will the correlation between a run and its twin?
+\labpart{Look for} The $p$-values of the permutation and Kolmogorov--Smirnov tests; the correlation between each run and its twin; the ratio of disagreements across learning rates.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=16mm},lplot,scale only axis,
+  width=40mm,height=32mm,every axis title/.append style={font=\small},typeset ticklabels with strut]
+\nextgroupplot[xmin=0.5,xmax=3.6,ymin=1.5,ymax=4.5,xtick={1,2,3},xticklabels={run,twin,new},
+  ylabel={test error (\%)},title={(a) clean labels},minor x tick num=0]
+\addplot[run] table[x expr=1+\thisrow{jx},y expr=100*\thisrow{c_base}] {figures/data/02-instability-draws-runs.dat};
+\addplot[run] table[x expr=2+\thisrow{jx},y expr=100*\thisrow{c_ulp}] {figures/data/02-instability-draws-runs.dat};
+\addplot[run] table[x expr=3+\thisrow{jx},y expr=100*\thisrow{c_new}] {figures/data/02-instability-draws-runs.dat};
+\addplot[mean,ebars] table[x expr=\thisrow{pos}+0.4,y expr=100*\thisrow{mean},y error expr=100*\thisrow{hw}] {figures/data/02-instability-draws-clean.dat};
+\nextgroupplot[xmin=0.5,xmax=4.6,ymin=14,ymax=32,xtick={1,2,3,4},xticklabels={run,twin,early,new},
+  title={(b) 20\% noisy labels},minor x tick num=0]
+\addplot[run] table[x expr=1+\thisrow{jx},y expr=100*\thisrow{n_base}] {figures/data/02-instability-draws-runs.dat};
+\addplot[run] table[x expr=2+\thisrow{jx},y expr=100*\thisrow{n_ulp}] {figures/data/02-instability-draws-runs.dat};
+\addplot[run] table[x expr=3+\thisrow{jx},y expr=100*\thisrow{n_early}] {figures/data/02-instability-draws-runs.dat};
+\addplot[run] table[x expr=4+\thisrow{jx},y expr=100*\thisrow{n_new}] {figures/data/02-instability-draws-runs.dat};
+\addplot[mean,ebars] table[x expr=\thisrow{pos}+0.4,y expr=100*\thisrow{mean},y error expr=100*\thisrow{hw}] {figures/data/02-instability-draws-noisy.dat};
+\nextgroupplot[xmode=log,xmin=0.009,xmax=0.2,ymin=-0.05,ymax=1.1,xlabel={learning rate},ylabel={disagreement ratio},
+  xtick={0.0125,0.025,0.05,0.1},xticklabels={0.0125,0.025,0.05,0.1},xticklabel style={font=\scriptsize},title={(c) twin / independent},
+  legend pos=north west,legend style={font=\scriptsize,inner sep=1pt}]
+\addplot[armA,error bars/y dir=both,error bars/y explicit] table[x=lr,y=c_ratio,y error plus=c_ehi,y error minus=c_elo] {figures/data/02-instability-draws-map.dat};
+\addlegendentry{clean}
+\addplot[armB,error bars/y dir=both,error bars/y explicit] table[x=lr,y=n_ratio,y error plus=n_ehi,y error minus=n_elo] {figures/data/02-instability-draws-map.dat};
+\addlegendentry{noisy}
+\addplot[reference,forget plot] coordinates {(0.009,1) (0.2,1)};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Test errors of the network of \cref{fig:instability:twins}. (a)~Clean labels and (b)~20\% random training labels: 100 runs (seeds $i=0,\dots,99$), their one-ulp twins, early twins moved by 1\% of the initial weight norm in a random direction (noisy labels only), and 100 runs with new seeds $1000+i$. Circles: runs, spread horizontally; filled, to the right of each group: means with 95\% $t$-intervals. (c)~Disagreement on the 539 test images between a run and its one-ulp twin, divided by the mean disagreement between a run and an independently seeded one, against the learning rate; 20 pairs per point, 95\% percentile-bootstrap intervals over pairs. The dashed line is the ratio for two independent runs.}
+\label{fig:instability:draws}
+\end{fullwidth}
+\end{figure}
+
+In both regimes the twins passed the tests of distributional reproducibility against new seeds (\cref{fig:instability:draws}).\sidenote{One test image is 0.19 percentage points of test error, which is why the runs in \cref{fig:instability:draws} fall on a grid.} With clean labels the mean test errors were \pmval{2.79}{0.08}\% for the runs, \pmval{2.79}{0.08}\% for their twins, and \pmval{2.80}{0.09}\% for new seeds (means with 95\% $t$-intervals, 100 runs each), and twins against new seeds gave $p=0.90$ in a two-sided permutation test of the means and $p=0.82$ in a Kolmogorov--Smirnov test. With noisy labels the means were \pmval{21.45}{0.55}\%, \pmval{21.28}{0.56}\%, \pmval{21.18}{0.45}\% for the early twins, and \pmval{21.56}{0.48}\%, and the tests gave $p=0.44$ and $p=0.47$ for the one-ulp twins. As \cref{prop:instability:twin} predicts, these tests cannot see what separates the regimes; the paired statistics can. With clean labels the correlation between the test errors of a run and its twin was 1.00, and no twin disagreed with its run on a single image: the twins were copies, and three of the 100 ended bitwise identical. With noisy labels the correlation was 0.25 (95\% Fisher interval 0.06 to 0.43), against 0.12 ($-0.07$ to 0.31) between runs and new seeds, and the twins disagreed with their runs on 20.7\% of the test images, against 27.4\% for new seeds: a ratio of 0.75 (bootstrap interval 0.72 to 0.78). The early twins, which separate near step 90 instead of 535, came closer to new draws, with correlation 0.21 (0.01 to 0.39) and ratio 0.85 (0.83 to 0.87): the earlier twins separate, the less they share. The direct ratio of mean squared differences, 0.98 (0.70 to 1.37), is too noisy to use.
+
+In panel (c) the disagreement ratio stayed at 0 with clean labels for every learning rate up to 0.1 and reached 0.21 (0.05 to 0.40) at 0.15. With noisy labels it rose from 0.01 at 0.0125, where the runs did not memorize the wrong labels in 50 epochs, through 0.19 at 0.05, to 0.81 at 0.1 and 0.87 (0.77 to 0.94) at 0.15. The miniature reproduces both halves of the verdict: a fixed seed repeats a run exactly, and a one-bit change is erased in the stable regime and becomes most of a new draw in the unstable one. It does not reach the ratios near 1 of \cref{tab:instability:bitratio}, because its twins diverge late, after sharing half of their training. We chose the learning rate, the number of epochs, and the label noise after a short pilot scan, which the regime map reports in full; the network, data, and optimizer are the defaults of the kit.
+
+\section{Protocol}\label{sec:instability:protocol}
+
+\begin{protocol}{Repeatable runs, reproducible results}\label{prot:instability:protocol}
+\item Give each source of randomness its own seed (initialization, data order, augmentation and dropout, data split) and record all of them with the result.
+\item For debugging and audit runs, turn on deterministic algorithms and turn off autotuning; record the code version, library versions, hardware, numbers of devices and threads, batch size, and determinism flags, and store a hash of the final weights.
+\item Check repeatability before relying on it: run one configuration twice and compare the hashes. If they differ, then find the nondeterministic operation before going on.
+\item Check stability: train a twin with one weight moved by one ulp, or with the examples of each minibatch reordered, and compare its predictions with the run's. If they differ, then treat every seed as a random draw and expect bitwise repetition to fail on other hardware.
+\item Draw seeds before training and never choose them by their results; report every run, with $n$ runs per arm sized as in \cref{ch:seeds}.
+\item When the hardware or a library changes, test distributional reproducibility: $n$ runs with fresh seeds in each environment, a two-sample test of the outcomes, and the comparison of interest recomputed in both.
+\item State which level of reproducibility a reported number has: repeatable on a stated stack, or a summary of a run distribution with its interval.
+\end{protocol}
+
+The protocol does not make a result portable: no seeding makes two GPU architectures add in the same order, and only order-independent arithmetic, such as the reproducible summation of \textcite{DemmelNguyen2015}, would. Determinism costs time, up to several times the GPU time \parencite{ZhuangEtAl2022}, so it belongs in debugging and audit runs rather than in every run of a sweep. A twin test with a few pairs detects instability that matters but not a weak correlation between twins, which needs about a hundred pairs (\cref{lab:instability:draws}), and a two-sample test with few runs per environment has little power (\cref{ch:seeds}). When a run is too expensive to repeat, as in large-scale pretraining, run the twin test on a small version of the model, report whether training was stable there, and treat differences between single runs smaller than the spread of seeds as unresolved.
+
+\begin{exercises}
+\item \consolidation (Five runs and a standard deviation.) For normal outcomes, $(n-1)S^2/\sigma^2$ has the $\chi^2$ distribution with $n-1$ degrees of freedom. (a) Derive the 95\% interval for $\sigma$ from $S$, and show that it runs from $0.60S$ to $2.87S$ for $n=5$ and from $0.76S$ to $1.46S$ for $n=20$. (b) Which rows of \cref{fd:instability:dqn} could be told apart with five runs per group?\label{ex:instability:sdinterval}
+
+\item \consolidation (Momentum.) For heavy-ball momentum on $f(\theta)=\frac12\lambda\theta^2$, the twin difference obeys $e_{t+1}=(1+\beta-\eta\lambda)e_t-\beta e_{t-1}$. (a) For $0\le\beta<1$, show that $e_t\to0$ for every start exactly when $0<\eta\lambda<2(1+\beta)$, and that it grows exponentially when $\lambda<0$ or $\eta\lambda>2(1+\beta)$. (b) For $\eta=0.1$ and $\beta=0.9$, the settings of \cref{lab:instability:twins}, find the curvature above which a direction expands. \hint{a polynomial $z^2+az+b$ with real coefficients has both roots inside the unit circle exactly when $\abs b<1$ and $\abs a<1+b$.}
+
+\item \consolidation\hard (Chaotic gradient descent.) Gradient descent with step $\eta=2$ on the double well $f(x)=\frac14(x^2-1)^2$ is the map $x\mapsto3x-2x^3$. (a) Show that the minima $x=\pm1$ are unstable fixed points. (b) Substitute $x=\sqrt2\cos\varphi$ and show that the map becomes $\varphi\mapsto3\varphi+\pi$ modulo $2\pi$, and that $[-\sqrt2,\sqrt2]$ is invariant. (c) Deduce that two orbits that start $2^{-24}$ apart in $\varphi$ are of order one apart after about 15 steps, and check numerically that the average of $\ln\abs{\Phi'(x_t)}$ along an orbit is $\ln3\approx1.099$. \hint{$\cos3\varphi=4\cos^3\varphi-3\cos\varphi$.}\label{ex:instability:doublewell}
+
+\item \consolidation (Twins disagree less.) Under the hypotheses of \cref{prop:instability:twin}, let the outcome be the class that a run predicts for one test example, and let $p_k=\Prob(\text{the run predicts }k\mid\cG)$. Show that two twins disagree on the example with probability $1-\E\sum_kp_k^2$ and two independent runs with probability $1-\sum_k(\E p_k)^2$, that the first is at most the second, and that they are equal exactly when every $p_k$ is almost surely constant.\label{ex:instability:churn}
+
+\item \labwork (A smaller step.) Run \script{02-instability-twins.py} with the learning rate 0.025 instead of 0.1. Predict from \cref{fig:instability:draws}(c) whether the noisy-label twins will leave the rounding floor, then check, and relate the outcome to the fraction of mislabeled examples that the runs fit.
+
+\item \labwork (Smooth activations.) Repeat the noisy-label part of \cref{lab:instability:draws} with \texttt{activation="tanh"} in the configuration. Does the disagreement ratio change? Compare with the claim of \textcite{ShamirEtAl2020} that smooth activations make predictions more reproducible, and say what your experiment can and cannot show about it.
+
+\item \labwork (Where the exponent lives.) From the distances recorded in \cref{lab:instability:twins}, compute the growth rate of the logarithm of the distance over windows of 25 steps for the noisy-label one-ulp twins, and plot it against the step. Where is it largest, and what does that say about $\Lambda(t)$?
+
+\item \design (Two GPU types.) A team wants to know whether moving a fine-tuning pipeline to another type of GPU changes the distribution of test accuracy. Seeds move the accuracy with a standard deviation of 0.4 points, and the budget is 40 runs. Give the runs per type, the test, the smallest shift detected with power 0.8 at level 0.05, and what must be held fixed and recorded.
+
+\item \design (When does a run commit?) In the noisy regime of \cref{lab:instability:twins}, design an experiment with 200 runs that finds the step after which releasing a new data-order seed changes the test predictions less than half as much as releasing it at step zero, in the spirit of the onset experiment of \textcite{SummersDinneen2021}. State the treatment and its levels, the response, the replicates, and the analysis.
+
+\item \critique A paper reports: ``We fixed all random seeds (seed 42) for reproducibility. Our method improves test accuracy over the baseline by 0.4 points.'' Each method was trained once, on eight GPUs. Which level of \cref{def:instability:levels} does the statement establish? What would you ask the authors for, and what does \cref{rem:instability:seed} say about whether the shared seed makes the comparison more precise?
+
+\item \critique (An invented report.) A team moves training to another type of GPU, sees the accuracy of a single run drop by 0.6 points, and concludes that the new GPU's arithmetic is less accurate. What else changed with the hardware, what should the drop be compared with, and which experiment would test the claim?
+
+\item \research (When does a run forget?) \Cref{prop:instability:contraction} covers strongly convex losses, the edge of stability of \textcite{CohenEtAl2021} places full-batch training where the sharpest direction neither contracts nor expands, and \cref{fig:instability:draws}(c) shows the instability switching on with the learning rate and the label noise. Open: predict the cumulative exponent $\Lambda(t)$ of a network from quantities measurable early in training, such as curvature relative to $2/\eta$, gradient noise, and the fraction of examples not yet fitted, and hence when a one-bit twin becomes a new draw.
+\end{exercises}
+
+\notesandrefs
+\Textcite{Goldberg1991} is the classic introduction to floating-point arithmetic, and \textcite{Higham2002} the reference for the rounding errors of summation, compensated summation included; \textcite{HighamMary2019} gave the probabilistic analysis behind the $\sqrt n\,u$ behavior of typical sums. Summation whose result does not depend on the order of the terms has been designed for parallel machines \parencite{DemmelNguyen2015}.
+
+Sensitive dependence on initial conditions was found by \textcite{Lorenz1963} in a model of atmospheric convection, and \textcite{Strogatz2015} explains Lyapunov exponents and why the horizon of prediction grows only with the logarithm of the precision of the initial state. For training, \textcite{SummersDinneen2021} gave the decisive experiment, \textcite{Jordan2024} replicated it while connecting run-to-run variance to the finite test set, and \textcite{KongTao2020} and \textcite{CohenEtAl2021} studied gradient descent at learning rates where it does not converge in the classical sense.
+
+On the reproducibility of machine learning research, \textcite{GundersenKjensmo2018} surveyed 400 papers from two AI conferences and found that none documented every variable needed to reproduce it, \textcite{PineauEtAl2021} report on the code policy, the reproducibility challenge, and the checklist of NeurIPS 2019, and \textcite{BouthillierEtAl2019} showed that a result can be repeated exactly and still fail to hold under a slightly different experiment. Churn was named as a problem of shipping successive versions of a model \parencite{MilaniFardEtAl2016}.
+
+\paragraph{Translating the literature.} \Textcite{SummersDinneen2021} call a source of randomness a \emph{nondeterminism source}, our one-ulp twin a \emph{random bit change}, and our churn \emph{pairwise disagreement}; their \emph{instability} is our amplification. \Textcite{FrankleEtAl2020} use \emph{instability} for the rise of the error along the line between two runs spawned from one state, so that a run can be stable in their sense and unstable in ours. \Textcite{ZhuangEtAl2022} write ALGO for the randomness that seeds control and IMPL for the nondeterminism of the environment $\cE$. \Textcite{PhamEtAl2020} call sources of randomness \emph{NI-factors} and our repeats \emph{fixed-seed identical training runs}; \textcite{NagarajanEtAl2018} call our repeatability \emph{replicability}; and \textcite{Jordan2024} calls a twin made by multiplying one weight by 1.001 a \emph{poke}.
+
+\printchapterbib
+\end{refsection}

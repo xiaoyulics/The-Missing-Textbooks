@@ -1,0 +1,454 @@
+%% laboratory.sty -- volume style for "Deep Learning as an Experimental Science"
+%% (The Missing Textbooks, volume 4). Loaded after missingbook.cls by main.tex and by
+%% tools/build_chapter.sh. Chapters must not load packages of their own.
+%%
+%% The design is a laboratory notebook. Structure is rubricated in a graph-paper vermilion,
+%% measurements and links are in a blue-black ink, record boxes sit on a cream tint, and
+%% the ornaments are graph paper: log-log paper with a fitted scaling law on the title
+%% page, millimetre paper with a running mean at the foot of each chapter opening, and a
+%% ruler under each chapter title. The series class is not modified: its colour names
+%% are re-pointed to this palette and its ornament macros are redefined here.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{laboratory}[2026/10/17 v1.0 volume style for Deep Learning as an Experimental Science]
+
+\RequirePackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{fillbetween,groupplots}
+\usetikzlibrary{fadings}
+\RequirePackage[scale=0.86]{sourcecodepro}
+\RequirePackage{siunitx}
+\sisetup{uncertainty-mode=separate,group-minimum-digits=5}
+
+%------------------------------------------------------------------------------
+% Palette
+%------------------------------------------------------------------------------
+\definecolor{rubric}{RGB}{176,58,36}       % vermilion: section numbers, labels, rules
+\definecolor{rubricdeep}{RGB}{116,36,22}   % part titles, imprint
+\definecolor{inkblue}{RGB}{28,54,94}       % measurements, links, rules of theorem boxes
+\definecolor{gridline}{RGB}{222,124,84}    % graph-paper lines; always used as a tint
+\definecolor{paper}{RGB}{250,247,240}      % cream tint of record boxes
+\definecolor{paperline}{RGB}{214,198,170}  % rules of record boxes
+\definecolor{inkwash}{RGB}{237,241,247}    % pale ink tint of theorem boxes
+% the series class draws with these names
+\colorlet{sea}{rubric}
+\colorlet{seadeep}{rubricdeep}
+\colorlet{seafoam}{inkwash}
+\colorlet{seamist}{gridline!22}
+\colorlet{sand}{paper}
+\colorlet{sandline}{paperline}
+\hypersetup{linkcolor=inkblue,citecolor=inkblue,urlcolor=inkblue}
+
+% theorems: a pale ink wash with an ink rule (definitions keep the cream box of the class)
+\tcbset{mbthm/.style={enhanced,breakable,colback=inkwash,frame hidden,boxrule=0pt,arc=0pt,
+    borderline west={1.3pt}{0pt}{inkblue},left=3.2mm,right=3mm,top=1.6mm,bottom=1.6mm,
+    before skip=1.3ex plus 0.5ex,after skip=1.3ex plus 0.5ex}}
+
+% the chapter number in the margin, in the colour of the graph paper
+\renewcommand*{\mb@chapnumfont}{\normalfont\fontsize{64}{64}\selectfont\color{gridline!80}}
+
+%------------------------------------------------------------------------------
+% The ruler: a millimetre scale across text block and margin column. It replaces
+% the series' wave rule under chapter titles and on part pages.
+%------------------------------------------------------------------------------
+% \lab@ruler{colour}{length}: a ruler of the given length, in whole millimetres
+\newlength{\lab@len}
+\newcommand*{\lab@ruler}[2]{%
+  \setlength{\lab@len}{#2}%
+  \pgfmathtruncatemacro{\lab@n}{\lab@len/(1mm)}%
+  \begin{tikzpicture}[x=1mm,y=1mm]
+    \draw[#1,line width=0.45pt] (0,0) -- (\lab@n,0);
+    \foreach \i in {0,...,\lab@n}{%
+      \pgfmathsetmacro{\lab@h}{ifthenelse(mod(\i,10)==0,1.9,ifthenelse(mod(\i,5)==0,1.25,0.7))}%
+      \draw[#1,line width=0.28pt] (\i,0) -- (\i,-\lab@h);}
+  \end{tikzpicture}}
+\renewcommand*{\mb@waverule}[1][rubric!75]{%
+  \par\noindent\makebox[\linewidth][l]{%
+    \lab@ruler{#1}{\dimexpr\linewidth+\marginparsep+\marginparwidth\relax}}\par}
+% part pages: the ruler spans the blurb, and the foot of the page is blank graph paper
+\renewcommand{\casepart}[3]{%
+  \setpartpreamble[c][0.78\textwidth]{%
+    \vspace{2.2\baselineskip}{\centering\lab@ruler{rubric!60}{\linewidth}\par}\vspace{1.2\baselineskip}%
+    {\normalfont\itshape\color{muted}\setlength{\parindent}{0pt}#2\par}%
+    \risingsea{#3}}%
+  \part{#1}}
+
+%------------------------------------------------------------------------------
+% The foot of an opening page: millimetre paper fading upwards, and the record of
+% repeated measurement. Chapter k shows the first k of sixteen runs (hollow dots), their
+% running mean (filled) and a 95% t-interval for the mean. Chapter 1 has one run and no
+% interval. The runs are sixteen standard normal draws (NumPy default_rng, seed 3407);
+% see figures/scripts/00-emblem.py. Entries: j / run / running mean / half-width, in
+% units of the standard deviation.
+%------------------------------------------------------------------------------
+\tikzfading[name=lab@coverfade,top color=transparent!0,bottom color=transparent!100]
+\newcommand*{\lab@runlist}{%
+  1/2.814/2.814/0.000,2/-1.534/0.640/27.622,3/0.551/0.611/5.402,4/-0.328/0.376/2.922,%
+  5/-0.181/0.265/1.999,6/-0.371/0.159/1.535,7/-0.046/0.129/1.237,8/-3.019/-0.264/1.392,%
+  9/1.458/-0.073/1.276,10/0.471/-0.018/1.126,11/-0.466/-0.059/1.008,12/-1.309/-0.163/0.937,%
+  13/-0.048/-0.154/0.854,14/1.781/-0.016/0.839,15/-0.568/-0.053/0.779,16/0.772/-0.001/0.732}
+\newcommand*{\lab@bandheight}{27}  % mm
+\newcommand*{\lab@zero}{11}        % mm: height of the true value
+\newcommand*{\lab@sd}{3}           % mm per standard deviation
+\newcommand*{\lab@step}{11.4}      % mm between runs
+% #1 = number of runs to show (0 to 16)
+\newcommand*{\lab@band}[1]{%
+  \begin{tikzpicture}[remember picture,overlay,x=1mm,y=1mm]
+    \begin{scope}[shift={(current page.south west)}]
+      \begin{scope}[shift={(4,0)}]
+        \draw[gridline!13,line width=0.15pt,step=1] (-4,0) grid (206,\lab@bandheight);
+        \draw[gridline!25,line width=0.25pt,step=5] (-4,0) grid (206,\lab@bandheight);
+        \draw[gridline!40,line width=0.35pt,step=10] (-4,0) grid (206,\lab@bandheight);
+      \end{scope}
+      \fill[white,path fading=lab@coverfade] (0,\lab@zero+2) rectangle (210,\lab@bandheight+0.2);
+      \draw[inkblue!45,line width=0.4pt,dash pattern=on 2.2pt off 1.6pt] (0,\lab@zero) -- (210,\lab@zero);
+      \foreach \j/\y/\m/\h in \lab@runlist {%
+        \ifnum\j>#1\relax\else
+          \pgfmathsetmacro{\lab@x}{24+(\j-1)*\lab@step}%
+          \pgfmathsetmacro{\lab@ym}{\lab@zero+\lab@sd*\m}%
+          \ifnum\j>1\relax
+            \pgfmathsetmacro{\lab@lo}{max(\lab@zero+\lab@sd*(\m-\h),1.0)}%
+            \pgfmathsetmacro{\lab@hi}{min(\lab@zero+\lab@sd*(\m+\h),\lab@bandheight-1.5)}%
+            \draw[inkblue,line width=0.45pt] (\lab@x,\lab@lo) -- (\lab@x,\lab@hi);
+            \pgfmathtruncatemacro{\lab@clip}{(\lab@zero+\lab@sd*(\m-\h)<1.0)?1:0}%
+            \ifnum\lab@clip=1\relax
+              \fill[inkblue] (\lab@x,\lab@lo-0.6) -- ++(-0.55,1.15) -- ++(1.1,0) -- cycle;
+            \else\draw[inkblue,line width=0.45pt] (\lab@x-0.7,\lab@lo) -- ++(1.4,0);\fi
+            \pgfmathtruncatemacro{\lab@clip}{(\lab@zero+\lab@sd*(\m+\h)>\lab@bandheight-1.5)?1:0}%
+            \ifnum\lab@clip=1\relax
+              \fill[inkblue] (\lab@x,\lab@hi+0.6) -- ++(-0.55,-1.15) -- ++(1.1,0) -- cycle;
+            \else\draw[inkblue,line width=0.45pt] (\lab@x-0.7,\lab@hi) -- ++(1.4,0);\fi
+            \draw[inkblue!70,line width=0.35pt,fill=white] (\lab@x,\lab@zero+\lab@sd*\y) circle (0.5);
+          \fi
+          \fill[inkblue] (\lab@x,\lab@ym) circle (0.62);
+        \fi}
+    \end{scope}
+  \end{tikzpicture}}
+% the class calls \risingsea on part pages and special chapters; here its argument is
+% the number of runs to show
+\renewcommand*{\risingsea}[1]{\lab@band{#1}}
+
+%------------------------------------------------------------------------------
+% Chapter openings
+%   \labchapter{Title}{Subtitle}{The claim}{Its source}{The verdict}{label}
+% The claim is set in quotation marks; its source goes in the margin beside it.
+%------------------------------------------------------------------------------
+\newlength{\lab@tagwidth}
+\setlength{\lab@tagwidth}{6.3em}
+\newcommand{\lab@tagrow}[3]{%
+  \par\noindent\makebox[\linewidth][l]{%
+    \parbox[t]{\linewidth}{\raggedright\hangindent=\lab@tagwidth\hangafter=1
+      \makebox[\lab@tagwidth][l]{\textsc{\color{rubric}#1}}#2}%
+    \hspace*{\marginparsep}%
+    \parbox[t]{\marginparwidth}{\raggedright\footnotesize\itshape\leavevmode\color{muted}#3}}\par}
+\newcommand{\lab@openerblock}[4]{%
+  \vspace*{-0.2\baselineskip}%
+  {\raggedright\large\itshape\color{muted}#1\par}%
+  \vspace{0.75\baselineskip}%
+  \lab@tagrow{the claim}{\itshape\enquote{#2}}{#3}%
+  \vspace{0.3\baselineskip}%
+  \lab@tagrow{the verdict}{#4}{}%
+  \vspace{0.55\baselineskip}%
+  \mb@waverule
+  \vspace{0.9\baselineskip}}
+% The verdict box of a chapter records its word in the .aux file; on the next run the
+% table of contents prints it, in small capitals, beside the chapter's subtitle.
+\newcommand*{\lab@setverdict}[2]{\expandafter\gdef\csname lab@verdict@#1\endcsname{#2}}
+\newcommand*{\lab@recordverdict}[1]{%
+  \if@filesw\immediate\write\@auxout{\string\lab@setverdict{\thechapter}{#1}}\fi}
+\newcommand*{\lab@tocsubtitle}[2]{%
+  \par\nopagebreak\vspace{-0.15ex}{\leftskip=2.3em\small\itshape\color{muted}#1%
+    \ifcsname lab@verdict@#2\endcsname\hfill
+      {\upshape\scshape\color{rubric}\csname lab@verdict@#2\endcsname}\fi\par}\vspace{0.35ex}}
+\newcommand{\labchapter}[6]{%
+  \chapter[head={#1},tocentry={#1}]{#1}\label{#6}%
+  \addtocontents{toc}{\protect\lab@tocsubtitle{#2}{\thechapter}}%
+  \lab@band{\value{chapter}}%
+  \lab@openerblock{#2}{#3}{#4}{#5}%
+  \@afterindentfalse\@afterheading}
+
+% An appendix chapter has no claim and no verdict: \labappendix{Title}{Subtitle}{label}.
+% Its foot shows every run. The class's \casechapter is redirected to the same band.
+\newcommand{\labappendix}[3]{%
+  \chapter[head={#1},tocentry={#1}]{#1}\label{#3}%
+  \addtocontents{toc}{\protect\mbtocsubtitle{#2}}%
+  \lab@band{16}%
+  \mb@subtitleblock{#2}{}%
+  \@afterindentfalse\@afterheading}
+\renewcommand{\casechapter}[4]{%
+  \chapter[head={#1},tocentry={#1}]{#1}\label{#4}%
+  \addtocontents{toc}{\protect\mbtocsubtitle{#2}}%
+  \lab@band{\value{chapter}}%
+  \mb@subtitleblock{#2}{#3}%
+  \@afterindentfalse\@afterheading}
+
+%------------------------------------------------------------------------------
+% Title page: log-log paper, and on it a scaling law fitted to six measured scales of
+% five runs each, with a bootstrap 95% band that opens where the data end. All numbers
+% come from figures/scripts/00-emblem.py (35 mm per decade of compute, 60 mm per decade
+% of loss). The text of the page is laid out as in the series class.
+%------------------------------------------------------------------------------
+\newcommand*{\lab@logs}{0.30103,0.47712,0.60206,0.69897,0.77815,0.84510,0.90309,0.95424}
+\newcommand*{\lab@logpaper}{%
+  \foreach \k in {-1,...,5}{%
+    \foreach \l in \lab@logs{\draw[gridline!20,line width=0.2pt] ({24+35*(\k+\l)},0) -- ++(0,97);}%
+    \draw[gridline!45,line width=0.4pt] ({24+35*\k},0) -- ++(0,97);}%
+  \foreach \k in {-1,0,1}{%
+    \foreach \l in \lab@logs{\draw[gridline!20,line width=0.2pt] (0,{22+60*(\k+\l)}) -- ++(210,0);}%
+    \draw[gridline!45,line width=0.4pt] (0,{22+60*\k}) -- ++(210,0);}}
+\newcommand*{\lab@titleplot}{%
+  \fill[rubric!11] plot[smooth] coordinates {(-0.50,84.82) (6.50,81.91) (13.50,78.94) (20.50,76.00)
+    (27.50,73.10) (34.50,70.15) (41.50,67.24) (48.50,64.26) (55.50,61.27) (62.50,58.31) (69.50,55.39)
+    (76.50,52.56) (83.50,49.88) (90.50,47.33) (97.50,44.91) (104.50,42.62) (111.50,40.41) (118.50,38.16)
+    (125.50,35.94) (132.50,33.71) (139.50,31.54) (146.50,29.38) (153.50,27.32) (160.50,25.31)
+    (167.50,23.36) (174.50,21.50) (181.50,19.77) (188.50,18.16) (195.50,16.61) (199.00,15.87)}
+    -- plot[smooth] coordinates {(199.00,28.79) (195.50,28.98) (188.50,29.39) (181.50,29.91) (174.50,30.48)
+    (167.50,31.14) (160.50,31.97) (153.50,32.93) (146.50,33.96) (139.50,35.14) (132.50,36.46)
+    (125.50,37.98) (118.50,39.72) (111.50,41.73) (104.50,43.97) (97.50,46.39) (90.50,48.91) (83.50,51.53)
+    (76.50,54.21) (69.50,56.96) (62.50,59.82) (55.50,62.82) (48.50,65.98) (41.50,69.39) (34.50,72.91)
+    (27.50,76.57) (20.50,80.31) (13.50,84.18) (6.50,88.12) (-0.50,92.12)} -- cycle;
+  \draw[rubric,line width=0.8pt,dash pattern=on 3pt off 2pt] plot[smooth] coordinates {(-0.50,88.13)
+    (6.50,84.71) (13.50,81.32) (20.50,77.98) (27.50,74.68) (31.00,73.05)};
+  \draw[rubric,line width=1.0pt] plot[smooth] coordinates {(31.00,73.05) (38.00,69.83) (45.00,66.68)
+    (52.00,63.59) (59.00,60.57) (66.00,57.64) (73.00,54.79) (80.00,52.04) (87.00,49.40) (94.00,46.86)
+    (101.00,44.43) (108.00,42.13) (115.00,39.95) (122.00,37.89)};
+  \draw[rubric,line width=0.8pt,dash pattern=on 3pt off 2pt] plot[smooth] coordinates {(122.00,37.89)
+    (129.00,35.97) (136.00,34.17) (143.00,32.51) (150.00,30.97) (157.00,29.56) (164.00,28.27)
+    (171.00,27.10) (178.00,26.03) (185.00,25.07) (192.00,24.21) (199.00,23.43)};
+  \foreach \p in {(30.95,75.84),(31.85,70.17),(32.75,72.89),(33.65,71.74),(34.55,71.94),
+      (48.45,63.91),(49.35,64.34),(50.25,60.46),(51.15,66.30),(52.05,65.01),
+      (65.95,56.43),(66.85,55.33),(67.75,56.97),(68.65,59.35),(69.55,56.29),
+      (83.45,51.19),(84.35,49.88),(85.25,47.69),(86.15,50.77),(87.05,48.78),
+      (100.95,43.24),(101.85,46.43),(102.75,43.47),(103.65,42.99),(104.55,47.94),
+      (118.45,36.91),(119.35,37.33),(120.25,38.93),(121.15,38.38),(122.05,38.11)}%
+    {\draw[inkblue!70,line width=0.35pt,fill=white] \p circle (0.5);}
+  \foreach \x/\y/\lo/\hi in {32.75/72.52/69.91/75.12,50.25/64.00/61.30/66.70,67.75/56.88/55.00/58.75,
+      85.25/49.66/47.87/51.45,102.75/44.81/42.04/47.59,120.25/37.93/36.92/38.94}{%
+    \draw[inkblue,line width=0.5pt] (\x,\lo) -- (\x,\hi) (\x-0.8,\lo) -- ++(1.6,0) (\x-0.8,\hi) -- ++(1.6,0);
+    \fill[inkblue] (\x,\y) circle (0.7);}}
+\renewcommand{\mbtitlepage}[4]{%
+  \begin{titlepage}
+  \begin{tikzpicture}[remember picture,overlay,x=1mm,y=1mm]
+    \begin{scope}[shift={(current page.south west)}]
+      \begin{scope}\clip (0,0) rectangle (210,97);\lab@logpaper\end{scope}
+      \fill[white,path fading=lab@coverfade] (0,58) rectangle (210,97.2);
+      \lab@titleplot
+    \end{scope}
+  \end{tikzpicture}%
+  \setlength{\parindent}{0pt}%
+  \vspace*{18mm}
+  {\large\scshape\color{rubric}the missing textbooks\par}
+  \vspace{14mm}
+  \makebox[\textwidth][l]{\parbox{\dimexpr\textwidth+\marginparsep+\marginparwidth\relax}{\raggedright\hyphenpenalty=10000\exhyphenpenalty=10000
+    \fontsize{44}{50}\selectfont\color{ink}#1}}\par
+  \vspace{7mm}
+  {\LARGE\itshape\color{muted}#2\par}
+  \vspace{20mm}
+  {\Large #3\par}
+  \vfill
+  {\small\color{rubricdeep}#4\par}
+  \vspace*{4mm}
+  \end{titlepage}}
+
+%------------------------------------------------------------------------------
+% Theorem-like environments of this volume (sharing the chapter's theorem counter)
+%------------------------------------------------------------------------------
+\theoremstyle{mbdefinition}
+\mb@newsharedtheorem{hypothesis}{Hypothesis}
+\mb@newsharedtheorem{assumption}{Assumption}
+\tcolorboxenvironment{hypothesis}{mbdef}
+\tcolorboxenvironment{assumption}{mbdef}
+\theoremstyle{mbremark}
+\mb@newsharedtheorem{finding}{Finding}
+\tcbset{lab@finding/.style={enhanced,breakable,colback=white,frame hidden,boxrule=0pt,arc=0pt,
+    borderline west={0.6pt}{0pt}{inkblue!65},left=3.2mm,right=0mm,top=0.6mm,bottom=0.6mm,
+    before skip=1.1ex plus 0.4ex,after skip=1.1ex plus 0.4ex}}
+\tcolorboxenvironment{finding}{lab@finding}
+\crefname{hypothesis}{Hypothesis}{Hypotheses}
+\crefname{assumption}{Assumption}{Assumptions}
+\crefname{finding}{Finding}{Findings}
+\theoremstyle{mbplain}
+
+% A heuristic derivation is an argument that is not a proof. It ends with a diamond
+% instead of the tombstone, and \qedhere works inside it as in a proof.
+\newcommand*{\lab@diamond}{\leavevmode\unskip\penalty9999 \hbox{}\nobreak\hfill\quad\hbox{$\Diamond$}}
+\newenvironment{heuristic}[1][Heuristic derivation]{\par\pushQED{\lab@diamond}\normalfont
+  \topsep5\p@\@plus5\p@\relax\trivlist\item[\hskip\labelsep\scshape #1.]\ignorespaces}
+  {\popQED\endtrivlist\@endpefalse}
+
+%------------------------------------------------------------------------------
+% Record boxes of this volume
+%------------------------------------------------------------------------------
+% \begin{experiment}[whose experiment] \field{question}{...} \field{treatment}{...} ... \end{experiment}
+% A record sheet: one row per field, hairlines between rows.
+\newif\iflab@firstfield
+\newcommand{\lab@field}[2]{%
+  \iflab@firstfield\global\lab@firstfieldfalse\else
+    \par\vspace{0.5ex}{\color{paperline}\hrule height 0.3pt}\vspace{0.6ex}\fi
+  \noindent\hangindent=7.2em\hangafter=1
+  \makebox[7.2em][l]{\textsc{\textcolor{rubric}{#1}}}\ignorespaces#2\par}
+\newenvironment{experiment}[1][]{%
+  \begin{tcolorbox}[enhanced,breakable,colback=white,colframe=paperline,boxrule=0.5pt,arc=0pt,
+    left=3mm,right=3mm,top=1.8mm,bottom=1.6mm,
+    title={\textsc{experimental design}\Ifstr{#1}{}{}{\enspace\textperiodcentered\enspace\textsc{#1}}},
+    fonttitle=\normalfont,coltitle=rubric,colbacktitle=paper,toptitle=0.9mm,bottomtitle=0.9mm,
+    before skip=1.6ex,after skip=1.6ex,fontupper=\small]%
+  \global\lab@firstfieldtrue\let\field\lab@field\setlength{\parskip}{0pt}}
+  {\end{tcolorbox}}
+
+% \begin{verdict}{reversed} ... \end{verdict}: closes the post-mortem. The verdict word is
+% stamped in the margin beside the box. Verdict words: reversed, vanishes, confounded,
+% artifact, narrowed, mechanism replaced, holds, open.
+\newcommand*{\lab@stamp}[1]{%
+  \begin{tikzpicture}[rotate=-7,transform shape]
+    \node[draw=rubric,line width=1pt,rounded corners=1.8pt,inner xsep=2.8mm,inner ysep=1.6mm,
+      text=rubric,font=\large\scshape] (s) {#1};
+    \draw[rubric,line width=0.4pt,rounded corners=1.1pt] ([shift={(0.65mm,0.65mm)}]s.south west)
+      rectangle ([shift={(-0.65mm,-0.65mm)}]s.north east);
+  \end{tikzpicture}}
+\newenvironment{verdict}[1]{%
+  \lab@recordverdict{#1}%
+  \begin{tcolorbox}[enhanced,breakable,colback=paper,frame hidden,boxrule=0pt,arc=0pt,
+    borderline north={0.8pt}{0pt}{rubric},borderline south={0.8pt}{0pt}{rubric},
+    left=3.2mm,right=3.2mm,top=2.2mm,bottom=2.2mm,before skip=2ex,after skip=2ex,
+    overlay unbroken and first={\node[anchor=north,inner sep=0pt] at
+      ([xshift=\marginparsep+0.5\marginparwidth,yshift=-1mm]frame.north east) {\lab@stamp{#1}};},
+    before upper={\textsc{\color{rubric}verdict.}\enspace}]}
+  {\end{tcolorbox}}
+
+% \begin{protocol}{Comparing two optimizers} \item ... \end{protocol}: a numbered procedure
+% with check boxes, closing each chapter.
+\newcounter{protocol}[chapter]
+\renewcommand*{\theprotocol}{\thechapter.\arabic{protocol}}
+\crefname{protocol}{Protocol}{Protocols}
+\DeclareRobustCommand*{\lab@checkbox}{\raisebox{0.05ex}{\tikz{\draw[rubric,line width=0.55pt] (0,0) rectangle (0.62em,0.62em);}}}
+\newenvironment{protocol}[1]{%
+  \refstepcounter{protocol}%
+  \begin{tcolorbox}[enhanced,breakable,colback=paper,colframe=rubric,boxrule=0pt,
+    toprule=0pt,bottomrule=0pt,leftrule=0pt,rightrule=0pt,arc=0pt,
+    left=4mm,right=4mm,top=2.4mm,bottom=2.4mm,
+    title={\textsc{protocol \theprotocol}\enspace\textperiodcentered\enspace\textsc{#1}},
+    fonttitle=\normalfont,coltitle=white,colbacktitle=rubric,toptitle=1.1mm,bottomtitle=1.1mm,
+    before skip=1.8ex,after skip=1.8ex]
+  \begin{enumerate}[label={\lab@checkbox},leftmargin=1.7em,labelsep=0.75em,itemsep=0.55ex,topsep=0.2ex]}
+  {\end{enumerate}\end{tcolorbox}}
+
+% \begin{lab}{Budget curves for two optimizers}{figures/scripts/03-budgets-curves.py} ... \end{lab}
+% A lab sheet on engineering paper: what to run, what to predict first, what to look for.
+\newcounter{lab}[chapter]
+\renewcommand*{\thelab}{\thechapter.\arabic{lab}}
+\crefname{lab}{Lab}{Labs}
+% #1 = upper right corner of the area below the title
+\newcommand*{\lab@sheetgrid}[1]{%
+  \begin{scope}
+    \clip (interior.south west) rectangle (#1);
+    \begin{scope}[shift={(interior.south west)}]
+      \draw[gridline!20,line width=0.22pt,step=5mm] (0,0) grid (300mm,300mm);
+    \end{scope}
+  \end{scope}}
+% #2 is the base name of the script in figures/scripts, printed in the margin
+\newenvironment{lab}[2]{%
+  \refstepcounter{lab}%
+  \begin{tcolorbox}[enhanced,breakable,colback=white,colframe=gridline!55,boxrule=0.4pt,arc=0pt,
+    left=3.4mm,right=3.4mm,top=2mm,bottom=2mm,
+    underlay unbroken and first={\lab@sheetgrid{title.south east}},
+    underlay middle and last={\lab@sheetgrid{interior.north east}},
+    title={\textsc{lab \thelab}\enspace\textperiodcentered\enspace\textsc{#1}},
+    fonttitle=\normalfont,coltitle=rubric,colbacktitle=paper,toptitle=0.9mm,bottomtitle=0.9mm,
+    titlerule=0.4pt,
+    overlay unbroken and first={\node[anchor=north west,inner sep=0pt,text width=\marginparwidth,
+      align=left,font=\footnotesize] at ([xshift=\marginparsep,yshift=-1.3mm]frame.north east)
+      {\textsc{\color{rubric}script}\\[0.3ex]{\ttfamily\color{inkblue}#2.py}};},
+    before skip=1.8ex,after skip=1.8ex]}
+  {\end{tcolorbox}}
+\newcommand{\labpart}[1]{\par\smallskip\noindent{\scshape\color{rubric}#1.}\enspace}
+
+%------------------------------------------------------------------------------
+% Plots: pgfplots on graph paper
+%------------------------------------------------------------------------------
+\pgfplotscreateplotcyclelist{labcycle}{%
+  {inkblue,line width=1.0pt},%
+  {rubric,line width=1.0pt,dashed},%
+  {black!55,line width=0.9pt,densely dotted},%
+  {paperline!60!black,line width=0.9pt,dashdotted}}
+\pgfplotsset{
+  lplot/.style={width=0.92\linewidth,height=0.58\linewidth,
+    grid=both,minor tick num=4,
+    major grid style={gridline!38,line width=0.32pt},minor grid style={gridline!14,line width=0.2pt},
+    axis line style={gridline!70,line width=0.4pt},tick style={draw=none},
+    every tick label/.append style={font=\footnotesize,text=ink},
+    label style={font=\small,text=ink},title style={font=\small},
+    legend style={draw=none,fill=white,fill opacity=0.9,text opacity=1,font=\footnotesize},
+    legend cell align=left,cycle list name=labcycle,scaled ticks=false,
+    tick label style={/pgf/number format/fixed}},
+  % log axes: use \begin{loglogaxis}[lplot,lloglog] (or semilogxaxis / semilogyaxis); pgfplots
+  % accepts xmode and ymode only as direct options of the axis, never inside a style
+  lloglog/.style={minor tick num=0,minor grid style={gridline!16,line width=0.2pt}},
+  % individual runs, their mean with error bars, a fitted curve and its extrapolation
+  run/.style={only marks,mark=o,mark size=1.15pt,color=inkblue!70,mark options={line width=0.35pt,fill=white}},
+  mean/.style={only marks,mark=*,mark size=1.6pt,color=inkblue,mark options={fill=inkblue,draw=white,line width=0.2pt}},
+  ebars/.style={error bars/y dir=both,error bars/y explicit,
+    error bars/error bar style={inkblue,line width=0.5pt},
+    error bars/error mark options={inkblue,rotate=90,mark size=1.7pt,line width=0.5pt}},
+  xebars/.style={error bars/x dir=both,error bars/x explicit,
+    error bars/error bar style={inkblue,line width=0.5pt},
+    error bars/error mark options={inkblue,mark size=1.7pt,line width=0.5pt}},
+  fit/.style={rubric,line width=1.0pt,no marks},
+  extrapolation/.style={rubric,line width=0.9pt,dash pattern=on 3pt off 2pt,no marks},
+  ciband/.style={fill=rubric!11,draw=none},
+  reference/.style={black!55,line width=0.5pt,densely dashed,no marks},
+  % the same marks in vermilion, for the second arm of a comparison
+  runB/.style={only marks,mark=o,mark size=1.15pt,color=rubric!75,mark options={line width=0.35pt,fill=white}},
+  meanB/.style={only marks,mark=square*,mark size=1.45pt,color=rubric,mark options={fill=rubric,draw=white,line width=0.2pt}},
+  ebarsB/.style={error bars/y dir=both,error bars/y explicit,
+    error bars/error bar style={rubric,line width=0.5pt},
+    error bars/error mark options={rubric,rotate=90,mark size=1.7pt,line width=0.5pt}},
+  % two arms of a comparison
+  armA/.style={inkblue,line width=1.0pt,mark=*,mark size=1.4pt,mark options={fill=inkblue,draw=white,line width=0.2pt}},
+  armB/.style={rubric,line width=1.0pt,mark=square*,mark size=1.3pt,mark options={fill=rubric,draw=white,line width=0.2pt}},
+}
+
+%------------------------------------------------------------------------------
+% Exercise tags of this volume (in addition to \consolidation and \research)
+%------------------------------------------------------------------------------
+\newcommand{\labwork}{{\scshape\color{rubric}lab.}\enspace}
+\newcommand{\design}{{\scshape\color{rubric}design.}\enspace}
+\newcommand{\critique}{{\scshape\color{rubric}critique.}\enspace}
+
+%------------------------------------------------------------------------------
+% Inline helpers
+%------------------------------------------------------------------------------
+% a measured value with its uncertainty: \pmval{71.3}{0.4}
+\newcommand{\pmval}[2]{\ensuremath{#1\,{\color{muted}\pm\,#2}}}
+% a script or file name of this book
+\newcommand{\script}[1]{{\ttfamily\small\color{inkblue}#1}}
+% a verdict word in running text
+\newcommand{\verdictword}[1]{\textsc{\color{rubric}#1}}
+
+%------------------------------------------------------------------------------
+% Notation shared by all chapters (see frontmatter/notation.tex)
+%------------------------------------------------------------------------------
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\Lhat}{\widehat{\mathcal{L}}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\iid}{\overset{\mathrm{iid}}{\sim}}
+\DeclareMathOperator{\SE}{SE}
+\DeclareMathOperator{\SD}{SD}
+\DeclareMathOperator{\Bias}{Bias}
+\DeclareMathOperator{\MSE}{MSE}
+\DeclareMathOperator{\Corr}{Corr}
+\DeclareMathOperator{\logit}{logit}
+\DeclareMathOperator{\Unif}{Unif}
+\DeclareMathOperator{\Bin}{Bin}
+\DeclareMathOperator{\Bern}{Bern}
+\DeclareMathOperator{\IQM}{IQM}
+\DeclareMathOperator{\med}{med}
+\DeclareMathOperator{\diag}{diag}
+\DeclareMathOperator{\softmax}{softmax}
+\DeclareMathOperator{\relu}{ReLU}
+\providecommand{\cK}{\mathcal{K}}
+\providecommand{\cO}{\mathcal{O}}
+\providecommand{\cQ}{\mathcal{Q}}
+\providecommand{\cR}{\mathcal{R}}
+\providecommand{\cV}{\mathcal{V}}
+
+\endinput

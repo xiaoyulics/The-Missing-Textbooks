@@ -1,0 +1,400 @@
+% Chapter 3 of Deep Learning as an Experimental Science: aggregates over a suite of tasks.
+\labchapter{Many Tasks, Few Runs}{Aggregates, intervals and multiplicity}{A higher median score over a few runs per game identifies the better algorithm.}{The practice of the Atari 100k benchmark, 2019--2021, as audited by Agarwal et al.\ (2021)}{Narrowed: rerun 100 times per game under one evaluation protocol, some claimed gains hold, while others are within noise or reverse.}{ch:aggregates}
+\begin{refsection}[chapters/03-aggregates.bib]
+
+\newcommand{\aggregatesJeff}{J_{\mathrm{eff}}}
+\newcommand{\aggregatesOG}{\mathrm{OG}}
+
+\begin{chaptersummary}
+Between 2019 and 2021, a succession of papers on the Atari 100k benchmark reported gains over earlier agents, mostly in the median human-normalized score over 3 to 20 runs per game, and the best were read as the new state of the art. \Textcite{AgarwalEtAl2021} trained five of these agents 100 times on each game: medians from a few runs scattered as widely as the gaps between agents, the sample median was biased, and some agents had been scored by a maximum. The method is to know what an aggregate over tasks estimates and how precisely: two levels of variation, the effective number of tasks behind the mean, the median and the interquartile mean, the stratified bootstrap and its shortfall with three runs, and the comparisons hidden in per-task tests, in maxima and in the choice of aggregate. In a twelve-task miniature built from digits, a baseline scored by its best checkpoint overtakes a better method, the aggregate decides between two others, and two hundred three-run replications show the median's interval missing a real gain in half of them.
+\end{chaptersummary}
+
+\section{The claim: a new state of the art every few months}\label{sec:aggregates:claim}
+
+Reinforcement learning on Atari games is evaluated on a suite. The Arcade Learning Environment of \textcite{BellemareEtAl2013} made dozens of Atari 2600 games a common testbed, and \textcite{MnihEtAl2015} put the games on one scale: an agent's score on a game is rescaled so that a random policy scores $0$ and a human player scores $1$,
+\[
+  \text{human-normalized score}=\frac{\text{agent score}-\text{random score}}{\text{human score}-\text{random score}} ,
+\]
+and the scores are summarized across games by their mean or their median.\index{human-normalized score} One number per agent made agents comparable at a glance, and the number became the result.
+
+\Textcite{KaiserEtAl2020} asked how well an agent can play after very little experience. Their model-based agent, SimPLe, learned from 100{,}000 interactions with each game, that is 400{,}000 frames with the usual frame skip of four, or about two hours of real-time play,\sidenote{The exact budget in \textcite{KaiserEtAl2020} is $6400\times16=102{,}400$ interactions, 409{,}600 frames or 114 minutes at 60 frames per second.} on 26 games, and they reported the mean and standard deviation of five runs on each game, comparing with model-free agents game by game. The setting became the \term{Atari 100k} benchmark\index{Atari 100k},\sidenote{The 26 games were those on which SimPLe or Rainbow obtained non-random results at 100k interactions \parencite[Section~6]{KaiserEtAl2020}: the suite was selected with the help of the methods it was first used to compare.} and its aggregate became the median human-normalized score over the 26 games.
+
+A sequence of papers followed, each reporting gains over the agents it compared with. \Textcite{vanHasseltEtAl2019} changed a few hyperparameters of Rainbow \parencite{HesselEtAl2018} (one update per environment step, 20-step returns, learning from replay after 1{,}600 transitions), and this \term{data-efficient Rainbow}, DER, beat SimPLe on 17 of the 26 games with five runs each.\sidenote{The SimPLe numbers in that comparison were those of SimPLe's first preprint; the conference version reports revised scores and concedes that tuned Rainbow is on par, better on 13 games and worse on 13 \parencite{KaiserEtAl2020}.} In a preprint, \textcite{Kielak2020} trained Rainbow with eight updates per environment step, called it OTRainbow, for ``overtrained'', and reported a median of $0.204$ against SimPLe's $0.102$. CURL \parencite{LaskinEtAl2020} added a contrastive loss on image representations and reported a median of $0.175$ over 20 runs, against $0.144$ for SimPLe and $0.161$ for DER: the ``1.2x'' gain on Atari in its abstract.\sidenote{The first two arXiv versions of CURL used 3 runs per game and reported a median of $0.24$; the conference version moved to another code base and 20 runs.} DrQ \parencite{YaratsEtAl2021} augmented the input images and reported a median of $0.268$ over five runs, a new state of the art. SPR \parencite{SchwarzerEtAl2021} added a self-predictive loss and reported $0.415$ over ten runs, ``a 55\% relative improvement'' over the previous state of the art.
+
+\begin{finding}[\textcite{SchwarzerEtAl2021}, Table~1]\label{fd:aggregates:table}
+On the 26 games of Atari 100k, the mean and median human-normalized scores of six agents were as follows; the runs per game are those of the original papers, as listed by \textcite{AgarwalEtAl2021} and \textcite{KaiserEtAl2020}. SPR led by both aggregates.
+\begin{center}\small
+\begin{tabular}{lcccccc}
+\toprule
+ & SimPLe & DER & OTRainbow & CURL & DrQ & SPR\\
+\midrule
+runs per game & 5 & 5 & 5 & 20 & 5 & 10\\
+mean & 0.443 & 0.285 & 0.264 & 0.381 & 0.357 & 0.704\\
+median & 0.144 & 0.161 & 0.204 & 0.175 & 0.268 & 0.415\\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{finding}
+
+DrQ and then SPR were received as the new state of the art. The claim this chapter examines is the practice behind such readings: that the agent with the higher median over a few runs per game is the better agent. Prior results on the benchmark had been computed mostly from three or five runs per game, more rarely from ten or twenty \parencite{AgarwalEtAl2021}.
+
+The practice was reasonable. Five runs on each of 26 games is already 130 trainings per agent, and the median was chosen on purpose: on a few games an agent can reach several times the human score, and those games dominate a mean (by the mean, SimPLe is ahead of CURL and DrQ; by the median, behind both). The improvements were also, in part, real: DER and OTRainbow corrected a comparison against untuned baselines, the subject of \cref{ch:budgets}, and SPR's lead was large. What no paper reported was how far its median would move when the runs were repeated.
+
+\section{The experiment: twenty-six games, a few runs, one number}\label{sec:aggregates:experiment}
+
+The comparisons behind these claims share one design.
+
+\begin{experiment}[Atari 100k comparisons, 2019--2021]
+\field{question}{Is the new agent more sample-efficient than earlier agents on Atari?}
+\field{units}{A run: one agent trained from scratch on one game for 100k interactions.}
+\field{treatment}{The agent: the new method against three to six earlier methods.}
+\field{tuned}{The new method's hyperparameters, sometimes per game; baselines as published.}
+\field{held fixed}{The 26 games and the budget of 100k interactions.}
+\field{not fixed}{The evaluation protocol of the baselines, their code bases, and the human reference scores used to normalize.}
+\field{response}{A run's human-normalized score: its mean return over a set of evaluation episodes.}
+\field{replicates}{3 to 20 runs per game, most often 3 or 5.}
+\field{analysis}{Mean over runs on each game; median and mean over games; point estimates set against numbers copied from earlier papers; win counts over games.}
+\end{experiment}
+
+This design answers one question well: did the new agent's runs, on these games, average higher than the numbers printed in earlier papers? It cannot answer the question it was read as answering, because three of its features are invisible in its output.
+
+First, the median of 26 game means is a random quantity, and one set of runs gives one draw of it. Its spread over reruns is not in the table, nor is the spread of the numbers it is compared with, although with five runs per game an interval could have been computed by resampling runs. The gaps between consecutive claims were small: $0.161$ to $0.175$ from DER to CURL, $0.204$ to $0.268$ from OTRainbow to DrQ.
+
+Second, the comparison has no common control arm. Each paper ran its own agent and copied the baselines' numbers, so a difference in the table mixes the difference of agents with differences of evaluation protocol, code base and reference scores. Even one baseline's numbers moved between papers: SimPLe's median is $0.102$ in \textcite{Kielak2020} and $0.144$ in later tables, and DER's is $0.147$ in early versions of CURL and $0.161$ in the final one, through changes in the SimPLe results used and in the human reference scores.\sidenote{DrQ's own reported median moved between its arXiv versions, from $0.270$ to $0.284$ to $0.268$ \parencite{YaratsEtAl2021}.}
+
+Third, a table over 26 games is a family of comparisons. A paper that bolds the best score on each game and counts the bold entries makes 26 comparisons at once, and a protocol that keeps the best of several evaluations makes several more per run, none of them adjusted for. None of the three is a flaw in the agents; each is a gap between what the design measures and what its single number was taken to mean.
+
+\section{The post-mortem: one hundred runs per game}\label{sec:aggregates:postmortem}
+
+\Textcite{AgarwalEtAl2021} measured what the design leaves out by running it a hundred times. For five agents, DER, OTRainbow, CURL, DrQ and SPR, and for DrQ($\epsilon$), DrQ with the standard exploration settings of the benchmark, they trained 100 independent runs on each of the 26 games and scored each run by its mean return over 100 evaluation episodes after training. DER and OTRainbow, which had no public code, were reimplemented in the Dopamine framework; CURL and SPR were run from their authors' code, and DrQ from code its authors provided. Subsampling these runs gives the distribution of every statistic that a paper with fewer runs could have reported.
+
+\begin{finding}[\textcite{AgarwalEtAl2021}, Section~3 and Appendix~A]\label{fd:aggregates:precipice}
+With 100 runs per game for each agent:
+(i) medians recomputed from as many runs as each paper had used (5, 10 or 20) vary widely, and the published medians lie far out in these distributions, some too high and some too low;
+(ii) the expected sample median changes with the number of runs, by an amount and in a direction that depend on the agent: for SPR the change from 5 to 100 runs, $+0.03$, is about 36\% of its improvement over DrQ($\epsilon$), $+0.08$;
+(iii) 95\% intervals for the median remain wide with 50 runs, and with no true difference at all two sets of 100 runs can differ by 20\% in median, while the interquartile mean needs far fewer runs for the same precision;
+(iv) CURL's published scores were the maximum over 10 evaluations during training, and DrQ's code evaluated with a 5\% chance of random actions instead of the standard 0.1\%.
+\end{finding}
+
+By the reported numbers OTRainbow was ahead of DER; with a hundred runs, DER ``may in fact be better'' than OTRainbow \parencite[Section~3]{AgarwalEtAl2021}, although part of this may come from implementation, since both were reimplemented. The protocol mattered more than the runs. Scored the way CURL was scored, by the maximum over evaluations during training, DER exceeds CURL's published scores by a wide margin, and scored at the end of training it is ahead of CURL: the gap between the two in the published table belongs to the protocol. SUNRISE \parencite{LeeEtAl2021}, which reported improvements over DER, had taken the maximum over eight hyperparameter configurations separately for each game, with three runs each, and simulating that protocol on DER explained much of the gain \parencite[Appendix~A.4]{AgarwalEtAl2021}. SPR's lead, by contrast, held: with a hundred runs it remained the strongest of the five.\sidenote{Read from the axes of Figure~3 of \textcite{AgarwalEtAl2021}: the expected medians order the agents SPR, DrQ($\epsilon$), DER, OTRainbow, CURL at every number of runs from 3 to 100.}
+
+The audit found the same pattern on the 200-million-frame Atari benchmark, where the ranking of agents changed with the aggregate, on the DeepMind Control Suite, and on Procgen, where several claimed improvements had a probability of improvement of only $0.5$ to $0.7$. Its recommendations were interval estimates of aggregates from a stratified bootstrap, performance profiles, the interquartile mean in place of the median, the optimality gap and the probability of improvement, and publication of every run; the authors released a library, rliable, and all of their runs.
+
+\begin{verdict}{narrowed}
+The claims that rested on a median of a few runs per game hold only where the gap between agents exceeds the uncertainty of that median and the agents were scored under one protocol. With a hundred runs per game, SPR stays ahead; DER, reported below OTRainbow and CURL, may be ahead of the first and is ahead of the second; and the advantage printed for CURL came from its evaluation protocol. The point estimates were not wrong as measurements; they could not carry the conclusions drawn from them.
+\end{verdict}
+
+The post-mortem did not show that these agents were poor, and its recommendations are not the only defensible ones. It argues for intervals rather than dichotomous tests, whereas earlier audits recommended tests: \textcite{HendersonEtAl2018}, whose seed experiment opens this book (\cref{ch:prologue}), proposed bootstrap intervals, significance tests and power analysis, and \textcite{ColasEtAl2018,ColasEtAl2019} recommended Welch's $t$-test with corrections for multiple comparisons, warning that bootstrap tests have high false-positive rates with few runs. \Textcite{JordanEtAl2020} built intervals with guaranteed coverage after finding that percentile bootstrap intervals failed 11\% of the time with ten runs. These disagree about the form of an uncertainty statement, not about whether to make one; and the interquartile mean is not the true aggregate, only a choice of what to measure.
+
+\section{The method: what an aggregate estimates}\label{sec:aggregates:estimates}
+
+An aggregate over a suite comes from a sample with two levels, tasks and runs within tasks; before computing an interval we need to know which level a claim is about and how the aggregate weighs the tasks.
+
+\paragraph{Two levels of variation.} A suite has $J$ tasks, indexed by $j$, and each method is run $n$ times on each task. The normalized score of run $i$ on task $j$ is $Y_{ji}$. Given the task, the runs are independent draws from the task's run distribution, with mean $\mu_j$ and variance $\sigma_j^2$, and the task mean $\bar Y_j=\frac1n\sum_iY_{ji}$ estimates $\mu_j$. A \term{suite-level} claim\index{suite-level inference} is about these $J$ tasks, for instance about $\frac1J\sum_j\mu_j$: the agent is better on these 26 games. A \term{population-level} claim\index{population-level inference} treats the tasks as a sample from a population of tasks: the agent is better on games like these. The two have different uncertainties.
+
+\begin{proposition}[Two levels of variation]\label{prop:aggregates:twolevel}
+Let the pairs $(\mu_j,\sigma_j^2)$, $j=1,\dots,J$, be independent and identically distributed, with $\omega^2=\Var\mu_j$ and $\bar\sigma^2=\E\sigma_j^2$ finite, and let the runs on task $j$ be, given $(\mu_j,\sigma_j^2)$, independent with mean $\mu_j$ and variance $\sigma_j^2$. The suite mean $\bar Y=\frac1J\sum_j\bar Y_j$ satisfies
+\begin{equation}\label{eq:aggregates:twolevel}
+  \Var\bigl(\bar Y\bigm|\mu_{1:J},\sigma^2_{1:J}\bigr)=\frac1{J^2}\sum_{j=1}^J\frac{\sigma_j^2}n,\qquad
+  \Var\bar Y=\frac{\omega^2}J+\frac{\bar\sigma^2}{nJ}.
+\end{equation}
+\end{proposition}
+
+\begin{proof}
+Given the tasks, the task means are independent with variances $\sigma_j^2/n$, and the variance of their average is the first formula. The law of total variance adds the mean of this conditional variance, $\bar\sigma^2/(nJ)$, to the variance of the conditional mean $\frac1J\sum_j\mu_j$, which is $\omega^2/J$ because the $\mu_j$ are independent with variance $\omega^2$.
+\end{proof}
+
+More runs shrink only the second term; the first, $\omega^2/J$, is fixed by the number of tasks. For two methods compared on the same tasks, apply the proposition to the per-task difference: $\omega^2$ is then the variance of the effect across tasks, small when a method helps everywhere by the same amount and large when it helps on some tasks and hurts on others. The stratified bootstrap resamples runs within fixed tasks, so it estimates the conditional variance and supports suite-level claims. A test across tasks, such as the signed-rank test of \cref{sec:aggregates:comparisons}, treats the tasks as the sampling units and supports population-level claims, but only to the extent that the tasks are a sample; a suite chosen by hand, like the 26 games, is not.
+
+\paragraph{Aggregates.} Five summaries of a method's scores are in common use \parencite{AgarwalEtAl2021}. The \term{mean} is $\frac1J\sum_j\bar Y_j$, and the \term{median} is $\med(\bar Y_1,\dots,\bar Y_J)$. The \term{interquartile mean}\index{interquartile mean}, $\IQM$, pools all $nJ$ scores, discards the lowest and the highest quarter, and averages the middle half: it is the 25\% trimmed mean of the pooled runs. The \term{optimality gap}\index{optimality gap} at a target $\gamma$ is $\aggregatesOG_\gamma=\gamma-\frac1{nJ}\sum_{j,i}\min(Y_{ji},\gamma)$, the average shortfall below the target, with $\gamma=1$ for human level. The \term{probability of improvement}\index{probability of improvement} of method~A over method~B is the average over tasks of $\Prob(Y^{\mathrm A}_j>Y^{\mathrm B}_j)+\frac12\Prob(Y^{\mathrm A}_j=Y^{\mathrm B}_j)$ for independent runs of the two methods, estimated on each task by the Mann--Whitney statistic (\cref{thm:toolkit:mannwhitney}). Behind all of them stands the \term{score distribution}\index{performance profile} $\hat F(t)=\frac1{nJ}\sum_{j,i}\ind\{Y_{ji}>t\}$, the fraction of runs above $t$, an unbiased estimate of $\frac1J\sum_j\Prob(Y_j>t)$; plotted against $t$ it is a performance profile in the sense of \textcite{DolanMore2002}.
+
+Each aggregate ignores something. The median sees the magnitude of the scores only on the one or two tasks in the middle: when it is positive, lowering the scores of every task below the middle, even to zero, leaves it unchanged. The mean is dominated by the tasks with the largest scores and the largest run-to-run variance; the interquartile mean ignores the extremes, which may include the tasks on which a method fails; the probability of improvement ignores the size of the improvement, and the optimality gap everything above its target. Each answers a different question, to be chosen before the scores are seen.
+
+\paragraph{Precision: the effective number of tasks.} The median of $J$ task means depends on all of them but moves with the run noise of only one or two: when the tasks are far apart, the task in the middle stays in the middle. The next theorem makes this exact for every aggregate that is a weighted sum of order statistics of the task means.\index{effective number of tasks}
+
+\begin{theorem}[Effective number of tasks]\label{thm:aggregates:effective}
+Let $X_j=\mu_j+e_j$ for $j=1,\dots,J$, where $\mu_1<\mu_2<\dots<\mu_J$ and the errors $e_j$ are independent with mean $0$ and variances $s_j^2$. Let $L(x)=\sum_{k=1}^Jc_kx_{(k)}$, with weights $c_k\ge0$ summing to $1$, let $V=\sum_kc_k^2s_k^2$, and let $\cA$ be the event $X_1<X_2<\dots<X_J$ that the errors do not reorder the tasks.
+\begin{enumerate}
+\item On $\cA$, $L(X)-L(\mu)=\sum_kc_ke_k$; everywhere, $\abs{L(X)-L(\mu)}\le\max_j\abs{e_j}$.
+\item The root mean squared error $R=\bigl(\E(L(X)-L(\mu))^2\bigr)^{1/2}$ satisfies $\abs{R-\sqrt V}\le2\bigl(\E\bigl[\max_je_j^2\,\ind_{\cA^c}\bigr]\bigr)^{1/2}$.
+\item If the errors are Gaussian with $s_j\le s$ and consecutive means differ by at least $g>0$, then
+\begin{equation}\label{eq:aggregates:effbound}
+  \abs{R-\sqrt V}\le2s\,\Bigl(3J(J-1)\,\Phi\bigl(-g/(s\sqrt2)\bigr)\Bigr)^{1/4}.
+\end{equation}
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to compare $L(X)$ with the linear statistic $Z=\sum_kc_ke_k$, which it equals when the tasks keep their order, and to bound the difference on the event that they do not.
+
+\emph{Part (i).} On $\cA$ the $k$th smallest of the $X_j$ is $X_k$, so $L(X)=\sum_kc_k(\mu_k+e_k)=L(\mu)+Z$, where $L(\mu)=\sum_kc_k\mu_k$ because the $\mu_k$ are sorted. For the bound everywhere we use that order statistics are $1$-Lipschitz in the maximum norm. Suppose $x_j\le y_j+\delta$ for every $j$. The $k$ indices that carry the $k$ smallest $y_j$ carry $k$ values $x_j$, each at most $y_{(k)}+\delta$, so $x_{(k)}\le y_{(k)}+\delta$; exchanging $x$ and $y$ gives $\abs{x_{(k)}-y_{(k)}}\le\max_j\abs{x_j-y_j}$. With $y=\mu$, and the weights nonnegative with sum $1$,
+\[
+  \abs{L(X)-L(\mu)}\le\sum_kc_k\abs{X_{(k)}-\mu_k}\le\max_j\abs{e_j}.
+\]
+
+\emph{Part (ii).} Let $D=L(X)-L(\mu)-Z$. By part (i), $D=0$ on $\cA$. Since also $\abs Z\le\sum_kc_k\abs{e_k}\le\max_j\abs{e_j}$, the same part gives $\abs D\le2\max_j\abs{e_j}$ on $\cA^c$. The errors are independent with mean $0$, so $\E Z^2=V$. Minkowski's inequality for the norm $\bigl(\E(\cdot)^2\bigr)^{1/2}$ bounds $\abs{R-\sqrt V}$ by $\bigl(\E D^2\bigr)^{1/2}$, which is at most $2\bigl(\E[\max_je_j^2\,\ind_{\cA^c}]\bigr)^{1/2}$.
+
+\emph{Part (iii).} If $X_k<X_{k+1}$ for every $k$, then the $X_j$ are in order, so $\cA^c$ is contained in the union of the $J-1$ events $\{X_k\ge X_{k+1}\}$. Each says that $e_k-e_{k+1}\ge\mu_{k+1}-\mu_k\ge g$, and $e_k-e_{k+1}$ is Gaussian with mean $0$ and variance at most $2s^2$, so the union bound gives $\Prob(\cA^c)\le(J-1)\Phi(-g/(s\sqrt2))$. Next we bound the expectation in part (ii) by the Cauchy--Schwarz inequality, then the maximum of the fourth powers by their sum, using $\E e_j^4=3s_j^4\le3s^4$ for Gaussian errors:
+\[
+  \E\bigl[\max_je_j^2\,\ind_{\cA^c}\bigr]\le\Bigl(\E\max_je_j^4\Bigr)^{1/2}\Prob(\cA^c)^{1/2}\le\bigl(3Js^4\bigr)^{1/2}\bigl((J-1)\Phi(-g/(s\sqrt2))\bigr)^{1/2}.
+\]
+Inserting this bound in part (ii) gives \eqref{eq:aggregates:effbound}.
+\end{proof}
+
+When the tasks are well separated, then, each such aggregate behaves like a weighted average of independent task errors; with equal run noise, $s_j=s$, its variance is that of an average of $\aggregatesJeff=1/\sum_kc_k^2$ independent tasks. The mean has $\aggregatesJeff=J$; the median has $\aggregatesJeff=1$ for an odd number of tasks and $2$ for an even number; a 25\% trimmed mean of the task means has $\aggregatesJeff=J/2$ when $J$ is a multiple of $4$, and so does the interquartile mean of pooled runs when the scores of different tasks do not overlap. On Atari 100k the median carries the run noise of two games and the interquartile mean that of about thirteen. The bound \eqref{eq:aggregates:effbound} is loose: in a simulation with $J=13$ Gaussian tasks (\cref{lab:aggregates:replications}), the median's error is already $0.995s$ when consecutive tasks are $g=4s$ apart, and $0.891s$ at $g=2s$.
+
+The opposite extreme is a suite in which every task has the same run distribution. The pooled runs are then one sample from a location family, and the classical asymptotics apply.
+
+\begin{proposition}[One sample]\label{prop:aggregates:location}
+Let $Y_1,\dots,Y_N$ be independent with density $f(y-\theta)$, where $f$ is symmetric about $0$, has variance $\sigma^2$, and is continuous and positive at $0$ and at its quartiles $\pm q$. As $N\to\infty$, the sample mean, the sample median and the 25\% trimmed mean are asymptotically normal around $\theta$, with variances $v/N$ given by
+\[
+  v_{\mathrm{mean}}=\sigma^2,\qquad v_{\mathrm{med}}=\frac1{4f(0)^2},\qquad v_{\IQM}=4\Bigl(\int_{-q}^{q}y^2f(y)\dd y+\frac{q^2}2\Bigr).
+\]
+\end{proposition}
+
+\begin{proofsketch}
+For the median, $\sqrt N(\med-\theta)\le t$ holds exactly when at least half of the $Y_i$ lie below $\theta+t/\sqrt N$; this count is binomial with success probability $\frac12+f(0)t/\sqrt N+o(N^{-1/2})$, and the central limit theorem for the binomial gives the limit $\Phi(2f(0)t)$. For the trimmed mean, \textcite{Stigler1973} proves asymptotic normality with the variance of the influence function, here the winsorized observation $\max(-q,\min(Y-\theta,q))$ divided by $1-2\cdot\frac14$; its second moment is the integral plus the two tails, each of mass $\frac14$ at $\pm q$, which gives $v_{\IQM}$. Quantiles and trimmed means are treated in general in \textcite[Chapters~21--22]{vanderVaart1998}.
+\end{proofsketch}
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lccc}
+\toprule
+run distribution & median & interquartile mean & mean\\
+\midrule
+normal & 0.64 & 0.84 & 1\\
+logistic & 0.82 & 1.04 & 1\\
+Laplace & 2.00 & 1.63 & 1\\
+Student's $t$, 3 degrees of freedom & 1.62 & 1.97 & 1\\
+normal, 5\% contaminated with SD 10 & 3.45 & 4.48 & 1\\
+\bottomrule
+\end{tabular}
+\caption{Asymptotic efficiency of the median and the interquartile mean relative to the mean, $v_{\mathrm{mean}}/v$ from \cref{prop:aggregates:location}, for one sample from five symmetric location families. Computed by numerical integration in \script{03-aggregates-reruns.py}.}\label{tab:aggregates:efficiency}
+\end{table}
+
+\Cref{tab:aggregates:efficiency} gives the efficiencies. For normal runs the median wastes a third of the data and the interquartile mean a sixth; for heavy-tailed runs both beat the mean, and the interquartile mean is never far from the better of the other two. Between the two extremes, with normal run noise, the median's effective number of tasks lies between $1$ and $2J/\pi\approx0.64J$, and the interquartile mean's between about $J/2$ and $0.84J$. This is the case for the interquartile mean with few runs: it gives up little when the runs are well behaved, much less than the median, and it does not let one task with wild runs dominate, as the mean does.
+
+The sample median is also biased: it is an order statistic of noisy values, and its expectation moves away from the median of the true task means. Suppose two tasks are tied at $\mu$, with $r-1$ tasks far below them and $r$ far above, so that $J=2r+1$ and the true median is $\mu$. Then the sample median is the larger of the two tied estimates, with expectation $\mu+s\,e_2=\mu+s/\sqrt\pi$, where $e_2$ is the expected maximum of two standard normals (\cref{ch:seeds}); with the tied pair one place higher the bias is $-s/\sqrt\pi$. The bias shrinks with $s$ as runs are added, and its sign depends on the tasks near the middle, which differ between methods: this is the bias that \textcite{AgarwalEtAl2021} measured.
+
+\paragraph{Intervals: the stratified bootstrap.}\index{bootstrap!stratified} Suite-level uncertainty comes from the runs, so an interval should resample runs and keep the tasks. The \term{stratified bootstrap} draws $n$ runs with replacement within each task, recomputes the aggregate, and repeats; the 2.5\% and 97.5\% quantiles of the recomputed values form the percentile interval (\cref{def:toolkit:bootstrap}). For a difference between methods, both are resampled. With few runs the interval is too narrow, by a factor that is exact for the mean.
+
+\begin{proposition}[The bootstrap with $n$ runs]\label{prop:aggregates:bootstrap}
+Given the scores, the stratified bootstrap variance of the mean aggregate equals $\frac{n-1}n$ times the unbiased estimate $\frac1{J^2}\sum_jS_j^2/n$ of its conditional variance \eqref{eq:aggregates:twolevel}, where $S_j^2$ is the sample variance of the $n$ runs on task $j$.
+\end{proposition}
+
+\begin{proof}
+Given the scores, the $n$ resampled runs of task $j$ are independent draws from the empirical distribution of its runs, which has mean $\bar Y_j$ and variance $\frac1n\sum_i(Y_{ji}-\bar Y_j)^2=\frac{n-1}nS_j^2$. Their mean therefore has variance $\frac{n-1}nS_j^2/n$, the tasks are resampled independently, and the mean aggregate averages the $J$ resampled task means.
+\end{proof}
+
+With three runs the bootstrap standard error is $\sqrt{2/3}\approx0.82$ times the usual one, and a percentile interval spans about $\pm1.96\times0.82=\pm1.60$ standard errors, which covers 89\% of the time for normal estimates, before counting the error of estimating each $\sigma_j^2$ from three runs; each task contributes at most ten distinct resampled means. \Textcite[Figure~6]{AgarwalEtAl2021} found this undercoverage with three runs on Atari, and percentile intervals adequate from about ten runs per task. The median and the interquartile mean share the shortfall to first order. Widening the interval by $\sqrt{n/(n-1)}$ removes the part that \cref{prop:aggregates:bootstrap} identifies, but not the rest.
+
+\section{The method: many comparisons}\label{sec:aggregates:comparisons}
+
+A suite multiplies comparisons: one per task, one per aggregate, one per baseline, and, hidden inside a protocol, one per evaluation or configuration over which a maximum is taken.
+
+\begin{proposition}[Many true nulls]\label{prop:aggregates:many}
+Suppose that $m_0$ of $m$ tests concern true null hypotheses and that each of these rejects with probability $\alpha$. Then the expected number of false rejections is $m_0\alpha$, and the probability of at least one is at most $m_0\alpha$; if the $m_0$ tests are independent, then it equals $1-(1-\alpha)^{m_0}$.
+\end{proposition}
+
+\begin{proof}
+The number of false rejections is a sum of $m_0$ indicators with mean $\alpha$ each, so its expectation is $m_0\alpha$; the union bound gives the second statement. If the tests are independent, then the probability that none of them rejects is the product $(1-\alpha)^{m_0}$.
+\end{proof}
+
+For a method no different from its baseline on each of 26 games, two-sided per-game tests at level $0.05$ reject $1.3$ times on average, and at least once with probability $1-0.95^{26}\approx0.74$ when the games are independent. The \term{family-wise error rate}\index{family-wise error rate}, the probability of at least one false rejection, is controlled by Bonferroni's correction, which tests each hypothesis at level $\alpha/m$, and more powerfully by the step-down procedure of \textcite{Holm1979}: order the $p$-values, compare the $k$th smallest with $\alpha/(m-k+1)$, and reject until the first comparison fails. Both are valid whatever the dependence between the tests (\cref{thm:toolkit:bonferroni,thm:toolkit:holm}): with probability at least $1-\alpha$ every true null has $p$-value above $\alpha/m_0$, and then Holm's procedure stops before the first true null. The \term{false discovery rate}\index{false discovery rate}, the expected proportion of false rejections among the rejections, is controlled at $\alpha$ by the step-up procedure of \textcite{BenjaminiHochberg1995} for independent or positively dependent tests (\cref{thm:toolkit:bh}); under arbitrary dependence the level must be divided by $\sum_{k=1}^m1/k$ \parencite{BenjaminiYekutieli2001}. The choice follows the claim: ``B is better on games X, Y and Z'' is a list of discoveries, for which the false discovery rate fits; ``B is never worse'' is a claim about the whole family, which needs the family-wise rate.\index{multiple comparisons}
+
+\paragraph{Tasks as the sampling units.} \Textcite{Demsar2006} studied the same problem for classifiers compared over many data sets. Surveying papers at the International Conference on Machine Learning from 1999 to 2003, he found paired $t$-tests on each data set to be almost the only test in use, often summarized by counts of wins and losses. He recommended treating the data sets as the sampling units: for two methods, the Wilcoxon signed-rank test on the per-data-set differences \parencite{Wilcoxon1945}; for several, Friedman's test on the ranks of the methods within each data set \parencite{Friedman1937}, followed by Nemenyi's test for all pairs or Holm's procedure for comparisons with a control, drawn as a critical-difference diagram. These tests answer the population-level question of \cref{prop:aggregates:twolevel}. A caution came later: the tests that follow Friedman's compare two methods through mean ranks that depend on the other methods in the comparison, so adding a third method can change whether the first two differ; pairwise signed-rank tests with a multiplicity correction avoid this \parencite{BenavoliEtAl2016}.
+
+\paragraph{Hidden maxima.} A protocol that reports the best of several evaluations makes a multiple comparison inside every run. The cost is easy to compute when the evaluations of one run are noisy measurements around a common value.\index{expected maximum}
+
+\begin{proposition}[The best of $k$ evaluations]\label{prop:aggregates:hiddenmax}
+Let $X_i=\mu+\sigma\bigl(\sqrt\rho\,Z_0+\sqrt{1-\rho}\,Z_i\bigr)$ for $i=1,\dots,k$, with $Z_0,\dots,Z_k$ independent standard normal and $0\le\rho\le1$; the $X_i$ have mean $\mu$, standard deviation $\sigma$ and pairwise correlation $\rho$. Then $\E\max_iX_i=\mu+\sigma\sqrt{1-\rho}\,e_k$.
+\end{proposition}
+
+\begin{proof}
+The shared term $\sigma\sqrt\rho\,Z_0$ is the same for every $i$, and $\sqrt{1-\rho}\ge0$, so $\max_iX_i=\mu+\sigma\sqrt\rho\,Z_0+\sigma\sqrt{1-\rho}\max_iZ_i$. Taking expectations, with $\E Z_0=0$ and $\E\max_iZ_i=e_k$, proves the claim.
+\end{proof}
+
+The maximum rewards the part of the evaluation noise that is not shared between evaluations: the episode-to-episode noise of a finite evaluation, and the fluctuation of the policy between checkpoints. With ten evaluations, $e_{10}\approx1.54$, so the best evaluation of a run that has stopped improving lies about $1.54\sqrt{1-\rho}$ standard deviations above its typical evaluation; a run that is still changing also contributes its best moment of training, a form of early stopping on the evaluation data. A maximum over eight hyperparameter configurations per game, the protocol of SUNRISE, is the best of $k=8$ trials of \cref{ch:budgets}, with $e_8\approx1.42$. In each case the published comparison set a maximum against an average.
+
+\paragraph{The garden of forking paths.}\index{garden of forking paths} \Textcite{GelmanLoken2013,GelmanLoken2014} pointed out that a researcher who would have analyzed the data differently had they come out differently has made multiple comparisons, even when only one analysis was run and nothing was hidden. A suite of tasks has many such paths, and papers on Atari 100k took different ones: the aggregate, the normalization and its reference scores, the tasks, the number of runs and which runs to keep, the evaluation protocol, the baselines to rerun. \Textcite{SimmonsEtAl2011} showed in psychology how a few such choices, each defensible, inflate the rate of false positives far above its nominal level, and the preprint of \textcite{DehghaniEtAl2021} showed for machine-learning benchmarks how the choice of tasks alone changes which model ranks first. The remedy is the one experimental sciences use: fix the analysis before the data arrive, report every aggregate a reader might want, and publish the runs so that others can take the paths not taken.
+
+\section{In the laboratory: a suite of twelve tasks}\label{sec:aggregates:lab}
+
+The miniature of Atari 100k is a suite of twelve tasks built from the digits, with a fixed budget of 400 optimizer steps per task and normalized scores in which a simple reference plays the human. Method~A is the volume's standard MLP. Method~B adds label smoothing, which in a pilot of 16 runs per task was ahead of A by the mean, the median and the interquartile mean, so that every aggregate has the same correct answer; method~C adds dropout and serves to show how aggregates disagree.
+
+\begin{lab}{A suite of twelve tasks}{03-aggregates-suite}\label{lab:aggregates:suite}
+\labpart{Setup} Twelve tasks: the digits with all 1258 training examples or 400, 150 or 60 of them; with 20, 40 or 60\% of the training labels replaced at random, or 30\% on 400 examples; with Gaussian pixel noise; with the bottom 3 or 5 rows blanked; and with the test images shifted one pixel to the right. Each task gets 400 steps of SGD with momentum $0.9$, learning rate $0.05$ and batch 32. Method~A is an MLP with two hidden layers of 64 units; B adds label smoothing $0.1$; C adds dropout $0.2$. A run's score is $(\text{accuracy}-0.1)/(\text{reference}-0.1)$, the reference being the test accuracy of a 1-nearest-neighbor classifier on the same training set. Fifty runs per task and method (seeds $1000m+i$ for method $m$), 1800 runs in two to three minutes, each also evaluated every 40 steps for a protocol that keeps the best evaluation. Stratified bootstrap intervals (5000 resamples) from the first 3 runs of each task and from all 50.
+\labpart{Predict first} B is ahead of A on every task. With three runs per task, which aggregate gives the narrowest interval for B$\,-\,$A? Scored by its best of ten evaluations, does A overtake B?
+\labpart{Look for} The spread of the runs on each task against the gap between A and B; how far each aggregate moves between 3 and 50 runs; the aggregate by which C beats A.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[lplot,width=\linewidth,height=0.25\linewidth,
+  xmin=0.45,xmax=12.55,ymin=0.25,ymax=1.95,
+  xtick={1,...,12},minor x tick num=0,
+  xticklabels={shifted test,400 ex.,3 rows blanked,150 ex.,all data,5 rows blanked,60 ex.,{400 ex., 30\% noise},20\% noise,pixel noise,40\% noise,60\% noise},
+  xticklabel style={rotate=28,anchor=north east,font=\scriptsize,inner sep=1pt},
+  ylabel={normalized score},legend pos=north west,legend columns=2]
+\addplot[reference,domain=0.45:12.55,samples=2,forget plot] {1};
+\addplot[run,forget plot] table[x=xA,y=scoreA] {figures/data/03-aggregates-taskruns.dat};
+\addplot[run,color=rubric!75,forget plot] table[x=xB,y=scoreB] {figures/data/03-aggregates-taskruns.dat};
+\addplot[mean,ebars] table[x expr=\thisrow{pos}-0.2,y=meanA,y error=hwA] {figures/data/03-aggregates-tasks.dat};
+\addlegendentry{method A}
+\addplot[mean,color=rubric,mark=square*,mark options={fill=rubric,draw=white,line width=0.2pt},
+  error bars/y dir=both,error bars/y explicit,error bars/error bar style={rubric,line width=0.5pt},
+  error bars/error mark options={rubric,rotate=90,mark size=1.7pt,line width=0.5pt}]
+  table[x expr=\thisrow{pos}+0.2,y=meanB,y error=hwB] {figures/data/03-aggregates-tasks.dat};
+\addlegendentry{method B}
+\end{axis}
+\end{tikzpicture}
+\caption{The suite of \cref{lab:aggregates:suite}: normalized scores of 50 runs of method~A (ink, left of each task) and method~B (vermilion, right) on each of the twelve tasks, ordered by A's mean (hollow marks, jittered horizontally), with the means and 95\% $t$-intervals (filled marks; most intervals are shorter than the marks). Seeds $0$--$49$ for A and $1000$--$1049$ for B. The dashed line is the 1-nearest-neighbor reference.}\label{fig:aggregates:tasks}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:aggregates:tasks} shows the suite. On every task B's mean is above A's, by between $0.005$ (pixel noise) and $0.076$ (the shifted test set and 60\% label noise). The tasks differ in scale and noise as Atari games do. Without label noise, apart from the shifted test set, the scores lie between $1.00$ and $1.22$, with run standard deviations between $0.005$ and $0.026$; with label noise, where the reference copies the wrong labels, they reach $1.1$ to $1.7$; on the shifted test set A scores \pmval{0.641}{0.044} (mean and 95\% $t$-interval over 50 runs), with a run standard deviation of $0.155$. That one task contributes 62\% of the run-noise variance of A's mean aggregate, and the two noisiest label-noise tasks another 27\%.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=3.5mm,yticklabels at=edge left},
+  lplot,width=0.355\linewidth,height=0.22\linewidth,ymin=0.45,ymax=5.55,ytick={1,...,5},minor y tick num=0,
+  minor x tick num=1,
+  yticklabels={{A, max, 50 runs},{B, 50 runs},{A, 50 runs},{B, 3 runs},{A, 3 runs}},
+  yticklabel style={font=\scriptsize},xticklabel style={font=\scriptsize},
+  title style={font=\small,yshift=-1ex}]
+\nextgroupplot[title={mean},xmin=1.072,xmax=1.188,xtick={1.08,1.12,1.16}]
+\addplot[mean,xebars] table[x=mean,y=y,x error minus=meanem,x error plus=meanep,
+  skip coords between index={1}{2},skip coords between index={3}{5}] {figures/data/03-aggregates-agg.dat};
+\addplot[armB,only marks,xebars,error bars/error bar style={rubric,line width=0.5pt},error bars/error mark options={rubric,mark size=1.7pt,line width=0.5pt}]
+  table[x=mean,y=y,x error minus=meanem,x error plus=meanep,
+  skip coords between index={0}{1},skip coords between index={2}{3},skip coords between index={4}{5}] {figures/data/03-aggregates-agg.dat};
+\addplot[only marks,mark=o,mark size=1.7pt,inkblue,xebars] table[x=mean,y=y,x error minus=meanem,x error plus=meanep,
+  skip coords between index={0}{4}] {figures/data/03-aggregates-agg.dat};
+\nextgroupplot[title={median},xmin=1.005,xmax=1.058,xtick={1.01,1.03,1.05}]
+\addplot[mean,xebars] table[x=median,y=y,x error minus=medianem,x error plus=medianep,
+  skip coords between index={1}{2},skip coords between index={3}{5}] {figures/data/03-aggregates-agg.dat};
+\addplot[armB,only marks,xebars,error bars/error bar style={rubric,line width=0.5pt},error bars/error mark options={rubric,mark size=1.7pt,line width=0.5pt}]
+  table[x=median,y=y,x error minus=medianem,x error plus=medianep,
+  skip coords between index={0}{1},skip coords between index={2}{3},skip coords between index={4}{5}] {figures/data/03-aggregates-agg.dat};
+\addplot[only marks,mark=o,mark size=1.7pt,inkblue,xebars] table[x=median,y=y,x error minus=medianem,x error plus=medianep,
+  skip coords between index={0}{4}] {figures/data/03-aggregates-agg.dat};
+\nextgroupplot[title={interquartile mean},xmin=1.035,xmax=1.095,xtick={1.04,1.06,1.08}]
+\addplot[mean,xebars] table[x=iqm,y=y,x error minus=iqmem,x error plus=iqmep,
+  skip coords between index={1}{2},skip coords between index={3}{5}] {figures/data/03-aggregates-agg.dat};
+\addplot[armB,only marks,xebars,error bars/error bar style={rubric,line width=0.5pt},error bars/error mark options={rubric,mark size=1.7pt,line width=0.5pt}]
+  table[x=iqm,y=y,x error minus=iqmem,x error plus=iqmep,
+  skip coords between index={0}{1},skip coords between index={2}{3},skip coords between index={4}{5}] {figures/data/03-aggregates-agg.dat};
+\addplot[only marks,mark=o,mark size=1.7pt,inkblue,xebars] table[x=iqm,y=y,x error minus=iqmem,x error plus=iqmep,
+  skip coords between index={0}{4}] {figures/data/03-aggregates-agg.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Aggregates over the twelve tasks of \cref{lab:aggregates:suite}, with 95\% stratified bootstrap percentile intervals (5000 resamples), from the first 3 runs of each task and from all 50: method~A (ink discs), method~B (vermilion squares), and method~A scored by its best of ten evaluations during training (hollow ink circle). Each panel has its own horizontal scale.}\label{fig:aggregates:aggregates}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:aggregates:aggregates} gives the aggregates. With all 50 runs, B$\,-\,$A is $+0.0305$ by the mean, with 95\% stratified bootstrap interval $[0.0245,0.0363]$, $+0.0168$ $[0.0109,0.0224]$ by the median and $+0.0203$ $[0.0172,0.0235]$ by the interquartile mean. From the first three runs of each task the same differences are $+0.0288$ $[0.0064,0.0515]$, $+0.0231$ $[0.0090,0.0354]$ and $+0.0285$ $[0.0225,0.0352]$: every interval excludes zero, but the three-run interval of the interquartile mean is narrow and misses the fifty-run value, as \cref{prop:aggregates:bootstrap} warns. The probability of improvement of B over A is $0.770$ $[0.744,0.796]$ with 50 runs: on a typical task a run of B beats a run of A three times in four.
+
+Scored by the best of its ten evaluations, A gains $0.082$ by the mean, $0.014$ by the median and $0.041$ by the interquartile mean. The gains come from the label-noise tasks, $+0.25$ on 400 examples with 30\% noise and $+0.37$ with 60\%, where test accuracy peaks early and falls as the network fits the wrong labels. Against B scored at the end of training, this A ``wins'' by the mean, $+0.0515$ $[0.0460,0.0570]$, and by the interquartile mean, $+0.0211$ $[0.0187,0.0236]$, and ties by the median, $-0.0032$ $[-0.0087,0.0021]$; scored the same way, B is ahead again by every aggregate. This is the comparison of CURL with DER in miniature: the protocol moved the result by more than the method did.
+
+With dropout as the new method, the aggregates disagree even with 50 runs. C$\,-\,$A is $+0.0384$ $[0.0320,0.0445]$ by the mean and $+0.0145$ $[0.0110,0.0178]$ by the interquartile mean, but $-0.0053$ $[-0.0106,-0.0001]$ by the median: dropout helps on the label-noise tasks, by up to $0.22$, and slightly hurts on the three tasks in the middle of the suite, by $0.004$ to $0.009$, and C is ahead on 7 of the 12 tasks. Treating the tasks as the sampling units gives the population-level view of \cref{prop:aggregates:twolevel}: the per-task differences B$\,-\,$A have a standard deviation of $0.026$ across tasks, a task-level standard error of $0.0074$ for their mean, and all twelve are positive (Wilcoxon signed-rank test, $p=0.0005$), whereas for C$\,-\,$A the standard deviation is $0.071$ and $p=0.23$, so on tasks like these an advantage of C is not established. Friedman's test on the three methods gives $p=0.009$, with average ranks $2.58$, $1.33$ and $2.08$ for A, B and C, and only B and A differ by more than Nemenyi's critical difference, $0.96$ at level $0.05$.
+
+\begin{lab}{Two hundred three-run papers}{03-aggregates-reruns}\label{lab:aggregates:replications}
+\labpart{Setup} From the 50 runs of \cref{lab:aggregates:suite}, 200 papers, each with 3 runs per task of A and 3 of B drawn without replacement (seed 2026), and 200 null papers comparing two disjoint sets of 3 runs of A. For each paper: B$\,-\,$A by the mean, the median and the interquartile mean; 95\% stratified bootstrap intervals (1000 resamples); Welch's test on each task, with Holm's and the Benjamini--Hochberg adjustments. The papers share runs of a finite bank, which slightly understates their spread. The script also computes \cref{tab:aggregates:efficiency} and the simulation after \cref{thm:aggregates:effective}, in under a second once the bank exists.
+\labpart{Predict first} In how many of the 200 papers does the median name A the winner? In how many null papers does at least one task differ at level $0.05$ by Welch's test?
+\labpart{Look for} The spread of B$\,-\,$A across papers for each aggregate against its fifty-run value; the same spread in the null papers; the coverage of the three-run intervals; what Holm's procedure does to the per-task ``wins''.
+\end{lab}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=4mm,yticklabels at=edge left},
+  lplot,width=0.52\linewidth,height=0.2\linewidth,ymin=0.5,ymax=3.5,ytick={1,2,3},minor y tick num=0,
+  yticklabels={{IQM},{median},{mean}},xmin=-0.042,xmax=0.068,xtick={-0.04,-0.02,0,0.02,0.04,0.06},
+  minor x tick num=1,xticklabel style={font=\scriptsize,/pgf/number format/fixed,/pgf/number format/precision=2},
+  xlabel={difference of aggregates},title style={font=\small,yshift=-1ex}]
+\nextgroupplot[title={(a) B $-$ A in 200 papers}]
+\addplot[reference] coordinates {(0,0.5) (0,3.5)};
+\addplot[run] table[x=dmean,y expr=3+\thisrow{jmean}] {figures/data/03-aggregates-reruns.dat};
+\addplot[run] table[x=dmedian,y expr=2+\thisrow{jmedian}] {figures/data/03-aggregates-reruns.dat};
+\addplot[run] table[x=diqm,y expr=1+\thisrow{jiqm}] {figures/data/03-aggregates-reruns.dat};
+\addplot[only marks,mark=|,mark size=7pt,rubric,mark options={line width=1.3pt}] table[x=d50,y=y] {figures/data/03-aggregates-rerunsref.dat};
+\nextgroupplot[title={(b) A $-$ A in 200 null papers}]
+\addplot[reference] coordinates {(0,0.5) (0,3.5)};
+\addplot[run] table[x=nmean,y expr=3+\thisrow{jnmean}] {figures/data/03-aggregates-reruns.dat};
+\addplot[run] table[x=nmedian,y expr=2+\thisrow{jnmedian}] {figures/data/03-aggregates-reruns.dat};
+\addplot[run] table[x=niqm,y expr=1+\thisrow{jniqm}] {figures/data/03-aggregates-reruns.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Replications of a three-run paper (\cref{lab:aggregates:replications}). (a)~B$\,-\,$A by the mean, the median and the interquartile mean in 200 papers with 3 runs per task and method, drawn without replacement from the 50 runs of \cref{lab:aggregates:suite} (seed 2026); hollow marks are papers, jittered vertically, and the vermilion bars are the differences computed from all 50 runs. (b)~The same aggregates for 200 null papers that compare two disjoint sets of 3 runs of A.}\label{fig:aggregates:replications}
+\end{fullwidth}
+\end{figure}
+
+\Cref{fig:aggregates:replications} shows the 200 papers. The standard deviation of B$\,-\,$A across papers is $0.0097$ for the median, $0.0118$ for the mean and $0.0060$ for the interquartile mean, against fifty-run differences of $0.0168$, $0.0305$ and $0.0203$. The median names A the winner in 12 papers (6.0\%); the mean and the interquartile mean never do. The ratio of gap to spread decides it: $3.4$ for the interquartile mean, $2.6$ for the mean, $1.7$ for the median. A paper's interval for B$\,-\,$A excludes zero in 95\% of the papers for the interquartile mean, 78.5\% for the mean, and 53\% for the median: half of the papers that report the median with an honest interval cannot claim the improvement that is there.
+
+The null papers show what three runs produce with nothing to find. The middle 95\% of A$\,-\,$A runs from $-0.019$ to $+0.019$ for the median, as large as B's real gain by that aggregate, and from $-0.015$ to $+0.014$ for the interquartile mean. Three-run intervals cover the fifty-run values in 82\% to 89\% of the papers for the mean, 77.5\% to 82\% for the median and 87\% to 88\% for the interquartile mean, against a nominal 95\%, and the intervals for A$\,-\,$A exclude zero in 18\%, 14\% and 12\% of the null papers. The average three-run median of A is $1.0208$, above its fifty-run median $1.0172$ by $0.0036$: the bias of the sample median, here from the nearly tied tasks in the middle of the suite.
+
+The spread of A's aggregates over the papers is $0.0093$ for the mean, exactly the value of \cref{prop:aggregates:twolevel}, $0.0068$ for the median and $0.0048$ for the interquartile mean, below the separated-task predictions of \cref{thm:aggregates:effective}, $0.0098$ and $0.0058$, because the middle tasks of this suite lie closer together than their run noise. The mean is the noisiest of the three, although it uses every run, because one task with wild runs carries most of its variance.
+
+Per-task tests show multiplicity directly. In the null papers, 33.5\% have at least one task that differs at level $0.05$ by Welch's test, against $1-0.95^{12}=46\%$ predicted by \cref{prop:aggregates:many} for exact independent tests (with three runs per arm Welch's test is conservative); after Holm's or the Benjamini--Hochberg procedure, 2.5\% do. For B against A, 92.5\% of the papers find at least one task significantly in favor of B by the unadjusted Welch test at level $0.05$, and 18.5\% after Holm's procedure: with three runs per task, honest per-task claims have little power. Among the 495 subsets of 8 of the 12 tasks, with all 50 runs, the verdict on C against A reverses for 42\% of the subsets by the median, 18\% by the interquartile mean and none by the mean; B, ahead on every task, is ahead on every subset.
+
+The miniature reproduces the anatomy of the Atari findings: wide spreads of aggregates from three runs, a median less precise than the interquartile mean and biased, intervals that undercover, a maximum that outweighs a real method effect, and aggregates that disagree. It does not reproduce their size. The median picked the wrong winner in 6\% of our papers because B's gain is $1.7$ spreads of the three-run median, while on Atari 100k the median needed 50 to 100 runs before its intervals became small; Atari runs are noisier relative to the gaps between agents, and a noisier suite would come closer (\cref{ex:aggregates:noisier}).
+
+\section{Protocol}\label{sec:aggregates:protocol}
+
+\begin{protocol}{Reporting results over a suite of tasks}\label{prot:aggregates:suite}
+\item Before running, write down the suite, the score normalization and its reference scores, the evaluation protocol, and one primary aggregate with its interval; say whether the claim is about these tasks or about tasks like them.
+\item Rerun every baseline under the same protocol, budget and code base as the new method; never set your runs against numbers copied from papers.
+\item Use at least ten runs per task when the budget allows; with fewer, say so, and widen bootstrap intervals by $\sqrt{n/(n-1)}$.
+\item Report the primary aggregate of each method, and of the difference between methods, with a 95\% stratified bootstrap interval; report the interquartile mean, the median and the mean together, with the performance profile.
+\item For a claim about tasks like these, add a test across tasks: the signed-rank test for two methods, Friedman's test with Holm's procedure against a control for several.
+\item Treat per-task claims as a family: Holm's procedure for claims of wins, the Benjamini--Hochberg procedure for lists of discoveries, or the probability of improvement with its interval instead.
+\item Never report a maximum over evaluations, configurations or seeds without the number it was taken over, and report the score at the end of training beside it.
+\item Publish the score of every run.
+\end{protocol}
+
+The protocol does not protect against a suite chosen, as the 26 games were, with the help of the methods it compares, nor against the slow overfitting of a community that reuses one suite for years; it does not make reimplemented baselines faithful (\cref{ch:budgets}); and its intervals are conditional on the tasks. Its cost is runs, often more than a project can afford. Then spend the runs where the aggregate is sensitive, on the tasks near the middle for the median and the interquartile mean, rerun the strongest baseline rather than every one, report wider intervals rather than none, and say which claims the budget could not support.
+
+\begin{exercises}
+\item \consolidation (Bonferroni and \v{S}id\'ak.) (a) Prove that testing each of $m$ hypotheses at level $\alpha/m$ controls the family-wise error rate at $\alpha$. (b) Show that for independent tests the level $1-(1-\alpha)^{1/m}$ gives a family-wise error rate of exactly $\alpha$ when every null is true \parencite{Sidak1967}, and that it exceeds $\alpha/m$.\label{ex:aggregates:sidak}
+
+\item \consolidation (Three procedures on one list.) Twelve per-task tests give the $p$-values $0.001$, $0.004$, $0.006$, $0.012$, $0.019$, $0.030$, $0.041$, $0.060$, $0.20$, $0.35$, $0.60$ and $0.90$. At $\alpha=0.05$, find the hypotheses rejected by Bonferroni's correction, by Holm's procedure and by the Benjamini--Hochberg procedure, and say which claim each set of rejections supports.\label{ex:aggregates:three}
+
+\item \consolidation (The median of tied tasks.) (a) Three tasks have means $\mu_1=\mu_2=0$ and $\mu_3=M$, and independent $\cN(0,s^2)$ errors. Show that as $M\to\infty$ the sample median has expectation tending to $s/\sqrt\pi$ and variance tending to $s^2(1-1/\pi)$. (b) Use \cref{prop:aggregates:location} to show that when all $J$ tasks are tied, $J$ times the variance of the median of the task means tends to $\pi s^2/2$. (c) For $J=26$, with \texttt{scipy}'s convention of trimming $\lfloor J/4\rfloor$ values at each end, find the effective number of tasks of the trimmed mean of well-separated task means.\label{ex:aggregates:tied}
+
+\item \consolidation (Interval coverage with few runs.) (a) Use \cref{prop:aggregates:bootstrap} to show that, for normal task means with known variances, the percentile interval of the mean aggregate covers with probability $2\Phi\bigl(1.96\sqrt{(n-1)/n}\bigr)-1$, and evaluate this for $n=3,5,10$. (b) Why is the coverage in \cref{lab:aggregates:replications} lower still?\label{ex:aggregates:coverage}
+
+\item \labwork (The aggregate decides.) In \cref{lab:aggregates:suite}, method C is ahead of A by the mean and the interquartile mean and behind by the median. Explain this from the per-task differences C$\,-\,$A that the script prints and the weights of each aggregate. Which aggregate would you have pre-registered for a claim about dropout?\label{ex:aggregates:dropout}
+
+\item \labwork (More runs per paper.) Rerun \cref{lab:aggregates:replications} with 5 and with 10 runs per paper. Record the wrong-sign rates, how often the interval for B$\,-\,$A excludes zero, and the coverage, and compare the coverage with \cref{ex:aggregates:coverage}.\label{ex:aggregates:moreruns}
+
+\item \labwork (A noisier suite.) Halve the budget of every task, or raise its label noise, rerun both labs, and measure how often the median names the wrong winner; relate the change to the ratio of gap to spread of each aggregate.\label{ex:aggregates:noisier}
+
+\item \design (Twenty-six games, three hundred runs.) A new agent is to be compared with two published baselines on the 26 games of Atari 100k, with compute for 300 runs in all. Decide the runs per game of each method, which baselines to rerun, the evaluation protocol, the primary aggregate and its interval, and the multiplicity adjustment, and say which claims the design can support.\label{ex:aggregates:design26}
+
+\item \design (Four methods, twelve data sets.) Pre-register the analysis for comparing a new method with three baselines on 12 data sets with 5 runs each: the primary aggregate, the comparisons and their adjustment, and the test across data sets. State in advance what result would count as the new method being better.\label{ex:aggregates:prereg}
+
+\item \critique (A bold column.) An invented paper bolds the best of five agents on each of 26 games, with baseline numbers taken from their papers, and claims to be ``best on 17 of 26 games'', a new state of the art in median score ($0.312$ against $0.298$), and ``significantly better on 9 games (Welch's $t$-test, $p<0.05$, 3 seeds)''. Audit the three claims.\label{ex:aggregates:bold}
+
+\item \critique (The best checkpoint.) An invented methods section reads: ``We evaluate every 10k steps on 10 episodes and report, for each seed, the best evaluation; results are averaged over 5 seeds. Baseline results are those reported by the original authors.'' Use \cref{prop:aggregates:hiddenmax} to say what the reported numbers estimate, and rewrite the paragraph so that the comparison is fair.\label{ex:aggregates:checkpoint}
+
+\item \research (Aggregates robust to the choice of tasks.) \Textcite{ZhangHardt2024} show for multi-task benchmarks a trade-off: the more the tasks disagree about the ranking of models, the more an aggregate ranking moves under irrelevant changes. Open: an aggregate whose interval accounts for both the runs and the selection of tasks, with a stability property under adding or removing tasks that it provably satisfies.\label{ex:aggregates:robust}
+
+\item \research (Three runs.) With three runs, each task's variance rests on two degrees of freedom. Open: intervals for the interquartile mean with nearly nominal coverage at $n=3$, pooling variance information across tasks, for instance through a hierarchical model of the $\sigma_j^2$, with guarantees that survive skewed, heterogeneous run distributions like those of \cref{fig:aggregates:tasks}.\label{ex:aggregates:threeruns}
+\end{exercises}
+
+\notesandrefs
+Comparisons over many data sets were studied in machine learning before deep reinforcement learning made them urgent: \textcite{Demsar2006} recommended rank-based tests across data sets, and \textcite{BenavoliEtAl2016} questioned the post hoc tests based on mean ranks. Performance profiles come from the benchmarking of optimization software \parencite{DolanMore2002}, where they plot, for each solver, the fraction of problems solved within a factor of the best solver's time.
+
+In deep reinforcement learning, \textcite{HendersonEtAl2018} documented how seeds, hyperparameters, code bases and environments move reported results, and \textcite{ColasEtAl2018,ColasEtAl2019} turned the lesson into tutorials on power analysis and the choice of test. \Textcite{JordanEtAl2020} aggregated across environments through performance percentiles, with intervals of guaranteed coverage. \Textcite{AgarwalEtAl2021} proposed the stratified bootstrap, the interquartile mean and the score distribution as default tools and released them in the library rliable, whose interquartile mean is \texttt{scipy}'s 25\% trimmed mean of all runs pooled over tasks and whose intervals are percentile intervals by default.
+
+The statistics are older: \textcite{EfronTibshirani1993} is the standard introduction to the bootstrap, the asymptotics of trimmed means are due to \textcite{Stigler1973}, and the statistic behind the probability of improvement to \textcite{MannWhitney1947}. \Textcite{Sidak1967} and \textcite{Holm1979} sharpened Bonferroni's correction, and \textcite{BenjaminiHochberg1995} and \textcite{BenjaminiYekutieli2001} replaced the family-wise error rate by the false discovery rate. The garden of forking paths is the phrase of \textcite{GelmanLoken2013,GelmanLoken2014}, and \textcite{DehghaniEtAl2021} and \textcite{ZhangHardt2024} studied how the choice and number of tasks shape the rankings of machine-learning benchmarks.
+
+\paragraph{Translating the literature.} \Textcite{AgarwalEtAl2021} write $M$ tasks and $N$ runs for our $J$ and $n$, and $x_{m,n}$ for our $Y_{ji}$; their ``score distribution'' $\hat F_X(\tau)$ is our $\hat F(t)$, and their ``true median'' is our median of the $\mu_j$. \Textcite{Demsar2006} writes $N$ data sets and $k$ classifiers for our $J$ tasks and number of methods, and his critical difference $q_\alpha\sqrt{k(k+1)/(6N)}$ is the one used in \cref{lab:aggregates:suite}. \Textcite{Holm1979} writes $n$ for our number of hypotheses $m$, and \textcite{BenjaminiHochberg1995} write $q^*$ for the level $\alpha$ at which we control the false discovery rate.
+
+\printchapterbib
+\end{refsection}
