@@ -11,7 +11,7 @@ Panel (b): b = 1, probability that item k has been seen, 1 - (1 - p_k)^D, for
 k = 1, 10, 100, 1000, together with M(D).
 
 Writes figures/data/16-scaling-zipf-theory.dat, 16-scaling-zipf-sim.dat and
-16-scaling-zipf-items.dat. Deterministic; about 30 s on one core.
+16-scaling-zipf-items.dat. Deterministic; about 60 s on one core.
 """
 import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):

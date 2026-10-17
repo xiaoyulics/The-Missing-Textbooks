@@ -13,7 +13,7 @@ lam_j w_j^2 = j^{-(1+b)}, labels y = <w, x> + noise of variance s2; a = 1.5, b =
     Theory: the deterministic equivalent (effective regularization kappa).
 
 Writes figures/data/16-scaling-ols-theory.dat, 16-scaling-ols-sim.dat and
-16-scaling-ridge.dat. Deterministic (seed 1617); about 40 s on one core.
+16-scaling-ridge-{theory,sim}.dat. Deterministic (seed 1617); about 25 s on one core.
 """
 import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
