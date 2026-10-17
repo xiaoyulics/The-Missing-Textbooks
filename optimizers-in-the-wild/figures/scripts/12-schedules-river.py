@@ -11,7 +11,9 @@ warmup-free WSD with a linear cooldown over the last 20% of the steps.
 
 Output: figures/data/12-schedules-river.dat (exact, every 20 steps) and
         figures/data/12-schedules-river-sgd.dat (mean of 100 SGD runs with Gaussian noise, every 100 steps).
-Runtime: a few seconds (numpy only, seed 12).
+Printed: the final values quoted in the text, and the tuned peaks of the four schedules (exact, no
+randomness; computed after the data files are written).
+Runtime: about 10 seconds (numpy only, seed 12).
 """
 import os
 import numpy as np
@@ -111,6 +113,49 @@ def main():
     print("const at end: total %.4f river %.4f hill %.4f" % tuple(ex[0][-1, 1:]))
     floor = np.sum(peak * s2[nr:] / (2 * (2 - peak * h[nr:])))
     print("noise floor at the peak: %.4f (eta*s/4 = %.4f)" % (floor, peak * 10 / 4))
+    tuned_peaks(h, s2, y0sq, nr, T, names)
+
+
+def final_loss_batch(E, h, s2, y0sq):
+    """Exact final expected loss for each row of step sizes E (no randomness)."""
+    v = np.broadcast_to(y0sq, (E.shape[0], len(h))).astype(float).copy()
+    for t in range(E.shape[1]):
+        e = E[:, t][:, None]
+        v = (1 - e * h) ** 2 * v + e ** 2 * s2
+    return 0.5 * (v * h).sum(axis=1)
+
+
+def final_loss_log(eta, h, s2, y0sq, nr):
+    """Exact final expected loss with the hill second moments summed in the log domain, for peaks at
+    which some early steps are unstable (eta h > 2) and intermediate values would overflow."""
+    v = y0sq[:nr].astype(float).copy()
+    for e in eta:
+        v = (1 - e * h[:nr]) ** 2 * v
+    total = 0.5 * np.sum(h[:nr] * v)
+    with np.errstate(divide="ignore"):
+        for i in range(nr, len(h)):            # hills start at zero: only the injected noise counts
+            lq = 2 * np.log(np.abs(1 - eta * h[i]))
+            after = np.concatenate([np.cumsum(lq[::-1])[::-1][1:], [0.0]])   # sum over later steps
+            terms = np.log(eta ** 2 * s2[i]) + after
+            m = terms.max()
+            total += 0.5 * h[i] * np.exp(m + np.log(np.sum(np.exp(terms - m))))
+    return total
+
+
+def tuned_peaks(h, s2, y0sq, nr, T, names):
+    """Numbers quoted in the text: each schedule's best peak among the peaks at which every step is
+    stable (peak * max h < 2), and cosine at peaks beyond that limit."""
+    for nm in names:
+        peaks = np.geomspace(0.01, 0.9999, 60)                    # coarse search, then a fine one
+        L = final_loss_batch(np.array([schedule(nm, T, p) for p in peaks]), h, s2, y0sq)
+        k = np.argmin(L)
+        peaks = np.linspace(peaks[max(k - 1, 0)], peaks[min(k + 1, len(peaks) - 1)], 41)
+        L = final_loss_batch(np.array([schedule(nm, T, p) for p in peaks]), h, s2, y0sq)
+        k = np.argmin(L)
+        print("tuned (stable peaks) %-6s: best peak %.3f, final loss %.4f" % (nm, peaks[k], L[k]))
+    for p in [1.5, 1.9, 2.0]:
+        print("cosine at peak %.1f (beyond the limit): final loss %.4f" % (
+            p, final_loss_log(schedule("cosine", T, p), h, s2, y0sq, nr)))
 
 
 if __name__ == "__main__":

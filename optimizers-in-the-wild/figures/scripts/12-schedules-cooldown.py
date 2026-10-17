@@ -12,7 +12,9 @@ The minimizer of the continuum approximation (river exact, hills by the cooldown
 (eta s_i/4) phi(eta h_i K), phi(k) = sqrt(pi)/2 erf(sqrt(k))/sqrt(k)) is written to the -opt file.
 
 Output: figures/data/12-schedules-cooldown.dat, 12-schedules-cooldown-sgd.dat, 12-schedules-cooldown-opt.dat
-Runtime: about 30 seconds (numpy and scipy.special, seed 31).
+Printed: the best cooldown fractions at the peaks 0.04 and 0.08 on a fine grid, the flat range of the
+minimum, and the one-hill checks of the cooldown law quoted in the text (exact, no randomness).
+Runtime: under a minute (numpy and scipy.special, seed 31).
 """
 import os
 import numpy as np
@@ -114,6 +116,55 @@ def main():
             r05 = [r for r in opt_rows if r[0] == "a05" and r[1] == T][0]
             r1 = [r for r in opt_rows if r[0] == "a1" and r[1] == T][0]
             f.write("%d %.4f %.6g %.4f %.6g\n" % (T, r05[2], r05[3], r1[2], r1[3]))
+    text_checks()
+
+
+def wsd_steps(T, Ks, peak):
+    """rows: schedules with a linear cooldown over the last K steps, for each K in Ks."""
+    E = np.full((len(Ks), T), peak)
+    for m, K in enumerate(Ks):
+        E[m, T - K:] = peak * (1 - np.arange(1, K + 1) / K)
+    return E
+
+
+def text_checks():
+    """Numbers quoted in the text (exact recursions, no randomness): the best cooldown fraction on a
+    fine grid at the peaks 0.04 and 0.08, the flat range of the minimum, and the one-hill cooldown law."""
+    best = {}
+    for key, q in QS.items():
+        h, s2, y0sq, nr = instance(q)
+        for peak in [PEAK, 2 * PEAK]:
+            for T in TS:
+                Ks = np.unique(np.round(np.arange(0.05, 0.86, 0.01) * T).astype(int))
+                k0 = Ks[np.argmin(exact_final(wsd_steps(T, Ks, peak), h, s2, y0sq))]
+                Ks = np.arange(max(1, k0 - T // 50), min(T, k0 + T // 50) + 1, max(1, T // 1000))
+                L = exact_final(wsd_steps(T, Ks, peak), h, s2, y0sq)
+                best[(key, peak, T)] = Ks[np.argmin(L)] / T
+                if key == "a05" and peak == PEAK and T == 4000:
+                    Kw = np.arange(600, 1801, 4)
+                    Lw = exact_final(wsd_steps(T, Kw, peak), h, s2, y0sq)
+                    ok = Kw[Lw <= 1.01 * L.min()] / T
+                    print("a05 T=4000: every c in [%.3f, %.3f] is within 1%% of the best" % (ok.min(), ok.max()))
+        print("%s: best c at peak 0.04: %s; doubling the peak multiplies it by %s" % (
+            key, [round(float(best[(key, PEAK, T)]), 3) for T in TS],
+            [round(float(best[(key, 2 * PEAK, T)] / best[(key, PEAK, T)]), 2) for T in TS]))
+    # one hill with eta*h = 0.01 (units h = sigma^2 = 1), started at the exact equilibrium v(eta)
+    z = 0.01
+    for K in [100, 1000, 10000]:
+        w = z / (2 - z)
+        for e in z * (1 - np.arange(1, K + 1) / K):
+            w = (1 - e) ** 2 * w + e ** 2
+        print("one hill, K=%5d: fraction of the floor left %.4f, chi = %.4f" % (K, w / (z / (2 - z)), phi(z * K)))
+    omega, Ks = 1e-4, np.arange(700, 901)
+    E = z * np.ones((len(Ks), Ks.max()))                           # cooldowns aligned at the end
+    for m, K in enumerate(Ks):
+        E[m, -K:] = z * (1 - np.arange(1, K + 1) / K)
+    w = np.full(len(Ks), z / (2 - z))
+    for t in range(E.shape[1]):
+        w = (1 - E[:, t]) ** 2 * w + E[:, t] ** 2
+    cost = omega * (Ks + 1) / 2 + w / (2 * z)                    # (river cost + hill loss) / eta
+    print("one hill, omega=1e-4: exact best cooldown %d steps, formula %.1f" % (
+        Ks[np.argmin(cost)], (np.sqrt(np.pi) / (8 * omega)) ** (2 / 3) * z ** (-1 / 3)))
 
 
 if __name__ == "__main__":
