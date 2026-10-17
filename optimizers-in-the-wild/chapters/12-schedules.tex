@@ -1,0 +1,477 @@
+% Chapter 12 of Optimizers in the Wild: learning-rate schedules.
+\newcommand{\schedulesG}{\mathcal{G}}
+\newcommand{\schedulesK}{\mathcal{K}}
+
+\casechapter{Schedules}{Cosine, warmup--stable--decay and the river valley}{Cosine and WSD schedules}{ch:schedules}
+\begin{refsection}[chapters/12-schedules.bib]
+
+\begin{chaptersummary}
+Large models are trained with a learning rate that rises briefly and then decays, along a cosine, along a straight line, or in a short cooldown after a long plateau, and the loss falls fastest exactly when the learning rate falls. For convex Lipschitz losses we prove a bound on the last iterate of stochastic gradient descent under an arbitrary schedule, show that linear decay to zero attains the rate of iterate averaging exactly, and evaluate the bound for the schedules in use. In a river valley, a slowly descending direction flanked by stiff and noisy ones, we compute the expected loss exactly for every schedule: it is a term that depends on the area under the schedule plus a term that remembers only the recent schedule, which is the form of the empirical laws that predict loss curves across schedules, and it gives the length of the best cooldown. Neither idealization has a landscape that changes during training, and the river valley's predictions depend on constants that must be measured.
+\end{chaptersummary}
+
+\section{In the wild: the shape of the learning rate}\label{sec:schedules:wild}
+
+Ask what learning rate a large language model was trained with and the answer is a curve. Most published pretraining recipes since GPT-3 warm the learning rate up over a small part of the run and then decay it to a small value at the planned end, and the shape of the decay is one of the few hyperparameters still argued about in public. As of 2025 three shapes dominate the open recipes.
+
+\begin{practice}[GPT-3, \textcite{BrownEtAl2020}; LLaMA, \textcite{TouvronEtAl2023}; MiniCPM, \textcite{HuEtAl2024}; \textcite{HageleEtAl2024}; \textcite{BergsmaEtAl2025}]
+Warm the learning rate up linearly from zero to its peak $\eta_{\max}$, over the first $375$ million tokens (GPT-3) or $2000$ steps (LLaMA). Then do one of three things. \emph{Cosine}: decay along half a period of a cosine to a tenth of the peak, $\eta_t=\eta_{\max}\bigl(0.1+0.45(1+\cos(\pi t/T))\bigr)$; LLaMA reaches the tenth at the end of the run, GPT-3 after $260$ of its $300$ billion tokens. \emph{Linear decay to zero}, $\eta_t=\eta_{\max}(1-t/T)$ \parencite{DefazioEtAl2023,BergsmaEtAl2025}. \emph{Warmup--stable--decay} (WSD): hold the peak, then decay to zero or nearly zero over the last $10$--$20\%$ of the steps (MiniCPM; \textcite{HageleEtAl2024} recommend about $20\%$, with the shape $1-\sqrt{\cdot}$). The original transformer used the inverse square root, $\eta_t\propto\min(t^{-1/2},\,t\,T_{\mathrm w}^{-3/2})$ with $T_{\mathrm w}=4000$ \parencite{VaswaniEtAl2017}.
+\end{practice}
+
+The cosine came from vision, where \textcite{LoshchilovHutter2017} introduced cosine annealing with periodic restarts; language models kept a single half period.\sidenote{Earlier vision recipes divided the learning rate by $10$ at two or three fixed epochs, a \emph{step decay}. The classical rule of stochastic approximation is $\eta_t\propto1/t$, which satisfies the conditions $\sum_t\eta_t=\infty$ and $\sum_t\eta_t^2<\infty$ of \textcite{RobbinsMonro1951}; every schedule in the box violates the second, because its horizon is finite.} The shapes look very different, yet the losses they reach at the end of a tuned run are close, and which is best is still debated. Four regularities frame the debate.
+
+\begin{observation}[The cooldown drop; \textcite{HuEtAl2024}, \textcite{HageleEtAl2024}]\label[observation]{obs:schedules:cooldown}
+Train with WSD. During the stable phase the loss decreases slowly; when the decay begins it falls much faster, and after a decay over $10$--$20\%$ of the steps it matches, or slightly beats, a cosine schedule of the same length. Longer decays help a little more, with diminishing returns.
+\end{observation}
+
+\begin{observation}[The horizon; \textcite{HoffmannEtAl2022}]\label[observation]{obs:schedules:horizon}
+A cosine schedule planned for noticeably more steps than the run takes gives a worse model than one planned for exactly the steps taken. WSD runs of different lengths coincide until their cooldowns, so one stable phase can be branched into cooldowns of several lengths, which makes scaling experiments cheaper \parencite{HageleEtAl2024}.
+\end{observation}
+
+The next two observations are of a different kind: fits and analogies that describe whole loss curves.
+
+\begin{observation}[Loss curves across schedules; \textcite{TissueEtAl2024}, \textcite{LuoEtAl2025}]\label[observation]{obs:schedules:laws}
+Fitted to the loss curves of one or two schedules, a law of the form
+\[
+  \Loss(t)\approx L_0+C\,S_1(t)^{-\alpha}-\mathrm{LD}(t),\qquad S_1(t)=\sum_{s\le t}\eta_s ,
+\]
+predicts the loss curves of the same model under other schedules. The \emph{forward area} $S_1(t)$ is the area under the schedule so far; the \emph{loss drop} $\mathrm{LD}(t)$ adds, for each decrease of the learning rate, a term proportional to the decrease that grows and then saturates with the number of steps \parencite{TissueEtAl2024} or with the area \parencite{LuoEtAl2025} since the decrease.
+\end{observation}
+
+\begin{observation}[Convex theory agrees; \textcite{SchaippEtAl2025}]\label[observation]{obs:schedules:convex}
+Evaluate, for each schedule and each step $t$, the bound on $\E\Loss(\theta_t)-\Loss^\star$ that convex optimization gives for stochastic gradient descent on a convex Lipschitz loss. The curves look like language-model loss curves: WSD plateaus and then drops suddenly, and cosine and WSD end close together. \Textcite{SchaippEtAl2025} report that the bound reproduces the matching performance of cosine and WSD and the necessity and length of the cooldown, and that learning rates chosen with it improved Llama-type models with $124$M and $210$M parameters.
+\end{observation}
+
+Language-model training is far from convex, so \cref{obs:schedules:convex} suggests that the schedule acts through something simpler than the landscape; in the experiments of \textcite{DefazioEtAl2023}, too, warmup followed by linear decay matched or beat cosine almost everywhere, as their worst-case theory predicts. Why does the loss fall when the learning rate falls, why do such different shapes end so close together, and how long must the decay be?
+
+\section{The idealization: two pictures of a schedule}\label{sec:schedules:ideal}
+
+Throughout, $\theta_1$ is the initial point and stochastic gradient descent with step sizes $\eta_1,\eta_2,\dots$ is
+\begin{equation}\label{eq:schedules:sgd}
+  \theta_{t+1}=\theta_t-\eta_t\,g_t ,\qquad t=1,2,\dots,
+\end{equation}
+with $g_t$ a stochastic gradient at $\theta_t$; ``learning rate'' (in practice) and ``step size'' (in the theory) are synonyms. Let $\cF_t$ be the $\sigma$-algebra generated by $g_1,\dots,g_{t-1}$, so that $\theta_t$ is $\cF_t$-measurable. A \term{schedule}\index{schedule} is the sequence $(\eta_t)$, often written $\eta_t=\eta\,\varphi(t/T)$ with a peak $\eta$ and a \emph{shape} $\varphi\colon[0,1]\to[0,1]$. The \term{area}\index{area under the schedule} before step $t$ is $A_t=\sum_{s=1}^{t-1}\eta_s$, the time of the gradient flow that the run follows when its steps are small.
+
+\paragraph{Convex Lipschitz losses.} The first picture keeps nothing of the landscape except convexity.
+
+\begin{assumption}[Convex Lipschitz stochastic optimization]\label[assumption]{ass:schedules:convex}
+The loss $\Loss\colon\R^d\to\R$ is convex and has a minimizer $\theta^\star$, and $D=\norm{\theta_1-\theta^\star}_2$. The stochastic gradients satisfy $\E[g_t\mid\cF_t]\in\partial\Loss(\theta_t)$ and $\E\bigl[\norm{g_t}_2^2\mid\cF_t\bigr]\le G^2$.
+\end{assumption}
+
+The constant $G$ bounds subgradients and noise together, so the subgradient method on a $G$-Lipschitz function and stochastic gradient descent on a smooth function with $\norm{\nabla\Loss}_2^2+\E\norm{\zeta_t}_2^2\le G^2$ are both covered; the norm is Euclidean because stochastic gradient descent is steepest descent in $\ell_2$ (\cref{ch:steepest}). A statement about the whole class cannot see the scales of a particular landscape, and this will show in the numbers.
+
+\paragraph{The river valley.} The second picture keeps the simplest landscape with two time scales. \Textcite{WenEtAl2025} proposed that the pretraining loss of a language model is shaped like a river valley: a deep valley whose floor descends slowly along a river, between steep walls. With a large learning rate the iterate oscillates between the walls while it moves quickly along the river; when the learning rate decays the oscillation dies out, and the progress made along the river shows in the loss.\sidenote{\Textcite{WenEtAl2025} derive the picture in a toy model trained on bigram data and use it to design a WSD variant that reuses decayed checkpoints. The quadratic walls and the noise below are our simplification.} We make the walls quadratic, the oscillation noise-driven, and the river straight or weakly curved.
+
+\begin{assumption}[The river valley]\label[assumption]{ass:schedules:river}
+The parameter is $\theta=(x,y)$ with river coordinates $x\in\R^p$ and hill coordinates $y\in\R^m$, and
+\[
+  \Loss(x,y)=r(x)+\frac12\sum_{i=1}^m h_i\,y_i^2,\qquad h_i>0 .
+\]
+The stochastic gradient is $g_t=\nabla\Loss(\theta_t)+\zeta_t$ with $\E[\zeta_t\mid\cF_t]=0$ and $\E[\zeta_{t,i}^2\mid\cF_t]=\sigma_i^2$ for each hill coordinate $y_i$. The river $r$ is linear, with a constant gradient $\nabla r$, or a quadratic whose curvatures are much smaller than the $h_i$, with noise of fixed variance in each of its eigendirections.
+\end{assumption}
+
+With a quadratic river the model is the noisy quadratic model of \cref{ch:noise}, its spectrum split into hills, whose curvature times the area of the run is large, and river directions, for which it is small. In a hill the iterate soon forgets its past and sits in a noise-driven equilibrium; along the river it never forgets, and it is still descending when the run ends.
+
+\begin{dictionary}
+step size $\eta_t$, peak $\eta$, shape $\varphi$ & the schedule $\eta_{\max}\varphi(t/T)$\\
+area $A_t=\sum_{s<t}\eta_s$ & the forward area $S_1$ of the empirical laws; how far the run has travelled along the river\\
+river $r(x)$ & the part of the loss that keeps falling at a constant learning rate, roughly a power of the area\\
+hill $y_i$, curvature $h_i$ & a sharp direction of the Hessian, along which the iterate oscillates at a high learning rate\\
+noise variance $\sigma_i^2$ & gradient noise along that direction, $\Sigma_{ii}/B$ at batch size $B$\\
+noise floor $\eta\sigma_i^2/(2(2-\eta h_i))$ & the excess loss of the stable phase, removed by the cooldown\\
+relaxation time $1/(2\eta h_i)$ steps & how long the loss takes to respond to a change of the learning rate\\
+annealing term $\sum_k(\eta_{k-1}-\eta_k)\,\schedulesG(A_T-A_k)$ & the loss drop $\mathrm{LD}(t)$ of the empirical laws\\
+$D$ and $G^2$ & the distance to a good solution; the mean squared gradient
+\end{dictionary}
+
+\paragraph{What was thrown away.} The convex picture throws away curvature, and with it every distinction between fast and slow directions, as well as nonconvexity and every optimizer but plain stochastic gradient descent; it comes first because in it a statement about every schedule and every loss of a class can be proved. The river valley throws away the coupling of river and hills (in the picture of \textcite{WenEtAl2025} the river bends and the walls turn with it), changes of curvature, noise that depends on the position, and momentum, Adam and weight decay. It keeps what the convex picture lacks, two time scales, and it is solvable exactly.
+
+\paragraph{What one had to notice.} The loss at the end of a run is a functional of the whole schedule, and in both pictures it depends on the schedule through two features with very different memories: the area, which remembers everything, and an average of the step sizes over the last few relaxation times, which remembers almost nothing. Large steps buy area; small steps at the end erase the short memory. A schedule is a compromise between two terms, and the shapes in use are different compromises between the same two terms.
+
+\section{The theory: the last iterate under an arbitrary schedule}\label{sec:schedules:convex}
+
+The classical analysis bounds the average iterate. Expanding $\norm{\theta_{t+1}-\theta^\star}_2^2$ and summing gives the online-gradient-descent bound of \cref{thm:toolkit:ogd}, $\sum_t\eta_t\E[\Loss(\theta_t)-\Loss^\star]\le\frac12(D^2+G^2\sum_t\eta_t^2)$, so by Jensen's inequality the $\eta$-weighted average of the iterates is within $(D^2+G^2\sum_t\eta_t^2)/(2\sum_t\eta_t)$ of the optimum, which is $DG/\sqrt T$ for the constant step $D/(G\sqrt T)$ \parencite{NemirovskiEtAl2009}. Practitioners do not average; they use the last iterate.\sidenote{Averaging in stochastic approximation goes back to \textcite{PolyakJuditsky1992}; in deep learning it survives as the moving average of the weights and in schedule-free methods (\cref{ch:momentum}).} The tool for $\theta_T$ is the same expansion with the minimizer replaced by an earlier iterate.\sidenote{The proofs use one more stochastic gradient $g_T$ at $\theta_T$ and the point $\theta_{T+1}$. Neither affects $\theta_1,\dots,\theta_T$, so the step size $\eta_T$ is a free parameter of the bounds.}
+
+\begin{lemma}[Anchored regret]\label[lemma]{lem:schedules:anchor}
+Let \cref{ass:schedules:convex} hold and let $\eta_1,\dots,\eta_T>0$. For each $k\in\{1,\dots,T\}$ and for $u=\theta^\star$ or $u=\theta_k$,
+\[
+  \sum_{t=k}^{T}\eta_t\,\E\bigl[\Loss(\theta_t)-\Loss(u)\bigr]\le\frac12\,\E\norm{\theta_k-u}_2^2+\frac{G^2}2\sum_{t=k}^{T}\eta_t^2 .
+\]
+\end{lemma}
+
+\begin{proof}
+The plan is to expand the distance of $\theta_{t+1}$ to $u$ and telescope from $t=k$ on. Let $s_t=\E[g_t\mid\cF_t]\in\partial\Loss(\theta_t)$; by Jensen's inequality $\norm{s_t}_2\le G$. All expectations are finite: $(\E\norm{\theta_t}_2^2)^{1/2}\le\norm{\theta_1}_2+G\sum_{s<t}\eta_s$ by Minkowski's inequality, and $0\le\Loss(\theta_t)-\Loss^\star\le\Loss(\theta_1)-\Loss^\star+G\norm{\theta_t-\theta_1}_2$ by the subgradient inequality at $\theta_t$. By \eqref{eq:schedules:sgd},
+\[
+  \norm{\theta_{t+1}-u}_2^2=\norm{\theta_t-u}_2^2-2\eta_t\ip{g_t,\theta_t-u}+\eta_t^2\norm{g_t}_2^2 .
+\]
+For $t\ge k$ both $\theta_t$ and $u$ are $\cF_t$-measurable, so conditioning on $\cF_t$ replaces $g_t$ by $s_t$ in the middle term, and $\ip{s_t,\theta_t-u}\ge\Loss(\theta_t)-\Loss(u)$. Hence $2\eta_t\E[\Loss(\theta_t)-\Loss(u)]\le\E\norm{\theta_t-u}_2^2-\E\norm{\theta_{t+1}-u}_2^2+\eta_t^2G^2$. Summing over $t=k,\dots,T$ and dropping $-\E\norm{\theta_{T+1}-u}_2^2\le0$ gives the claim.
+\end{proof}
+
+With $u=\theta_k$ the lemma says that the iterates after step $k$ are, on average, not much worse than $\theta_k$, with no distance term at all.
+
+\begin{theorem}[Last iterate under an arbitrary schedule]\label{thm:schedules:lastiterate}
+Let \cref{ass:schedules:convex} hold, let $\eta_1,\dots,\eta_T>0$, and let $\theta_1,\dots,\theta_T$ be generated by \eqref{eq:schedules:sgd}. Write $R_k=\sum_{t=k}^{T}\eta_t$ and $V_k=\sum_{t=k}^{T}\eta_t^2$. Then
+\begin{equation}\label{eq:schedules:lastiterate}
+  \E\Loss(\theta_T)-\Loss^\star\ \le\ \frac{D^2+G^2V_1}{2R_1}\;+\;\frac{G^2}{2}\sum_{k=1}^{T-1}\frac{\eta_k}{R_{k+1}}\cdot\frac{V_k}{R_k} .
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+The plan is to compare, for each $k$, the $\eta$-weighted mean of the expected losses from step $k$ on with the loss at step $k$, using $\theta_k$ as the comparator in \cref{lem:schedules:anchor}, and to telescope from the mean over the whole run down to the last iterate. Write $\ell_t=\E\Loss(\theta_t)$ and $\bar\ell_k=R_k^{-1}\sum_{t=k}^{T}\eta_t\ell_t$, so that $\bar\ell_T=\ell_T$.
+
+\emph{The whole run.} \Cref{lem:schedules:anchor} with $k=1$ and $u=\theta^\star$ gives $R_1(\bar\ell_1-\Loss^\star)\le\frac12(D^2+G^2V_1)$.
+
+\emph{One step of the telescope.} Let $1\le k\le T-1$. \Cref{lem:schedules:anchor} with $u=\theta_k$ gives $R_k(\bar\ell_k-\ell_k)\le\frac12G^2V_k$. By definition $R_k\bar\ell_k=\eta_k\ell_k+R_{k+1}\bar\ell_{k+1}$; subtracting $R_{k+1}\bar\ell_k=(R_k-\eta_k)\bar\ell_k$ from both sides,
+\[
+  R_{k+1}\bigl(\bar\ell_{k+1}-\bar\ell_k\bigr)=\eta_k\bigl(\bar\ell_k-\ell_k\bigr)\le\frac{G^2}2\,\frac{\eta_kV_k}{R_k} .
+\]
+\emph{Summation.} Divide by $R_{k+1}>0$ and add the identity $\ell_T-\Loss^\star=(\bar\ell_1-\Loss^\star)+\sum_{k=1}^{T-1}(\bar\ell_{k+1}-\bar\ell_k)$.
+\end{proof}
+
+The first term of \eqref{eq:schedules:lastiterate} is the averaging bound; the second is the price of the last iterate, an average of the step sizes near the end of the run. In it $V_k/R_k$ is the $\eta$-weighted mean step size from step $k$ on, and its weight $\eta_k/R_{k+1}$, the current step over the area still to come, is negligible early and of order one at the end. The two terms are the convex counterparts of the river and the hills of \cref{sec:schedules:river}: one decreases with the area, the other remembers the recent schedule. Constant steps make the weights $1/(T-k)$, whose harmonic sum costs a logarithm; a schedule that decays to zero makes the step sizes small where the weights are large.\sidenote{The comparison with an earlier iterate is the argument of \textcite{ShamirZhang2013}; \textcite{Orabona2020} gave a version without a bounded domain, which we follow. \Textcite{DefazioEtAl2023} prove a last-iterate bound for general schedules by a reduction from regret, and \textcite{SchaippEtAl2025} evaluate such a bound along training runs.}
+
+For linear decay the theorem gives about $2DG/\sqrt T$ (\cref{cor:schedules:shapes}), twice the averaging bound. A different argument closes the gap, and shows why linear decay is special.
+
+\begin{proposition}[Linear decay matches averaging]\label[proposition]{prop:schedules:linear}
+Let \cref{ass:schedules:convex} hold, let $\gamma>0$, and run \eqref{eq:schedules:sgd} with $\eta_t=\gamma\,(T-t)/T$ for $t=1,\dots,T-1$. Then
+\[
+  \E\Loss(\theta_T)-\Loss^\star\le\frac{D^2}{2\gamma T}+\frac{\gamma G^2}2 ,
+\]
+which is $DG/\sqrt T$ for $\gamma=D/(G\sqrt T)$, the bound for the average iterate of stochastic gradient descent with the constant step $\gamma$.
+\end{proposition}
+
+\begin{proof}
+The plan is to write the last iterate as the average of a sequence that takes constant steps along the same stochastic gradients, and to show by convexity that the regret of that sequence controls the last iterate. Let $z_1=\theta_1$ and $z_{t+1}=z_t-\gamma g_t$ for $t=1,\dots,T$, with $g_t$ the stochastic gradient at $\theta_t$.
+
+\emph{The last iterate is an average.} We claim that $T\theta_t=\sum_{s<t}z_s+(T-t+1)z_t$ for $1\le t\le T$. It holds for $t=1$, and if it holds for $t$, the claimed values at $t+1$ and $t$ differ by $T^{-1}\bigl(z_t+(T-t)z_{t+1}-(T-t+1)z_t\bigr)=\frac{T-t}T(z_{t+1}-z_t)=-\eta_tg_t$, which is the step \eqref{eq:schedules:sgd}. In particular $\theta_T=T^{-1}\sum_{s=1}^Tz_s$.
+
+\emph{A convexity inequality.} Let $p_t=t^{-1}\sum_{s\le t}z_s$, so that $p_1=\theta_1$ and $p_T=\theta_T$. For $2\le t\le T$ the claim reads $T\theta_t=(t-1)p_{t-1}+(T-t+1)z_t$; eliminating $z_t$ with $tp_t=(t-1)p_{t-1}+z_t$ gives
+\[
+  z_t-\theta_t=\frac{t-1}{T-t+1}\,(\theta_t-p_{t-1}),\qquad p_t=\frac{(t-1)(T-t)\,p_{t-1}+T\theta_t}{t\,(T-t+1)} .
+\]
+The second identity makes $p_t$ a convex combination of $p_{t-1}$ and $\theta_t$, so with $F_1=\Loss(\theta_1)$ and $F_t=\bigl((t-1)(T-t)F_{t-1}+T\Loss(\theta_t)\bigr)/(t(T-t+1))$, convexity and induction give $\Loss(p_t)\le F_t$; note that $F_T=\Loss(\theta_T)$. Let $s_t\in\partial\Loss(\theta_t)$ and $u\in\R^d$. The first identity and the subgradient inequality at $\theta_t$, applied to $u$ and to $p_{t-1}$, give
+\[
+  \ip{s_t,z_t-u}\ge\Loss(\theta_t)-\Loss(u)+\frac{t-1}{T-t+1}\bigl(\Loss(\theta_t)-F_{t-1}\bigr)=tF_t-(t-1)F_{t-1}-\Loss(u),
+\]
+the equality being the definition of $F_t$ rearranged (for $t=1$ read $(t-1)F_{t-1}=0$). The right side telescopes, so $\sum_{t=1}^{T}\ip{s_t,z_t-u}\ge T\bigl(\Loss(\theta_T)-\Loss(u)\bigr)$.
+
+\emph{Conclusion.} Take $u=\theta^\star$ and $s_t=\E[g_t\mid\cF_t]$. Since $z_t$ is $\cF_t$-measurable, $\E\ip{g_t,z_t-\theta^\star}=\E\ip{s_t,z_t-\theta^\star}$, and since $(z_t)$ is stochastic gradient descent with the constant step $\gamma$, the expansion in the proof of \cref{lem:schedules:anchor} gives $\sum_{t=1}^T\E\ip{g_t,z_t-\theta^\star}\le D^2/(2\gamma)+\gamma TG^2/2$. Divide by $T$.
+\end{proof}
+
+Under linear decay the gradient $g_t$ enters $\theta_T$ with the weight $\gamma(T-t)/T$, exactly its total weight in the average of $z_1,\dots,z_T$: the last iterate of linear decay \emph{is} an average, computed without storing one. \Textcite{DefazioEtAl2023} derive the schedule from a conversion of this kind with general weights (Exercise~\ref{ex:schedules:weights}).
+
+\begin{corollary}[Constant steps and linear decay]\label[corollary]{cor:schedules:shapes}
+Under the hypotheses of \cref{thm:schedules:lastiterate}, let $H_n=\sum_{j=1}^n1/j$.
+\begin{enumerate}
+\item For $\eta_t=\eta$ the right side of \eqref{eq:schedules:lastiterate} is $D^2/(2\eta T)+\frac12G^2\eta\,(1+H_{T-1})$. Its minimum over $\eta$ is $DG\sqrt{(1+H_{T-1})/T}$; the step $\eta=D/(G\sqrt T)$ gives $(DG/\sqrt T)(1+\frac12H_{T-1})$.
+\item For $\eta_t=\eta\,(T+1-t)/(T+1)$ it is $D^2/(\eta T)+G^2\eta\,(T-\frac12+H_{T-1})/(T+1)$, with minimum $(2DG/\sqrt T)(1+O(T^{-1}\log T))$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+(i) Here $V_k/R_k=\eta$ and $\eta_k/R_{k+1}=1/(T-k)$, so the sum is $\eta H_{T-1}$, and the first term is $D^2/(2\eta T)+G^2\eta/2$; the minimum of $a/\eta+b\eta$ is $2\sqrt{ab}$. (ii) Put $m=T+1-k$ and $\epsilon=\eta/(T+1)$. Then $\eta_k=\epsilon m$, $R_k=\epsilon m(m+1)/2$, $V_k=\epsilon^2m(m+1)(2m+1)/6$ and $R_{k+1}=\epsilon(m-1)m/2$, so the $k$th term of the sum is $\frac{2\epsilon}{3}\cdot\frac{2m+1}{m-1}$, and $\sum_{m=2}^{T}\frac{2m+1}{m-1}=2(T-1)+3H_{T-1}$. With $R_1=\eta T/2$ and $V_1=\eta^2T(2T+1)/(6(T+1))$, collecting terms gives the formula.
+\end{proof}
+
+With the best constant step the last iterate pays $\sqrt{1+H_{T-1}}\approx\sqrt{\ln T}$ over averaging, and with the step $D/(G\sqrt T)$ it pays $\frac12\ln T$. The logarithm is real: for the subgradient method with the best constant step, \textcite{ZamaniGlineur2025} computed the exact worst case of the last iterate, $DG\sqrt{1+\log(N)/4}/\sqrt{N+1}$ after $N$ steps, so the theorem has the right order and a constant that is not sharp.\sidenote{\Textcite{ZamaniGlineur2025} also show that linear decay attains the lower bound $DG/\sqrt{N+1}$ that holds for all first-order methods, and that no single sequence of step sizes attains it at every $N$: the optimal schedule must know its horizon, which is \cref{obs:schedules:horizon} in the worst case. For $\eta_t\propto1/\sqrt t$, which does not, the last iterate loses a logarithmic factor that cannot be removed \parencite{HarveyEtAl2019}.} For other shapes the sums in \eqref{eq:schedules:lastiterate} are Riemann sums. For a shape $\varphi$, piecewise continuous on $[0,1]$ and positive on $[0,1)$, put $\Phi(s)=\int_s^1\varphi$, $\Psi(s)=\int_s^1\varphi^2$ and
+\begin{equation}\label{eq:schedules:J}
+  J[\varphi]=\frac{\Psi(0)}{\Phi(0)}+\int_0^1\frac{\varphi(s)\,\Psi(s)}{\Phi(s)^2}\,ds .
+\end{equation}
+
+\begin{proposition}[The bound for a shape]\label[proposition]{prop:schedules:shape}
+Let $\eta_t=\eta\,\varphi(t/(T+1))$ for $t\le T$, with $J[\varphi]<\infty$ and $\eta=\gamma D/(G\sqrt T)$ for a fixed $\gamma>0$. As $T\to\infty$ the right side of \eqref{eq:schedules:lastiterate} is $(DG/\sqrt T)\bigl(1/(2\gamma\Phi(0))+\gamma J[\varphi]/2+o(1)\bigr)$, and its minimum over $\gamma$ is $DG\sqrt{J[\varphi]/(\Phi(0)T)}\,(1+o(1))$.
+\end{proposition}
+
+\begin{proofsketch}
+With $s=k/(T+1)$, $R_k=\eta T\Phi(s)+O(\eta)$ and $V_k=\eta^2T\Psi(s)+O(\eta^2)$, so the $k$th term of the sum is $(\eta/T)\,\varphi\Psi/\Phi^2$ at $s$, up to a factor $1+O(1/(T(1-s)))$, and the sums converge to the integrals in \eqref{eq:schedules:J}. We omit the estimate of the last terms, where $1-s\lesssim1/T$; for the shapes of \cref{tab:schedules:bound} it can be done by exact summation as in \cref{cor:schedules:shapes}(ii), and at $T=10^5$ the discrete bound agrees with the limit to four digits.
+\end{proofsketch}
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering
+\small
+\begin{tabular}{@{}lccl@{}}
+\toprule
+shape & $\Phi(0)$ & $J[\varphi]$ & best bound $\times\sqrt T/(DG)$\\
+\midrule
+constant & $1$ & $1+H_{T-1}$ (exact) & $\sqrt{1+H_{T-1}}$, which is $3.28$ at $T=10^4$\\
+linear decay to zero & $1/2$ & $2$ & $2$\\
+cosine to zero & $1/2$ & $2.122$ & $2.060$\\
+cosine to $\rho=0.1$ & $0.55$ & $1.775+0.1\ln T$ & $2.21$ at $T=10^4$; $2.31$ at $T=10^5$\\
+WSD, linear cooldown of fraction $c$ & $1-c/2$ & $2+\ln\frac{2-c}c$ & $2.28$, $2.16$, $2.03$ for $c=0.1$, $0.2$, $0.5$\\
+WSD, $1-\sqrt\cdot$ cooldown, $c=0.2$ & $0.867$ & $3.92$ & $2.13$\\
+\bottomrule
+\end{tabular}
+\caption{The last-iterate bound \eqref{eq:schedules:lastiterate} at its best peak (\cref{prop:schedules:shape}); the constant and floor rows are exact discrete evaluations, whose $J$ grows with $T$. Linear decay is best, cosine to zero is within $3\%$, a WSD cooldown of $20\%$ within $8\%$, and decaying to a floor $\rho$ adds $\rho\ln T$ to $J$ (Exercise~\ref{ex:schedules:floor}).}\label{tab:schedules:bound}
+\end{fullwidth}
+\end{table}
+
+\begin{corollary}[The cooldown in the bound]\label[corollary]{cor:schedules:cooldown}
+For WSD with peak $\eta$ and a linear cooldown to zero over the last fraction $c\in(0,1]$ of the steps, the right side of \eqref{eq:schedules:lastiterate} is, as $T\to\infty$ with $\eta\sqrt T$ fixed, $B(c)\,(1+o(1))$ with
+\begin{equation}\label{eq:schedules:wsdbound}
+  B(c)=\frac{D^2}{(2-c)\,\eta T}+\frac{G^2\eta}2\Bigl(2+\ln\frac{2-c}{c}\Bigr).
+\end{equation}
+\begin{enumerate}
+\item With the peak tuned for each $c$, the bound is $DG\sqrt{2(2+\ln((2-c)/c))/((2-c)T)}$, which decreases in $c$: the bound prefers to decay over the whole run.
+\item With the peak fixed, let $\mu=G\eta\sqrt T/D$ be the peak in units of the best peak for linear decay. Then $B$ is minimized at $c^\star=\min\{1,\,2\mu^2/(1+\mu^2)\}$: a peak below the best one asks for a shorter cooldown.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+The plan is to compute $J$ for this shape and apply \cref{prop:schedules:shape}. Here $\Phi(0)=1-c/2$ and $\Psi(0)=1-2c/3$. On the cooldown $\Phi(s)=(1-s)^2/(2c)$ and $\Psi(s)=(1-s)^3/(3c^2)$, so the integrand of \eqref{eq:schedules:J} is $4/(3c)$ and contributes $4/3$. On the stable phase, with $w=1-s-c/2$, the integrand is $(w-c/6)/w^2$, with integral $\ln\frac{2-c}c-\frac13+\frac{c}{3(2-c)}$ over $w\in[c/2,1-c/2]$. Adding $\Psi(0)/\Phi(0)=\frac{2(3-2c)}{3(2-c)}$ gives $J=2+\ln\frac{2-c}c$.
+(i) The tuned value is $DG\sqrt{2F(c)/T}$ with $F(c)=(2+\ln r)/(2-c)$ and $r=(2-c)/c\ge1$, and $F'(c)=(1-r+\ln r)/(2-c)^2\le0$ because $\ln r\le r-1$.
+(ii) The derivative $B'(c)=D^2/((2-c)^2\eta T)-G^2\eta/(c(2-c))$, multiplied by $c(2-c)^2\eta T/D^2>0$, is $c(1+\mu^2)-2\mu^2$, which changes sign from negative to positive at $2\mu^2/(1+\mu^2)$; if that exceeds $1$, then $B$ decreases on $(0,1]$.
+\end{proof}
+
+So the bound reproduces \cref{obs:schedules:cooldown} in a weak form: a cooldown removes the logarithm of the constant schedule, and its benefit saturates ($20\%$ is within $8\%$ of a full decay, $50\%$ within $2\%$). It does not single out $20\%$; with tuned peaks it prefers a decay over the whole run, as in the experiments of \textcite{DefazioEtAl2023} and \textcite{BergsmaEtAl2025}, and it prefers the $1-\sqrt\cdot$ cooldown of \textcite{HageleEtAl2024} to a linear one of the same length.
+
+\section{The theory: the river valley}\label{sec:schedules:river}
+
+In the river valley the expected loss can be computed exactly for every schedule. For a hill $i$ write $q_{i,t}=(1-\eta_th_i)^2$ and $P_i(k,T)=\prod_{t=k}^{T-1}q_{i,t}$ (an empty product is $1$), the contraction of its second moment between steps $k$ and $T$. When $0\le\eta h_i<2$, let
+\[
+  v_i(\eta)=\frac{\eta\,\sigma_i^2}{h_i\,(2-\eta h_i)} ,
+\]
+the stationary second moment of the hill at the constant step $\eta$ (\cref{lem:toolkit:lyapunov}).
+
+\begin{theorem}[Stochastic gradient descent in the river valley]\label{thm:schedules:river}
+Let \cref{ass:schedules:river} hold and let $(\eta_t)$ be a schedule. For each hill $i$ and each $T\ge1$:
+\begin{enumerate}
+\item $\E y_{T,i}^2=P_i(1,T)\,y_{1,i}^2+\sigma_i^2\sum_{k=1}^{T-1}\eta_k^2\,P_i(k+1,T)$.
+\item If $0\le\eta_th_i<2$ for $t<T$, then
+\begin{multline}\label{eq:schedules:annealing}
+  \E y_{T,i}^2=v_i(\eta_1)+P_i(1,T)\bigl(y_{1,i}^2-v_i(\eta_1)\bigr)\\
+  -\sum_{k=2}^{T-1}\bigl(v_i(\eta_{k-1})-v_i(\eta_k)\bigr)\bigl(1-P_i(k,T)\bigr).
+\end{multline}
+\item If $\eta_th_i\le\frac12$ for $k\le t<T$, then $e^{-2h_i(A_T-A_k)-2h_i^2\sum_{t=k}^{T-1}\eta_t^2}\le P_i(k,T)\le e^{-2h_i(A_T-A_k)}$.
+\item If the river is linear, then $\E r(x_T)=r(x_1)-\norm{\nabla r}_2^2\,A_T$. If it is quadratic, each of its eigendirections satisfies (i)--(iii) with its own curvature and noise.
+\end{enumerate}
+Consequently $\E\Loss(\theta_T)=\E r(x_T)+\frac12\sum_ih_i\,\E y_{T,i}^2$ is given in closed form by the schedule.
+\end{theorem}
+
+\begin{proof}
+The plan is to derive the second-moment recursion of each coordinate and to rewrite it around the moving equilibrium $v_i(\eta_t)$. (i) The hill coordinate moves by $y_{t+1,i}=(1-\eta_th_i)y_{t,i}-\eta_t\zeta_{t,i}$. Square it and condition on $\cF_t$; the cross term vanishes because $y_{t,i}$ is $\cF_t$-measurable and $\E[\zeta_{t,i}\mid\cF_t]=0$, so $\E[y_{t+1,i}^2\mid\cF_t]=q_{i,t}y_{t,i}^2+\eta_t^2\sigma_i^2$. Take expectations and unroll from $t=1$.
+(ii) Write $u_t=\E y_{t,i}^2$ and $v_t=v_i(\eta_t)$. A direct computation gives $q_{i,t}v_t+\eta_t^2\sigma_i^2=v_t$, so subtracting it from the recursion of (i) gives $u_{t+1}-v_t=q_{i,t}(u_t-v_t)$, that is, $u_{t+1}-v_{t+1}=q_{i,t}(u_t-v_t)+(v_t-v_{t+1})$. Unrolling, $u_T-v_T=P_i(1,T)(u_1-v_1)+\sum_{k=2}^{T}(v_{k-1}-v_k)P_i(k,T)$. The term $k=T$ has $P_i(T,T)=1$ and cancels the unused $v_T$, and $v_{T-1}=v_1-\sum_{k=2}^{T-1}(v_{k-1}-v_k)$ gives \eqref{eq:schedules:annealing}.
+(iii) For $0\le z\le\frac12$, $e^{-z-z^2}\le1-z\le e^{-z}$: the right inequality is convexity of the exponential, and $\ln(1-z)+z+z^2$ vanishes at $0$ and has derivative $z(1-2z)/(1-z)\ge0$. Apply it with $z=\eta_th_i$, square, and multiply.
+(iv) A linear river has $x_{t+1}=x_t-\eta_t(\nabla r+\zeta_{t,x})$, so $\E x_T=x_1-A_T\nabla r$, and $r$ is affine. The eigendirections of a quadratic river are decoupled coordinates of the same form as the hills.
+\end{proof}
+
+Part (ii) is the structure behind the chapter. The second moment of a hill at step $T$ is its equilibrium at the initial step size, plus the fading memory of the initial condition, minus one term for every decrease of the step size: the decrease of the equilibrium, times the fraction $1-P_i(k,T)$ of it realized since. By (iii) that fraction depends on the area since the decrease, $1-e^{-2h_i(A_T-A_k)}$ up to corrections of relative order $\eta h_i$; an increase of the step size, as in warmup, enters with the opposite sign. We call \eqref{eq:schedules:annealing} the \term{annealing decomposition}\index{annealing decomposition}.
+
+\begin{corollary}[Noise floor and relaxation]\label[corollary]{cor:schedules:floor}
+Under \cref{ass:schedules:river}, let $0<\eta h_i<2$ for every hill.
+\begin{enumerate}
+\item At the constant step $\eta$ the hill part of the expected loss converges, at the rate $(1-\eta h_i)^2$ per step in hill $i$, to the \term{noise floor}\index{noise floor} $\Loss_{\mathrm{hill}}(\eta)=\sum_{i}\eta\sigma_i^2/(2(2-\eta h_i))$, which lies between $\frac\eta4\sum_i\sigma_i^2$ and $\eta\sum_i\sigma_i^2/(4-2\eta\max_ih_i)$.
+\item If $\E y_{k,i}^2=v_i(\eta)$ and the step size is $\eta'<\eta$ from step $k$ on, then $\E y_{T,i}^2=v_i(\eta')+\bigl(v_i(\eta)-v_i(\eta')\bigr)(1-\eta'h_i)^{2(T-k)}$ for $T\ge k$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+(i) In \eqref{eq:schedules:annealing} all differences vanish and $P_i(1,T)=(1-\eta h_i)^{2(T-1)}$; multiply by $h_i/2$ and sum, and use $2-\eta\max_ih_i\le2-\eta h_i\le2$. (ii) The recursion $u_{t+1}-v_i(\eta')=(1-\eta'h_i)^2(u_t-v_i(\eta'))$ of the proof of \cref{thm:schedules:river}(ii) holds for $t\ge k$.
+\end{proof}
+
+So at a constant learning rate each hill adds about $\eta\sigma_i^2/4$ to the loss, a floor proportional to the learning rate and to the noise, hence to $1/B$. A drop of the learning rate removes the excess on the \term{relaxation time}\index{relaxation time} $1/(\eta'h_i(2-\eta'h_i))\approx1/(2\eta'h_i)$ of the \emph{new} step size: the smaller the final learning rate, the slower the loss responds to it. A decay to zero therefore never quite finishes.
+
+\begin{heuristic}[The cooldown law]
+Take one hill in equilibrium at the peak $\eta$, and a linear cooldown to zero over the last $K$ steps. Measure time by the area: to first order in $\eta h$ the recursion of \cref{thm:schedules:river}(i) is $dv/dA=-2hv+\eta(A)\sigma^2$, because a step changes $v$ by $-(2\eta_th-\eta_t^2h^2)v+\eta_t^2\sigma^2$ and the area by $\eta_t$. The cooldown has area $\eta K/2$, and with $\varrho$ the area that remains before the end the step size is $\eta(\varrho)=\sqrt{2\eta\varrho/K}$. Solving the linear equation from $v=\eta\sigma^2/(2h)$,
+\[
+  v_{\mathrm{end}}=\frac{\eta\sigma^2}{2h}e^{-\eta hK}+\sigma^2\int_0^{\eta K/2}e^{-2h\varrho}\sqrt{2\eta\varrho/K}\,d\varrho ,
+\]
+an incomplete gamma function. With $\kappa=\eta hK$ the two terms combine into
+\begin{equation}\label{eq:schedules:cooldownlaw}
+  \frac h2\,v_{\mathrm{end}}=\frac{\eta\sigma^2}4\,\chi(\kappa),\qquad \chi(\kappa)=\frac{\sqrt\pi}2\,\frac{\erf\sqrt\kappa}{\sqrt\kappa} .
+\end{equation}
+A short cooldown has $\chi(\kappa)=1-\kappa/3+O(\kappa^2)$ and removes almost nothing; a long one leaves $\chi(\kappa)\approx\frac{\sqrt\pi}2\kappa^{-1/2}$. The residual noise after a linear cooldown of $K$ steps decays like $K^{-1/2}$, not exponentially, because the last steps are too small to forget what the earlier ones did.\qedhere
+\end{heuristic}
+
+The exact recursion confirms \eqref{eq:schedules:cooldownlaw} to within relative errors of order $\eta h$: for $\eta h=0.01$ and $K=100$, $1000$, $10^4$ it gives residuals of $0.744$, $0.279$ and $0.0882$ times the floor, against $\chi=0.747$, $0.280$ and $0.0886$. The cooldown that removes the most noise in $K$ steps, with the river ignored, is a $1/t$ decay, with a residual of order $1/K$ (Exercise~\ref{ex:schedules:greedy}); a linear cooldown trades some of this for the river.\sidenote{The error function enters as $\int_0^x\sqrt u\,e^{-u}du=\frac{\sqrt\pi}2\erf\sqrt x-\sqrt x\,e^{-x}$. A cosine cooldown or the $1-\sqrt\cdot$ shape gives a different function with the same $\kappa^{-1/2}$ tail; only the constant changes.}
+
+\begin{heuristic}[The best cooldown]
+Let the river be linear, so that by \cref{thm:schedules:river}(iv) it loses $\omega=\norm{\nabla r}_2^2$ per unit of area, and replace the last $K$ steps of a constant schedule by a linear cooldown. The cooldown gives up the area $\eta K/2$ and removes noise by \eqref{eq:schedules:cooldownlaw}, so the final loss is, up to a constant, $\omega\eta K/2+\sum_i\frac14\eta\sigma_i^2\chi(\eta h_iK)$. For one hill with $\eta hK\gg1$ the derivative vanishes at
+\begin{equation}\label{eq:schedules:Kstar}
+  K^\star=\Bigl(\frac{\sqrt\pi\,\sigma^2}{8\,\omega}\Bigr)^{2/3}(\eta h)^{-1/3},
+\end{equation}
+where the residual noise is twice the river progress given up. The best cooldown is a fixed number of steps, and its \emph{fraction} of the run falls like $1/T$. A river that flattens changes this. If the river loss is a power of the area, $\bar r(A)=L_\infty+CA^{-\alpha}$, then its slope at the end of a run of area $\eta T$ is $\alpha C(\eta T)^{-1-\alpha}$, and the same balance, with $1-c/2\approx1$, gives the best cooldown fraction
+\begin{equation}\label{eq:schedules:cstar}
+  c^\star\approx\Bigl(\frac{\sqrt\pi}{8\alpha C}\sum_i\frac{\sigma_i^2}{\sqrt{h_i}}\Bigr)^{2/3}\,\eta^{(1+2\alpha)/3}\,T^{(2\alpha-1)/3} .
+\end{equation}
+A fixed fraction is optimal at every horizon exactly when $\alpha=\frac12$; a river that falls faster than the inverse square root of the area asks for a longer cooldown in a longer run, a slower one for a shorter cooldown.\qedhere
+\end{heuristic}
+
+For one hill with $\eta h=0.01$, $\sigma^2=1$ and $\omega=10^{-4}$, the exact recursion puts the best linear cooldown at $787$ steps and \eqref{eq:schedules:Kstar} at $789$; the asymptotic form fails, as it must, when $\eta hK^\star$ is of order one. The decomposition also explains the empirical laws of \cref{obs:schedules:laws}.
+
+\begin{heuristic}[From the river valley to the empirical laws]
+Multiply \eqref{eq:schedules:annealing} by $h_i/2$, sum over the hills, and keep the first order in $\eta h_i$, where $\frac{h_i}2v_i(\eta)\approx\frac14\eta\sigma_i^2$ and $1-P_i(k,T)\approx1-e^{-2h_i(A_T-A_k)}$. Once the initial transient has faded,
+\begin{equation}\label{eq:schedules:law}
+  \E\Loss(\theta_T)\approx\E r(x_T)+\frac{\eta_1}4\sum_i\sigma_i^2-\sum_{k=2}^{T-1}(\eta_{k-1}-\eta_k)\,\schedulesG(A_T-A_k),
+\end{equation}
+with the saturation function $\schedulesG(u)=\sum_i\frac14\sigma_i^2\bigl(1-e^{-2h_iu}\bigr)$, the Laplace transform of the hill spectrum weighted by the noise. This is the form of \cref{obs:schedules:laws}: an area term, which for a quadratic river with a power-law spectrum is close to $L_\infty+CA_T^{-\alpha}$, and a loss drop that adds, for each decrease of the learning rate, the decrease times a saturating function of the area since. If the noise is spread over many hills whose curvatures follow a gamma distribution with shape $\beta$ and scale $\bar h$, then $\schedulesG(u)=\frac s4\bigl(1-(1+2\bar hu)^{-\beta}\bigr)$ with $s$ the total noise variance, the power-law saturation of \textcite{LuoEtAl2025}. A single hill at a nearly constant step $\bar\eta$ after the decreases gives $1-\lambda^{T-k}$ with $\lambda=e^{-2\bar\eta h}$, a saturation counted in steps, which is the annealing area of \textcite{TissueEtAl2024}. Finally, the continuum form of \cref{thm:schedules:river}(i) writes the noise term as $\sum_k\eta_k^2\schedulesK(A_T-A_{k+1})$ with the kernel $\schedulesK=\schedulesG'$, a convolution of the squared schedule with a kernel in area-time; \textcite{LiEtAl2025} derive a functional scaling law of this kind for stochastic gradient descent on kernel regression with power-law spectra.\qedhere
+\end{heuristic}
+
+The model makes one prediction that the empirical laws leave open: the loss relaxes after a decrease of the learning rate in \emph{area}, not in steps, because a quadratic hill contracts by $(1-\eta h)^2\approx e^{-2h\eta}$ per step, that is, by $e^{-2h}$ per unit of area. \Textcite{TissueEtAl2024} count the relaxation in steps, and \textcite{LuoEtAl2025} in area with a correction fitted to depend on the learning rate; a correction of that kind measures a departure from a fixed quadratic landscape.
+
+\begin{remark}[Branching, rewarming and averaging]\label[remark]{rem:schedules:wsd}
+At the end of a long stable phase the hills of the river valley have forgotten everything but the peak, so by \eqref{eq:schedules:annealing} the loss after a cooldown depends on the stable phase only through its area: a WSD checkpoint is a sufficient summary of the run for every later cooldown (\cref{obs:schedules:horizon}). Rewarming a cooled checkpoint refills the hills within a relaxation time and keeps the river progress. Schedule-free methods \parencite{DefazioEtAl2024} remove the noise by averaging instead of decaying (\cref{ch:momentum}); in the river valley, averaging the last $K$ iterates at a constant step gives up the same area as a linear cooldown of $K$ steps and leaves a residual of order $1/(\eta hK)$ instead of $(\eta hK)^{-1/2}$ (Exercise~\ref{ex:schedules:averaging}).
+\end{remark}
+
+\section{Reading the theory}\label{sec:schedules:reading}
+
+\paragraph{Loss curves.} \Cref{fig:schedules:river} runs the four schedules in a river valley built to look like a language model: a quadratic river in $200$ directions whose loss falls like the inverse square root of the area, and $40$ noisy hills with curvatures between $0.2$ and $2$. The curves are \cref{thm:schedules:river}; the points, means of $100$ runs, agree with them within their sampling error (final means $0.203$, $0.156$, $0.158$, $0.131$ against $0.207$, $0.157$, $0.158$, $0.131$). The constant schedule reaches the noise floor $\Loss_{\mathrm{hill}}(0.04)=0.102$ within a few hundred steps and then follows the river down at that height. In the cooldown of WSD the hill part falls from $0.102$ to $0.021$ while the river part continues from $0.117$ to $0.110$: four fifths of the floor removed for a tenth of the area. Cosine and linear decay remove almost all of the floor, to $0.008$ and $0.009$, but cover half the area, and their river part ends at $0.149$. At a common peak the model ranks WSD first, cosine and linear decay together, and the constant schedule last.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=48mm,xmin=0,xmax=4000,xtick={0,1000,2000,3000,4000},scaled x ticks=false,xticklabel style={/pgf/number format/1000 sep={}}]
+\nextgroupplot[xlabel={step $t$},ylabel={expected loss},ymode=log,ymin=0.1,ymax=0.65,ytick={0.1,0.15,0.2,0.3,0.4,0.6},yticklabels={$0.1$,$0.15$,$0.2$,$0.3$,$0.4$,$0.6$},legend style={at={(0.5,1.03)},anchor=south},legend columns=4]
+\addplot[theory] table[x=t,y=const] {figures/data/12-schedules-river.dat};
+\addplot[theory3] table[x=t,y=cosine] {figures/data/12-schedules-river.dat};
+\addplot[theory2] table[x=t,y=linear] {figures/data/12-schedules-river.dat};
+\addplot[muted,line width=1.0pt,dashdotted] table[x=t,y=wsd] {figures/data/12-schedules-river.dat};
+\addplot[only marks,mark=*,mark size=1.1pt,sea,each nth point=2,filter discard warning=false] table[x=t,y=const] {figures/data/12-schedules-river-sgd.dat};
+\addplot[only marks,mark=*,mark size=1.1pt,sandline!55!black,each nth point=2,filter discard warning=false] table[x=t,y=cosine] {figures/data/12-schedules-river-sgd.dat};
+\addplot[only marks,mark=square*,mark size=1.0pt,seadeep,each nth point=2,filter discard warning=false] table[x=t,y=linear] {figures/data/12-schedules-river-sgd.dat};
+\addplot[only marks,mark=triangle*,mark size=1.3pt,muted,each nth point=2,filter discard warning=false] table[x=t,y=wsd] {figures/data/12-schedules-river-sgd.dat};
+\legend{constant,cosine,linear,WSD}
+\nextgroupplot[xlabel={step $t$},ylabel={river and hill parts},ymode=log,ymin=0.004,ymax=0.65,legend style={at={(0.5,1.03)},anchor=south},legend columns=2]
+\addplot[muted,line width=1.0pt,dashdotted] table[x=t,y=wsdriver] {figures/data/12-schedules-river.dat};
+\addplot[muted,line width=0.8pt,densely dotted] table[x=t,y=wsdhill] {figures/data/12-schedules-river.dat};
+\addplot[theory3] table[x=t,y=cosriver] {figures/data/12-schedules-river.dat};
+\addplot[sandline!55!black,line width=0.8pt,densely dotted] table[x=t,y=coshill] {figures/data/12-schedules-river.dat};
+\addplot[only marks,mark=triangle*,mark size=1.3pt,muted,each nth point=2,filter discard warning=false] table[x=t,y=wsdriver] {figures/data/12-schedules-river-sgd.dat};
+\addplot[only marks,mark=triangle*,mark size=1.3pt,muted,each nth point=2,filter discard warning=false] table[x=t,y=wsdhill] {figures/data/12-schedules-river-sgd.dat};
+\addplot[only marks,mark=*,mark size=1.1pt,sandline!55!black,each nth point=2,filter discard warning=false] table[x=t,y=cosriver] {figures/data/12-schedules-river-sgd.dat};
+\addplot[only marks,mark=*,mark size=1.1pt,sandline!55!black,each nth point=2,filter discard warning=false] table[x=t,y=coshill] {figures/data/12-schedules-river-sgd.dat};
+\legend{WSD river,WSD hills,cosine river,cosine hills}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Four schedules in a river valley: curves are the exact expected loss (\cref{thm:schedules:river}), points the mean of $100$ runs of stochastic gradient descent with Gaussian noise (seed $12$), every $200$ steps. River: $200$ directions with curvatures $0.02\,j^{-2}$, initial losses proportional to $j^{-2}$ (total $0.5$), no noise. Hills: $40$, curvatures log-spaced in $[0.2,2]$, started at $0$, noise variance $1/4$ each. Peak $0.04$, $T=4000$, no warmup; WSD cools down linearly over the last $800$ steps. Left: total loss. Right: river part (upper curves) and hill part (lower curves). Script: \texttt{12-schedules-river.py}.}
+\label{fig:schedules:river}
+\end{figure}
+
+That ranking is not a prediction about tuned runs. With each peak tuned separately the model sends the peaks of cosine and linear decay to the stability limit $\eta\max_ih_i<2$ and ranks cosine first ($0.053$, against $0.074$ for linear decay, $0.096$ for WSD and $0.195$ for the constant schedule): a larger peak buys area, and a long decay removes the larger floor. Nothing in the model penalizes a large peak short of divergence; that is the subject of \cref{ch:eos,ch:spikes}. What is robust are the decomposition and its time scales. The cooldown drop is the noise floor at the peak, about $\eta\tr(\Sigma_{\mathrm{hill}})/(4B)$, so it should double when the peak doubles or the batch size halves; it takes a few relaxation times of the slowest noisy direction, and it leaves a residual that decays only like $(\eta hK)^{-1/2}$. The agreement of curves and points is exact by construction; it must fail as soon as the curvature changes along the run, the noise depends on the position, or the optimizer is not plain stochastic gradient descent.
+
+\paragraph{The convex bound along a run.} \Cref{fig:schedules:bound} (left) evaluates \eqref{eq:schedules:lastiterate} at every step for the same four shapes, on the \term{cone}\index{cone (test problem)} $\Loss(\theta)=\E_a\abs{\ip{a,\theta-\theta^\star}}=\sqrt{2/\pi}\,\norm{\theta-\theta^\star}_2$ with $a\sim\cN(0,I_{100})$, which is convex with a nonsmooth minimum and has $G^2=d$ exactly. The shapes agree with the simulation and with \cref{obs:schedules:convex}: the constant schedule plateaus, WSD plateaus and then drops, cosine and linear decay descend smoothly, and both rank the final values linear decay, cosine, WSD, constant. The values do not agree: the bound is $8$ to $10$ times the simulated suboptimality at the end. On the cone the last iterate of constant steps settles at exactly the averaging floor $\eta G^2/2$, with no logarithm, and the cone forgets a change of the step size within about $130$ steps whatever the step size, so its final loss is set by the last steps. The right panel shows the consequence for tuned comparisons: the bound charges a $20\%$ cooldown $8\%$ over linear decay, the cone $68\%$; for cosine, $3\%$ against $31\%$. The bound is a worst case over all convex Lipschitz functions, attained by functions that keep pushing the iterate into new directions \parencite{HarveyEtAl2019,ZamaniGlineur2025}; its agreement with training curves is one of shapes and rankings, not of values. Both agree that shorter cooldowns want smaller peaks.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=48mm]
+\nextgroupplot[xlabel={step $t$},ylabel={$\E\Loss(\theta_t)-\Loss^\star$},ymode=log,xmin=0,xmax=1000,ymin=0.04,ymax=4,legend style={at={(0.5,1.03)},anchor=south},legend columns=4,xticklabel style={/pgf/number format/1000 sep={}}]
+\addplot[theory,restrict x to domain=10:1000] table[x=t,y=const] {figures/data/12-schedules-bound.dat};
+\addplot[theory3,restrict x to domain=10:1000] table[x=t,y=cosine] {figures/data/12-schedules-bound.dat};
+\addplot[theory2,restrict x to domain=10:1000] table[x=t,y=linear] {figures/data/12-schedules-bound.dat};
+\addplot[muted,line width=1.0pt,dashdotted,restrict x to domain=10:1000] table[x=t,y=wsd] {figures/data/12-schedules-bound.dat};
+\addplot[only marks,mark=*,mark size=1.0pt,sea,restrict x to domain=10:1000,each nth point=2,filter discard warning=false] table[x=t,y=const] {figures/data/12-schedules-bound-sgd.dat};
+\addplot[only marks,mark=*,mark size=1.0pt,sandline!55!black,restrict x to domain=10:1000,each nth point=2,filter discard warning=false] table[x=t,y=cosine] {figures/data/12-schedules-bound-sgd.dat};
+\addplot[only marks,mark=square*,mark size=0.9pt,seadeep,restrict x to domain=10:1000,each nth point=2,filter discard warning=false] table[x=t,y=linear] {figures/data/12-schedules-bound-sgd.dat};
+\addplot[only marks,mark=triangle*,mark size=1.2pt,muted,restrict x to domain=10:1000,each nth point=2,filter discard warning=false] table[x=t,y=wsd] {figures/data/12-schedules-bound-sgd.dat};
+\legend{constant,cosine,linear,WSD}
+\nextgroupplot[xlabel={cooldown fraction $c$},ylabel={tuned final value / linear decay},xmode=log,xmin=0.02,xmax=1.05,ymin=0.9,ymax=2.2,xtick={0.02,0.05,0.1,0.2,0.5,1},xticklabels={$0.02$,$0.05$,$0.1$,$0.2$,$0.5$,$1$},legend style={at={(0.5,1.03)},anchor=south},legend columns=2]
+\addplot[theory] table[x=c,y=boundrel] {figures/data/12-schedules-bound-tunedcurve.dat};
+\addplot[simulation] table[x=c,y=sgdrel] {figures/data/12-schedules-bound-tuned.dat};
+\addplot[guide,domain=0.02:1.05] {1};
+\legend{bound \eqref{eq:schedules:lastiterate},SGD on the cone}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The last-iterate bound against stochastic gradient descent on the cone $\sqrt{2/\pi}\,\norm{\theta-\theta^\star}_2$ in $d=100$ dimensions, $D=1$, $G^2=d$. Left: the bound \eqref{eq:schedules:lastiterate} for $\theta_t$, computed from $\eta_1,\dots,\eta_t$ (curves), and the mean of $200$ runs (points, seed $21$), $T=1000$, common peak $D/(G\sqrt T)$; WSD cools down over the last $200$ steps. Right: WSD with cooldown fraction $c$, peak tuned for each $c$, final value relative to linear decay; the bound is minimized exactly, the simulation takes the best of $17$ peaks between a quarter of and four times $D/(G\sqrt T)$, $40$ runs each (seed $22$). Script: \texttt{12-schedules-bound.py}.}
+\label{fig:schedules:bound}
+\end{figure}
+
+\paragraph{How long to cool down.} \Cref{fig:schedules:cooldown} tests the cooldown heuristics in the valley of \cref{fig:schedules:river} and in one whose river falls like $A^{-1}$. For $\alpha=\frac12$ the best cooldown fraction is $0.24$, $0.28$ and $0.27$ at $T=1000$, $4000$ and $16000$, a fixed fraction as \eqref{eq:schedules:cstar} predicts; for $\alpha=1$ it is $0.21$, $0.35$ and $0.48$, a factor $2.3$ over a sixteenfold increase of $T$, against $16^{1/3}=2.5$. In both valleys the minimizer of the continuum approximation coincides with that of the exact recursion within the grid spacing, and the minimum is flat, as in \cref{obs:schedules:cooldown}: at $\alpha=\frac12$ and $T=4000$ every fraction between $0.17$ and $0.42$ is within $1\%$ of the best. The dependence on the peak in \eqref{eq:schedules:cstar} is only approximate at fractions this large: doubling the peak to $0.08$ multiplies $c^\star$ by $1.42$ to $1.63$, against $2^{(1+2\alpha)/3}=1.59$ and $2$. The value $c^\star\approx0.27$ depends on the noise, the curvatures and the river; the scaling with $T$, and its dependence on $\alpha$, are what the model predicts.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=48mm,xmode=log,xmin=0.01,xmax=1.05,xtick={0.01,0.03,0.1,0.3,1},xticklabels={$0.01$,$0.03$,$0.1$,$0.3$,$1$},ymode=log]
+\nextgroupplot[xlabel={cooldown fraction $c$},ylabel={final expected loss},title={river $\propto A^{-1/2}$},ymin=0.055,ymax=0.36,ytick={0.06,0.1,0.15,0.2,0.3},yticklabels={$0.06$,$0.1$,$0.15$,$0.2$,$0.3$}]
+\addplot[theory] table[x=c,y=a05T1000] {figures/data/12-schedules-cooldown.dat};
+\addplot[theory3] table[x=c,y=a05T4000] {figures/data/12-schedules-cooldown.dat};
+\addplot[theory2] table[x=c,y=a05T16000] {figures/data/12-schedules-cooldown.dat};
+\addplot[simulation] table[x=c,y=a05T1000] {figures/data/12-schedules-cooldown-sgd.dat};
+\addplot[simulation] table[x=c,y=a05T4000] {figures/data/12-schedules-cooldown-sgd.dat};
+\addplot[simulation] table[x=c,y=a05T16000] {figures/data/12-schedules-cooldown-sgd.dat};
+\addplot[only marks,mark=diamond*,mark size=2.6pt,ink,mark options={fill=white}] coordinates {(0.2370,0.276894) (0.2795,0.130455) (0.2706,0.0648693)};
+\nextgroupplot[xlabel={cooldown fraction $c$},ylabel={final expected loss},title={river $\propto A^{-1}$},ymin=0.015,ymax=0.3,ytick={0.02,0.05,0.1,0.2},yticklabels={$0.02$,$0.05$,$0.1$,$0.2$},legend style={at={(0.97,0.63)},anchor=east,font=\scriptsize},legend columns=1]
+\addplot[theory] table[x=c,y=a1T1000] {figures/data/12-schedules-cooldown.dat};
+\addplot[theory3] table[x=c,y=a1T4000] {figures/data/12-schedules-cooldown.dat};
+\addplot[theory2] table[x=c,y=a1T16000] {figures/data/12-schedules-cooldown.dat};
+\addplot[simulation] table[x=c,y=a1T1000] {figures/data/12-schedules-cooldown-sgd.dat};
+\addplot[simulation] table[x=c,y=a1T4000] {figures/data/12-schedules-cooldown-sgd.dat};
+\addplot[simulation] table[x=c,y=a1T16000] {figures/data/12-schedules-cooldown-sgd.dat};
+\addplot[only marks,mark=diamond*,mark size=2.6pt,ink,mark options={fill=white}] coordinates {(0.2080,0.204817) (0.3500,0.0539995) (0.4781,0.0174161)};
+\legend{$T=1000$,$T=4000$,$T=16000$}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The final loss of WSD against its cooldown fraction $c$, in the valley of \cref{fig:schedules:river} (left, river loss $\propto A^{-1/2}$) and in the same valley with initial river losses $\propto j^{-3}$ (right, $\propto A^{-1}$), at the peak $0.04$, for $T=1000$, $4000$, $16000$ (top to bottom). Curves: exact expected loss (\cref{thm:schedules:river}); points: mean of $40$ runs of stochastic gradient descent (seed $31$); diamonds: minimizer of the continuum approximation, with the river exact and the hills by \eqref{eq:schedules:cooldownlaw}. Script: \texttt{12-schedules-cooldown.py}.}
+\label{fig:schedules:cooldown}
+\end{figure}
+
+\section{What the theory misses}\label{sec:schedules:misses}
+
+\paragraph{What was idealized away.} The convex bound holds for every convex Lipschitz loss and so cannot see the scales of a particular one; \cref{fig:schedules:bound} shows the cost. The river valley keeps two time scales but fixes everything else: quadratic hills with constant curvature, decoupled from the river; additive noise with a covariance that does not depend on the position, whereas in a network the gradient covariance follows the Hessian and changes along the run; and plain stochastic gradient descent, without momentum, Adam's normalization, clipping or weight decay. The river's exponent $\alpha$ and the spread of the noise over the hills are inputs, not outputs, and they set the constants of every prediction of \cref{sec:schedules:reading}. Neither model needs warmup, which \cref{ch:warmup} explains by the curvature that the early steps meet.
+
+\paragraph{Where it breaks.} (1) In the river valley the best peak of a decaying schedule is the stability limit, so with tuned peaks the model ranks cosine well ahead of WSD, whereas WSD matches cosine in language models (\cref{obs:schedules:cooldown}); what limits the peak in practice, instabilities and loss spikes, is outside the model (\cref{ch:eos,ch:spikes}). (2) The landscape moves with the schedule. In full-batch training the sharpness rises while it is below $2/\eta$ and then stays near $2/\eta$ \parencite{CohenEtAl2021}, so a decaying learning rate lets the sharpest directions sharpen again, and part of the oscillation that a cooldown removes is the oscillation at the edge of stability (\cref{ch:eos}), whose size is set by the dynamics rather than by noise. The two mechanisms differ in a testable way: the noise floor of \cref{cor:schedules:floor} scales like $1/B$, the oscillation at the edge does not. (3) The empirical laws disagree with the model, and with each other, on how the loss relaxes after a decrease: in steps for \textcite{TissueEtAl2024}, in area with a fitted learning-rate correction for \textcite{LuoEtAl2025}, exactly in area for a fixed quadratic hill. (4) With AdamW the norms of normalized weights equilibrate on the time scale $1/(\eta\lambda)$, which a cooldown lengthens (\cref{ch:decay}); part of what a cooldown does acts through the norms of the weights, which the river valley does not have. (5) The convex bound prefers a decay over the whole run, as do the experiments of \textcite{DefazioEtAl2023} and \textcite{BergsmaEtAl2025}, but on the cone it underestimates the penalty of short cooldowns by an order of magnitude, so its agreement with practice is one of direction. And the river valley itself is a conjecture about language models, supported by a toy derivation and by the success of the laws it implies, not derived from a network \parencite{WenEtAl2025}.
+
+\paragraph{Repairs and open problems.} The empirical laws are repairs of the kind the model suggests: \textcite{TissueEtAl2024} and \textcite{LuoEtAl2025} keep the area term and the annealing structure of \eqref{eq:schedules:law} and fit the saturation, and \textcite{LiEtAl2025} derive a functional law from kernel regression with power-law spectra, a noisy quadratic model in which river and hills are the two ends of one spectrum. \Textcite{DefazioEtAl2023} refine the schedule with observed gradient norms and obtain a warmup and a fast final decay; schedule-free methods \parencite{DefazioEtAl2024} replace the decay by averaging, and \textcite{HageleEtAl2024} compare weight averaging with cooldowns. Last-iterate analyses now reach beyond bounded domains \parencite{LiuZhou2024}, and for least squares the last iterate under step decay \parencite{GeEtAl2019} and under decaying steps in the overparameterized regime \parencite{WuEtAl2022} is understood. Open: a river valley derived from a network, with its exponent and hill spectrum (Exercise~\ref{ex:schedules:derive}); a solved model in which the hills sit at the edge of stability; a mechanism for the learning-rate dependence of the relaxation that the laws fit (Exercise~\ref{ex:schedules:relax}); and a derivation of the cooldown fraction near $20\%$ that practitioners use.
+
+\section{Back in the wild}\label{sec:schedules:back}
+
+\fieldnotes{Warmup, then cosine to a tenth of the peak, linear decay to zero, or a constant peak with a cooldown over the last $10$--$20\%$ (WSD).}
+{Convex Lipschitz SGD under an arbitrary schedule; the river valley, a slow river between stiff noisy hills, solved exactly.}
+{A last-iterate bound for every schedule; linear decay attains the averaging rate $DG/\sqrt T$ exactly; exact second moments and the annealing decomposition in the river valley.}
+{Loss $=$ area term $+$ recent-schedule term; a noise floor $\approx\eta\tr\Sigma_{\mathrm{hill}}/(4B)$ that a cooldown removes, leaving $\propto(\eta hK)^{-1/2}$; best cooldown fraction $\propto T^{(2\alpha-1)/3}$; in the bound, a floor $\rho$ costs $\rho\ln T$.}
+{A landscape that moves with the schedule; position-dependent noise; Adam, momentum, weight decay; tuned peaks; why $20\%$.}
+{Decay to zero or nearly zero (proved in both idealizations); expect the cooldown drop to scale with the peak and with $1/B$, and make the cooldown long compared with the slowest relaxation time (derived); the exact $20\%$ is folklore backed by experiments.}
+
+The two idealizations agree on three points. The learning rate should end at or near zero: the convex bound charges a final floor $\rho$ a term $\rho\ln T$, and the river valley leaves a fraction $\rho$ of the noise floor in place. The loss at the end is an area term minus a recent-schedule term, which is why very different shapes end close together and why the empirical laws work. And the benefit of a longer cooldown saturates. They disagree on its length: the bound, with a tuned peak, wants a decay over the whole run; the river valley wants a cooldown set by the relaxation times and the slope of the river, a fixed fraction of the run only if the river falls like the inverse square root of the area. A short cooldown branched from a stable checkpoint measures the noise floor, and with it the size of the prize, before the shape is tuned. The rule that $20\%$ is enough is supported by experiments \parencite{HageleEtAl2024}, not by these theories.
+
+The chapter closes a thread that begins in \cref{ch:prologue}: sign descent never converges at a fixed step size, and only a schedule removes its two-cycle (Exercise~\ref{ex:schedules:sign}). Momentum and schedule-free averaging remove the same kind of floor by averaging instead of decaying (\cref{ch:momentum}); the river valley is the noisy quadratic model of \cref{ch:noise} at the time scale of a run; and with decoupled weight decay the schedule is the step size of a Frank--Wolfe method, so a cooldown is Frank--Wolfe's decaying step (\cref{ch:decay}).
+
+\begin{exercises}
+\item \consolidation (Two exact bounds.) Prove \cref{cor:schedules:shapes}. For constant steps, find the best step, and show that at $T=10^4$ the step $D/(G\sqrt T)$ gives a bound $1.79$ times the best one.\label{ex:schedules:exact}
+
+\item \consolidation (Shapes of the cooldown.) For $\varphi=1$ on $[0,1-c]$ and $\varphi(s)=((1-s)/c)^p$ on the cooldown, show that $\Phi(0)=1-cp/(p+1)$ and $J[\varphi]=1+1/p+\ln((p+1-cp)/c)$, which for $p=1$ is \cref{cor:schedules:cooldown}. For $c=0.2$, find the $p$ that minimizes $\sqrt{J/\Phi(0)}$ (near $1.4$) and compare with the $1-\sqrt\cdot$ cooldown of \cref{tab:schedules:bound}. \hint{on the cooldown, with $u=(1-s)/c$, the integrand of \eqref{eq:schedules:J} is $(p+1)^2u^{p-1}/(c(2p+1))$.}\label{ex:schedules:shape}
+
+\item \consolidation (A floor costs a logarithm.) Let $\eta_t=\eta\varphi(t/(T+1))$ with $\varphi$ continuous and $\varphi(1)=\rho>0$. Show that the last-iterate term of \eqref{eq:schedules:lastiterate} is $\frac12G^2\eta(\rho\ln T+O(1))$, and check the entry $1.775+0.1\ln T$ of \cref{tab:schedules:bound} at $T=10^4$ and $10^5$. \hint{for $T-k\ll T$, $R_k\approx\rho\eta(T-k+1)$ and $V_k\approx\rho^2\eta^2(T-k+1)$.}\label{ex:schedules:floor}
+
+\item \consolidation (Step decay.) A hill starts at $v_i(\eta)$, and the step size is divided by $10$ at step $k$. (a) By \cref{cor:schedules:floor}(ii), show that the excess over the new floor falls below $1\%$ of the old floor after about $\ln(90)/(2\eta'h)=22.5/(\eta h)$ steps, where $\eta'=\eta/10$. (b) Show that an increase of the step size enters \eqref{eq:schedules:annealing} with a positive sign, and describe the hill during a linear warmup.\label{ex:schedules:step}
+
+\item \consolidation (The cooldown law.) (a) Derive \eqref{eq:schedules:cooldownlaw} from $dv/dA=-2hv+\eta(A)\sigma^2$. (b) Show that $\chi(\kappa)=1-\kappa/3+O(\kappa^2)$ and $\chi(\kappa)\sim\frac{\sqrt\pi}2\kappa^{-1/2}$. (c) Derive \eqref{eq:schedules:Kstar}, and show that at $K^\star$ the residual noise is twice the area cost $\omega\eta K^\star/2$.\label{ex:schedules:law}
+
+\item \variation (Weighted conversions; \textcite{DefazioEtAl2023}.) Let $w_t>0$, $W=\sum_{t\le T}w_t$ and $W_t=\sum_{s=t}^Tw_s$. (a) With $z_{t+1}=z_t-\gamma w_tg_t$ and $\eta_t=\gamma w_tW_{t+1}/W$, show that $W\theta_T=\sum_tw_tz_t$, and generalize the proof of \cref{prop:schedules:linear} to
+\[
+  \E\Loss(\theta_T)-\Loss^\star\le\frac1W\Bigl(\frac{D^2}{2\gamma}+\frac{\gamma G^2}2\sum_tw_t^2\Bigr).
+\]
+(b) Show, by the Cauchy--Schwarz inequality, that uniform weights, that is linear decay, are best for this bound. (c) If $\E\norm{g_t}_2^2\le G_t^2$, show that the best weights are $w_t\propto G_t^{-2}$, and describe the schedule $\eta_t\propto G_t^{-2}\sum_{s>t}G_s^{-2}$ when the gradient norms fall during training.\label{ex:schedules:weights}
+
+\item \variation (Normalized steps need a schedule.) Sign descent on $\frac12hx^2$ is $x_{t+1}=x_t-\eta_t\sign(x_t)$ (\cref{ch:prologue}). (a) With a constant step, show that the iterates end on a two-cycle with $\abs x\le\eta$. (b) Let $\eta_t\ge\eta_{t-1}/2$ for all $t$. Show that if $\abs{x_t}\le\eta_{t-1}$, then $\abs{x_{t+1}}\le\eta_t$, so the loss stays below $h\eta_t^2/2$. (c) Compare this floor, quadratic in the step size and present without noise, with the noise floor of \cref{cor:schedules:floor}.\label{ex:schedules:sign}
+
+\item \variation (The noise-optimal cooldown.) In one hill, choose $\eta_t\ge0$ to minimize $v_K$ in $v_{t+1}=(1-\eta_th)^2v_t+\eta_t^2\sigma^2$. (a) Show that the step minimizing $v_{t+1}$ given $v_t$ is $hv_t/(\sigma^2+h^2v_t)$, and that it gives $1/v_{t+1}=1/v_t+h^2/\sigma^2$ exactly. (b) Show that this greedy choice is optimal over all schedules. \hint{the map $v\mapsto\min_\eta\{(1-\eta h)^2v+\eta^2\sigma^2\}$ is increasing.} (c) Deduce $v_K=\sigma^2/(h^2(K+K_0))$ with $K_0=\sigma^2/(h^2v_0)$, reached by $\eta_t=1/(h(t+K_0+1))$, and compare with \eqref{eq:schedules:cooldownlaw}.\label{ex:schedules:greedy}
+
+\item \variation (Averaging instead of cooling.) In one hill at equilibrium at the step $\eta$, let $\bar y$ be the average of the last $K$ iterates, $\varrho=1-\eta h$ and $v=v_i(\eta)$. (a) Show that
+\[
+  \E\bar y^2=\frac vK\Bigl(\frac{1+\varrho}{1-\varrho}-\frac{2\varrho(1-\varrho^K)}{K(1-\varrho)^2}\Bigr),
+\]
+so that the hill loss at $\bar y$ is about $2/(\eta hK)$ times the floor. (b) Show that with a linear river the average gives up the same area as a linear cooldown of $K$ steps. (c) Conclude that in the river valley tail averaging leaves less noise than a linear cooldown when $\eta hK$ is large, and compare with schedule-free methods (\cref{ch:momentum}) and with the comparison of averaging and cooldowns by \textcite{HageleEtAl2024}.\label{ex:schedules:averaging}
+
+\item \simulation (Shapes and peaks.) In \texttt{12-schedules-river.py}: (a) replace the linear cooldown by a $1-\sqrt\cdot$ cooldown of the same length, and check that the final loss falls from $0.131$ to $0.129$; (b) raise the peak to $0.2$, check that cosine ($0.080$) now beats WSD ($0.096$), and explain the reversal with the river and hill parts; (c) add a linear warmup over the first $100$ steps and check that the hill parts at the end do not change, and the river parts change by the lost area.\label{ex:schedules:sim1}
+
+\item \simulation (The cone.) In \texttt{12-schedules-bound.py}: (a) check that the constant schedule settles at $\eta G^2/2$, and that after the step size is halved the excess decays by a factor $e$ in about $130$ steps for $d=100$, at $\eta=0.0032$ and at $\eta=0.01$; (b) set $d=400$ and observe that at the common peak cosine and linear decay now end above the constant schedule, and explain it with the first term of \eqref{eq:schedules:lastiterate}, which plays the part of the river.\label{ex:schedules:sim2}
+
+\item \research (Derive the river.) Find a model of a network trained on structured data in which a river valley can be derived, with the river's exponent $\alpha$ and the hill spectrum computed from the data. \Textcite{WenEtAl2025} give a bigram example; a model with features that are learned is open.\label{ex:schedules:derive}
+
+\item \research (Steps or area?) The river valley predicts that the loss relaxes after a decrease of the learning rate in area, the cone that it relaxes in steps. Find the mechanism behind the learning-rate dependence that the empirical laws fit: a nonsmooth minimum, curvature that adapts to the learning rate at the edge of stability, or Adam's normalization, and predict its exponent. As far as we know this is open.\label{ex:schedules:relax}
+\end{exercises}
+
+\notesandrefs
+The step-size conditions of \textcite{RobbinsMonro1951} and the averaging of \textcite{PolyakJuditsky1992} are the classical theory of schedules, and \textcite{NemirovskiEtAl2009} showed that constant steps with averaging are optimal for convex Lipschitz problems. For the last iterate, \textcite{ShamirZhang2013} proved the $\log T/\sqrt T$ rate of the steps $1/\sqrt t$, \textcite{HarveyEtAl2019} showed it tight, \textcite{JainNagarajNetrapalli2019} designed a horizon-dependent schedule with the optimal rate, \textcite{Orabona2020} removed the bounded domain, and \textcite{LiuZhou2024} extended the analysis further. \Textcite{ZamaniGlineur2025} computed the exact worst cases of the subgradient method and found linear decay optimal, and \textcite{DefazioEtAl2023} found, independently, that it is optimal for stochastic gradient descent, with refinements from observed gradient norms. Our proof of \cref{thm:schedules:lastiterate} follows the comparison argument, and our proof of \cref{prop:schedules:linear} is a conversion of the kind used by \textcite{DefazioEtAl2023} and \textcite{Cutkosky2019}, written out for uniform weights.
+
+Cosine annealing is due to \textcite{LoshchilovHutter2017}, the inverse square root to \textcite{VaswaniEtAl2017}, the cosine to a tenth of the peak to GPT-3 \parencite{BrownEtAl2020} and LLaMA \parencite{TouvronEtAl2023}, and the horizon-matched cosine to \textcite{HoffmannEtAl2022}. WSD was introduced for MiniCPM \parencite{HuEtAl2024} and studied by \textcite{HageleEtAl2024}, who proposed the $1-\sqrt\cdot$ cooldown; \textcite{BergsmaEtAl2025} argue for linear decay to zero, and \textcite{SchaippEtAl2025} found the agreement with the convex bound. The river valley is due to \textcite{WenEtAl2025}; the noisy quadratic model under schedules was studied by \textcite{ZhangEtAl2019}, and the last iterate for least squares by \textcite{GeEtAl2019} and \textcite{WuEtAl2022}. The laws of loss curves across schedules are those of \textcite{TissueEtAl2024} and \textcite{LuoEtAl2025}, and \textcite{LiEtAl2025} derive a functional scaling law from kernel regression. We have not found the cooldown law \eqref{eq:schedules:cooldownlaw}, the optimal cooldowns \eqref{eq:schedules:Kstar} and \eqref{eq:schedules:cstar}, or the gamma-type saturation in the literature we could check; all are derived here, not proved.
+
+\paragraph{Translating the literature.} \Textcite{DefazioEtAl2023} and \textcite{SchaippEtAl2025} write $x_t$ for our $\theta_t$ and $f$ for $\Loss$, and start at $x_1$ as we do. \Textcite{SchaippEtAl2025} write the schedule as a base learning rate $\gamma$ times a shape $\eta_t$, our peak $\eta$ times $\varphi(t/T)$; they call the bound $\Omega_t$, allow a bound $G_t^2\ge\E\norm{g_t}^2$ that varies with $t$ where we use one $G^2$, and write $D=\norm{x_1-x_\star}$. \Textcite{DefazioEtAl2023} work with weights $w_t$; their schedule $\eta_t\propto w_t\sum_{s>t}w_s$ is that of Exercise~\ref{ex:schedules:weights}. In \textcite{TissueEtAl2024} and \textcite{LuoEtAl2025} the forward area $S_1(t)=\sum_{s\le t}\eta_s$ is our $A_{t+1}$, the area $\sum_{s=k}^{t}\eta_s$ since a decrease at step $k$ is our $A_{t+1}-A_k$, the loss drop $\mathrm{LD}(t)$ is our annealing sum in \eqref{eq:schedules:law}, and their $\alpha$ is our river exponent. \Textcite{WenEtAl2025} speak of river and hill directions as we do; our hills are quadratic and our oscillation is driven by noise.
+
+\printchapterbib
+\end{refsection}

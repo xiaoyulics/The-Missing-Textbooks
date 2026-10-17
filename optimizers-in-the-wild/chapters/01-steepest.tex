@@ -1,0 +1,408 @@
+% Chapter 1 of Optimizers in the Wild: the geometry of a step.
+
+\casechapter{The Geometry of a Step}{Steepest descent in a normed space}{Normalized updates}{ch:steepest}
+\begin{refsection}[chapters/01-steepest.bib]
+
+\begin{chaptersummary}
+The optimizers that train large networks do not step along the gradient: Adam, signSGD, Lion and Muon let the gradient choose a direction and the learning rate a length. The idealization that explains them is steepest descent in a normed space, in which the gradient is a dual vector and a norm turns it into a step. We compute the steepest step for the norms that optimizers use, and prove that the guaranteed decrease of a step and the convergence rates depend on the norm only through the smoothness constant in that norm and the dual norm of the gradient. For quadratics both are explicit: the max-norm step wins when the gradient is denser than the curvature's effective rank, and for sign descent on a diagonal quadratic the bound is attained exactly, including a floor which says that a normalized step of fixed length never converges. The theory fixes the norm in advance, assumes a global smoothness constant, and cannot say which norm to choose.
+\end{chaptersummary}
+
+\section{In the wild: steps of a fixed size}\label{sec:steepest:wild}
+
+Plain gradient descent takes a step proportional to the gradient: if the gradient doubles, so does the step. Few of the optimizers that train large networks work this way. They let the gradient choose a direction and the learning rate a length, and their authors say so: Kingma and Ba read Adam's learning rate as the radius of a trust region around the current parameters \parencite{KingmaBa2015}.\sidenote{The reading is in Section~2.1 of their paper, with two approximate bounds on the size of the step; \cref{ch:sign} derives the exact bound.} signSGD was proposed to compress the gradients that workers exchange to one bit per coordinate \parencite{BernsteinEtAl2018}, Lion was found by a program search over update rules \parencite{ChenEtAl2023Lion}, and Muon orthogonalizes the step of each hidden weight matrix \parencite{JordanEtAl2024Muon}; even plain gradient descent is usually run with clipping, which caps the step when the gradient is large (\cref{ch:spikes}).
+
+\begin{practice}[Adam, \textcite{KingmaBa2015}; Lion, \textcite{ChenEtAl2023Lion}; LARS and LAMB, \textcite{YouGitmanGinsburg2017,YouEtAl2020}; Muon, \textcite{JordanEtAl2024Muon,LiuEtAl2025Muon}]
+Let the gradient choose the direction and the learning rate the size of the step. Adam divides the momentum of each coordinate by the root-mean-square of its recent gradients, so that no coordinate moves much more than $\eta$ per step. signSGD and Lion move every coordinate by exactly $\eta$, in the direction of the sign of the gradient or of an interpolation between the gradient and its momentum; Lion's authors recommend a learning rate $3$ to $10$ times smaller than AdamW's, because a sign step is longer. LARS and LAMB rescale the update of each layer to a fixed fraction of the norm of the layer's weights. Muon replaces the momentum of each hidden weight matrix by its orthogonal polar factor, whose singular values all equal one; to reuse AdamW's learning rate and weight decay, the Moonlight recipe multiplies the polar factor of an $m\times n$ matrix by $0.2\sqrt{\max(m,n)}$, which gives the update a root-mean-square of $0.2$ times the learning rate.
+\end{practice}
+
+Because these rules fix the size of the step rather than its proportion to the gradient, the size of an update is now measured, and matched across optimizers.
+
+\begin{observation}[Update size; \textcite{LiuEtAl2025Muon}]\label[observation]{obs:steepest:rms}
+In the language-model training runs reported by Liu and coauthors, the root-mean-square of AdamW's update of a weight matrix, in units of the learning rate, typically lay between $0.2$ and $0.4$. With its update rescaled to a root-mean-square of $0.2$, Muon could reuse the learning rate and weight decay tuned for AdamW.
+\end{observation}
+
+This is one report, from one family of models, in 2025; the regularity behind it, that Adam's update behaves like a sign of fixed size when the gradients are consistent from step to step, is older \parencite{BallesHennig2018}. The logic of the rule is that a learning rate is a length, and lengths in different norms can be converted into one another. A second observation shows that the normalization is not a detail.
+
+\begin{observation}[\textcite{KunstnerEtAl2023}]\label[observation]{obs:steepest:sign}
+Transformers for language and translation, trained with full-batch gradients so that noise plays no role, still train much faster with Adam than with gradient descent, and sign descent with momentum closes most of the gap.
+\end{observation}
+
+The experiments cover a handful of standard tasks (\cref{ch:sign,ch:transformers} return to them), and they say that much of what separates Adam from gradient descent there lies in the change of the step from the gradient to its sign. The rules of the box look like a collection of fixes, but they are one rule: take the direction in which the loss decreases fastest per unit of a chosen length, and move a prescribed distance in that length. Which length is right, and what does the choice buy?
+
+\section{The idealization: a gradient is a dual vector}\label{sec:steepest:idealization}
+
+Let $\Loss\colon\R^d\to\R$ be differentiable. Its derivative at $\theta$ is the linear functional $u\mapsto\ip{\nabla\Loss(\theta),u}=\sum_i\partial_i\Loss(\theta)\,u_i$; the pairing identifies a functional with its coefficients and measures no lengths (for matrices, $\ip{G,D}=\tr(G^\top D)$). The gradient therefore lives in the dual space: it says how fast the loss changes along each direction, but it is not a direction in which to move. Its coordinates are in units of loss per unit of $\theta_i$, so $\theta-\eta\nabla\Loss(\theta)$ adds unlike quantities unless $\eta$ carries the units of $\theta_i^2$ per unit of loss. Gradient descent converts the gradient into a step with the Euclidean inner product of whatever coordinates the parameters are written in, and a linear change of coordinates changes the method (\cref{ex:steepest:quadnorm}). A norm supplies the map from the dual space back to the parameter space.
+
+\begin{definition}[Dual norm]\label[definition]{def:steepest:dualnorm}
+Let $\norm{\cdot}$ be a norm on $\R^d$. Its \term{dual norm}\index{dual norm} is $\norm{g}_*=\max_{\norm{u}\le1}\ip{g,u}$.
+\end{definition}
+
+The maximum exists because the unit ball is compact. By \cref{lem:toolkit:dualnorm}, $\norm{\cdot}_*$ is a norm whose dual is $\norm{\cdot}$, Hölder's inequality $\abs{\ip{g,u}}\le\norm{g}_*\norm{u}$ holds, and the dual of $\ell_p$ is $\ell_q$ with $1/p+1/q=1$. The dual norm of the gradient is the largest rate at which the loss decreases along a direction of unit length: the slope of the loss, measured with the chosen ruler.
+
+\begin{definition}[Linear minimization oracle and sharp operator]\label[definition]{def:steepest:lmo}
+For $g\in\R^d$, the \term{linear minimization oracle}\index{linear minimization oracle} $\lmo(g)$ is an element of the set $\argmin_{\norm{u}\le1}\ip{g,u}$ of \term{steepest unit directions}; when the set has several elements we fix a choice, and we take $\lmo(0)=0$. The \term{sharp operator}\index{sharp operator}\label[definition]{def:steepest:sharp} maps $g$ to $g^\sharp=-\norm{g}_*\lmo(g)$.
+\end{definition}
+
+The oracle is named after the subproblem of the Frank--Wolfe method \parencite{FrankWolfe1956}, and \cref{ch:decay} shows that steepest descent with decoupled weight decay is that method.\sidenote{The sharp notation follows \textcite{KelnerEtAl2014}, who used steepest descent in the $\ell_\infty$ norm to compute approximate maximum flows.} The steepest unit direction minimizes the directional derivative over directions of unit length: steepness is a ratio of a change of loss to a length, and it depends on how length is measured.
+
+\begin{definition}[Steepest descent]\label[definition]{def:steepest:steepest}
+Let $\eta>0$ and $g_t=\nabla\Loss(\theta_t)$. \term{Normalized steepest descent}\index{steepest descent!normalized} in the norm $\norm{\cdot}$ is the iteration $\theta_{t+1}=\theta_t+\eta\lmo(g_t)$, and \term{unnormalized steepest descent}\index{steepest descent!unnormalized} is $\theta_{t+1}=\theta_t-\eta g_t^\sharp$.
+\end{definition}
+
+By \cref{lem:steepest:basic} below, a normalized step has length exactly $\eta$ in the norm when the gradient is not zero, and an unnormalized step has length $\eta\norm{g_t}_*$; this is what ``normalized'' means throughout the book. The step size $\eta$ is what practitioners call the learning rate; we use the second name for practice and the first for theory. In the Euclidean norm $g^\sharp=g$: unnormalized steepest descent is gradient descent, and the normalized version is $\theta\leftarrow\theta-\eta g/\norm{g}_2$.
+
+\begin{remark}[One formula]\label[remark]{rem:steepest:trustregion}
+By the substitutions $u=\eta v$ and $u=-\eta w$ and \cref{lem:steepest:basic}(iii), both steps minimize the linear model of the loss under a control on the length of the step:
+\[
+  \eta\lmo(g_t)\in\argmin_{\norm{u}\le\eta}\ip{g_t,u},\qquad
+  -\eta g_t^\sharp\in\argmin_{u}\Bigl\{\ip{g_t,u}+\frac1{2\eta}\norm{u}^2\Bigr\}.
+\]
+The first is a \term{trust-region}\index{trust region} step: the model is trusted on a ball of radius $\eta$ and minimized there \parencite{ConnGouldToint2000}. The second replaces the constraint by a penalty, and the two coincide when the radius is $\eta\norm{g_t}_*$. Every optimizer of Parts~I and~II takes a step of the first kind, with a norm that may change from step to step and a gradient that may be replaced by an average: this is the one formula of the book.
+\end{remark}
+
+\begin{assumption}[Smoothness in a norm]\label[assumption]{ass:steepest:smooth}
+The loss $\Loss\colon\R^d\to\R$ is differentiable and bounded below, $\Loss^\star=\inf\Loss>-\infty$, and for some $L>0$ it is \term{$L$-smooth with respect to $\norm{\cdot}$}\index{smoothness!with respect to a norm}: $\norm{\nabla\Loss(\theta)-\nabla\Loss(\theta')}_*\le L\norm{\theta-\theta'}$ for all $\theta,\theta'$.
+\end{assumption}
+
+Displacements are measured in the norm and changes of gradient, which are dual vectors, in the dual norm. Since all norms on $\R^d$ are equivalent, a loss that is smooth in one norm is smooth in all, but the constants differ by factors as large as the dimension (\cref{prop:steepest:whichnorm}), and the content of a choice of norm lies in these factors. For a twice differentiable loss, the descent inequality below needs only the one-sided bound $u^\top\nabla^2\Loss(\theta)\,u\le L\norm{u}^2$.
+
+\begin{dictionary}
+the norm $\norm{\cdot}$ & what the optimizer treats as a step of unit size: $\ell_2$ for SGD, $\ell_\infty$ for sign descent, the spectral norm of each matrix for Muon, a maximum over layers for LARS\\
+the radius $\eta$ & the learning rate of a normalized optimizer, the length of every step in its norm\\
+$\lmo(g)$ & the update direction before the learning rate: $-g/\norm{g}_2$, $-\sign(g)$, $-\polar(G)$\\
+$\norm{g}_*$ & the decrease of the loss per unit step: $\norm{g}_1$ for sign descent, $\norm{G}_{\nuc}$ for Muon\\
+the smoothness constant $L$ & the curvature that limits the step, in the norm: the sharpness $S$ for $\ell_2$\\
+the floor $L\eta/2$ & the plateau of a run at a constant learning rate, removed only by a decaying schedule
+\end{dictionary}
+
+The chapter derives two optimizers in full, below, and a third, greedy coordinate descent, which is steepest descent in $\ell_1$ (\cref{prop:steepest:dualitymaps}(iii)); sign descent and Muon, which come from the max norm and the spectral norm, have their entries in \cref{ch:sign,ch:spectral}.
+
+\begin{fieldguide}{Gradient descent and SGD}{\textcite{Cauchy1847}; \textcite{RobbinsMonro1951}}
+\fgrow{update}{$\theta_{t+1}=\theta_t-\eta g_t$, with the gradient (GD) or a minibatch gradient (SGD)}
+\fgrow{norm}{$\ell_2$, unnormalized ($g^\sharp=g$): the step has length $\eta\norm{g_t}_2$}
+\fgrow{preconditioner}{none; a fixed $P\succ0$ gives the norm $\norm{\cdot}_P$ (\cref{ex:steepest:quadnorm})}
+\fgrow{averages}{none; momentum in \cref{ch:momentum}}
+\fgrow{state}{none (one number per parameter with momentum)}
+\fgrow{in the wild}{with momentum $0.9$, common for convolutional networks, rare for transformers}
+\end{fieldguide}
+
+\begin{fieldguide}{LARS and LAMB}{\textcite{YouGitmanGinsburg2017,YouEtAl2020}}
+\fgrow{update}{per layer, $W_l\leftarrow W_l-\eta\norm{W_l}_F\,U_l/\norm{U_l}_F$, with $U_l$ the gradient (LARS) or the Adam update (LAMB)}
+\fgrow{norm}{$\max_l\norm{\Delta W_l}_F/\norm{W_l}_F$, rescaled by the weights at each step; LARS is normalized steepest descent in it (\cref{prop:steepest:dualitymaps}(iv))}
+\fgrow{preconditioner}{none (LARS); Adam's diagonal one (LAMB)}
+\fgrow{averages}{momentum (LARS); Adam's two averages (LAMB)}
+\fgrow{state}{one or two numbers per parameter}
+\fgrow{in the wild}{large-batch training of ResNet-50 and BERT; $\norm{W_l}_F/\norm{U_l}_F$ is the ``trust ratio''}
+\end{fieldguide}
+
+\paragraph{What was thrown away.} Noise, since the gradients are exact; memory, since each step depends only on the current gradient; change, since the norm is fixed and the smoothness constant global; and structure, since the parameters form one vector or a fixed list of blocks. Each has a chapter of its own: noise and memory change what is fed to the duality map, not the map (\cref{ch:momentum,ch:adaptive}); a norm that adapts to the gradients is a preconditioner (\cref{ch:adaptive,ch:kronecker}); changing curvature is the subject of Part~III; and the norm of a network is built in \cref{ch:modular}. What is left is the question that comes first: given one exact gradient and one norm, what is the best step, and what does it guarantee?
+
+\paragraph{What one had to notice.} The rules of the practice box are not normalizations bolted onto gradient descent; they are gradient descent in other norms. A sign vector is the steepest unit direction of the max norm, a polar factor that of the spectral norm, and a layerwise normalization that of a maximum over layers. Steepest descent in a general norm is classical in optimization \parencite{BoydVandenberghe2004}, and spectral descent was proposed for networks by \textcite{CarlsonEtAl2015}; \textcite{BernsteinNewhouse2024} observed that Adam, Shampoo and Prodigy with their accumulators switched off are steepest descent in particular norms, a view that \textcite{LargeEtAl2024,BernsteinNewhouse2025} extended to whole networks. Seen this way, the choice of an optimizer is the choice of a norm, and it can be analyzed.
+
+\section{The theory: the steepest step in each norm}\label{sec:steepest:maps}
+
+We collect first the elementary facts that every later chapter uses.
+
+\begin{lemma}[Basic properties]\label[lemma]{lem:steepest:basic}
+Let $\norm{\cdot}$ be a norm on $\R^d$ and $g\in\R^d$.
+\begin{enumerate}
+\item $\ip{g,\lmo(g)}=-\norm{g}_*$, and $\norm{\lmo(g)}=1$ if $g\ne0$.
+\item $\ip{g,g^\sharp}=\norm{g}_*^2$ and $\norm{g^\sharp}=\norm{g}_*$.
+\item For every $u$, $\ip{g,u}-\frac12\norm{u}^2\le\frac12\norm{g}_*^2$, with equality at $u=g^\sharp$. If $g\ne0$, the maximizers are the vectors $-\norm{g}_*v$ with $v$ a steepest unit direction; if $g=0$, the only maximizer is $0$.
+\item For $c>0$ the steepest unit directions of $cg$ and of $g$ coincide; so $\lmo$ can be chosen with $\lmo(cg)=\lmo(g)$, and then $(cg)^\sharp=c\,g^\sharp$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to combine Hölder's inequality with the symmetry of the unit ball. (i) By symmetry, $\min_{\norm{u}\le1}\ip{g,u}$ equals $-\max_{\norm{u}\le1}\ip{g,-u}$, which is $-\norm{g}_*$. If $g\ne0$, then $\norm{g}_*>0$, and Hölder's inequality gives $\norm{g}_*=-\ip{g,\lmo(g)}\le\norm{g}_*\norm{\lmo(g)}$, so $\norm{\lmo(g)}\ge1$; the reverse holds because $\lmo(g)$ lies in the ball. (ii) Multiply both identities of (i) by $\norm{g}_*$. (iii) By Hölder's inequality and $ab-\frac12b^2\le\frac12a^2$,
+\[
+  \ip{g,u}-\tfrac12\norm{u}^2\le\norm{g}_*\norm{u}-\tfrac12\norm{u}^2\le\tfrac12\norm{g}_*^2 .
+\]
+The second step is an equality only if $\norm{u}=\norm{g}_*$, and the first only if $\ip{g,u}=\norm{g}_*\norm{u}$. If $g=0$ this forces $u=0$. If $g\ne0$, it says that $u=\norm{g}_*w$ with $\norm{w}=1$ and $\ip{g,w}=\norm{g}_*$, that is, $u=-\norm{g}_*v$ with $v=-w$ a steepest unit direction; by (ii), $g^\sharp$ is one of these. (iv) The objective $c\ip{g,u}$ has the same minimizers, and $\norm{cg}_*=c\norm{g}_*$.
+\end{proof}
+
+Part (iii) says that $\frac12\norm{\cdot}_*^2$ is the convex conjugate of $\frac12\norm{\cdot}^2$ (\cref{lem:toolkit:conjugate}); part (iv), that a normalized step does not depend on the size of the gradient, so a normalized method is insensitive to the scale of the loss. For $W\in\R^{m\times n}$ we write $We_j$ for the columns, $W^\top e_i$ for the rows, and $\norm{W}_{p\to q}=\max_{x\ne0}\norm{Wx}_q/\norm{x}_p$.
+
+\begin{proposition}[Duality maps of the norms that optimizers use]\label[proposition]{prop:steepest:dualitymaps}
+Let $g\in\R^d$ and $G\in\R^{m\times n}$ be nonzero, and let $M(g)=\argmin_{\norm{u}\le1}\ip{g,u}$ be the set of steepest unit directions of the norm at hand.
+\begin{enumerate}
+\item ($\ell_2$ and Frobenius.) The dual of $\norm{\cdot}_2$ is $\norm{\cdot}_2$, $M(g)=\{-g/\norm{g}_2\}$ and $g^\sharp=g$. Likewise $\norm{\cdot}_F$ is self-dual, $\lmo(G)=-G/\norm{G}_F$ and $G^\sharp=G$.
+\item ($\ell_\infty$.) The dual norm is $\norm{g}_1$, and $M(g)=\{u\in[-1,1]^d:u_i=-\sign(g_i)\text{ whenever }g_i\ne0\}$. We choose $\lmo(g)=-\sign(g)$, so that $g^\sharp=\norm{g}_1\sign(g)$.
+\item ($\ell_1$.) The dual norm is $\norm{g}_\infty$, and $M(g)$ is the convex hull of the vectors $-\sign(g_i)e_i$ with $\abs{g_i}=\norm{g}_\infty$. For one such $i$, $\lmo(g)=-\sign(g_i)e_i$ and $g^\sharp=g_ie_i$: unnormalized steepest descent in $\ell_1$ is greedy coordinate descent, the \term{Gauss--Southwell rule}\index{Gauss--Southwell rule}.
+\item (Maxima over blocks.) Let $\R^d=\R^{d_1}\times\dots\times\R^{d_K}$ with $\theta=(\theta_1,\dots,\theta_K)$, give the $k$th factor a norm $\norm{\cdot}_{(k)}$ with dual $\norm{\cdot}_{(k),*}$ and steepest unit directions $M_k$, and let $\norm{\theta}=\max_k\norm{\theta_k}_{(k)}$. Then $\norm{g}_*=\sum_k\norm{g_k}_{(k),*}$, $M(g)=M_1(g_1)\times\dots\times M_K(g_K)$, $\lmo(g)=(\lmo_{(k)}(g_k))_k$, and $g^\sharp=-\bigl(\sum_j\norm{g_j}_{(j),*}\bigr)(\lmo_{(k)}(g_k))_k$.
+\item (Columns and rows.) $\norm{W}_{1\to2}=\max_j\norm{We_j}_2$ and $\norm{W}_{2\to\infty}=\max_i\norm{W^\top e_i}_2$. Their duals are the sum of the column norms and the sum of the row norms, and $\lmo$ normalizes each column, respectively row, of $G$ to unit length and reverses its sign, mapping a zero column or row to zero.
+\item (Spectral.) The dual of $\norm{\cdot}_{\op}$ is the nuclear norm $\norm{G}_{\nuc}=\sum_i\sigma_i(G)$, and $-\polar(G)\in M(G)$, so $G^\sharp=\norm{G}_{\nuc}\polar(G)$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to bound $\ip{g,u}$ from below over the unit ball by a chain of elementary inequalities, to exhibit a point where every inequality is an equality, and to read off the set of such points; (ii) and (v) are instances of (iv). If the minimum of $\ip{g,u}$ over the ball is $-c$, then $\norm{g}_*=c$, because the ball is symmetric.
+
+(i) By the Cauchy--Schwarz inequality, $\ip{g,u}\ge-\norm{g}_2\norm{u}_2\ge-\norm{g}_2$ when $\norm{u}_2\le1$. Equality in the first step requires $u=-cg$ with $c\ge0$, and in the second $\norm{u}_2=1$, so $u=-g/\norm{g}_2$, which attains the bound; then $g^\sharp=g$. The Frobenius norm is the $\ell_2$ norm of the entries, and the trace pairing is the coordinate pairing of the entries.
+
+(iv) If $\norm{u}\le1$, then $\norm{u_k}_{(k)}\le1$ for every $k$, and Hölder's inequality in each factor gives $\ip{g,u}=\sum_k\ip{g_k,u_k}\ge-\sum_k\norm{g_k}_{(k),*}$. Equality holds if and only if $\ip{g_k,u_k}=-\norm{g_k}_{(k),*}$ for every $k$, that is, $u_k\in M_k(g_k)$ for every $k$; for a block with $g_k=0$ this is the whole unit ball of the block. Such $u$ exist, for instance $u_k=\lmo_{(k)}(g_k)$, so the minimum is $-\sum_k\norm{g_k}_{(k),*}$ and the minimizers form the product of the sets $M_k(g_k)$.
+
+(ii) The max norm is (iv) with $d$ blocks of size one, each with the absolute value, which is its own dual. For one coordinate, $\argmin_{\abs{u_i}\le1}g_iu_i$ is $\{-\sign(g_i)\}$ if $g_i\ne0$ and $[-1,1]$ if $g_i=0$.
+
+(iii) For $\norm{u}_1\le1$,
+\[
+  \ip{g,u}\ge-\sum_i\abs{g_i}\abs{u_i}\ge-\norm{g}_\infty\sum_i\abs{u_i}\ge-\norm{g}_\infty .
+\]
+The first inequality is an equality if and only if $g_iu_i\le0$ for all $i$, the second if and only if $u_i=0$ whenever $\abs{g_i}<\norm{g}_\infty$, and the third, since $g\ne0$, if and only if $\norm{u}_1=1$. The vectors with these properties are $u=-\sum_{i\in I}c_i\sign(g_i)e_i$ with $c_i\ge0$, $\sum_ic_i=1$ and $I=\{i:\abs{g_i}=\norm{g}_\infty\}$: the convex hull of the vertices $-\sign(g_i)e_i$, $i\in I$. At a vertex, $g^\sharp=\norm{g}_\infty\sign(g_i)e_i=g_ie_i$.
+
+(v) By the triangle inequality, $\norm{Wx}_2=\norm{\sum_jx_jWe_j}_2\le\norm{x}_1\max_j\norm{We_j}_2$, with equality at $x=e_j$ for a column of largest norm. By the Cauchy--Schwarz inequality, $\norm{Wx}_\infty=\max_i\abs{\ip{W^\top e_i,x}}\le\norm{x}_2\max_i\norm{W^\top e_i}_2$, with equality at $x=W^\top e_i/\norm{W^\top e_i}_2$ for a row of largest norm. So both norms are maxima, over the columns and over the rows, of the Euclidean norm, and (iv) with (i) gives their duals and oracles; for a zero block we choose zero, as in \cref{def:steepest:lmo}.
+
+(vi) By von Neumann's trace inequality (\cref{thm:toolkit:vonneumann}), every $D$ with $\norm{D}_{\op}=\sigma_1(D)\le1$ satisfies
+\[
+  \ip{G,D}=\tr(G^\top D)\ge-\sum_i\sigma_i(G)\sigma_i(D)\ge-\sigma_1(D)\sum_i\sigma_i(G)\ge-\norm{G}_{\nuc}.
+\]
+Let $G=U\diag(\sigma)V^\top$ be a compact singular value decomposition, with $r=\rank G\ge1$, $U\in\R^{m\times r}$, $V\in\R^{n\times r}$ and $U^\top U=V^\top V=I_r$. Then $(UV^\top)^\top UV^\top=VV^\top$ is an orthogonal projection of rank $r$, so the nonzero singular values of $UV^\top$ equal $1$ and $\norm{UV^\top}_{\op}=1$; and $\ip{G,-UV^\top}=-\tr(\diag(\sigma)V^\top V)=-\sum_i\sigma_i$. So $-UV^\top$ attains the bound.
+\end{proof}
+
+\begin{remark}[Ties, jumps and step sizes]\label[remark]{rem:steepest:ties}
+The steepest unit direction is unique for the Euclidean and Frobenius norms, whose balls are strictly convex, and otherwise only away from ties: for $\ell_\infty$ when no $g_i$ vanishes, for $\ell_1$ when the largest $\abs{g_i}$ is attained once, for the spectral norm when $G$ has full rank (\cref{ch:spectral}). At a tie the direction jumps, as a coordinate of $-\sign(g)$ does when $g_i$ crosses zero, and noisy gradients straddle such ties all the time (\cref{ch:sign,ch:momentum}). The norms also give steps of very different sizes: a normalized step of length $\eta$ has root-mean-square $\eta$ in $\ell_\infty$ (if no $g_i$ vanishes), $\eta/\sqrt d$ in $\ell_2$, and $\eta/\sqrt{\max(m,n)}$ in the spectral norm of a full-rank $m\times n$ matrix (\cref{ex:steepest:rms}). Matching update sizes across optimizers, as in \cref{obs:steepest:rms}, converts between these lengths.
+\end{remark}
+
+\begin{remark}[Steepest descent is not mirror descent]\label[remark]{rem:steepest:mirror}
+\term{Mirror descent}\index{mirror descent} \parencite{NemirovskyYudin1983,BeckTeboulle2003} carries the iterate, not the gradient, to the dual space: with a differentiable, strongly convex mirror map $\psi$ it sets $\nabla\psi(\theta_{t+1})=\nabla\psi(\theta_t)-\eta g_t$. With $\psi=\frac12\norm{\cdot}^2$, whose conjugate has the gradient $g\mapsto g^\sharp$ where it is differentiable, this would read $\theta_{t+1}=(\nabla\psi(\theta_t)-\eta g_t)^\sharp$, while steepest descent reads $\theta_{t+1}=\theta_t-\eta g_t^\sharp$. The two agree for all $\theta_t$ and $g_t$ exactly when the sharp operator is linear, that is, when the norm comes from an inner product, $\norm{u}=\norm{u}_P$, and both are then the preconditioned step $\theta_t-\eta P^{-1}g_t$. For the max, $\ell_1$ and spectral norms, $\frac12\norm{\cdot}^2$ is neither differentiable nor strictly convex, so it is not an admissible mirror map; mirror descent in these geometries uses other maps, such as the negative entropy on the simplex, and it is analyzed through Bregman divergences and regret rather than through the descent inequality.
+\end{remark}
+
+\section{The theory: descent in a general norm}\label{sec:steepest:descent}
+
+Smoothness gives a quadratic upper bound on the loss around every point, and steepest descent minimizes it; the main theorem of the chapter follows.
+
+\begin{theorem}[Descent in a general norm]\label{thm:steepest:descent}
+Let $\Loss$ satisfy \cref{ass:steepest:smooth}, let $\theta_0\in\R^d$, $\Delta_0=\Loss(\theta_0)-\Loss^\star$ and $g_t=\nabla\Loss(\theta_t)$.
+\begin{enumerate}
+\item (One step.) For all $\theta,u\in\R^d$,
+\begin{equation}\label{eq:steepest:descentlemma}
+  \Loss(\theta+u)\le\Loss(\theta)+\ip{\nabla\Loss(\theta),u}+\frac L2\norm{u}^2 .
+\end{equation}
+The right side is smallest at $u=-\nabla\Loss(\theta)^\sharp/L$, where it equals $\Loss(\theta)-\norm{\nabla\Loss(\theta)}_*^2/(2L)$. At $u=\eta\lmo(\nabla\Loss(\theta))$ it is at most $\Loss(\theta)-\eta\norm{\nabla\Loss(\theta)}_*+L\eta^2/2$.
+\item (Unnormalized, nonconvex.) Unnormalized steepest descent with step size $1/L$ satisfies, for all $T\ge1$,
+\[
+  \min_{t<T}\norm{g_t}_*^2\le\frac1T\sum_{t<T}\norm{g_t}_*^2\le\frac{2L\Delta_0}{T}.
+\]
+\item (Normalized, nonconvex.) Normalized steepest descent with step size $\eta>0$ satisfies, for all $T\ge1$,
+\begin{equation}\label{eq:steepest:normalized}
+  \frac1T\sum_{t<T}\norm{g_t}_*\le\frac{\Delta_0}{\eta T}+\frac{L\eta}2 ,
+\end{equation}
+and the right side is smallest, equal to $\sqrt{2L\Delta_0/T}$, at $\eta=\sqrt{2\Delta_0/(LT)}$.
+\item (Unnormalized, convex.) If moreover $\Loss$ is convex with a minimizer $\theta^\star$, and $R=\sup\{\norm{\theta-\theta^\star}:\Loss(\theta)\le\Loss(\theta_0)\}$ is finite, then unnormalized steepest descent with step size $1/L$ satisfies $\Delta_T\le2LR^2/(T+4)$ for all $T\ge0$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to prove the quadratic upper bound \eqref{eq:steepest:descentlemma} once, to minimize it over the two kinds of steps, and to add up the decreases; the convex rate needs one more inequality, which turns a gap into a lower bound on the gradient.
+
+(i) Fix $\theta$ and $u$, and let $\varphi(s)=\Loss(\theta+su)$ for $s\in[0,1]$. The gradient is Lipschitz, hence continuous, so $\varphi$ is continuously differentiable with $\varphi'(s)=\ip{\nabla\Loss(\theta+su),u}$. By the fundamental theorem of calculus, then Hölder's inequality and smoothness,
+\[
+\begin{aligned}
+  \Loss(\theta+u)-\Loss(\theta)-\ip{\nabla\Loss(\theta),u}&=\int_0^1\ip{\nabla\Loss(\theta+su)-\nabla\Loss(\theta),u}\dd s\\
+  &\le\int_0^1Ls\norm{u}^2\dd s=\frac L2\norm{u}^2,
+\end{aligned}
+\]
+which is \eqref{eq:steepest:descentlemma} (\cref{lem:toolkit:descent}). Write $g=\nabla\Loss(\theta)$. By Hölder's inequality the right side of \eqref{eq:steepest:descentlemma} is at least $\Loss(\theta)-\norm{g}_*\norm{u}+\frac L2\norm{u}^2$, a quadratic in $\norm{u}$ whose minimum over $\norm{u}\ge0$ is $\Loss(\theta)-\norm{g}_*^2/(2L)$. At $u=-g^\sharp/L$, \cref{lem:steepest:basic}(ii) gives $\ip{g,u}=-\norm{g}_*^2/L$ and $\norm{u}=\norm{g}_*/L$, so the right side equals this minimum. At $u=\eta\lmo(g)$, \cref{lem:steepest:basic}(i) gives $\ip{g,u}=-\eta\norm{g}_*$ and $\norm{u}\le\eta$.
+
+(ii) By (i), $\Loss(\theta_{t+1})\le\Loss(\theta_t)-\norm{g_t}_*^2/(2L)$. Adding these inequalities for $t<T$ and using $\Loss(\theta_T)\ge\Loss^\star$ gives $\sum_{t<T}\norm{g_t}_*^2\le2L\Delta_0$, and a minimum is at most an average.
+
+(iii) By (i), $\Loss(\theta_{t+1})\le\Loss(\theta_t)-\eta\norm{g_t}_*+L\eta^2/2$; if $g_t=0$, the step is zero and the inequality holds too. Adding for $t<T$ gives $\eta\sum_{t<T}\norm{g_t}_*\le\Delta_0+TL\eta^2/2$, which is \eqref{eq:steepest:normalized} after division by $\eta T$. By the inequality between the arithmetic and geometric means, $\frac{\Delta_0}{\eta T}+\frac{L\eta}2\ge2\sqrt{L\Delta_0/(2T)}=\sqrt{2L\Delta_0/T}$, with equality when the two terms are equal, at $\eta=\sqrt{2\Delta_0/(LT)}$.
+
+(iv) The losses do not increase, by (i), so every $\theta_t$ lies in the sublevel set of $\theta_0$ and $\norm{\theta_t-\theta^\star}\le R$. By convexity and Hölder's inequality, $\Delta_t\le\ip{g_t,\theta_t-\theta^\star}\le R\norm{g_t}_*$, and with (i) this gives $\Delta_{t+1}\le\Delta_t-\Delta_t^2/(2LR^2)$. If some $\Delta_t$ is zero, then so are all later ones, and there is nothing to prove; so suppose that every $\Delta_t$ is positive, which forces $R>0$. Dividing the recursion by $\Delta_t\Delta_{t+1}$ and using $\Delta_{t+1}\le\Delta_t$,
+\[
+  \frac1{\Delta_{t+1}}-\frac1{\Delta_t}\ge\frac{\Delta_t}{2LR^2\,\Delta_{t+1}}\ge\frac1{2LR^2},
+\]
+so $1/\Delta_T\ge1/\Delta_0+T/(2LR^2)$. Finally, $\nabla\Loss(\theta^\star)=0$, so \eqref{eq:steepest:descentlemma} at $\theta^\star$ with $u=\theta_0-\theta^\star$ gives $\Delta_0\le LR^2/2$, that is, $1/\Delta_0\ge4/(2LR^2)$. Hence $1/\Delta_T\ge(T+4)/(2LR^2)$.
+\end{proof}
+
+\paragraph{Where the norm enters.} The theorem holds for every norm at once, and the norm enters only through the smoothness constant, the dual norm of the gradient, and, for the convex rate, the radius $R$. Choosing a norm is choosing which smoothness constant and which gradient norm one pays, and a norm suits a loss when its smoothness constant is small compared with the dual norms of the gradients the iterates meet. The guarantees come in different currencies, the $\ell_1$ norm of the gradient for sign descent and the $\ell_2$ norm for gradient descent; \cref{prop:steepest:whichnorm} converts between them for quadratics. Part (iv) is Nesterov's argument for gradient descent \parencite{Nesterov2018}, with the dual norm in place of the Euclidean one.\sidenote{In the Euclidean case $R$ can be replaced by $\norm{\theta_0-\theta^\star}_2$, because gradient descent with step size $1/L$ never moves away from a minimizer of a convex smooth loss. That rests on co-coercivity, which has no analogue in a general norm (\cref{lem:toolkit:descent}).}
+
+\paragraph{Normalized and unnormalized.} At their best step sizes the two methods have the same guarantee: by (ii) and the Cauchy--Schwarz inequality, the average of $\norm{g_t}_*$ under unnormalized descent is at most $\sqrt{2L\Delta_0/T}$, the value of (iii) at its best step. They differ in what they risk. An unnormalized step of size $\eta$ has the guaranteed decrease $\eta(1-L\eta/2)\norm{g_t}_*^2$, which vanishes at $\eta=2/L$, and on a Euclidean quadratic the iteration diverges beyond it, the stability threshold of the prologue. A normalized step never moves farther than $\eta$, so the loss rises by at most $L\eta^2/2$ per step and \eqref{eq:steepest:normalized} holds for every $\eta>0$: there is no threshold, and a step size that is too large only raises the floor. A normalized method is clipped by construction (\cref{ch:spikes}).
+
+\paragraph{The floor.} At a fixed step size the right side of \eqref{eq:steepest:normalized} tends to $L\eta/2$, not to zero: a normalized step has length $\eta$ even where the gradient is tiny, so the iterates cannot settle, as the prologue showed for sign descent on a quadratic. A decaying learning rate removes the floor, since with step sizes $\eta_t$ the same argument gives $\sum_t\eta_t\norm{g_t}_*\le\Delta_0+\frac L2\sum_t\eta_t^2$ (\cref{ex:steepest:schedule}); this is a theme of the book (\cref{ch:momentum,ch:schedules,ch:decay}). The floor takes over when the two terms of \eqref{eq:steepest:normalized} are equal, at $T=2\Delta_0/(L\eta^2)$, and the best step for a horizon puts the horizon at this crossover. To compare norms we need their smoothness constants, which for quadratics can be computed.
+
+\begin{proposition}[Which norm? Smoothness constants of a quadratic]\label[proposition]{prop:steepest:whichnorm}
+Let $\Loss(\theta)=\frac12\theta^\top H\theta-\ip{b,\theta}$ with $H$ symmetric, positive semidefinite and nonzero. For a norm $\norm{\cdot}$ let $L_{\norm\cdot}$ be the smallest $L$ for which $\Loss$ is $L$-smooth with respect to $\norm{\cdot}$.
+\begin{enumerate}
+\item For every norm, $L_{\norm\cdot}=\max_{\norm{u}\le1}u^\top Hu$.
+\item $L_{\ell_2}=\lmax(H)$, $L_{\ell_1}=\max_iH_{ii}$, and $L_{\ell_\infty}=\norm{H}_{\infty\to1}=\max_{s\in\{-1,1\}^d}s^\top Hs$, which satisfies $\tr H\le L_{\ell_\infty}\le d\,\lmax(H)$, with $L_{\ell_\infty}=\tr H$ when $H$ is diagonal.
+\item At a point with gradient $g\ne0$, the guaranteed decrease $\norm{g}_*^2/(2L_{\norm\cdot})$ of \cref{thm:steepest:descent}(i) is larger for $\ell_\infty$ than for $\ell_2$ if and only if
+\begin{equation}\label{eq:steepest:whichnorm}
+  \frac{\norm{g}_1^2}{\norm{g}_2^2}>\frac{\norm{H}_{\infty\to1}}{\lmax(H)},
+\end{equation}
+and the right side is at least $\tr H/\lmax(H)$, with equality when $H$ is diagonal.
+\item For every norm, the step $-g^\sharp/L_{\norm\cdot}$ decreases $\Loss$ by at least $\norm{g}_*^2/(2L_{\norm\cdot})$ and at most twice as much, and by exactly the lower value if and only if $\lmo(g)$ maximizes $u^\top Hu$ over the unit ball; for $\ell_\infty$ and diagonal $H$, this holds whenever no coordinate of $g$ vanishes.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to reduce every constant to the maximum of the quadratic form $u^\top Hu$ over the unit ball, and to evaluate that maximum at the vertices of the ball. (i) Since $\nabla\Loss(\theta)-\nabla\Loss(\theta')=H(\theta-\theta')$, the best constant is $\sup_{u\ne0}\norm{Hu}_*/\norm{u}=\sup\{v^\top Hu:\norm{u}\le1,\ \norm{v}\le1\}$. Taking $v=u$ shows that this is at least $\max_{\norm{u}\le1}u^\top Hu$. Conversely, $(u,v)\mapsto v^\top Hu$ is a positive semidefinite bilinear form, so the Cauchy--Schwarz inequality gives $v^\top Hu\le(u^\top Hu)^{1/2}(v^\top Hv)^{1/2}\le\max\{u^\top Hu,v^\top Hv\}$.
+
+(ii) For $\ell_2$, (i) is the Rayleigh quotient. For $\ell_1$ and $\ell_\infty$, the function $u\mapsto u^\top Hu$ is convex, and a convex function on a polytope attains its maximum at a vertex, because every point of the polytope is a convex combination of vertices. The vertices of the $\ell_1$ ball are $\pm e_i$, where the function equals $H_{ii}$; those of the $\ell_\infty$ ball are the sign vectors. That $\max_ss^\top Hs=\max_{\norm{u}_\infty\le1}\norm{Hu}_1=\norm{H}_{\infty\to1}$ is (i) with the dual norm $\ell_1$. For $s$ uniform on $\{-1,1\}^d$, $\E[s_is_j]=\ind[i=j]$, so $\E[s^\top Hs]=\tr H$, and the maximum is at least the mean. For every $s$, $s^\top Hs\le\lmax(H)\norm{s}_2^2=d\,\lmax(H)$; and if $H$ is diagonal, $s^\top Hs=\tr H$ for every $s$.
+
+(iii) Compare the guarantees $\norm{g}_1^2/(2L_{\ell_\infty})$ and $\norm{g}_2^2/(2L_{\ell_2})$, and use (ii).
+
+(iv) Let $L=L_{\norm\cdot}$, $u=\lmo(g)$ and $q=u^\top Hu$, so that $0\le q\le L$ by (i) and \cref{lem:steepest:basic}(i). For a quadratic, \eqref{eq:steepest:descentlemma} holds with equality once $\frac L2\norm{v}^2$ is replaced by $\frac12v^\top Hv$; with $v=-g^\sharp/L=(\norm{g}_*/L)\,u$,
+\[
+  \Loss(\theta)-\Loss(\theta+v)=\frac{\norm{g}_*^2}{L}-\frac{\norm{g}_*^2}{2L^2}\,q=\frac{\norm{g}_*^2}{2L}\Bigl(2-\frac qL\Bigr),
+\]
+which lies between $\norm{g}_*^2/(2L)$ and $\norm{g}_*^2/L$ and equals the first exactly when $q=L$. For $\ell_\infty$ and diagonal $H$, $q=\sum_iH_{ii}\sign(g_i)^2=\tr H=L$ when every $g_i\ne0$.
+\end{proof}
+
+The left side of \eqref{eq:steepest:whichnorm} is the \term{density}\index{density of a gradient} of the gradient, between $1$ for a gradient with one nonzero coordinate and $d$ for one whose coordinates all have the same size; the ratio $\tr H/\lmax(H)$, between $1$ and $\rank H$, is the \term{effective rank}\index{effective rank} of the curvature. So the max norm wins a step, on the guarantees, when the gradient is spread over more coordinates than the curvature over directions: a dense gradient against a curvature of low effective rank. A gradient with independent Gaussian coordinates has density close to $2d/\pi$, since $\E\abs{g_i}=\sqrt{2/\pi}$ for a standard Gaussian, so for diagonal $H$ the max norm then wins unless the curvature is nearly isotropic. By (iv) the guarantees decide the comparison of the true decreases whenever they differ by more than a factor of two; \cref{ch:sign,ch:transformers} measure both sides of \eqref{eq:steepest:whichnorm} in networks. The constant $\norm{H}_{\infty\to1}$, however, is NP-hard to compute \parencite{Rohn2000}, since for a graph Laplacian it is four times the maximum cut (\cref{ex:steepest:maxcut}): the theorem asks for an input that cannot be computed in the most important non-Euclidean case. For diagonal $H$ the difficulty disappears, and that is the case in which the theory can be tested exactly.
+
+\section{Reading the theory}\label{sec:steepest:reading}
+
+The theory predicts four things. Per step, the best normalized step length is $\norm{g}_*/L$ and the guaranteed decrease $\norm{g}_*^2/(2L)$, within a factor of two of the truth on convex quadratics. Between norms, the max norm wins a step exactly when \eqref{eq:steepest:whichnorm} holds. At a fixed step size the average dual norm of the gradient obeys \eqref{eq:steepest:normalized}, a transient decaying like $1/T$ above a floor $L\eta/2$ that takes over after $2\Delta_0/(L\eta^2)$ steps. For convex losses, unnormalized descent has gap at most $2LR^2/(T+4)$. \Cref{fig:steepest:geometry} shows the geometry of a step in the plane.\sidenote{The emblem on the title page of this book is the left panel of \cref{fig:steepest:geometry}, drawn for $g$ instead of $-g$.}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=15mm},wplot,width=60mm,height=60mm,axis equal image]
+\nextgroupplot[xmin=-1.7,xmax=1.7,ymin=-1.7,ymax=1.7,xtick={-1,0,1},ytick={-1,0,1},xlabel={$u_1$},ylabel={$u_2$}]
+\addplot[sea,line width=0.9pt] table[x=x,y=y] {figures/data/01-steepest-geometry-circle.dat};
+\addplot[seadeep,line width=0.9pt] coordinates {(1,1) (-1,1) (-1,-1) (1,-1) (1,1)};
+\addplot[sandline!55!black,line width=0.9pt] coordinates {(1,0) (0,1) (-1,0) (0,-1) (1,0)};
+\addplot[sandline!55!black,densely dashed,line width=0.6pt,quiver={u=\thisrow{du},v=\thisrow{dv}},skip coords between index={1}{3}] table[x=ax,y=ay] {figures/data/01-steepest-geometry-lmo.dat};
+\addplot[sea,densely dashed,line width=0.6pt,quiver={u=\thisrow{du},v=\thisrow{dv}},skip coords between index={0}{1},skip coords between index={2}{3}] table[x=ax,y=ay] {figures/data/01-steepest-geometry-lmo.dat};
+\addplot[seadeep,densely dashed,line width=0.6pt,quiver={u=\thisrow{du},v=\thisrow{dv}},skip coords between index={0}{2}] table[x=ax,y=ay] {figures/data/01-steepest-geometry-lmo.dat};
+\addplot[muted,-stealth,line width=0.7pt,quiver={u=\thisrow{x}*1.62,v=\thisrow{y}*1.62},skip coords between index={0}{1},skip coords between index={2}{3}] table[x expr=0,y expr=0] {figures/data/01-steepest-geometry-lmo.dat};
+\addplot[sandline!55!black,-stealth,line width=1.1pt,quiver={u=\thisrow{x},v=\thisrow{y}},skip coords between index={1}{3}] table[x expr=0,y expr=0] {figures/data/01-steepest-geometry-lmo.dat};
+\addplot[sea,-stealth,line width=1.1pt,quiver={u=\thisrow{x},v=\thisrow{y}},skip coords between index={0}{1},skip coords between index={2}{3}] table[x expr=0,y expr=0] {figures/data/01-steepest-geometry-lmo.dat};
+\addplot[seadeep,-stealth,line width=1.1pt,quiver={u=\thisrow{x},v=\thisrow{y}},skip coords between index={0}{2}] table[x expr=0,y expr=0] {figures/data/01-steepest-geometry-lmo.dat};
+\fill[ink] (axis cs:0,0) circle (1.1pt);
+\node[font=\small,text=muted,anchor=south west,inner sep=1pt] at (axis cs:1.43,0.76) {$-g$};
+\node[font=\small,text=seadeep,anchor=south west,inner sep=1pt] at (axis cs:1.0,1.0) {$\ell_\infty$};
+\node[font=\small,text=sea,anchor=north east,inner sep=1pt] at (axis cs:-0.72,-0.72) {$\ell_2$};
+\node[font=\small,text=sandline!55!black,anchor=north,inner sep=1.5pt] at (axis cs:0.62,-0.42) {$\ell_1$};
+\nextgroupplot[xmin=-2.75,xmax=1.15,ymin=-1.2,ymax=2.7,xtick={-2,-1,0,1},ytick={-1,0,1,2},xlabel={$\theta_1$},ylabel={$\theta_2$},legend style={at={(0.97,0.03)},anchor=south east,font=\scriptsize}]
+\addplot[muted!55,line width=0.4pt,forget plot] table[x=xa,y=ya] {figures/data/01-steepest-geometry-levels.dat};
+\addplot[muted!55,line width=0.4pt,forget plot] table[x=xb,y=yb] {figures/data/01-steepest-geometry-levels.dat};
+\addplot[muted!55,line width=0.4pt,forget plot] table[x=xc,y=yc] {figures/data/01-steepest-geometry-levels.dat};
+\addplot[muted!55,line width=0.4pt,forget plot] table[x=xd,y=yd] {figures/data/01-steepest-geometry-levels.dat};
+\addplot[sea,line width=0.8pt,mark=*,mark size=0.9pt] table[x=x2,y=y2] {figures/data/01-steepest-geometry-traj.dat};
+\addplot[seadeep,line width=0.8pt,mark=square*,mark size=0.9pt] table[x=xinf,y=yinf] {figures/data/01-steepest-geometry-traj.dat};
+\addplot[sandline!55!black,line width=0.8pt,mark=triangle*,mark size=1.1pt] table[x=x1,y=y1] {figures/data/01-steepest-geometry-traj.dat};
+\fill[ink] (axis cs:-2.4,1.3) circle (1.2pt);
+\legend{$\ell_2$,$\ell_\infty$,$\ell_1$}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The geometry of a step. Left: the unit balls of $\ell_1$ (diamond), $\ell_2$ (circle) and $\ell_\infty$ (square), the negative gradient $-g$ at $28^\circ$ with $\norm{g}_2=1$, and the steepest unit direction $\lmo(g)$ of each norm (thick arrows), where the ball touches its supporting line $\{u:\ip{g,u}=-\norm{g}_*\}$ (dashed). The lines lie at distances $\norm{g}_\infty=0.88$, $\norm{g}_2=1$ and $\norm{g}_1=1.35$ from the origin: the dual norm measures how far the ball reaches toward $-g$. Right: $40$ steps of normalized steepest descent in each norm with $\eta=0.2$, from one start (dot), on the quadratic with Hessian $R\diag(1,0.12)R^\top$, $R$ the rotation by $30^\circ$, over level sets of the loss. The $\ell_1$ steps are parallel to the axes and the $\ell_\infty$ steps to the diagonals; all three runs end on cycles of period two. Script: \texttt{01-steepest-geometry.py}.}
+\label{fig:steepest:geometry}
+\end{figure}
+
+\paragraph{One step.} The left panel of \cref{fig:steepest:descent} tests the first two predictions on a diagonal quadratic in $d=1000$ dimensions with curvatures $h_i=1/i$, so that $\lmax(H)=1$ and $\tr H=7.49$, at a random point. Its gradient has density $30.1$ against an effective rank of $7.49$, so \eqref{eq:steepest:whichnorm} predicts that the sign step wins, and the guarantees differ by a factor of $4.02$ ($2.43$ against $0.60$). The sign step's true decrease equals its guarantee at every step length, as \cref{prop:steepest:whichnorm}(iv) requires for a diagonal Hessian, on which every sign vector is a direction of maximal curvature. The normalized gradient step beats its guarantee because the curvature along $g/\norm{g}_2$ is $q=0.65$, not $\lmax=1$: at its recommended length $\norm{g}_2=1.10$ it gains $0.82$, which is $2-q=1.35$ times its guarantee. The sign step still wins, by a factor of $2.97$ at the recommended lengths and of $2.60$ against the best Euclidean step. The agreement must fail for a non-diagonal Hessian, on which the curvature along $-\sign(g)$ falls below $\norm{H}_{\infty\to1}$ and a rotation of the coordinates can reverse the comparison (\cref{ch:sign}).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=52mm]
+\nextgroupplot[xlabel={step length $\eta$},ylabel={decrease $\Loss(\theta_0)-\Loss(\theta_1)$},xmin=0,xmax=2.4,ymin=-0.4,ymax=2.75,xtick={0,0.5,1,1.5,2},legend style={at={(0.98,0.98)},anchor=north east,font=\scriptsize},legend columns=1]
+\addplot[guide,forget plot] coordinates {(0,0) (2.4,0)};
+\addplot[theory] table[x=eta,y=bdinf] {figures/data/01-steepest-descent-onestep.dat};
+\addplot[theory2] table[x=eta,y=bdtwo] {figures/data/01-steepest-descent-onestep.dat};
+\addplot[simulation,each nth point=3] table[x=eta,y=acinf] {figures/data/01-steepest-descent-onestep.dat};
+\addplot[simulation2,each nth point=3] table[x=eta,y=actwo] {figures/data/01-steepest-descent-onestep.dat};
+\legend{guarantee $\eta\norm{g}_1-\eta^2\tr H/2$,guarantee $\eta\norm{g}_2-\eta^2\lmax/2$,sign step,normalized gradient step}
+\nextgroupplot[xmode=log,ymode=log,xlabel={number of steps $T$},ylabel={$\frac1T\sum_{t<T}\norm{\nabla\Loss(\theta_t)}_1$},xmin=1,xmax=1e5,ymin=2e-3,ymax=40,xtick={1,10,100,1000,10000,100000},ytick={0.01,0.1,1,10},legend style={at={(0.03,0.03)},anchor=south west,font=\scriptsize}]
+\addplot[theory] table[x=T,y=bdA] {figures/data/01-steepest-descent-floor.dat};
+\addplot[simulation] table[x=T,y=avgA] {figures/data/01-steepest-descent-floor.dat};
+\addplot[theory,forget plot] table[x=T,y=bdB] {figures/data/01-steepest-descent-floor.dat};
+\addplot[simulation,forget plot] table[x=T,y=avgB] {figures/data/01-steepest-descent-floor.dat};
+\addplot[theory,forget plot] table[x=T,y=bdC] {figures/data/01-steepest-descent-floor.dat};
+\addplot[simulation,forget plot] table[x=T,y=avgC] {figures/data/01-steepest-descent-floor.dat};
+\addplot[theory3,densely dotted] table[x=T,y=env] {figures/data/01-steepest-descent-floor.dat};
+\addplot[guide,forget plot,domain=1:1e5] {0.374274};
+\addplot[guide,forget plot,domain=1:1e5] {0.0374274};
+\addplot[guide,forget plot,domain=1:1e5] {0.00374274};
+\node[font=\scriptsize,text=ink,anchor=south] at (axis cs:3e4,0.40) {$\eta=0.1$};
+\node[font=\scriptsize,text=ink,anchor=south] at (axis cs:3e4,0.052) {$\eta=0.01$};
+\node[font=\scriptsize,text=ink,anchor=north] at (axis cs:3e4,0.0036) {$\eta=0.001$};
+\legend{bound \eqref{eq:steepest:normalized},sign descent,best bound $\sqrt{2\Delta_0\tr H/T}$}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The descent theorem on $\Loss(\theta)=\frac12\sum_ih_i\theta_i^2$ with $d=1000$ and $h_i=1/i$, from $\theta_0$ with independent standard Gaussian coordinates (numpy seed $9$, a draw whose ratio of guarantees, $4.02$, is close to the median $3.91$ over seeds $0$ to $199$; $\Delta_0=3.64$). Left: the decrease achieved by one sign step $-\eta\sign(g)$ and by one normalized gradient step $-\eta g/\norm{g}_2$ (points), against the guarantees of \cref{thm:steepest:descent}(i) with $L=\tr H$ and $L=\lmax(H)$ (curves). Right: the running average of $\norm{\nabla\Loss(\theta_t)}_1$ along sign descent at three step sizes (points), against the bound \eqref{eq:steepest:normalized} computed in advance from $\Delta_0$, $\tr H$ and $\eta$ (curves); dashed, the floors $\eta\tr H/2$; dotted, the best bound at each horizon. Script: \texttt{01-steepest-descent.py}.}
+\label{fig:steepest:descent}
+\end{figure}
+
+\paragraph{The floor.} The right panel follows sign descent on the same problem for $10^5$ steps at three step sizes. Early in each run the points lie below the curve: the bound charges the whole initial gap $\Delta_0$ to the first $T$ steps, while a run that has moved each coordinate by only $T\eta$ has spent part of it. Once every coordinate has reached its cycle, after $\max_i\abs{\theta_{0,i}}/\eta$ steps (about $31$ for $\eta=0.1$ and $310$ for $\eta=0.01$), the points lie on the curve; at $T=10^5$ the two agree to six digits for all three step sizes. Each run then follows its curve down to its floor $\eta\tr H/2$, which the run with $\eta=0.1$ reaches near $T=10^2$ and the run with $\eta=0.01$ near $T=10^4$, while the run with $\eta=0.001$ is still on the $1/T$ part at $T=10^5$. A run touches the best bound (dotted) only at its own crossover $2\Delta_0/(\eta^2\tr H)$: $97$, $9.7\times10^3$ and $9.7\times10^5$. The exactness has a simple cause.
+
+\begin{proposition}[When the bound is attained]\label[proposition]{prop:steepest:attained}
+Let $\Loss(\theta)=\frac12\theta^\top H\theta$ with $H$ positive semidefinite.
+\begin{enumerate}
+\item If normalized steepest descent in a norm $\norm{\cdot}$ with step size $\eta$ has a cycle of period two, $\theta\mapsto\theta+\eta u\mapsto\theta$, then the average of $\norm{\nabla\Loss}_*$ over the cycle is $\frac\eta2u^\top Hu\le L_{\norm\cdot}\eta/2$.
+\item Let $H=\diag(h_1,\dots,h_d)$ with all $h_i>0$, and let sign descent start at a point $\theta_0$ none of whose coordinates is an integer multiple of $\eta$. Then for every $T\ge1$,
+\begin{equation}\label{eq:steepest:identity}
+  \frac1T\sum_{t<T}\norm{g_t}_1=\frac{\Delta_0-\Delta_T}{\eta T}+\frac{\eta\tr H}2 ,
+\end{equation}
+and from step $\max_i\abs{\theta_{0,i}}/\eta$ on the iterates lie on a cycle of period two, with $\Delta_T<\frac12\eta^2\tr H$. So the two sides of \eqref{eq:steepest:normalized}, with $L=\tr H=L_{\ell_\infty}$, differ by exactly $\Delta_T/(\eta T)$, and the running average tends to the floor $\eta\tr H/2$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to evaluate the exact expansion of the quadratic along the steps. (i) Write $\theta'=\theta+\eta u$, $g=\nabla\Loss(\theta)$ and $g'=\nabla\Loss(\theta')=g+\eta Hu$. The cycle means $u=\lmo(g)$ and $-u=\lmo(g')$, so by \cref{lem:steepest:basic}(i), $\norm{g}_*=-\ip{g,u}$ and $\norm{g'}_*=\ip{g',u}=\ip{g,u}+\eta u^\top Hu$. Adding, $\norm{g}_*+\norm{g'}_*=\eta u^\top Hu$, and $u^\top Hu\le L_{\norm\cdot}$ by \cref{prop:steepest:whichnorm}(i).
+
+(ii) Each coordinate of $\theta_t$ changes by $\pm\eta$ per step, so under the hypothesis no coordinate of $\theta_t$, and hence none of $g_t=H\theta_t$, ever vanishes. Then $\sign(g_t)^\top H\sign(g_t)=\tr H$, and the exact expansion gives $\Loss(\theta_{t+1})=\Loss(\theta_t)-\eta\norm{g_t}_1+\frac{\eta^2}2\tr H$ at every step; adding over $t<T$ gives \eqref{eq:steepest:identity}. By the prologue's theorem on sign descent, from step $\max_i\abs{\theta_{0,i}}/\eta$ on each coordinate alternates between two values of absolute value less than $\eta$, so the iterates cycle and $\Delta_T<\frac12\eta^2\tr H$. Hence $\Delta_T/(\eta T)\to0$.
+\end{proof}
+
+For normalized gradient descent the same computation gives \eqref{eq:steepest:identity} with $\frac\eta2\cdot\frac1T\sum_tq_t$ in place of $\frac{\eta\tr H}2$, where $q_t$ is the curvature along $g_t/\norm{g_t}_2$, so its bound is attained only by runs that step along a top eigenvector. By part (i) its cycles lie along eigenvectors, since $g$ and $g+\eta Hu$ are both parallel to $u$. In the plane of \cref{fig:steepest:geometry} all three methods end on cycles along directions of maximal curvature and attain their floors exactly (\cref{ex:steepest:plane}); in high dimension a Euclidean run can linger on a cycle along an eigenvector with a smaller eigenvalue $\lambda_k$, and its bound is then loose by $\lambda_k/\lmax$.
+
+\paragraph{The best step depends on the criterion.} By \cref{prop:steepest:attained}(ii) the best fixed step for the criterion of the theorem is very nearly $\sqrt{2\Delta_0/(T\tr H)}$, which shrinks like $T^{-1/2}$. A practitioner tuning a learning rate for a budget minimizes the final loss instead, and for that criterion the best step on the same problem shrinks like $T^{-1}$, because the step must cover the distance $\norm{\theta_0-\theta^\star}_\infty$ in the time available and a longer step only raises the loss on the final cycle (\cref{ex:steepest:beststep}). How the best learning rate scales with the horizon is not a consequence of the descent theorem; it depends on what is measured and on the landscape (\cref{ch:schedules}).
+
+\paragraph{Worst-case rates do not rank the norms.} The convex rate compares norms through $LR^2$. For a diagonal quadratic the sublevel set is an ellipsoid with axes along the coordinates, whose $\ell_\infty$ and $\ell_2$ radii both equal its longest semi-axis $R$; so $L_{\ell_\infty}R^2=\tr H\cdot R^2\ge L_{\ell_2}R^2$, and the convex rate never prefers the max norm on such a problem, while the step of \cref{fig:steepest:descent} prefers it by a factor of three. The worst point of a sublevel set has its gradient on one flat coordinate, which is the worst case for the max norm; the gradient at hand need not look like that (\cref{ex:steepest:pl}).
+
+\section{What the theory misses}\label{sec:steepest:misses}
+
+\paragraph{What was idealized away.} A fixed norm: practical optimizers change their norm at every step, through Adam's second moments or Shampoo's Kronecker factors, and a theory of one norm describes them only with their accumulators switched off (\cref{ch:adaptive,ch:kronecker}). A global smoothness constant: the curvature of a network changes by orders of magnitude during training, and at practical step sizes it settles at the largest value that the step size tolerates (\cref{ch:eos}). Exact gradients: with noise, $\lmo(g_t)$ is a biased estimate of $\lmo(\nabla\Loss(\theta_t))$, because the oracle is not linear, and the bias does not shrink with the step size (\cref{ch:momentum}). No memory, and one vector instead of matrices in layers (\cref{ch:spectral,ch:modular}).
+
+\paragraph{Where it breaks.} At the step sizes of practice the one-step guarantee is void. Full-batch gradient descent on neural networks drives the sharpness up to $2/\eta$ and trains there \parencite{CohenEtAl2021}, which is where the Euclidean guarantee $\eta(1-L\eta/2)\norm{g}_2^2$, with $L$ the sharpness, reaches zero; the loss still falls, over long times and not monotonically, for reasons the descent inequality cannot see (\cref{ch:eos}). Smoothness constants are not constant: along the training of language models and image classifiers, \textcite{ZhangEtAl2020Clipping} measured a local smoothness that grows with the gradient norm, so a global $L$ is absent or uselessly large, and clipped or normalized steps beat a theory that charges every step the worst curvature (\cref{ch:spikes}). The rates do not rank optimizers: on transformers, the gap between Adam and gradient descent has been attributed to curvature that differs across blocks of parameters \parencite{ZhangEtAl2024Hessian} and to the sign-like geometry of the step \parencite{KunstnerEtAl2023}, not to a worst-case rate (\cref{ch:transformers}). The right norm is a modeling choice that the theorem cannot identify: the theorem holds for all norms at once, and its inputs are not computable for networks, nor, for the max norm, even for quadratics. And the jumps of the oracle at ties break the deterministic picture once gradients are noisy: \textcite{KarimireddyEtAl2019} give simple convex problems on which sign descent with stochastic gradients does not converge to the optimum (\cref{ch:sign}).
+
+\paragraph{Repairs and open problems.} Smoothness that is local, anisotropic or tied to the gradient repairs the second failure: \textcite{XieEtAl2025} analyze Adam under smoothness in the max norm and find that constant far more favorable than the Euclidean one for a language model, and $(L_0,L_1)$-smoothness \parencite{ZhangEtAl2020Clipping} and curvature bounded by the loss are the subjects of \cref{ch:spikes,ch:warmup}. Stochastic steepest descent with momentum in general norms is analyzed by \textcite{PethickEtAl2025}, who train networks with a norm-constrained oracle in each layer, and by \textcite{Kovalev2025}, who treats orthogonalized updates as non-Euclidean trust-region steps; \textcite{CutkoskyMehta2020} had done this for the Euclidean norm, and \cref{ch:momentum} proves the general statement. Norms built from the architecture are the modular norms of \textcite{LargeEtAl2024,BernsteinNewhouse2025} (\cref{ch:modular}); norms built from past gradients are preconditioners (\cref{ch:adaptive,ch:kronecker}). For normalized gradient descent at a fixed step, \textcite{AroraLiPanigrahi2022} show that near a manifold of minimizers the oscillation at the floor drives the iterates toward lower sharpness, so on a loss that is not quadratic the floor has dynamics of its own. Open: a choice of norm from data with a guarantee that improves on the best fixed norm in hindsight (\cref{ex:steepest:choose}); the right norm for embeddings, attention and normalization layers; and a theory of steepest descent at the step sizes of practice.
+
+\section{Back in the wild}\label{sec:steepest:back}
+
+\fieldnotes{Optimizers step a fixed distance in some norm: Adam, Lion and signSGD per coordinate, Muon per matrix, LARS and LAMB per layer; update sizes are compared across optimizers.}
+{Steepest descent in a normed space, with $\lmo(g)$ and $g^\sharp$; a loss that is $L$-smooth in the norm; exact gradients; a fixed norm.}
+{Duality maps of $\ell_2$, $\ell_\infty$, $\ell_1$, Frobenius, spectral, column, row and block norms; the decrease $\norm{g}_*^2/(2L)$; the rates $2L\Delta_0/T$, $\Delta_0/(\eta T)+L\eta/2$, $2LR^2/(T+4)$; the constants of a quadratic; exactness for sign descent on a diagonal quadratic.}
+{The max norm wins a step when $\norm{g}_1^2/\norm{g}_2^2>\norm{H}_{\infty\to1}/\lmax(H)$; a fixed normalized step has a floor $L\eta/2$ and no stability threshold.}
+{Global smoothness (networks train at the edge of stability), noise (the oracle jumps), memory, layers, and the choice of norm.}
+{A learning rate is a length in the optimizer's norm: compare optimizers by step size in a common norm (suggested); prefer the norm with a small smoothness constant relative to the dual norms of the gradients (proved in the idealization, not computable in practice); expect a fixed normalized step to plateau in proportion to the step, and decay it to go lower (proved).}
+
+The theory tells a practitioner what a learning rate is: in every optimizer of the practice box it is the radius of a ball in some norm, and the norm decides which directions a step can take. It explains why matching update sizes is a sensible way to move a learning rate between optimizers, and why normalized optimizers tolerate step sizes at which gradient descent diverges, at the price of a floor that only a schedule removes. It does not say which norm to use: the comparison depends on the gradients that training will produce, and the constants it needs cannot be computed for a network, so the preference for Adam or Muon on transformers rests on experiments, which the following chapters try to explain. Part~I goes on to the max norm (\cref{ch:sign}), the spectral norm (\cref{ch:spectral}) and the norm of a network (\cref{ch:modular}); the floor returns as the floor that momentum and schedules remove (\cref{ch:momentum,ch:schedules}), and the oracle as the Frank--Wolfe step of decoupled weight decay (\cref{ch:decay}).
+
+\begin{exercises}
+\item \consolidation (Duality maps of $\ell_p$.) Let $1<p<\infty$, $1/p+1/q=1$ and $g\ne0$. (a) Show that the dual of $\norm{\cdot}_p$ is $\norm{\cdot}_q$ and that the unique steepest unit direction is $\lmo(g)_i=-\sign(g_i)\abs{g_i}^{q-1}/\norm{g}_q^{q-1}$, so that $g^\sharp_i=\norm{g}_q^{2-q}\sign(g_i)\abs{g_i}^{q-1}$. (b) Find the limits of $\lmo(g)$ as $p\to\infty$ and $p\to1$, and compare with \cref{prop:steepest:dualitymaps}(ii) and (iii); if the largest $\abs{g_i}$ is attained $k$ times, which point of the set in (iii) is the limit? \hint{equality holds in $\sum_ig_iu_i\ge-\norm{g}_q\norm{u}_p$ exactly when $\abs{u_i}^p$ is proportional to $\abs{g_i}^q$ and the signs are opposite.}\label{ex:steepest:lp}
+
+\item \consolidation (Sums and maxima of norms.) With blocks as in \cref{prop:steepest:dualitymaps}(iv) and scales $s_k>0$: (a) show that the dual of $\max_ks_k\norm{\theta_k}_{(k)}$ is $\sum_k\norm{g_k}_{(k),*}/s_k$ with oracle $(\lmo_{(k)}(g_k)/s_k)_k$, so normalized descent in a weighted maximum norm is blockwise normalized descent with learning rates $\eta/s_k$; (b) show that the dual of $\sum_ks_k\norm{\theta_k}_{(k)}$ is $\max_k\norm{g_k}_{(k),*}/s_k$, and that its steepest unit directions put the whole step on the blocks that attain the maximum; (c) show that unnormalized descent in the norm of (a) couples all blocks through the single factor $\sum_j\norm{g_j}_{(j),*}/s_j$ (\cref{ch:modular}).\label{ex:steepest:blocks}
+
+\item \consolidation (The constants of $\ell_\infty$ and $\ell_1$.) (a) For a graph Laplacian $H=D-A$, show that $s^\top Hs=4\abs{E(S,S^c)}$ for $s\in\{-1,1\}^d$ and $S=\{i:s_i=1\}$, where $E(S,S^c)$ is the set of edges leaving $S$; conclude that $L_{\ell_\infty}$ is four times the maximum cut, so that computing it is NP-hard. (b) For $H=\diag(h)+c\mathbf1\mathbf1^\top$ with $h_i,c\ge0$, show that $L_{\ell_\infty}=\sum_ih_i+cd^2$; for $h=0$ this attains the upper bound $d\,\lmax(H)$ of \cref{prop:steepest:whichnorm}(ii). (c) Show that the $\ell_1$ guarantee beats the $\ell_2$ guarantee if and only if $\norm{g}_\infty^2/\norm{g}_2^2>\max_iH_{ii}/\lmax(H)$, and evaluate both sides for $H=I+\mathbf1\mathbf1^\top$.\label{ex:steepest:maxcut}
+
+\item \consolidation (Step length and update size.) (a) Show that a normalized step of length $\eta$ has root-mean-square $\eta$ in $\ell_\infty$ (if no $g_i$ vanishes), $\eta/\sqrt d$ in $\ell_2$ and $\ell_1$, and $\eta/\sqrt{\max(m,n)}$ in the spectral norm of a full-rank $m\times n$ matrix, and that the Moonlight update $0.2\sqrt{\max(m,n)}\,\eta\polar(G)$ has root-mean-square $0.2\eta$. (b) For $W\in\R^{d_{\mathrm{out}}\times d_{\mathrm{in}}}$ and $\norm{W}_{\rms\to\rms}=\sqrt{d_{\mathrm{in}}/d_{\mathrm{out}}}\,\norm{W}_{\op}$, show that the steepest unit direction is $-\sqrt{d_{\mathrm{out}}/d_{\mathrm{in}}}\,\polar(G)$, and compare how the root-mean-squares of the two rules scale with the width of a square matrix (\cref{ch:modular}).\label{ex:steepest:rms}
+
+\item \variation (A quadratic norm is a preconditioner.) Let $P\succ0$ and $\norm{u}_P=(u^\top Pu)^{1/2}$. (a) Show that the dual norm is $\norm{g}_{P^{-1}}$, $\lmo(g)=-P^{-1}g/\norm{g}_{P^{-1}}$ and $g^\sharp=P^{-1}g$: unnormalized steepest descent in $\norm{\cdot}_P$ is preconditioned gradient descent. (b) For $\Loss(\theta)=\frac12\theta^\top H\theta$ show that $L_{\norm{\cdot}_P}=\lmax(P^{-1}H)$, the preconditioned sharpness $S_P$. (c) For $H\succ0$, show that among quadratic norms the guarantee $g^\top P^{-1}g/(2\lmax(P^{-1}H))$ is largest for $P=H$, where it is the whole gap $\frac12g^\top H^{-1}g$: Newton's method. (d) For $\theta=A\varphi$ with $A$ invertible, show that steepest descent on $\varphi\mapsto\Loss(A\varphi)$ in the norm $\varphi\mapsto\norm{A\varphi}$ gives $\varphi_t=A^{-1}\theta_t$, while gradient descent in $\varphi$ is steepest descent in $\theta$ for the norm $\norm{A^{-1}\theta}_2$. \hint{for (c), with $\mu=\lmax(P^{-1}H)=\lmax(H^{1/2}P^{-1}H^{1/2})$, show that $P^{-1}\preceq\mu H^{-1}$.}\label{ex:steepest:quadnorm}
+
+\item \variation (Polyak--Łojasiewicz in a dual norm.) Suppose that, besides \cref{ass:steepest:smooth}, $\norm{\nabla\Loss(\theta)}_*^2\ge2\mu(\Loss(\theta)-\Loss^\star)$ for all $\theta$ (\cref{lem:toolkit:pl}). (a) Show that unnormalized steepest descent with step size $1/L$ has $\Delta_t\le(1-\mu/L)^t\Delta_0$. (b) For $\Loss(\theta)=\frac12\sum_ih_i\theta_i^2$ with $h_1\ge\dots\ge h_d>0$, show that the best constant is $\mu=h_d$ both for $\ell_2$ and for $\ell_\infty$ (whose dual is $\ell_1$), so the guaranteed rates are $1-h_d/h_1$ and $1-h_d/\tr H$. (c) Conclude that the worst-case linear rate always prefers $\ell_2$ on a diagonal quadratic, and reconcile this with \cref{fig:steepest:descent}.\label{ex:steepest:pl}
+
+\item \variation (A schedule removes the floor.) Run normalized steepest descent with step sizes $\eta_t>0$. (a) Show that $\sum_{t<T}\eta_t\norm{g_t}_*\le\Delta_0+\frac L2\sum_{t<T}\eta_t^2$. (b) Deduce that $\liminf_t\norm{g_t}_*=0$ if $\sum_t\eta_t=\infty$ and $\sum_t\eta_t^2<\infty$. (c) With $\eta_t=\eta_0/\sqrt{t+1}$, show that $\min_{t<T}\norm{g_t}_*\le\bigl(\Delta_0+\frac L2\eta_0^2(1+\ln T)\bigr)/\bigl(2\eta_0(\sqrt{T+1}-1)\bigr)$, and compare with the prologue's sign descent with a decaying step.\label{ex:steepest:schedule}
+
+\item \simulation (Three norms in the plane.) For the quadratic of \cref{fig:steepest:geometry}, right (script \texttt{01-steepest-geometry.py}), (a) check that $L_{\ell_2}=1$, $L_{\ell_\infty}=H_{11}+H_{22}+2\abs{H_{12}}=1.882$ and $L_{\ell_1}=\max_iH_{ii}=0.780$. (b) For $\eta\in\{0.2,0.05,0.01\}$, run each method for $400/\eta$ steps and average the dual norm of the gradient over the last $100$ steps; you should find $L_{\norm\cdot}\eta/2$ in each norm, to five digits. (c) Explain this with \cref{prop:steepest:attained}(i), by finding the direction of each final cycle and checking that it maximizes $u^\top Hu$ over the unit ball.\label{ex:steepest:plane}
+
+\item \simulation (The best fixed step depends on what is measured.) Run sign descent with a fixed step $\eta$ on the quadratic of \cref{fig:steepest:descent}, from its starting point (script \texttt{01-steepest-descent.py}). For each of $T=10^2$, $10^3$ and $10^4$, find by a grid search over $\eta\in[10^{-4},1]$ (a) the $\eta$ that minimizes $\frac1T\sum_{t<T}\norm{g_t}_1$, and (b) the $\eta$ that minimizes $\Loss(\theta_T)$. You should find that (a) agrees with $\sqrt{2\Delta_0/(T\tr H)}$ to within the grid spacing, with a minimum equal to $\sqrt{2\Delta_0\tr H/T}$ to three digits, while (b) lies within about ten percent of $\max_i\abs{\theta_{0,i}}/T$. Explain (a) with \cref{prop:steepest:attained}(ii), and (b) by the time a normalized step needs to cover the distance $\norm{\theta_0}_\infty$.\label{ex:steepest:beststep}
+
+\item \research (Choosing a norm from data.) \Cref{ex:steepest:quadnorm}(c) shows that among quadratic norms the one-step guarantee singles out the Hessian. (a) For weighted max norms $\max_ia_i\abs{u_i}$ on a diagonal quadratic, find the weights that maximize the guarantee $\norm{g}_*^2/(2L_{\norm\cdot})$ at a given gradient, and show that the resulting step is Newton's. (b) For diagonal quadratics with $h_i=i^{-a}$ and Gaussian $\theta_0$, map numerically the exponents $a$ and target losses for which normalized $\ell_\infty$ descent, at its best fixed step, beats normalized $\ell_2$ descent, and test whether \eqref{eq:steepest:whichnorm} at $\theta_0$ predicts the winner. What is open is a rule that chooses a norm online, from gradients alone, with a nonconvex guarantee that improves on the best fixed norm of a family in hindsight; AdaGrad's guarantee (\cref{ch:adaptive}) is of this kind for diagonal quadratic norms and convex losses, and \textcite{BallesPedregosaLeRoux2020} and \textcite{XieEtAl2025} compare sign descent and gradient descent through their smoothness constants.\label{ex:steepest:choose}
+\end{exercises}
+
+\notesandrefs
+
+Steepest descent goes back to \textcite{Cauchy1847}, and its stochastic form to \textcite{RobbinsMonro1951}. \Textcite[Section~9.4]{BoydVandenberghe2004} treat it in a general norm, define normalized and unnormalized steepest descent directions, and work out the quadratic norms and the $\ell_1$ norm, for which it is coordinate descent; \textcite{NutiniEtAl2015} showed that the speed of the Gauss--Southwell rule is governed by strong convexity in the $\ell_1$ norm. The descent inequality and the convex rate are standard \parencite{Nesterov2018}, and \textcite{KelnerEtAl2014} used steepest descent in the $\ell_\infty$ norm for maximum flow. Mirror descent is due to \textcite{NemirovskyYudin1983}, in its modern form to \textcite{BeckTeboulle2003}; the linear minimization oracle is the subproblem of the method of \textcite{FrankWolfe1956}.
+
+In deep learning, spectral descent was proposed by \textcite{CarlsonEtAl2015}, sign descent entered through gradient compression \parencite{BernsteinEtAl2018} and the analysis of Adam as a sign method \parencite{BallesHennig2018}, and layerwise normalization through large-batch training \parencite{YouGitmanGinsburg2017,YouEtAl2020}. \Textcite{BernsteinNewhouse2024} read Adam, Shampoo and Prodigy without accumulators as steepest descent in particular norms, \textcite{LargeEtAl2024} built a norm for whole networks from the norms of their modules, \textcite{BernsteinNewhouse2025} made the duality map of that norm the central object of a theory of optimizers, and \textcite{Newhouse2025} gives a connected account; \textcite{PethickEtAl2025} and \textcite{Kovalev2025} analyze stochastic steepest descent with momentum in the norms used by Muon and its relatives. The bound \eqref{eq:steepest:normalized} for exact gradients is elementary, and we do not know who stated it first, nor have we seen the exactness of \cref{prop:steepest:attained} stated. The hardness of $\norm{H}_{\infty\to1}$ is due to \textcite{Rohn2000}, and \textcite{BallesPedregosaLeRoux2020} relate the smoothness of a quadratic in the max norm to the concentration of its Hessian on the diagonal.
+
+\paragraph{Translating the literature.} \Textcite{BoydVandenberghe2004} call our $\lmo(g)$ a normalized steepest descent direction $\Delta x_{\mathrm{nsd}}$, and our $-g^\sharp$ the unnormalized steepest descent direction $\Delta x_{\mathrm{sd}}=\norm{\nabla f(x)}_*\Delta x_{\mathrm{nsd}}$. \Textcite{KelnerEtAl2014} write $x^\#$ for our $x^\sharp$. \Textcite{BernsteinNewhouse2024} write $\norm{\cdot}^\dagger$ for our dual norm and $\lambda$ for the coefficient of the quadratic penalty, our $L$ (or $1/\eta$), so their steepest descent step $-\frac{\norm{g}^\dagger}{\lambda}\argmax_{\norm{t}=1}g^\top t$ is our $-g^\sharp/L$; in \textcite{BernsteinNewhouse2025} the map $g\mapsto\argmax_{\norm{t}=1}\ip{g,t}$, our $-\lmo(g)$, is the duality map that produces the dualized gradient. \Textcite{PethickEtAl2025} write $\lmo(d)\in\argmin_{x\in\cD}\ip{d,x}$ for a norm ball $\cD$ of radius $\rho$, which is $\rho$ times our $\lmo(d)$, so their update $x^{k+1}=x^k+\gamma_k\lmo(d^k)$ is our normalized step with $\eta=\gamma_k\rho$. Our $L_{\ell_\infty}=\norm{H}_{\infty\to1}$ is also written $\norm{H}_{\infty,1}$.
+
+\printchapterbib
+\end{refsection}

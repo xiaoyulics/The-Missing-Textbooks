@@ -1,0 +1,486 @@
+% Chapter 4 of Optimizers in the Wild: norms for networks (the modular norm, the spectral condition, muP).
+\newcommand{\modularh}{d_{\mathrm h}}
+\newcommand{\modularin}{d_{\mathrm{in}}}
+\newcommand{\modularout}{d_{\mathrm{out}}}
+
+\casechapter{Norms for Networks}{The modular norm, the spectral condition and $\mu$P}{Hyperparameter transfer across width}{ch:modular}
+\begin{refsection}[chapters/04-modular.bib]
+
+\begin{chaptersummary}
+Hyperparameters tuned on a narrow network are reused on a wide one, and this works only if each layer's step is scaled with the widths in the right way: in $\mu$P, Adam's learning rate for hidden weights is divided by the width, Muon's orthogonalized update is multiplied by $\sqrt{\modularout/\modularin}$, and SGD needs per-layer rates proportional to fan-out over fan-in. We measure features by their root mean square, each layer by its RMS-to-RMS operator norm, and the network by the maximum of its layers' norms. We prove that steepest descent in this norm is per-layer normalized descent; compute exactly how far one step of SGD, of sign descent and of spectral descent moves a layer's features on one example, which yields all three width rules; and prove that weights and updates of width-independent operator norm give features and feature changes of width-independent size, with a lower bound that rules out cancellation between layers. The theory says how learning rates must scale with width, not what they should be, and its picture of a rank-one gradient aligned with the features holds only early in training.
+\end{chaptersummary}
+
+\section{In the wild: learning rates that survive widening}\label{sec:modular:wild}
+
+No one tunes the learning rate of a network with tens of billions of parameters by trying twenty values, because each trial costs as much as the network. Practitioners tune a network a hundred times smaller and carry the result over. Whether that works depends on the \term{parametrization}\index{parametrization}: the three choices, made for every layer as functions of its widths, of the scale of the initial weights, of a constant multiplier on the layer's output, and of the layer's learning rate. In the \term{standard parametrization}\index{parametrization!standard} (SP) of the deep-learning libraries, initial weights have variance proportional to $1/\text{fan-in}$, there are no multipliers, and one learning rate serves every layer. \Textcite{YangHu2021} showed that the standard and the neural-tangent parametrizations admit no infinite-width limit that learns features, and they identified the parametrization under which every layer's features move by an amount of order one in every step, at every width: the \term{maximal update parametrization}\index{maximal update parametrization ($\mu$P)}, $\mu$P. \Textcite{YangEtAl2021} then found that in $\mu$P many optimal hyperparameters stay put as the network grows, and turned the observation into a procedure.\sidenote{The NeurIPS 2021 paper of \textcite{YangEtAl2021} appeared on arXiv in 2022 as \emph{Tensor Programs V}; the series' fourth paper, \textcite{YangHu2021}, contains the classification of parametrizations into feature-learning and kernel limits.}
+
+\begin{practice}[$\mu$Transfer, \textcite{YangEtAl2021}; Muon, \textcite{JordanEtAl2024}; Moonlight, \textcite{LiuEtAl2025}]
+Tune the learning rate and the other hyperparameters on a narrow proxy, widen the network, and keep them. With Adam in $\mu$P: initialize input and hidden weights with variance $1/\text{fan-in}$ and the output layer much smaller (variance $1/\text{fan-in}^2$, or zero); keep the learning rate of the input layer; divide the learning rates of hidden and output weights by the width multiplier, the ratio of the width to the proxy's width. Yang et al.\ transferred hyperparameters from a 13M-parameter proxy to BERT-large, and from a 40M-parameter proxy to a 6.7B-parameter GPT-3 at about 7\% of its pretraining cost. With Muon on the hidden matrices: multiply the orthogonalized update of a $\modularout\times\modularin$ matrix by $\sqrt{\max(1,\modularout/\modularin)}$ (Jordan et al.), or by $0.2\sqrt{\max(\modularout,\modularin)}$, which gives its entries the root mean square of an AdamW update so that AdamW's learning rate and weight decay can be reused (Liu et al.); embeddings, the output layer and the gains stay on AdamW.
+\end{practice}
+
+The effect is visible at the scale of a laptop. \Cref{fig:modular:curves} trains a two-hidden-layer network at five widths on a task that requires feature learning, sweeping the learning rate. In the standard parametrization the curves slide to the left as the width grows, by about a factor of two per doubling; in $\mu$P and under normalized spectral steps they stay where they are, and the wider networks are better at every learning rate near the optimum.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=7mm,y descriptions at=edge left},wplot,width=62mm,height=50mm,
+  ymin=0.08,ymax=0.62,unbounded coords=jump,xlabel={$\log_2$ base learning rate},ylabel={loss after training},
+  every axis plot/.append style={line width=0.9pt,mark=*,mark size=1.0pt}]
+\nextgroupplot[title={Adam, standard parametrization},xmin=-12.5,xmax=-4.5,xtick={-12,-10,-8,-6}]
+\addplot[sea!30] table[x=log2lr,y=adamsp64] {figures/data/04-modular-transfer-curves.dat};
+\addplot[sea!50] table[x=log2lr,y=adamsp128] {figures/data/04-modular-transfer-curves.dat};
+\addplot[sea!75] table[x=log2lr,y=adamsp256] {figures/data/04-modular-transfer-curves.dat};
+\addplot[sea] table[x=log2lr,y=adamsp512] {figures/data/04-modular-transfer-curves.dat};
+\addplot[seadeep] table[x=log2lr,y=adamsp1024] {figures/data/04-modular-transfer-curves.dat};
+\nextgroupplot[title={Adam, $\mu$P},xmin=-10.5,xmax=-3.5,xtick={-10,-8,-6,-4}]
+\addplot[sea!30] table[x=log2lr,y=adammup64] {figures/data/04-modular-transfer-curves.dat};
+\addplot[sea!50] table[x=log2lr,y=adammup128] {figures/data/04-modular-transfer-curves.dat};
+\addplot[sea!75] table[x=log2lr,y=adammup256] {figures/data/04-modular-transfer-curves.dat};
+\addplot[sea] table[x=log2lr,y=adammup512] {figures/data/04-modular-transfer-curves.dat};
+\addplot[seadeep] table[x=log2lr,y=adammup1024] {figures/data/04-modular-transfer-curves.dat};
+\nextgroupplot[title={normalized spectral steps},xmin=-7.5,xmax=-0.5,xtick={-7,-5,-3,-1},
+  legend style={at={(0.97,0.03)},anchor=south east,font=\scriptsize},legend cell align=left]
+\addplot[sea!30] table[x=log2lr,y=spec64] {figures/data/04-modular-transfer-curves.dat};
+\addplot[sea!50] table[x=log2lr,y=spec128] {figures/data/04-modular-transfer-curves.dat};
+\addplot[sea!75] table[x=log2lr,y=spec256] {figures/data/04-modular-transfer-curves.dat};
+\addplot[sea] table[x=log2lr,y=spec512] {figures/data/04-modular-transfer-curves.dat};
+\addplot[seadeep] table[x=log2lr,y=spec1024] {figures/data/04-modular-transfer-curves.dat};
+\legend{$64$,$128$,$256$,$512$,$1024$}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Learning-rate transfer in a small network. A ReLU network with input dimension $32$, two hidden layers of width $64$ (lightest) to $1024$ (darkest) and one output learns $y=\sum_{j\le4}((q_j^\top x)^2-1)/\sqrt8$ for orthonormal $q_j$ from fresh Gaussian minibatches of $32$ inputs, $150$ steps at a constant learning rate; the loss is measured afterwards on $4096$ fresh inputs. Left: Adam, standard parametrization (one learning rate). Middle: Adam in $\mu$P (learning rates $\eta$, $\eta\,64/\modularh$, $\eta\,64/\modularh$ for the input, hidden and output layers, output layer initialized $\sqrt{\modularh/64}$ times smaller). Right: every layer takes the normalized step $\eta\lmo_{\rms\to\rms}$ of its minibatch gradient, Muon without momentum. One seed, the same initial weights and data for every learning rate; script \texttt{04-modular-transfer.py}.}
+\label{fig:modular:curves}
+\end{figure}
+
+\begin{observation}[Transfer under $\mu$P; \textcite{YangEtAl2021}, \textcite{VyasEtAl2023}]\label{obs:modular:transfer}
+Under the standard parametrization the learning rate that minimizes the loss after a fixed amount of training decreases as the width grows. Under $\mu$P the minimizer is nearly independent of the width, and on simple tasks the loss curves and even the predictions of wide networks of different widths nearly coincide throughout training.
+\end{observation}
+
+The observation is robust for width and for the learning rate, in transformers, ResNets and multilayer perceptrons. Its limits are documented too. \Textcite{VyasEtAl2023} found that on harder tasks and late in training the networks of different widths drift apart. \Textcite{Lingle2024}, in an unrefereed study of transformers with up to 10 billion parameters, found that transfer holds in most configurations but fails in some, among them trainable gains in the normalization layers and the Lion optimizer. And $\mu$P is not the only rule that transfers.
+
+\begin{observation}[Every parametrization can transfer; \textcite{EverettEtAl2024}]\label{obs:modular:everett}
+Training tens of thousands of models with three optimizers and four parametrizations, up to $26.8$ billion parameters, Everett et al.\ found that every parametrization transfers once each layer receives its own learning-rate exponent. For Adam in the standard parametrization they recommend an embedding learning rate independent of the width $\modularh$ and hidden and readout learning rates proportional to $1/\modularh$, a prescription that outperformed $\mu$P in their comparison. Adam's $\epsilon$ must be scaled with the width as well, or removed (their Adam-atan2).
+\end{observation}
+
+A third observation, recent and not yet tested as widely, qualifies all of this. \Textcite{KossonEtAl2026} report that in language-model training the alignment assumptions behind $\mu$P, which concern how a layer's inputs line up with its weights and its updates, hold only at the start of training; afterwards it is weight decay, not $\mu$P, that keeps the size of the updates consistent across widths. We return to it in \cref{sec:modular:misses}.
+
+The width rules in use look unrelated. One divides Adam's hidden learning rate by the width, one multiplies Muon's update by the square root of an aspect ratio, one leaves SGD's hidden learning rate alone and scales its input layer up. What do they have in common, why does the default fail, and which quantity is the same at every width?
+
+\section{The idealization: layers, norms and one step}\label{sec:modular:ideal}
+
+\begin{assumption}[A network of layers]\label[assumption]{ass:modular:network}
+The parameters are $\theta=(W_1,\dots,W_N)$ with $W_l\in\R^{d_l\times d_{l-1}}$. An input $x=h_0\in\R^{d_0}$ produces the pre-activations $u_l=W_lh_{l-1}$, the features $h_l=\phi(u_l)$ for $l<N$, and the output $f=u_N\in\R^{d_N}$. The activation $\phi$ acts entrywise, $\phi(0)=0$, and $\abs{\phi(a)-\phi(b)}\le\abs{a-b}$ for all real $a,b$, as for ReLU, $\tanh$ and the identity.
+\end{assumption}
+
+The loss of an example $\xi=(x,y)$ is $\ell(\theta;\xi)=\psi(f)$ for a differentiable function $\psi$ of the output, such as $\psi(f)=\frac12\norm{f-y}_2^2$. Backpropagation computes the \term{backpropagated signals}\index{backpropagated signal} $\delta_l=\nabla_{u_l}\ell$ from $\delta_N=\nabla\psi(f)$ by $\delta_l=\phi'(u_l)\odot(W_{l+1}^\top\delta_{l+1})$, where $\odot$ is the entrywise product, and the gradient of layer $l$ on one example is the outer product
+\begin{equation}\label{eq:modular:rankone}
+  G_l=\nabla_{W_l}\ell=\delta_l\,h_{l-1}^\top .
+\end{equation}
+For a minibatch, $G_l$ is the average of such outer products and has rank at most the batch size. We write $\modularin=d_{l-1}$ and $\modularout=d_l$ (fan-in and fan-out) when one layer is in view, and $\modularh$ for a common hidden width.
+
+\paragraph{How to measure.} A vector of $m$ entries of order one has Euclidean norm of order $\sqrt m$ but \term{RMS norm}\index{RMS norm} $\norm{v}_\rms=\norm{v}_2/\sqrt m$ of order one, so ``every activation has a typical size of one'' reads ``$\norm{h_l}_\rms=\Theta(1)$''. Features are measured in the RMS norm, layers in the induced operator norm $\norm{W}_{\rms\to\rms}=\max_{v\ne0}\norm{Wv}_\rms/\norm{v}_\rms$ (\cref{ch:spectral}), and backpropagated signals, which pair with features, in the dual of the RMS norm, $\norm{v}_{\rms,*}=\max_{\norm{z}_\rms\le1}\ip{v,z}=\sqrt m\,\norm{v}_2$. A quantity is \term{width-independent} if it is bounded above and below by constants that do not depend on $d_1,\dots,d_{N-1}$; the depth $N$, the input and output dimensions $d_0$ and $d_N$, the data and the base step size are fixed.
+
+\begin{assumption}[One step from one example]\label[assumption]{ass:modular:onestep}
+The step $\Delta\theta=(\Delta W_1,\dots,\Delta W_N)$ is computed from the loss of one example $\xi=(x,y)$, so that every layer gradient is the rank-one matrix \eqref{eq:modular:rankone}, and its effect is measured on the same input $x$: $\Delta u_l$ and $\Delta h_l$ denote the changes of $u_l$ and $h_l$ when $\theta$ becomes $\theta+\Delta\theta$.
+\end{assumption}
+
+\begin{definition}[The feature-learning desideratum; \textcite{YangSimonBernstein2023}]\label[definition]{def:modular:desideratum}
+A rule that chooses initial weights and steps as functions of the widths \term{learns features}\index{feature learning} if $\norm{h_l}_\rms$ and $\norm{\Delta h_l}_\rms$ are width-independent for every hidden layer $l<N$, and the output change $\norm{\Delta f}_\rms$ is bounded independently of the widths.
+\end{definition}
+
+A rule under which $\norm{\Delta h_l}_\rms\to0$ as the widths grow is \term{lazy}\index{lazy training}: the network then trains like its linearization at initialization, a kernel method \parencite{JacotGabrielHongler2018,ChizatOyallonBach2019}. A rule under which some $\norm{\Delta h_l}_\rms\to\infty$, or $\norm{\Delta f}_\rms\to\infty$, is unstable at large width unless its learning rate shrinks.
+
+\begin{dictionary}
+the RMS norm $\norm{h}_\rms$ & the typical size of one activation, which unit scaling and u-$\mu$P keep near one\\
+the RMS$\to$RMS norm $\norm{W}_{\rms\to\rms}=\sqrt{\modularin/\modularout}\,\norm{W}_{\op}$ & the largest gain of a layer on its activations\\
+the dual norm $\norm{\delta}_{\rms,*}=\sqrt m\,\norm{\delta}_2$ & the size of the gradient with respect to a layer's pre-activations, which shrinks like $1/\text{width}$ per entry\\
+the scales $s_l$ of the max norm (\cref{def:modular:maxnorm}) & per-layer learning-rate multipliers: $\mu$P's rates, Modula's masses\\
+normalized steepest descent in the max norm & per-layer normalized optimizers: LARS, Muon with its shape factor, Modula\\
+one step from one example & the first steps of training, when gradients are low-rank and aligned with the activations that produced them\\
+$\norm{\Delta h_l}_\rms=\Theta(1)$ at every width & feature learning, as opposed to lazy (kernel) training\\
+a width rule & a column of a $\mu$P table
+\end{dictionary}
+
+\paragraph{What was thrown away.} Almost everything that makes a modern network: attention, normalization layers, embeddings, residual connections and depth that grows, biases, weight decay, the optimizer's memory, and all examples but one. What is kept is the question of scale. Each simplification is the right one to make first. A single example makes every layer's gradient rank one, so that its geometry is that of a pair of vectors; one step isolates the effect of a learning rate from the history of training; and the question ``how must the learning rate depend on the width?'' is answered by exponents, which a calculation that is exact up to constants can find. Early in training, gradients are in fact of low rank and aligned with the features, which is where the rules matter most: a learning rate that is too large at a large width diverges in the first steps.
+
+\paragraph{What one had to notice.} Two things. First, that the size of a weight update must be measured by its effect on the features, which is an operator norm, and not by the size of its entries or its Frobenius norm. A rank-one matrix with entries $\pm\eta$ has operator norm $\eta\sqrt{\modularout\modularin}$, a random matrix with the same entries one of order $\eta(\sqrt{\modularout}+\sqrt{\modularin})$, and an entrywise rule cannot tell them apart; this is the point of \textcite{YangSimonBernstein2023}. Second, that once every layer is measured in such a norm, the network can be given the maximum of its layers' norms, and then steepest descent in that one norm hands each layer its own normalized step: per-layer learning rates are not a hack added to an optimizer but the duality map of a norm \parencite{LargeEtAl2024,BernsteinNewhouse2025}.
+
+\begin{fieldguide}{$\mu$P Adam}{\textcite{YangHu2021}, \textcite{YangEtAl2021}}
+\fgrow{update}{Adam on every layer; learning rate $\eta$ for the input layer and $\eta\,d^{\circ}/\modularin$ for hidden and output weights, $d^{\circ}$ the proxy's width}
+\fgrow{norm}{with $\beta_1=\beta_2=0$ (sign descent, \cref{ch:sign}), normalized steepest descent in $\max_ls_l\max_{ij}\abs{(W_l)_{ij}}$ with $s_l=\modularin/d^{\circ}$ for hidden and output layers (\cref{thm:modular:dual}), which controls the RMS$\to$RMS norms (\cref{ex:modular:signnorm})}
+\fgrow{preconditioner}{diagonal, Adam's (\cref{ch:adaptive})}
+\fgrow{averages}{Adam's $\beta_1$, $\beta_2$}
+\fgrow{state}{two numbers per parameter}
+\fgrow{in the wild}{initialization variance $1/\text{fan-in}$, output layer near zero; the \texttt{mup} package divides the hidden learning rate by the width multiplier}
+\end{fieldguide}
+
+\begin{fieldguide}{Modular normalized descent}{\textcite{LargeEtAl2024}}
+\fgrow{update}{$W_l\leftarrow W_l+(\eta/s_l)\lmo_{(l)}(M_l)$, $M_l$ the gradient or its momentum; for a linear layer $\lmo_{\rms\to\rms}(M)=-\sqrt{\modularout/\modularin}\,\polar(M)$}
+\fgrow{norm}{the modular norm, a scaled maximum of the modules' norms (\cref{def:modular:maxnorm}), RMS$\to$RMS for linear layers}
+\fgrow{preconditioner}{none}
+\fgrow{averages}{optional momentum}
+\fgrow{state}{one number per parameter with momentum}
+\fgrow{in the wild}{the Modula library, with scales computed from user-assigned masses; Muon (\cref{ch:spectral}) on one matrix, with Newton--Schulz in place of the polar factor}
+\end{fieldguide}
+
+\begin{fieldguide}{LARS and LAMB}{\textcite{YouGitmanGinsburg2017}, \textcite{YouEtAl2020}}
+\fgrow{update}{$W_l\leftarrow W_l-\eta\tau\,(\norm{W_l}_F/\norm{G_l}_F)\,G_l$, with momentum and the trust coefficient $\tau$; LAMB applies the same ratio to Adam's update}
+\fgrow{norm}{a maximum of Frobenius norms with the state-dependent scales $s_l=1/\norm{W_l}_F$: each layer moves by a fixed fraction of its own norm}
+\fgrow{preconditioner}{none (LARS); diagonal (LAMB)}
+\fgrow{averages}{heavy-ball momentum (LARS); Adam's (LAMB)}
+\fgrow{state}{one (LARS) or two (LAMB) numbers per parameter}
+\fgrow{in the wild}{ResNet-50 at batch size 32K; BERT at batch size 32K in 76 minutes}
+\end{fieldguide}
+
+\section{The theory: the norm of a network}\label{sec:modular:norm}
+
+We first collect the facts about the RMS geometry of one layer, most of which \cref{ch:spectral} proved in the language of the spectral norm.
+
+\begin{lemma}[RMS geometry of a layer]\label[lemma]{lem:modular:rms}
+Let $W,G\in\R^{\modularout\times\modularin}$ and $v\in\R^{\modularout}$.
+\begin{enumerate}
+\item $\norm{W}_{\rms\to\rms}=\sqrt{\modularin/\modularout}\,\norm{W}_{\op}$.
+\item The dual of $\norm{\cdot}_{\rms\to\rms}$ under $\ip{G,W}=\tr(G^\top W)$ is $\norm{G}_{\rms\to\rms,*}=\sqrt{\modularout/\modularin}\,\norm{G}_{\nuc}$, and $-\sqrt{\modularout/\modularin}\,\polar(G)\in\lmo_{\rms\to\rms}(G)$ when $G\ne0$.
+\item $\norm{W^\top v}_{\rms,*}\le\norm{W}_{\rms\to\rms}\,\norm{v}_{\rms,*}$.
+\item If $G=ab^\top$ with $a\ne0$ and $b\ne0$, then $\polar(G)=\frac{a}{\norm a_2}\frac{b^\top}{\norm b_2}$, $\norm{G}_{\rms\to\rms}=\norm{a}_\rms\norm{b}_{\rms,*}$, $\norm{G}_{\rms\to\rms,*}=\norm{a}_{\rms,*}\norm{b}_\rms$, and $\norm{Gb}_\rms=\norm{G}_{\rms\to\rms}\norm{b}_\rms$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+(i) For $v\ne0$, $\norm{Wv}_\rms/\norm{v}_\rms=\sqrt{\modularin/\modularout}\,\norm{Wv}_2/\norm{v}_2$; take the maximum over $v$. (ii) For a norm $\norm{\cdot}$ and $c>0$, the dual of $c\norm{\cdot}$ is $c^{-1}\norm{\cdot}_*$, because $\max_{c\norm{U}\le1}\ip{G,U}=c^{-1}\max_{\norm{U'}\le1}\ip{G,U'}$, and the substitution $U=U'/c$ shows that $\lmo_{c\norm\cdot}(G)=c^{-1}\lmo_{\norm\cdot}(G)$. The dual of the spectral norm is the nuclear norm and $-\polar(G)\in\lmo_{\op}(G)$ (\cref{thm:toolkit:vonneumann}; \cref{ch:spectral}). (iii) $\sqrt{\modularin}\norm{W^\top v}_2\le\sqrt{\modularin}\norm{W}_{\op}\norm{v}_2=\sqrt{\modularin/\modularout}\,\norm{W}_{\op}\cdot\sqrt{\modularout}\norm{v}_2$. (iv) The compact singular value decomposition of $ab^\top$ has the single singular value $\norm a_2\norm b_2$ with singular vectors $a/\norm a_2$ and $b/\norm b_2$, so $\norm{G}_{\op}=\norm{G}_{\nuc}=\norm a_2\norm b_2$, and (i) and (ii) give the two norms. Finally $Gb=\norm{b}_2^2\,a$, whose RMS norm is $\norm{a}_\rms\norm{b}_2^2=\norm{a}_\rms\norm{b}_{\rms,*}\norm{b}_\rms$.
+\end{proof}
+
+Part (iii) says that the backward pass contracts dual norms by the same factor as the forward pass contracts RMS norms; part (iv), that a rank-one matrix acts on its own right singular vector with its full operator norm. Both are used repeatedly below.
+
+\subsection{Steepest descent in a maximum of layer norms}
+
+\begin{definition}[The max norm of a network]\label[definition]{def:modular:maxnorm}
+Give each layer a norm $\norm{\cdot}_{(l)}$ on $\R^{d_l\times d_{l-1}}$, with dual norm $\norm{\cdot}_{(l),*}$, and a scale $s_l>0$. The \term{max norm}\index{modular norm} of the network is $\norm{\theta}=\max_ls_l\norm{W_l}_{(l)}$, on the parameter space with the inner product $\ip{g,\theta}=\sum_l\tr(G_l^\top W_l)$.
+\end{definition}
+
+For a sequential network, the \term{modular norm} of \textcite{LargeEtAl2024} is of this form, as \textcite{BernsteinNewhouse2024} write it: the layer norms are operator norms chosen for each kind of module (RMS$\to$RMS for a linear layer) and the scales are computed from two numbers attached to every module, its mass, which sets its share of the feature learning, and its sensitivity to its input. The positivity, homogeneity and triangle inequality of $\norm{\cdot}$ follow from those of the layer norms, since a maximum of sums is at most the sum of the maxima. Steepest descent in the max norm is computed layer by layer.
+
+\begin{theorem}[Steepest descent in the norm of a network]\label{thm:modular:dual}
+For the max norm of \cref{def:modular:maxnorm} and every $g=(G_1,\dots,G_N)$:
+\begin{enumerate}
+\item the dual norm is $\norm{g}_*=\sum_{l=1}^N\norm{G_l}_{(l),*}/s_l$;
+\item $u=(U_1,\dots,U_N)$ belongs to $\lmo(g)$ if and only if $s_lU_l\in\lmo_{(l)}(G_l)$ for every $l$;
+\item normalized steepest descent $\theta_{t+1}=\theta_t+\eta\lmo(g_t)$ is the layerwise update $W_{l,t+1}=W_{l,t}+(\eta/s_l)\lmo_{(l)}(G_{l,t})$: normalized descent in every layer, with the per-layer learning rate $\eta/s_l$;
+\item unnormalized steepest descent $\theta_{t+1}=\theta_t-\eta g_t^\sharp$ is
+\[
+  W_{l,t+1}=W_{l,t}+\frac{\eta}{s_l}\Bigl(\sum_{k=1}^N\frac{\norm{G_{k,t}}_{(k),*}}{s_k}\Bigr)\lmo_{(l)}(G_{l,t}):
+\]
+the same directions, every layer's step multiplied by one global factor, the dual norm of the whole gradient.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to observe that the unit ball of the max norm is a product of layer balls and that the linear function $\ip{g,\cdot}$ is a sum of layer terms, so that minimizing it over the ball splits into one problem per layer. The unit ball is $\{\theta:\norm{W_l}_{(l)}\le1/s_l\text{ for every }l\}$, the product of the balls $\cB_l=\{U:\norm{U}_{(l)}\le1/s_l\}$.
+
+(i) The maximum of $\sum_l\ip{G_l,U_l}$ over a product of sets is the sum of the maxima of the terms. By the definition of the dual norm and its homogeneity, $\max_{U\in\cB_l}\ip{G_l,U}=\norm{G_l}_{(l),*}/s_l$.
+
+(ii) If every $U_l$ minimizes $\ip{G_l,\cdot}$ over $\cB_l$, then $u$ minimizes the sum over the product. Conversely, if some $U_k$ does not, replace it by a minimizer, which exists because $\cB_k$ is compact: the sum strictly decreases, so $u$ was not a minimizer. The minimizers of $\ip{G_l,\cdot}$ over $\cB_l$ are $1/s_l$ times those over the unit ball of $\norm{\cdot}_{(l)}$, by the substitution $U=U'/s_l$; that is, $U_l$ is a minimizer if and only if $s_lU_l\in\lmo_{(l)}(G_l)$.
+
+(iii) This is (ii) with $u=\lmo(g_t)$ multiplied by $\eta$.
+
+(iv) By \cref{lem:toolkit:conjugate}, $g^\sharp=-\norm{g}_*\lmo(g)$ for every norm; insert (i) and (ii).
+\end{proof}
+
+Two degenerate cases deserve a word. If $G_l=0$, every point of the layer's ball is a minimizer, and implementations take $U_l=0$, which keeps the layer still. If $g=0$, both updates are zero.
+
+\begin{remark}[Which combination of layer norms?]\label[remark]{rem:modular:sum}
+The maximum is a modelling choice. The sum $\sum_ls_l\norm{W_l}_{(l)}$ has the dual norm $\max_l\norm{G_l}_{(l),*}/s_l$, and its $\lmo$ puts the whole step on the layers that attain this maximum (\cref{ex:modular:sum}): steepest descent in a sum of layer norms is greedy block-coordinate descent, close in spirit to the duality-structure gradient descent of \textcite{Flynn2017}, which updates one greedily chosen layer per step. The maximum is the combination in which a step of size $\eta$ moves every layer by its full share at once, which is what the desideratum of \cref{def:modular:desideratum} asks for.
+\end{remark}
+
+\Cref{thm:modular:dual} turns the question ``how should the learning rate of each layer depend on the widths?'' into the question ``which norm should each layer carry?''. Once every layer's norm measures the effect of its weights on its features in width-independent units, the scales $s_l$ can be constants, and one learning rate $\eta$ serves every width. With smoothness with respect to the max norm, the descent bound of \cref{ch:steepest} reads $\Loss(\theta+\eta\lmo(g))\le\Loss(\theta)-\eta\sum_l\norm{G_l}_{(l),*}/s_l+\frac L2\eta^2$: the guaranteed decrease adds up over the layers.
+
+\subsection{One step of three optimizers on one layer}
+
+Which layer norms have this property? The answer comes from computing exactly what one step of each optimizer does to the layer's output, on the example that produced the step.
+
+\begin{theorem}[One step of three optimizers on one layer]\label{thm:modular:widthrules}
+Let $W\in\R^{\modularout\times\modularin}$ be a layer whose input on an example is $x\ne0$ and whose backpropagated signal is $\delta\ne0$, so that its gradient is $G=\delta x^\top$. Write $\rho(x)=\norm{x}_1/(\sqrt{\modularin}\,\norm{x}_2)\in(0,1]$ for the density of $x$, and $\sigma(v)=\norm{\sign v}_\rms$ for the square root of the fraction of nonzero entries of a vector $v$. Let $\eta>0$.
+\begin{enumerate}
+\item (SGD) The step $\Delta W=-\eta G$ gives $\Delta Wx=-\eta\norm{x}_2^2\,\delta$ and
+\[
+  \norm{\Delta Wx}_\rms=\eta\,\modularin\norm{\delta}_\rms\norm{x}_\rms^2,\qquad \norm{\Delta W}_{\rms\to\rms}=\eta\,\modularin\norm{\delta}_\rms\norm{x}_\rms .
+\]
+\item (Sign descent) The step $\Delta W=-\eta\sign(G)$ gives $\Delta Wx=-\eta\norm{x}_1\sign(\delta)$ and
+\[
+  \norm{\Delta Wx}_\rms=\eta\,\modularin\,\rho(x)\,\sigma(\delta)\norm{x}_\rms,\qquad \norm{\Delta W}_{\rms\to\rms}=\eta\,\modularin\,\sigma(\delta)\,\sigma(x).
+\]
+\item (Normalized spectral step) The step $\Delta W=\eta\lmo_{\rms\to\rms}(G)=-\eta\sqrt{\modularout/\modularin}\,\polar(G)$ gives $\Delta Wx=-\eta\sqrt{\modularout}\,\norm{x}_\rms\,\delta/\norm{\delta}_2$ and
+\[
+  \norm{\Delta Wx}_\rms=\eta\norm{x}_\rms,\qquad \norm{\Delta W}_{\rms\to\rms}=\eta .
+\]
+\end{enumerate}
+Consequently the step sizes that move the layer's output on $x$ by $\norm{\Delta Wx}_\rms=c\norm{x}_\rms$ are
+\begin{equation}\label{eq:modular:rules}
+  \eta_{\mathrm{SGD}}=\frac{c}{\modularin\norm{\delta}_\rms\norm{x}_\rms},\qquad
+  \eta_{\mathrm{sign}}=\frac{c}{\modularin\,\rho(x)\,\sigma(\delta)},\qquad
+  \eta_{\mathrm{spec}}=c .
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+(i) $\Delta Wx=-\eta\,\delta\,(x^\top x)$. Its RMS norm is $\eta\norm{x}_2^2\norm{\delta}_\rms=\eta\,\modularin\norm{x}_\rms^2\norm{\delta}_\rms$, and by \cref{lem:modular:rms}(iv), $\norm{\Delta W}_{\rms\to\rms}=\eta\norm{\delta}_\rms\norm{x}_{\rms,*}=\eta\norm{\delta}_\rms\,\modularin\norm{x}_\rms$.
+
+(ii) Since $\sign(\delta_ix_j)=\sign(\delta_i)\sign(x_j)$, also when one factor is zero, $\sign(G)=\sign(\delta)\sign(x)^\top$, and $\sign(x)^\top x=\norm{x}_1$. Hence $\Delta Wx=-\eta\norm{x}_1\sign(\delta)$, whose RMS norm is $\eta\norm{x}_1\sigma(\delta)$, and $\norm{x}_1=\rho(x)\sqrt{\modularin}\norm{x}_2=\rho(x)\,\modularin\norm{x}_\rms$. By \cref{lem:modular:rms}(iv), $\norm{\Delta W}_{\rms\to\rms}=\eta\norm{\sign\delta}_\rms\norm{\sign x}_{\rms,*}=\eta\,\sigma(\delta)\,\modularin\,\sigma(x)$.
+
+(iii) By \cref{lem:modular:rms}(ii) and (iv), $\Delta W=-\eta\sqrt{\modularout/\modularin}\,\frac{\delta}{\norm\delta_2}\frac{x^\top}{\norm x_2}$, so $\Delta Wx=-\eta\sqrt{\modularout/\modularin}\,\norm{x}_2\,\delta/\norm{\delta}_2=-\eta\sqrt{\modularout}\,\norm{x}_\rms\,\delta/\norm{\delta}_2$, whose RMS norm is $\eta\norm{x}_\rms$; and $\norm{\Delta W}_{\rms\to\rms}=\eta$ because $\polar(G)$ has operator norm one. Solving each identity for $\eta$ gives \eqref{eq:modular:rules}.
+\end{proof}
+
+The three rules depend on different things, and that is the whole story of this chapter in one display. SGD's step depends on the size of the backpropagated signal $\norm{\delta}_\rms$, which is set by the layers above, and on the size of the input, squared. Sign descent is blind to the size of $\delta$ and of $x$, but its step grows with the fan-in, in proportion to the density of the input: a dense input ($\rho(x)$ of order one, as for Gaussian or ReLU features) receives a change of order $\eta\,\modularin$, a one-hot input a change of order $\eta\sqrt{\modularin}\,\norm{x}_\rms$ (\cref{ex:modular:embedding}). The normalized spectral step depends on nothing: it moves the output by exactly $\eta$ in RMS. In each case the output moves along $-\delta$ or $-\sign\delta$, the direction that decreases the loss, and in each case $\norm{\Delta Wx}_\rms$ equals $\norm{\Delta W}_{\rms\to\rms}\norm{x}_\rms$, up to the factor $\rho(x)/\sigma(x)$ for sign descent: a single-example update is aligned with the input it came from. That is why the RMS$\to$RMS norm of the update, and not the size of its entries, is the quantity a width rule must control.
+
+\section{The theory: the spectral condition}\label{sec:modular:spectral}
+
+\Cref{thm:modular:widthrules} concerns one layer. A network adds two questions: whether the steps of different layers can cancel each other's effect on the features, and how large the backpropagated signal is. The first has a clean answer.
+
+\begin{lemma}[No cancellation between layers]\label[lemma]{lem:modular:nocancel}
+Under \cref{ass:modular:network}, fix one example and a direction $\Delta\theta=(\Delta W_1,\dots,\Delta W_N)$, and suppose that $\phi$ is differentiable at every entry of $u_1,\dots,u_{N-1}$. The first-order changes $\dot u_l=\frac{\dd}{\dd\epsilon}u_l(\theta+\epsilon\Delta\theta)\big|_{\epsilon=0}$ satisfy
+\begin{equation}\label{eq:modular:nocancel}
+  \ip{\delta_l,\dot u_l}=\sum_{k=1}^l\ip{G_k,\Delta W_k}\qquad(l=1,\dots,N).
+\end{equation}
+Consequently, if every layer descends, $\ip{G_k,\Delta W_k}\le0$ for $k\le l$, and $\delta_l\ne0$, then $\norm{\dot u_l}_2\ge\sum_{k\le l}\abs{\ip{G_k,\Delta W_k}}/\norm{\delta_l}_2$.
+\end{lemma}
+
+\begin{proof}
+The plan is an induction on $l$ along the forward pass. Differentiating $u_l=W_lh_{l-1}$ and $h_{l-1}=\phi(u_{l-1})$ gives $\dot u_l=\Delta W_l\,h_{l-1}+W_l\dot h_{l-1}$ and $\dot h_{l-1}=\phi'(u_{l-1})\odot\dot u_{l-1}$, with $\dot h_0=0$. The first term pairs with $\delta_l$ to the gradient term, $\ip{\delta_l,\Delta W_lh_{l-1}}=\tr(\Delta W_l^\top\delta_lh_{l-1}^\top)=\ip{G_l,\Delta W_l}$. The second pairs with $\delta_l$ to the previous layer's left side, because the backward recursion moves the transpose and the derivative across:
+\[
+  \ip{\delta_l,W_l\dot h_{l-1}}=\ip{W_l^\top\delta_l,\;\phi'(u_{l-1})\odot\dot u_{l-1}}=\ip{\phi'(u_{l-1})\odot W_l^\top\delta_l,\;\dot u_{l-1}}=\ip{\delta_{l-1},\dot u_{l-1}} .
+\]
+For $l=1$ the second term vanishes, which starts the induction, and adding the two terms proves \eqref{eq:modular:nocancel}. If all terms on the right of \eqref{eq:modular:nocancel} are nonpositive, then $\abs{\ip{\delta_l,\dot u_l}}=\sum_{k\le l}\abs{\ip{G_k,\Delta W_k}}$, and the Cauchy--Schwarz inequality $\abs{\ip{\delta_l,\dot u_l}}\le\norm{\delta_l}_2\norm{\dot u_l}_2$ gives the bound.
+\end{proof}
+
+The identity says that the first-order change of a layer's pre-activations, projected on its backpropagated signal, is the first-order change of the loss caused by the layers up to it. When every layer takes a descent step, all these contributions have the same sign, and the steps of the lower layers cannot undo the effect of a layer's own step in the direction $-\delta_l$. Taking only the term $k=l$, and writing $\hat\delta_l=\delta_l/\norm{\delta_l}_2$,
+\begin{equation}\label{eq:modular:direct}
+  \norm{\dot u_l}_2\ \ge\ \ip{-\hat\delta_l,\;\Delta W_l\,h_{l-1}} :
+\end{equation}
+the feature change is at least the projection of the layer's own direct change on $-\hat\delta_l$. For SGD and for normalized spectral steps the direct change is parallel to $-\delta_l$ (\cref{thm:modular:widthrules}), and \eqref{eq:modular:direct} is its full length; for sign descent it is its length times $\cos\angle(\delta_l,\sign\delta_l)=\rho(\delta_l)/\sigma(\delta_l)$. We can now state the condition that makes a network learn features at every width.
+
+\begin{theorem}[The spectral condition]\label{thm:modular:spectralcondition}
+Under \cref{ass:modular:network}, suppose that $\norm{W_l}_{\rms\to\rms}\le a_l$ and $\norm{\Delta W_l}_{\rms\to\rms}\le b_l$ for every $l$, and put $A_l=\prod_{k\le l}a_k$ and $B_l=\prod_{k\le l}(a_k+b_k)$, with $A_0=B_0=1$. For every input $x$ and every $l$:
+\begin{enumerate}
+\item (forward) $\norm{h_l}_\rms\le\norm{u_l}_\rms\le A_l\norm{x}_\rms$;
+\item (update) $\norm{\Delta h_l}_\rms\le\norm{\Delta u_l}_\rms\le(B_l-A_l)\norm{x}_\rms$;
+\item (rank-one lower bound) if $\phi$ is differentiable at the entries of $u_1,\dots,u_{N-1}$, and every layer takes the normalized step $\Delta W_k=\eta_k\lmo_{\rms\to\rms}(G_k)$ of the loss of one example with input $x$, then $\norm{\dot u_l}_\rms\ge\eta_l\norm{h_{l-1}}_\rms$ whenever $\delta_l\ne0$;
+\item (deep linear networks) if $\phi$ is the identity, then
+\[
+  \norm{\Delta u_l-\dot u_l}_\rms\le\Bigl(B_l-A_l-\sum_{k\le l}b_k\prod_{j\le l,\,j\ne k}a_j\Bigr)\norm{x}_\rms ,
+\]
+and, if moreover $a_k\le1$ and the steps of (iii) all have $\eta_k=\eta$,
+\begin{equation}\label{eq:modular:sandwich}
+  \eta\norm{h_{l-1}}_\rms-\bigl((1+\eta)^l-1-l\eta\bigr)\norm{x}_\rms\ \le\ \norm{\Delta h_l}_\rms\ \le\ \bigl((1+\eta)^l-1\bigr)\norm{x}_\rms .
+\end{equation}
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to propagate norm bounds through the layers, using that $\phi$ does not increase distances, and to obtain the lower bound from \cref{lem:modular:nocancel}.
+
+(i) Since $\phi(0)=0$ and $\phi$ is $1$-Lipschitz entrywise, $\norm{\phi(u)}_\rms\le\norm{u}_\rms$ and $\norm{\phi(u)-\phi(u')}_\rms\le\norm{u-u'}_\rms$. So $\norm{h_{l-1}}_\rms\le\norm{u_{l-1}}_\rms$ and $\norm{u_l}_\rms\le a_l\norm{h_{l-1}}_\rms$, and induction on $l$ gives (i).
+
+(ii) The changed network has layers $W_k+\Delta W_k$ of RMS$\to$RMS norm at most $a_k+b_k$, so (i) applied to it bounds its features: $\norm{h_{l-1}+\Delta h_{l-1}}_\rms\le B_{l-1}\norm{x}_\rms$. Write the change of the pre-activations as
+\[
+  \Delta u_l=(W_l+\Delta W_l)(h_{l-1}+\Delta h_{l-1})-W_lh_{l-1}=W_l\,\Delta h_{l-1}+\Delta W_l\,(h_{l-1}+\Delta h_{l-1}) .
+\]
+With $D_l=B_l-A_l$ and the induction hypothesis $\norm{\Delta h_{l-1}}_\rms\le\norm{\Delta u_{l-1}}_\rms\le D_{l-1}\norm{x}_\rms$, which holds for $l=1$ because $\Delta h_0=0$ and $D_0=0$,
+\[
+  \norm{\Delta u_l}_\rms\le\bigl(a_lD_{l-1}+b_lB_{l-1}\bigr)\norm{x}_\rms=\bigl((a_l+b_l)B_{l-1}-a_lA_{l-1}\bigr)\norm{x}_\rms=D_l\norm{x}_\rms ,
+\]
+and $\norm{\Delta h_l}_\rms\le\norm{\Delta u_l}_\rms$ because $\phi$ is $1$-Lipschitz.
+
+(iii) By \cref{lem:modular:rms}(ii), every layer descends: $\ip{G_k,\Delta W_k}=-\eta_k\norm{G_k}_{\rms\to\rms,*}\le0$. By \cref{lem:modular:rms}(iv) applied to $G_l=\delta_lh_{l-1}^\top$, the term $k=l$ has absolute value $\eta_l\norm{\delta_l}_{\rms,*}\norm{h_{l-1}}_\rms=\eta_l\sqrt{d_l}\,\norm{\delta_l}_2\norm{h_{l-1}}_\rms$. \Cref{lem:modular:nocancel}, keeping only this term, gives $\norm{\dot u_l}_2\ge\eta_l\sqrt{d_l}\,\norm{h_{l-1}}_\rms$; divide by $\sqrt{d_l}$.
+
+(iv) For a linear network, $u_l+\Delta u_l=(W_l+\Delta W_l)\cdots(W_1+\Delta W_1)x$. Expanding the product gives one term for each set $S\subseteq\{1,\dots,l\}$ of layers that contribute their $\Delta W_k$; the empty set gives $u_l$, the singletons give $\dot u_l$, and the term of $S$ has RMS norm at most $\prod_{k\in S}b_k\prod_{k\notin S}a_k\norm{x}_\rms$. Summing over $\abs S\ge2$ gives the first claim, since $\sum_{S}\prod_{S}b_k\prod_{S^c}a_k=B_l$. The bound is a polynomial with nonnegative coefficients in the $a_k$, so with $a_k\le1$ and $b_k=\eta$ it is at most $\sum_{\abs S\ge2}\eta^{\abs S}=(1+\eta)^l-1-l\eta$. The left inequality of \eqref{eq:modular:sandwich} follows from (iii) and the triangle inequality, the right one from (ii) and the same monotonicity, because $\Delta h_l=\Delta u_l$.
+\end{proof}
+
+In operator norms, the hypothesis $a_l,b_l=\Theta(1)$ reads $\norm{W_l}_{\op}=\Theta(\sqrt{d_l/d_{l-1}})$ and $\norm{\Delta W_l}_{\op}=\Theta(\sqrt{d_l/d_{l-1}})$, the \term{spectral condition}\index{spectral condition} of \textcite{YangSimonBernstein2023}. Under it, the forward and update bounds of the theorem do not involve the widths; under the normalized steps of \cref{thm:modular:dual} with RMS$\to$RMS layer norms, the lower bound does not either.
+
+\begin{corollary}[Feature learning at every width]\label[corollary]{cor:modular:featurelearning}
+In a deep linear network with $\norm{W_k}_{\rms\to\rms}\le1$ for all $k$, let every layer take the normalized RMS$\to$RMS step of size $\eta$ of one example's loss, and suppose that the forward pass does not collapse: $\norm{h_{l-1}}_\rms\ge c\,\norm{x}_\rms$ for some $c>0$. Then
+\[
+  \Bigl(c\,\eta-\tbinom l2\eta^2(1+\eta)^{l-2}\Bigr)\norm{x}_\rms\ \le\ \norm{\Delta h_l}_\rms\ \le\ \bigl((1+\eta)^l-1\bigr)\norm{x}_\rms ,
+\]
+bounds in which no width appears.
+\end{corollary}
+
+\begin{proof}
+By Taylor's theorem with the Lagrange remainder, $(1+\eta)^l-1-l\eta=\binom l2(1+\xi)^{l-2}\eta^2$ for some $\xi\in(0,\eta)$, which is at most $\binom l2(1+\eta)^{l-2}\eta^2$ for $l\ge2$ (for $l=1$ both sides are zero). Insert this and the hypothesis into \eqref{eq:modular:sandwich}.
+\end{proof}
+
+The upper bound is attained to first order. If every layer is square and orthogonal and the steps are the normalized spectral steps of one example, then all $l$ contributions to $\dot u_l$ point along $-\hat\delta_l$ and have RMS norm $\eta\norm{x}_\rms$, so $\norm{\dot u_l}_\rms=l\eta\norm{x}_\rms$, which is the first-order term of $(1+\eta)^l-1$ (\cref{ex:modular:tight}). The lower bound is attained at $l=1$, where the direct term is the only one.
+
+\subsection{The backward pass and the size of the signal}
+
+SGD's rule \eqref{eq:modular:rules} depends on $\norm{\delta_l}_\rms$, which the layers above set. Its size is controlled by the same operator norms.
+
+\begin{proposition}[The backward pass in dual norms]\label[proposition]{prop:modular:backward}
+Under \cref{ass:modular:network}, with $\phi$ differentiable at the entries of $u_1,\dots,u_{N-1}$, suppose $\norm{W_k}_{\rms\to\rms}\le a_k$ for every $k$. For one example:
+\begin{enumerate}
+\item $\norm{\delta_l}_{\rms,*}\le\bigl(\prod_{k=l+1}^Na_k\bigr)\norm{\nabla\psi(f)}_{\rms,*}$, that is, $\norm{\delta_l}_\rms\le\frac1{d_l}\bigl(\prod_{k>l}a_k\bigr)\norm{\nabla\psi(f)}_{\rms,*}$;
+\item $\norm{G_l}_{\rms\to\rms,*}=\norm{\delta_l}_{\rms,*}\norm{h_{l-1}}_\rms\le\bigl(\prod_{k\ne l}a_k\bigr)\norm{\nabla\psi(f)}_{\rms,*}\,\norm{x}_\rms$;
+\item in the max norm with RMS$\to$RMS layer norms and scales $s_l$, $\norm{\nabla_\theta\ell}_*\le\bigl(\sum_ls_l^{-1}\prod_{k\ne l}a_k\bigr)\norm{\nabla\psi(f)}_{\rms,*}\,\norm{x}_\rms$.
+\end{enumerate}
+For the average loss over several examples, (ii) and (iii) hold with the right sides averaged over the examples.
+\end{proposition}
+
+\begin{proof}
+(i) Because $\phi$ is $1$-Lipschitz, $\abs{\phi'}\le1$ where it exists, so $\norm{\delta_l}_{\rms,*}=\norm{\phi'(u_l)\odot W_{l+1}^\top\delta_{l+1}}_{\rms,*}\le\norm{W_{l+1}^\top\delta_{l+1}}_{\rms,*}\le a_{l+1}\norm{\delta_{l+1}}_{\rms,*}$ by \cref{lem:modular:rms}(iii); iterate down from $\delta_N=\nabla\psi(f)$, and use $\norm{v}_\rms=\norm{v}_{\rms,*}/m$ for $v\in\R^m$. (ii) The identity is \cref{lem:modular:rms}(iv); bound $\norm{\delta_l}_{\rms,*}$ by (i) and $\norm{h_{l-1}}_\rms$ by \cref{thm:modular:spectralcondition}(i). (iii) Insert (ii) into \cref{thm:modular:dual}(i). For several examples, the gradient is the average of the single-example gradients, and the triangle inequality for the dual norms gives the averaged bounds.
+\end{proof}
+
+For the square loss in RMS units, $\psi(f)=\frac12\norm{f-y}_\rms^2$, the quantity $\norm{\nabla\psi(f)}_{\rms,*}$ is the RMS residual $\norm{f-y}_\rms$. Part (i) says that under the spectral condition every backpropagated signal is at most of order $1/d_l$ per entry, and (iii) that the loss is Lipschitz in the max norm with a constant that does not grow with width: the dual norm of the gradient, which a normalized steepest-descent step converts into a guaranteed decrease (\cref{ch:steepest}), stays bounded. That is the Lipschitz half of the analysis of \textcite{LargeEtAl2024}, for this network. Upper bounds are all that operator norms give; that the bounds are attained at a random initialization is a heuristic about random matrices, and it is what the width rules need.
+
+\begin{heuristic}[Heuristic derivation of the width exponents]
+Fix the depth, $d_0$, $d_N$, an example with $\norm{x}_\rms=1$ and $\norm{\nabla\psi(f)}_{\rms,*}$ of order one, let all hidden widths equal $\modularh\to\infty$, and let the initial weights of layer $l$ be independent $\cN(0,v_l^2)$. For such a matrix $W\in\R^{\modularout\times\modularin}$ and vectors $z\in\R^{\modularin}$, $z'\in\R^{\modularout}$ that do not depend on it, the law of large numbers gives $\norm{Wz}_2\approx v\sqrt{\modularout}\norm{z}_2$ and $\norm{W^\top z'}_2\approx v\sqrt{\modularin}\norm{z'}_2$, while $\norm{W}_{\op}\approx v(\sqrt{\modularin}+\sqrt{\modularout})$. In the units of this chapter the forward gain $\norm{Wz}_\rms/\norm{z}_\rms\approx v\sqrt{\modularin}$ and the backward gain $\norm{W^\top z'}_{\rms,*}/\norm{z'}_{\rms,*}\approx v\,\modularin/\sqrt{\modularout}$ are within a factor $1+\sqrt{\modularin/\modularout}$, respectively $1+\sqrt{\modularout/\modularin}$, of $\norm{W}_{\rms\to\rms}\approx v\sqrt{\modularin}\,(1+\sqrt{\modularin/\modularout})$. The forward pass traverses the input and hidden layers, which have $\modularin\le\modularout$, and the backward pass the hidden and output layers, which have $\modularin\ge\modularout$; so both bounds of \cref{thm:modular:spectralcondition}(i) and \cref{prop:modular:backward}(i) are attained up to constants. ReLU halves the squared norms, and initializations with $v_l^2=2/d_{l-1}$ compensate.
+
+So if every layer has $\norm{W_l}_{\rms\to\rms}=\Theta(1)$, which for the output layer means entries of size $1/\modularh$ (variance $1/\text{fan-in}^2$, $\mu$P's choice), then $\norm{h_l}_\rms=\Theta(1)$ and $\norm{\delta_l}_\rms=\Theta(1/\modularh)$. In the standard parametrization the output layer has entries of size $\modularh^{-1/2}$, so $\norm{W_N}_{\rms\to\rms}=\Theta(\modularh^{1/2})$, and the backward gain through it raises the signals of all lower layers to $\norm{\delta_l}_\rms=\Theta(\modularh^{-1/2})$. Now insert these sizes, and the densities $\rho,\sigma=\Theta(1)$ of Gaussian and ReLU features, into \cref{thm:modular:widthrules}. The step sizes that move every layer's output by $\Theta(1)$ are those of \cref{tab:modular:rules}: $\eta_l\propto d_l/d_{l-1}$ for SGD, $\eta_l\propto1/d_{l-1}$ for sign descent, and $\eta_l\propto1$ for normalized spectral steps. In the standard parametrization one learning rate $\eta$ moves the input, hidden and output layers by $\Theta(\eta d_0\modularh^{-1/2})$, $\Theta(\eta\modularh^{1/2})$ and $\Theta(\eta\modularh)$ under SGD, and by $\Theta(\eta)$, $\Theta(\eta\modularh)$ and $\Theta(\eta\modularh)$ under sign descent. Keeping the output stable requires $\eta=O(1/\modularh)$ in both cases, and then the hidden layers of SGD and the input layer of sign descent learn nothing in the limit.
+\end{heuristic}
+
+\begin{table}[t]
+\centering\small
+\caption{Width exponents of the per-layer step size that moves every layer's output by $\Theta(1)$, for one input layer of width $\modularh\times d_0$, hidden layers $\modularh\times\modularh$ and an output layer $d_N\times\modularh$, with $d_0$ and $d_N$ fixed. Derived from \cref{thm:modular:widthrules} and the heuristic sizes of $\delta_l$; the sign-descent column is the $\mu$P rule for Adam, the SGD column the $\mu$P rule for SGD in a parametrization without multipliers. The last row is the standard parametrization with one learning rate $\eta$.}\label{tab:modular:rules}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+& SGD & sign descent (Adam) & normalized spectral\\
+\midrule
+input layer & $\eta_1\propto\modularh$ & $\eta_1\propto1$ & $\eta_1\propto1$\\
+hidden layers & $\eta_l\propto1$ & $\eta_l\propto1/\modularh$ & $\eta_l\propto1$\\
+output layer & $\eta_N\propto1/\modularh$ & $\eta_N\propto1/\modularh$ & $\eta_N\propto1$\\
+general rule & $d_l/d_{l-1}$ (fan-out over fan-in) & $1/d_{l-1}$ (one over fan-in) & $1$, with $\sqrt{d_l/d_{l-1}}$ inside $\lmo$\\
+\midrule
+SP, per-layer change & $\eta d_0\modularh^{-1/2},\ \eta\modularh^{1/2},\ \eta\modularh$ & $\eta,\ \eta\modularh,\ \eta\modularh$ & ---\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The sign-descent column is the Adam column of $\mu$P \parencite{YangHu2021,YangEtAl2021}, which \textcite{YangLittwin2023} justify for adaptive optimizers in the infinite-width limit, and the shape factor in the spectral column is the one that \textcite{BernsteinNewhouse2025} derive by dualizing the RMS$\to$RMS norm, from which they recover $\mu$P. The derivation also explains why the three rules are one rule. Each multiplies the optimizer's natural step by the constant that converts its norm into the RMS$\to$RMS norm on aligned updates: for SGD the constant depends on the signal, for sign descent it is the fan-in, which is the norm-equivalence constant between the largest entry of a matrix and its RMS$\to$RMS norm (\cref{ex:modular:signnorm}), and for spectral steps it is one.
+
+\subsection{Smoothness and depth}
+
+The Lipschitz bound of \cref{prop:modular:backward} has a second-order companion. For a deep linear network and the square loss, the second derivative of $\ell$ along a direction $\Delta\theta$ with $\max_l\norm{\Delta W_l}_{\rms\to\rms}\le1$ is $\norm{\dot f}^2_\rms+\ip{f-y,\ddot f}_\rms$, where $\ip{a,b}_\rms=\ip{a,b}/d_N$, and the expansion in the proof of \cref{thm:modular:spectralcondition}(iv) bounds $\norm{\dot f}_\rms$ by $\sum_k\prod_{j\ne k}a_j\norm{x}_\rms$ and $\norm{\ddot f}_\rms$ by $2\sum_{j<k}\prod_{i\ne j,k}a_i\norm{x}_\rms$: on the set $\{\norm{W_l}_{\rms\to\rms}\le a_l\}$ the loss is smooth in the max norm with a constant that does not depend on the widths. \Textcite{LargeEtAl2024} prove width-independent Lipschitz and smoothness bounds of this kind for networks assembled from modules that satisfy their conditions of being well normed and sharp, with constants given by recursive formulas over the architecture. For nonlinear layers the conditions carry real content. In RMS units the second-order term of an entrywise nonlinearity, $\phi''(u)\odot\dot u\odot\dot u$, is bounded by $\norm{\phi''}_\infty\norm{\dot u}_\infty\norm{\dot u}_\rms$ but not by a multiple of $\norm{\dot u}_\rms^2$ that is independent of the width: a change concentrated on few coordinates is penalized more than its RMS norm shows (\cref{ex:modular:curvature}).
+
+Depth is a separate scaling. In a residual network $h_l=h_{l-1}+N^{-\alpha}F_l(h_{l-1})$ whose branches satisfy $\norm{F_l(h)}_\rms\le a\norm{h}_\rms$, the argument of \cref{thm:modular:spectralcondition}(i) gives $\norm{h_N}_\rms\le(1+aN^{-\alpha})^N\norm{x}_\rms$, which is bounded uniformly in $N$ if and only if $\alpha\ge1$, whereas branch outputs orthogonal to the stream give $\norm{h_N}_\rms^2\le(1+a^2N^{-2\alpha})^N\norm{x}^2_\rms$, bounded for $\alpha\ge1/2$ (\cref{ex:modular:depth}). Both exponents are in use. \Textcite{BordelonEtAl2024} and \textcite{YangEtAl2024} scale the residual branches and their updates by $1/\sqrt N$ (Depth-$\mu$P) and observe hyperparameter transfer across depth, while \textcite{DeyEtAl2025} argue for $1/N$ (CompleteP), which they find necessary for every layer to learn features beyond its linearization; it requires rescaling the learning rates of normalization layers and biases, AdamW's weight decay and $\epsilon$ as well. We state these results and do not prove them.
+
+\section{Reading the theory}\label{sec:modular:reading}
+
+The theory makes three kinds of prediction. (1) \emph{Per-layer exponents}: the learning rates of \cref{tab:modular:rules}, under which the optimal base learning rate should not depend on the width. (2) \emph{The failure of one learning rate}: in the standard parametrization the output layer, and for Adam also the hidden layers, move by $\Theta(\eta\modularh)$ per step, so the largest stable and, in short training, the best learning rate scale like $1/\modularh$, a slope of $-1$ on a $\log$--$\log$ plot, for SGD and for Adam alike. (3) \emph{The size of one step}: at a fixed base learning rate the change of the hidden features grows like $\modularh^{1/2}$ under SGD in the standard parametrization and like $\modularh$ under sign descent, the first step of Adam, and is width-independent under the three width-aware rules; for normalized spectral steps it lies between the two bounds of \cref{thm:modular:spectralcondition}. Leading constants follow from the Gaussian computations of the heuristic: for the hidden layer of the network of \cref{fig:modular:curves}, with $f-y=1$ and $\norm{x}_\rms=1$, the direct change per unit of step is $\sqrt{\modularh/2}$ for SGD and $\modularh/\sqrt{2\pi}$ for sign descent in the standard parametrization, and $\sqrt{32}$ and $64/\sqrt{2\pi}$ in $\mu$P with base width $64$ (\cref{ex:modular:constants}).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 2,horizontal sep=17mm,vertical sep=17mm},wplot,width=80mm,height=52mm,
+  xmode=log,log basis x=2,xtick={64,128,256,512,1024,2048,4096},xticklabels={$2^6$,$2^7$,$2^8$,$2^9$,$2^{10}$,$2^{11}$,$2^{12}$},
+  xlabel={hidden width $\modularh$}]
+\nextgroupplot[title={(a) optimal learning rate},xmin=54,xmax=1210,ymin=-5.6,ymax=1.3,
+  ylabel={$\log_2\bigl(\eta^\star(\modularh)/\eta^\star(64)\bigr)$},
+  legend style={at={(0.02,0.03)},anchor=south west,font=\scriptsize},legend columns=2]
+\addplot[guide,domain=64:1024] {0};
+\addplot[guide,domain=64:1024] {-ln(x/64)/ln(2)};
+\addplot[simulation2] table[x=n,y=adamsprel] {figures/data/04-modular-transfer-optima.dat};
+\addplot[only marks,mark=square,mark size=1.6pt,color=seadeep] table[x=n,y=adammuprel] {figures/data/04-modular-transfer-optima.dat};
+\addplot[only marks,mark=diamond*,mark size=2.0pt,color=sea] table[x=n,y=specrel] {figures/data/04-modular-transfer-optima.dat};
+\addplot[only marks,mark=o,mark size=1.7pt,color=sandline!55!black] table[x=n,y=sgdmuprel] {figures/data/04-modular-transfer-optima.dat};
+\addplot[simulation] table[x=n,y=sgdspstablerel] {figures/data/04-modular-transfer-optima.dat};
+\legend{,,Adam SP,Adam $\mu$P,spectral,SGD $\mu$P,SGD SP${}^{\dagger}$}
+\nextgroupplot[title={(b) one SGD step},xmin=54,xmax=4800,ymode=log,ymin=3,ymax=80,
+  ylabel={$\norm{\Delta u_2}_\rms/\eta$},legend style={at={(0.02,0.97)},anchor=north west,font=\scriptsize}]
+\addplot[theory,domain=64:4096,samples=40] {sqrt(x/2)};
+\addplot[theory2,domain=64:4096] {sqrt(32)};
+\addplot[simulation] table[x=n,y=sgdsp] {figures/data/04-modular-onestep.dat};
+\addplot[only marks,mark=o,mark size=1.7pt,color=sandline!55!black] table[x=n,y=sgdmup] {figures/data/04-modular-onestep.dat};
+\legend{$\sqrt{\modularh/2}$,$\sqrt{32}$,SP,$\mu$P}
+\nextgroupplot[title={(c) one sign-descent (first Adam) step},xmin=54,xmax=4800,ymode=log,ymin=15,ymax=3000,
+  ylabel={$\norm{\Delta u_2}_\rms/\eta$},legend style={at={(0.02,0.97)},anchor=north west,font=\scriptsize}]
+\addplot[theory,domain=64:4096] {x/sqrt(2*pi)};
+\addplot[theory2,domain=64:4096] {64/sqrt(2*pi)};
+\addplot[simulation2] table[x=n,y=adamsp] {figures/data/04-modular-onestep.dat};
+\addplot[only marks,mark=square,mark size=1.6pt,color=seadeep] table[x=n,y=adammup] {figures/data/04-modular-onestep.dat};
+\legend{$\modularh/\sqrt{2\pi}$,$64/\sqrt{2\pi}$,SP,$\mu$P}
+\nextgroupplot[title={(d) one normalized spectral step},xmin=54,xmax=4800,ymin=0,ymax=5.6,
+  ylabel={$\norm{\Delta u_2}_\rms/\eta$},legend style={at={(0.98,0.5)},anchor=east,font=\scriptsize}]
+\addplot[theory3] table[x=n,y=spechi] {figures/data/04-modular-onestep.dat};
+\addplot[only marks,mark=diamond*,mark size=2.0pt,color=sea] table[x=n,y=spec] {figures/data/04-modular-onestep.dat};
+\addplot[theory] table[x=n,y=speclo] {figures/data/04-modular-onestep.dat};
+\legend{upper bound $a_1+a_2$,measured,lower bound $\norm{h_1}_\rms$}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Width rules, measured. (a) Optimal base learning rate relative to width $64$, from the sweeps of \cref{fig:modular:curves} (vertex of a parabola through the best grid point and its neighbours in $(\log_2\eta,\log\text{loss})$); dashed lines: the predicted slopes $0$ and $-1$. ${}^{\dagger}$Under SGD in the standard parametrization the loss hardly depends on the learning rate (the network barely learns this task in $150$ steps), so the points show its largest stable grid learning rate instead. (b)--(d) One step from one example, $f-y=1$, $\norm{x}_\rms=1$, base step $10^{-5}$, of the same network at initialization; points: the change of the second hidden layer's pre-activations divided by the step, all three layers updated, mean of $8$ seeds. Curves in (b), (c): the hidden layer's own contribution predicted by \cref{thm:modular:widthrules} with the heuristic sizes of $\delta$; the gap above them is the input layer's contribution, which does not grow with width. (d): the bounds of \cref{thm:modular:spectralcondition} at first order, computed from the initial weights. Scripts \texttt{04-modular-transfer.py} and \texttt{04-modular-onestep.py}.}
+\label{fig:modular:widthrules}
+\end{figure}
+
+\Cref{fig:modular:widthrules} compares the predictions with measurements on the network of \cref{fig:modular:curves}. Panel (a) shows prediction (2). The optimum of Adam in the standard parametrization moves by $-0.96$ octaves per doubling of the width (least-squares slope over the five widths, $-1.03$ from width $128$ on), against the predicted $-1$, and the largest stable learning rate of SGD in the standard parametrization halves exactly with every doubling from width $128$ on. The three width-aware rules keep the optimum within about one octave over a sixteenfold range of widths: slopes of $-0.21$ for Adam in $\mu$P, $-0.19$ for spectral steps and $+0.16$ for SGD in $\mu$P, the last noisy because its optimum sits at the edge of stability. The small negative drift of Adam in $\mu$P and of spectral steps is not predicted by the leading-order theory; it is a finite-width effect of the kind \textcite{VyasEtAl2023} and \textcite{EverettEtAl2024} report.
+
+Panels (b)--(d) show prediction (3) with constants. When only the hidden layer steps, its measured change agrees with the predicted contribution to within $8\%$ at every width, and to within $1\%$ for widths of $2048$ and $4096$. When all layers step, the change is larger by the input layer's contribution, which is width-independent under every rule, so that under the standard parametrization the points approach the curves from above, with local slopes rising to $0.49$ (SGD) and $0.99$ (sign descent) at the largest widths, while under $\mu$P they stay a constant factor above them. For normalized spectral steps the change is $2.4$ to $2.5$ at every width, between the lower bound $\norm{h_1}_\rms\approx1$, which is the hidden layer's exact contribution, and the upper bound $a_1+a_2\approx4.4$.
+
+\paragraph{Where the agreement must fail.} Prediction (3) is a statement about one step at initialization, and it is accurate there. Prediction (2) relies on more: that the best learning rate after $150$ steps is limited by the same layers that limit the first step, and that later gradients stay aligned with the features. Minibatch gradients have rank up to $32$ here, Adam's moments mix steps, and the alignment of updates with features decays as training proceeds \parencite{KossonEtAl2026}; at a fixed learning rate the change of features then grows more slowly with width than the rank-one calculation says, which would flatten the slope of (a). In this experiment the slope survives because training is short. At small widths the exponents are blurred by lower-order terms, such as the factor $1+\sqrt{d_0/\modularh}$ in the norm of the input layer and the input layer's contribution in (b)--(c).
+
+\paragraph{Muon's shape factors.} The factor $\sqrt{\modularout/\modularin}$ is the RMS$\to$RMS normalization of the polar factor exactly, and with it a Muon step has $\norm{\Delta W}_{\rms\to\rms}=\eta$ for every shape. Jordan et al.'s clamp, $\sqrt{\max(1,\modularout/\modularin)}$, agrees for $\modularout\ge\modularin$ and gives a wide-to-narrow matrix the larger norm $\sqrt{\modularin/\modularout}$, a constant factor for a fixed architecture shape. Liu et al.'s factor $0.2\sqrt{\max(\modularout,\modularin)}$ gives $\norm{\Delta W}_{\rms\to\rms}=0.2\sqrt{\modularin}$ for $\modularout\ge\modularin$, which grows with width: under it, the theory predicts, the base learning rate must shrink like $\modularh^{-1/2}$ to transfer (\cref{ex:modular:muonscale}). RMS matching serves a different purpose, reusing AdamW's tuned learning rate at a given width, and there it does what it was designed to do. For a square matrix and a full-rank polar factor, every input receives the gain $\norm{\Delta W}_{\rms\to\rms}$ exactly, aligned or not: the normalized spectral step is the one step whose effect does not depend on the alignment assumptions that the other two rules need.
+
+\section{What the theory misses}\label{sec:modular:misses}
+
+\paragraph{What was idealized away.} \emph{One example and one step.} Minibatch gradients are sums of rank-one terms, with stable rank well below the batch size but above one, and Adam's moments and Muon's momentum mix many steps; once updates are not aligned with the inputs they are applied to, $\norm{\Delta Wh}_\rms$ falls below $\norm{\Delta W}_{\rms\to\rms}\norm{h}_\rms$, by a factor that depends on the update's spectrum and on the alignment, and the exponents of \cref{tab:modular:rules} change (\cref{ex:modular:batch}). \emph{Orders of magnitude in place of constants.} The theory fixes exponents; the factor of $2$ between the operator norm and the typical gain of a square Gaussian matrix, the densities $\rho$ and $\sigma$, and the base learning rate are outside it. \emph{The RMS norm itself.} It treats all coordinates alike, which is right for delocalized features and wrong for the few large activations that trained transformers develop, and it controls entrywise nonlinearities only to first order. \emph{The architecture.} Embeddings receive one-hot inputs, for which the right input norm is $\ell_1$ and not RMS (\cref{ex:modular:embedding}); attention and normalization layers have no norm in this chapter. \emph{Everything that is not width.} Weight decay, the training horizon, the batch size and depth are fixed.
+
+\paragraph{Where it breaks.} (1) The theory does not single out $\mu$P. \Textcite{EverettEtAl2024} found that all four parametrizations they tested transfer once each layer has the right exponent, and that a per-layer prescription for the standard parametrization beat $\mu$P at scale; they also found that the exponents depend on how aligned the updates are, which is a property of training and not of the architecture. (2) The alignment that the rank-one calculation assumes is transient. \Textcite{KossonEtAl2026} measured it in language-model training and found that it holds only at the start, after which the relative size of the updates is set by weight decay, and they argue that $\mu$P acts mainly as an implicit warmup. (3) Optimal learning rates also depend on the length of training: \textcite{BjorckEtAl2025} find that the best learning rate of a language model shrinks as the token horizon grows, following a scaling law of its own, about which the norm of the network is silent. (4) Weight decay interacts with the width rules: with AdamW, $\mu$P's scaling of the learning rate breaks down during training unless the weight decay is scaled too \parencite{WangAitchison2025}. (5) In the ablations of \textcite{Lingle2024}, transfer failed with trainable gains in the normalization layers, with Lion, with decoupled weight decay, and with the standard $1/\sqrt{d}$ scaling of attention logits, all components outside this chapter's model. (6) Depth needs its own rule, and the two candidate exponents disagree about whether hyperparameters transfer across depth at all \parencite{YangEtAl2024,BordelonEtAl2024,DeyEtAl2025}. (7) Finally, the theory predicts how the optimum scales, not where it is, and not why it transfers: the optimum's location is a property of the loss landscape that the norm does not see.
+
+\paragraph{Repairs and open problems.} The landscape explanation has been taken up directly. \Textcite{NociEtAl2024} found that under $\mu$P the sharpness along the training trajectory is nearly independent of width and depth, which they call super consistency, while under the neural-tangent parametrization it changes with width, and they link the presence or absence of super consistency to the presence or absence of learning-rate transfer; in the language of \cref{ch:eos}, the optimal learning rate sits near the stability threshold, which then does not move. For the components that break transfer, u-$\mu$P \parencite{BlakeEtAl2025} combines $\mu$P with unit scaling, gives near-optimal defaults, and trains in 8-bit floating point; Depth-$\mu$P and CompleteP extend the rules to depth; and the scaling of weight decay with width is the subject of \cref{ch:decay} \parencite{WangAitchison2025,KossonEtAl2026}. A more radical repair fixes the norms instead of scaling the steps: Hyperball \parencite{WenEtAl2026} constrains the Frobenius norm of every matrix and normalizes every update, so that the learning rate sets an angular step, and reports better transfer across widths and depths in an unrefereed study of models up to $1.2$ billion parameters. The spectral-condition derivation has been extended to LAMB, Sophia, Shampoo and Muon \parencite{GuptaEtAl2026}, and per-layer rules for matrix-preconditioned optimizers have been worked out by \textcite{QiuEtAl2025}. Open are a theory of where the optimum lies, not only how it scales; norms for attention, embeddings and normalization layers derived rather than chosen; the dynamics of alignment over training, which decides the exponents in practice; and transfer across the training horizon and the batch size, which no norm on the weights can see.
+
+\section{Back in the wild}\label{sec:modular:back}
+
+\fieldnotes{Tune on a narrow proxy and widen: in $\mu$P, Adam's hidden and output learning rates are divided by the width multiplier; Muon's update carries $\sqrt{\modularout/\modularin}$ or an RMS-matching factor; Modula normalizes every module.}
+{A network as a chain of layers, each with an operator norm (RMS$\to$RMS for linear layers), the network normed by the maximum; one step from one example, so rank-one gradients; features of RMS $\Theta(1)$.}
+{Steepest descent in the max norm is per-layer normalized descent; exact one-step feature changes for SGD, sign descent and spectral steps; width-free forward, update and backward bounds under the spectral condition; no cancellation between layers at first order.}
+{Per-layer rates $\propto$ fan-out/fan-in (SGD), $1/\text{fan-in}$ (Adam), $1$ (spectral); in SP the optimum scales like $1/\text{width}$; one-step feature changes $\propto\modularh^{1/2}$, $\modularh$ and $1$ (measured: slopes $-0.96$ and about $0$ for the optimum).}
+{Alignment after the first steps; constants and the optimum's location; embeddings, attention, normalization; weight decay, training horizon, batch size; depth.}
+{Measure a step by its RMS$\to$RMS norm and scale each layer's learning rate so that this norm is width-independent: proved in the idealization to give width-independent feature changes. Expect the optimum's location to transfer across width, not across horizon or batch size (observed, not proved).}
+
+What the chapter tells a practitioner is a units check rather than a recipe. A learning rate is a number only after a norm has been chosen; the RMS$\to$RMS norm is the one in which ``the same learning rate'' means ``the same change of the features'' at every width, and every working width rule, $\mu$P's $1/\text{fan-in}$ for Adam, Muon's $\sqrt{\modularout/\modularin}$, the per-layer exponents of Everett et al., is a way of expressing that norm in the optimizer's own currency. The theory does not tell anyone which base learning rate to use, nor that a proxy tuned for one training horizon is tuned for another; the belief that a $\mu$P proxy can stand in for every hyperparameter of a large run goes beyond the evidence in \cref{sec:modular:misses}.
+
+The chapter closes Part~I. \Cref{ch:steepest} gave the dual of a maximum of norms in the abstract; \cref{ch:sign,ch:spectral} computed the duality maps of the entrywise and spectral norms of one tensor; here the layers are assembled into one norm, and the per-layer learning rate turns out to be part of the norm. The memory that practical optimizers add to these steps is the subject of \cref{ch:momentum,ch:adaptive,ch:kronecker}; the per-layer rate returns as the effective learning rate of a normalized layer under weight decay in \cref{ch:decay}, and the stability threshold that super consistency keeps fixed is the subject of \cref{ch:eos}.
+
+\begin{exercises}
+\item \consolidation (Sums and other combinations.) (a) Show that the dual of $\norm{\theta}=\sum_ls_l\norm{W_l}_{(l)}$ is $\max_l\norm{G_l}_{(l),*}/s_l$, and that $\lmo(g)$ is the set of $u$ that vanish outside the layers attaining the maximum and are convex combinations of their scaled $\lmo$'s. (b) For $1<p<\infty$, show that the dual of $\bigl(\sum_l(s_l\norm{W_l}_{(l)})^p\bigr)^{1/p}$ is $\bigl(\sum_l(\norm{G_l}_{(l),*}/s_l)^q\bigr)^{1/q}$ with $1/p+1/q=1$, and find its $\lmo$. (c) For two layers with $\norm{G_1}_{(1),*}/s_1=2\norm{G_2}_{(2),*}/s_2$, compare the steps of the max, sum and $\ell_2$ combinations.\label{ex:modular:sum}
+
+\item \consolidation (Sign descent and the largest entry.) (a) Show that the $\ell_1\to\ell_\infty$ operator norm of $W$ is $\norm{W}_{\max}=\max_{ij}\abs{W_{ij}}$, so that sign descent is normalized steepest descent in it. (b) Show that $\norm{W}_{\rms\to\rms}\le\modularin\norm{W}_{\max}$, with equality if and only if $W=c\,ab^\top$ for sign vectors $a\in\{\pm1\}^{\modularout}$, $b\in\{\pm1\}^{\modularin}$. (c) Deduce the $\mu$P rule $\eta\propto1/\text{fan-in}$ for sign descent as the statement that $\eta\norm{\cdot}_{\max}$-steps have RMS$\to$RMS norm at most $\eta\,\modularin$, with equality for single-example steps on dense inputs.\label{ex:modular:signnorm}
+
+\item \consolidation (Embeddings.) An embedding layer $W\in\R^{\modularout\times\modularin}$ receives one-hot inputs $x=e_j$, so $\norm{x}_1=1$ while $\norm{x}_\rms=\modularin^{-1/2}$. (a) Compute $\norm{\Delta We_j}_\rms$ for one step of SGD, of sign descent and of the normalized RMS$\to$RMS step, and show that the last is $\eta\,\modularin^{-1/2}$: the spectral norm is the wrong norm for a vocabulary. (b) Show that the $\ell_1\to\rms$ operator norm is the largest column RMS, $\max_j\norm{W_{:j}}_\rms$, that its dual is $\sqrt{\modularout}\sum_j\norm{G_{:j}}_2$, and that its $\lmo$ normalizes the nonzero columns of $-G$ to RMS one. (c) Show that its normalized step moves the embedding of token $j$ by exactly $\eta$ in RMS, and that the width exponents of the input-layer row of \cref{tab:modular:rules} follow for one-hot inputs.\label{ex:modular:embedding}
+
+\item \consolidation (Tightness.) Let all layers of a deep linear network be square and orthogonal, $\norm{x}_\rms=1$, and let each layer take the normalized RMS$\to$RMS step of size $\eta$ of one example's loss. (a) Show that $\delta_k=W_{k+1}^\top\cdots W_l^\top\delta_l$ and that the contribution of layer $k$ to $\dot u_l$ is $-\eta\sqrt{d_l}\,\hat\delta_l$. (b) Deduce $\norm{\dot u_l}_\rms=l\eta$, the first-order term of the upper bound of \cref{thm:modular:spectralcondition}(ii). (c) Check numerically that $\norm{\Delta u_l}_\rms/\eta\to l$ as $\eta\to0$.\label{ex:modular:tight}
+
+\item \consolidation (Constants.) For the network of \cref{fig:modular:curves} with He initialization, $f-y=1$ and $\norm{x}_\rms=1$, show heuristically that $\norm{h_1}_\rms\approx1$, $\rho(h_1)\approx1/\sqrt\pi$, $\sigma(h_1)\approx\sigma(\delta_2)\approx1/\sqrt2$, and $\norm{\delta_2}_\rms\approx(2\modularh)^{-1/2}$ in the standard parametrization and $\sqrt{32}/\modularh$ in $\mu$P with base width $64$. Deduce the four curves of \cref{fig:modular:widthrules}(b)--(c).\label{ex:modular:constants}
+
+\item \variation (Minibatches.) Let $G=\frac1B\sum_{i=1}^B\delta_ix_i^\top$ with orthogonal inputs of equal norm and orthogonal signals. (a) Show that SGD moves the layer's output on $x_j$ by $\frac\eta B\norm{x_j}_2^2\,\delta_j$, a factor $B$ less than the single-example step of the same learning rate. (b) Show that $\polar(G)=\sum_i\hat\delta_i\hat x_i^\top$ and that the normalized spectral step moves the output on every $x_j$ by exactly $\eta\norm{x_j}_\rms$, as for one example. (c) For sign descent with $B=2$ and Gaussian vectors, estimate $\norm{\Delta Wx_1}_\rms$ and compare.\label{ex:modular:batch}
+
+\item \variation (Depth.) Let $h_l=h_{l-1}+N^{-\alpha}F_l(h_{l-1})$, $l=1,\dots,N$, with $\norm{F_l(h)}_\rms\le a\norm{h}_\rms$. (a) Show that $\norm{h_N}_\rms\le(1+aN^{-\alpha})^N\norm{x}_\rms\le e^{aN^{1-\alpha}}\norm{x}_\rms$, uniformly bounded in $N$ for $\alpha\ge1$. (b) If every branch output is orthogonal to its input, show that $\norm{h_N}^2_\rms\le(1+a^2N^{-2\alpha})^N\norm{x}_\rms^2$, bounded for $\alpha\ge1/2$. (c) Relate the two exponents to Depth-$\mu$P and CompleteP.\label{ex:modular:depth}
+
+\item \variation (Muon's shape factors.) For an update $\gamma\polar(M)$ of a $\modularout\times\modularin$ matrix of full rank, compute $\norm{\gamma\polar(M)}_{\rms\to\rms}$ and its entrywise RMS for $\gamma=\sqrt{\modularout/\modularin}$, $\gamma=\sqrt{\max(1,\modularout/\modularin)}$ and $\gamma=0.2\sqrt{\max(\modularout,\modularin)}$. Show that with the third factor all updates have entrywise RMS $0.2$, and that a hidden $\modularh\times\modularh$ matrix needs a base learning rate $\propto\modularh^{-1/2}$ for width-independent feature changes. What does the second factor do to the down-projection of a transformer's MLP, of shape $d\times4d$?\label{ex:modular:muonscale}
+
+\item \variation (Weight decay under $\mu$P.) With decoupled weight decay, $W\leftarrow(1-\eta_l\lambda_l)W-\eta_lU$, the weights are an exponential moving average of the updates with time scale $1/(\eta_l\lambda_l)$ steps (\cref{ch:decay}). Show that keeping this time scale fixed while $\eta_l\propto1/\modularh$ requires $\lambda_l\propto\modularh$, and compare with the advice of \textcite{WangAitchison2025} that the optimal weight decay grows with model size under $\mu$P learning rates.\label{ex:modular:decay}
+
+\item \variation (Curvature of a nonlinearity.) Let $\phi=\tanh$ and $u=0$. (a) For $\dot u=\sqrt m\,e_1\in\R^m$, which has $\norm{\dot u}_\rms=1$, compute $\norm{\phi''(u+t\dot u)\odot\dot u\odot\dot u}_\rms$ at a small $t\ne0$ and show that it grows like $\sqrt m$. (b) For $\dot u$ with entries $\pm1$, show that it stays bounded. (c) Conclude that a width-independent smoothness constant in RMS units needs a condition on $\norm{\dot u}_\infty$, and discuss which updates of \cref{thm:modular:widthrules} satisfy it.\label{ex:modular:curvature}
+
+\item \simulation (Alignment over training.) Modify \texttt{04-modular-transfer.py} to record, for the hidden matrix at widths $64$ to $1024$, the alignment ratio $\norm{\Delta W_2h_1}_\rms/(\norm{\Delta W_2}_{\rms\to\rms}\norm{h_1}_\rms)$ averaged over the batch, and the stable rank $\norm{\Delta W_2}_F^2/\norm{\Delta W_2}_{\op}^2$ of the update, at steps $1,10,50,150$, for Adam in $\mu$P and for spectral steps. Observe that the ratio of Adam's update starts near the rank-one value and decays, and explain why the spectral update's ratio is bounded below by the fraction of the input that lies in its row space.\label{ex:modular:align}
+
+\item \simulation (Breaking transfer.) In \texttt{04-modular-transfer.py}: (a) replace the factor $\sqrt{\modularout/\modularin}$ of the spectral steps by $0.2\sqrt{\max(\modularout,\modularin)}$ and measure the slope of the optimum (prediction: $-1/2$); (b) give the output layer of the $\mu$P configurations the standard initialization and observe the effect on the optimum and on the loss; (c) double the number of steps and check whether the slopes of \cref{fig:modular:widthrules}(a) change.\label{ex:modular:break}
+
+\item \research (A norm for attention.) Self-attention is not a linear layer: the logits are quadratic in the query and key weights and the softmax is Lipschitz only in a range of logits. Propose a norm on $(W_Q,W_K,W_V,W_O)$ under which one normalized step changes the attention output by a width-independent amount, derive the scaling of the logits it implies (the $1/d$ versus $1/\sqrt d$ question of \textcite{Lingle2024}), and test it against the alignment measurements of \cref{ex:modular:align}. As far as we know, no derivation of the attention norm from the feature-learning desideratum alone is accepted.\label{ex:modular:attention}
+
+\item \research (Exponents beyond alignment.) Suppose that after $t$ steps the update of a hidden layer has stable rank $r(t,\modularh)$ and alignment ratio $\kappa(t,\modularh)$ with the features. Derive the width exponents of \cref{tab:modular:rules} as functions of the growth rates of $r$ and $\kappa$, and compare with the exponents measured by \textcite{EverettEtAl2024}. A model in which $r$ and $\kappa$ are derived rather than measured is open.\label{ex:modular:research}
+\end{exercises}
+
+\notesandrefs
+The scale of initial weights was tied to the fan-in long before width became a variable: \textcite{GlorotBengio2010} chose variances that keep activations and gradients of constant size through depth. Wide networks became a theory with the neural tangent kernel \parencite{JacotGabrielHongler2018}, in which features do not move, and with the mean-field limit of two-layer networks \parencite{MeiMontanariNguyen2018}, in which they do; \textcite{ChizatOyallonBach2019} showed that the difference is a matter of scaling. \Textcite{YangHu2021} classified the parametrizations of networks of every depth into those with a kernel limit and those that learn features, singled out $\mu$P, and extended the program to adaptive optimizers with \textcite{YangLittwin2023}. $\mu$Transfer \parencite{YangEtAl2021} made the classification a tuning procedure, used, for example, for the Cerebras-GPT models \parencite{DeyEtAl2023}.
+
+Per-layer normalized steps came first from large-batch training: LARS \parencite{YouGitmanGinsburg2017} and LAMB \parencite{YouEtAl2020} rescale each layer's step to a fixed fraction of its weights. \Textcite{BernsteinEtAl2020} derived such relative steps from a bound on the change of a deep network's function, deep relative trust, and \textcite{Flynn2017} analysed descent with layerwise norms. \Textcite{YangSimonBernstein2023} replaced the tensor-program derivation of $\mu$P by the spectral condition, a few lines of linear algebra, which \cref{thm:modular:spectralcondition} follows; \textcite{LargeEtAl2024} built the modular norm for general architectures and the Modula library, and \textcite{BernsteinNewhouse2024,BernsteinNewhouse2025} wrote the optimizers in use as steepest descent in such norms and computed the duality maps of linear, embedding and convolutional layers. \Textcite{Newhouse2025} presents this line in a thesis. Muon's shape factor is in \textcite{JordanEtAl2024}, and the RMS-matching variant in \textcite{LiuEtAl2025}. \Textcite{PethickEtAl2025} develop optimizers built on linear minimization oracles over norm balls, with a norm for deep architectures chosen layer by layer for transfer across model sizes.
+
+\Cref{lem:modular:nocancel} and its use in \cref{thm:modular:spectralcondition}(iii) are, as far as we know, not stated in this form in the literature, although the alignment of the steps of different layers is implicit in the arguments of \textcite{YangSimonBernstein2023}. The constants of \cref{fig:modular:widthrules}(b)--(c) are our computation. The empirical record on transfer is large and moving fast; the studies of \textcite{EverettEtAl2024}, \textcite{Lingle2024}, \textcite{KossonEtAl2026} and \textcite{BjorckEtAl2025} are the place to start, and depth is treated in \textcite{BordelonEtAl2024}, \textcite{YangEtAl2024} and \textcite{DeyEtAl2025}.
+
+\paragraph{Translating the literature.} \Textcite{YangSimonBernstein2023} write $n_\ell$ for the width of layer $\ell$ (our $d_l$) and $\norm{\cdot}_*$ for the \emph{spectral} norm, which is our $\norm{\cdot}_{\op}$; in this book a star always marks a dual norm. Their Desideratum~1, $\norm{h_\ell}_2=\Theta(\sqrt{n_\ell})$ and $\norm{\Delta h_\ell}_2=\Theta(\sqrt{n_\ell})$, is our $\norm{h_l}_\rms,\norm{\Delta h_l}_\rms=\Theta(1)$, and their Condition~1 is our $\norm{W_l}_{\rms\to\rms},\norm{\Delta W_l}_{\rms\to\rms}=\Theta(1)$. \Textcite{YangHu2021} write each weight as a width-dependent multiplier times a trainable matrix whose initialization and learning rate also scale with the width $n$ (an ``abc-parametrization''); multiplier, initialization and learning rate can be traded for one another without changing the dynamics, which is why the same dynamics appears in different tables, and our \cref{tab:modular:rules} puts all width dependence into the initialization and the per-layer learning rates. ``Fan-in'' and ``fan-out'' are our $d_{l-1}$ and $d_l$, the ``width multiplier'' is $\modularh$ divided by the proxy's width. \Textcite{LargeEtAl2024} and \textcite{BernsteinNewhouse2025} call the map $g\mapsto\argmax_{\norm t=1}\ip{g,t}$ the duality map, which is $-\lmo(g)$ here, and the scales of our max norm are computed in their framework from the masses and sensitivities of the modules. \Textcite{PethickEtAl2025} take the linear minimization oracle over a norm ball of radius $\rho$, which is $\rho$ times our $\lmo$. Muon's documentation writes the shape of a weight matrix as $A\times B$, our $\modularout\times\modularin$.
+
+\printchapterbib
+\end{refsection}

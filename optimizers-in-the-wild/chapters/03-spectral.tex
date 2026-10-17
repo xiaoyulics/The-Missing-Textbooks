@@ -1,0 +1,450 @@
+% Chapter 3 of Optimizers in the Wild: orthogonalized updates (Muon, Shampoo, Newton--Schulz).
+\newcommand{\spectralrnuc}{r_{\mathrm{nuc}}}
+\newcommand{\spectralrst}{r_{\mathrm{st}}}
+
+\casechapter{Orthogonalized Updates}{The spectral norm, Muon and Newton--Schulz}{Muon and Shampoo}{ch:spectral}
+\begin{refsection}[chapters/03-spectral.bib]
+
+\begin{chaptersummary}
+Muon trains the hidden weight matrices of a network by replacing each matrix's momentum with an approximately orthogonal matrix, computed by five steps of a matrix polynomial; Shampoo computes the same matrix when it keeps no memory. We model one weight matrix trained by steepest descent under the spectral norm and prove four things: the steepest direction is the polar factor $UV^\top$ of the gradient, and for a rank-deficient gradient the steepest directions form a whole face of the unit ball; memoryless Shampoo returns the polar factor; the cubic Newton--Schulz iteration converges to it from a Frobenius-normalized start, while Muon's quintic never converges and holds the singular values in $[0.681,1.203]$; and on a linear layer a spectral step guarantees more decrease than a gradient step exactly when the gradient's nuclear rank exceeds the stable rank of the layer's inputs. The theory concerns one matrix and one step: it nearly locates the crossover between the two methods in a solvable case, misjudges it for generic targets, and says nothing about why the advantage of matrix optimizers shrinks with scale.
+\end{chaptersummary}
+
+\section{In the wild: an optimizer that orthogonalizes}\label{sec:spectral:wild}
+
+Adam updates each entry of a weight matrix on its own, as if the matrix were a list of numbers. Since 2024 another kind of optimizer has spread through the training of language models: it treats each weight matrix as a linear map and replaces its update by an orthogonal matrix. The best known is \term{Muon}\index{Muon}, described by Keller Jordan and coauthors in a blog post of 2024 after it had set speed records on two community benchmarks \parencite{JordanEtAl2024Muon}. The name stands for MomentUm Orthogonalized by Newton--Schulz.\sidenote{The reference code calls its orthogonalization routine \texttt{zeropower\_via\_newtonschulz5}: for $G=U\Sigma V^\top$ the target $UV^\top$ is $U\Sigma^0V^\top$, the ``zeroth power'' of $G$ \parencite{Jordan2024}.}
+
+\begin{practice}[Muon, \textcite{JordanEtAl2024Muon}, code \textcite{Jordan2024}; Moonlight, \textcite{LiuEtAl2025Muon}]
+For each hidden weight matrix $W\in\R^{d_{\mathrm{out}}\times d_{\mathrm{in}}}$ (convolution filters flattened to matrices) with gradient $G_t$: set $M_t=\beta M_{t-1}+(1-\beta)G_t$ with $\beta=0.95$ and $N_t=(1-\beta)G_t+\beta M_t$ (Nesterov form); cast $N_t$ to bfloat16, divide it by its Frobenius norm, and apply five times $X\leftarrow aX+b(XX^\top)X+c(XX^\top)^2X$ with $(a,b,c)=(3.4445,-4.7750,2.0315)$; step $W\leftarrow W-\eta\sqrt{\max(1,d_{\mathrm{out}}/d_{\mathrm{in}})}\,X$ with $\eta=0.02$ by default. Train embeddings, output layer, gains and biases with AdamW. At scale (Moonlight, 2025): add decoupled weight decay ($0.1$ in the released code) and use the factor $0.2\sqrt{\max(d_{\mathrm{out}},d_{\mathrm{in}})}$ instead, so that the update has the same root-mean-square size for every shape and shares AdamW's learning rate and weight decay.
+\end{practice}
+
+The coefficients are not those of a textbook iteration. According to the documentation of the reference code they make the slope of the polynomial at zero as large as possible, beyond the point where the iteration converges to one, so that the output is not $UV^\top$ but roughly $US'V^\top$ with the diagonal of $S'$ spread over $[0.5,1.5]$, which in the author's experience does not hurt \parencite{Jordan2024}. \Cref{prop:spectral:quintic} says exactly what the five steps do.
+
+\begin{observation}[Muon at small and at large scale]\label{obs:spectral:records}
+(i) On the NanoGPT speedrun, which trains a transformer of the size of GPT-2 small to a fixed validation loss as fast as possible, Muon improved the record by a factor of $1.35$; on a CIFAR-10 speedrun it cut the time to $94\%$ accuracy from $3.3$ to $2.6$ A100-seconds \parencite{JordanEtAl2024Muon,Jordan2024}. (ii) In Moonshot AI's scaling-law experiments Muon matched AdamW with about $52\%$ of the training FLOPs, and it trained Moonlight, a mixture of experts with 3B active and 16B total parameters, on 5.7T tokens \parencite{LiuEtAl2025Muon}; Kimi K2, with 1T total and 32B active parameters, was pre-trained on 15.5T tokens with a variant, MuonClip, and its report states that the run had no loss spike \parencite{KimiTeam2025}. (iii) In experiments up to 4B parameters Muon kept its data efficiency at batch sizes far beyond the critical batch size, better than AdamW \parencite{ShahEtAl2025}. (iv) Shampoo, which computes the same update when its memory is switched off (\cref{prop:spectral:shampoo}), won the external-tuning ruleset of the AlgoPerf competition \parencite{KasimbegEtAl2025}.
+\end{observation}
+
+These are records, company reports and one competition, not controlled comparisons, and (ii) and (iii) come from groups that use the method. The second observation is about the matrices.
+
+\begin{observation}[Spread-out gradients, flat updates]\label{obs:spectral:shape}
+The gradients of hidden weight matrices of transformers have a few dominant singular values and a long tail. Low-rank methods such as GaLore, which project each gradient onto a subspace of small dimension, rest on the first fact \parencite{ZhaoEtAl2024GaLore}. In NanoGPT-scale training, \textcite{DavisDrusvyatskiy2025} find that the activations entering a layer keep a low stable rank throughout training, while the gradients keep a large ratio $\norm{G}_{\nuc}/\norm{G}_F$. Muon's update has all but its smallest singular values in a band around one.
+\end{observation}
+
+The two facts about gradients are compatible: singular values $(1,\eps,\dots,\eps)$ with $k$ copies of $\eps=k^{-1/2}$ give $\norm{G}_F^2/\norm{G}_{\op}^2=2$ but $\norm{G}_{\nuc}^2/\norm{G}_F^2=(1+\sqrt k)^2/2$. An update that keeps the singular vectors and sets every singular value to one gives the tail the weight of the head. A third observation pulls the other way.
+
+\begin{observation}[The advantage shrinks with scale; \textcite{WenEtAl2026Fantastic}]\label{obs:spectral:shrink}
+In a comparison of ten optimizers on language models of $0.1$B to $1.2$B parameters, trained on one to eight times the Chinchilla-optimal amount of data with every optimizer's hyperparameters tuned, the matrix-based optimizers, Muon and SOAP among them, were the fastest; but their speedup over well-tuned AdamW fell from about $1.4\times$ at $0.1$B parameters to about $1.1\times$ at $1.2$B.
+\end{observation}
+
+This is one careful study on one data distribution, and no theorem we know explains it. The questions of this chapter are the ones the recipe raises. Why orthogonalize an update? Why does Shampoo, a preconditioner, produce the same matrix? How do five multiplications by a matrix polynomial produce something close to an orthogonal matrix, and why are Muon's coefficients not ones that converge? And when does a step that discards the singular values of the gradient beat the gradient itself?
+
+\section{The idealization: steepest descent on one matrix}\label{sec:spectral:model}
+
+Fix one weight matrix and freeze the rest of the network. The parameter is $W\in\R^{m\times n}$, with $m=d_{\mathrm{out}}$ and $n=d_{\mathrm{in}}$ for a layer $x\mapsto Wx$, and $\R^{m\times n}$ carries the inner product $\ip{A,B}=\tr(A^\top B)=\sum_{ij}A_{ij}B_{ij}$, so that the gradient $G=\nabla\Loss(W)$ is again an $m\times n$ matrix. The singular values $\sigma_1(W)\ge\sigma_2(W)\ge\dots\ge0$ define the \term{spectral norm}\index{spectral norm} $\norm{W}_{\op}=\sigma_1(W)$, the operator norm from $\ell_2$ to $\ell_2$; the Frobenius norm $\norm{W}_F=(\sum_i\sigma_i(W)^2)^{1/2}$, the Euclidean norm of the entries; and the \term{nuclear norm}\index{nuclear norm} $\norm{W}_{\nuc}=\sum_i\sigma_i(W)$. Measuring vectors by their root-mean-square size $\norm{x}_{\rms}=\norm{x}_2/\sqrt{\dim x}$ gives the \term{RMS-to-RMS norm}\index{RMS-to-RMS norm}
+\[
+  \norm{W}_{\rms\to\rms}=\sup_{x\ne0}\frac{\norm{Wx}_{\rms}}{\norm{x}_{\rms}}=\sqrt{\frac nm}\,\norm{W}_{\op},
+\]
+the factor by which the layer can enlarge the typical size of an input coordinate. As in \cref{ch:steepest}, a norm turns a gradient into a step through the linear minimization oracle $\lmo(G)\in\argmin_{\norm{D}\le1}\ip{G,D}$: normalized steepest descent $W_{t+1}=W_t+\eta\lmo(G_t)$ takes a step of length $\eta$ in the chosen norm, and unnormalized steepest descent is $W_{t+1}=W_t-\eta G_t^\sharp$ with $G^\sharp=-\norm{G}_*\lmo(G)$. The step size $\eta$ is the learning rate of the practice box.
+
+\begin{assumption}[One matrix, spectral geometry]\label{ass:spectral:smooth}
+The loss $\Loss\colon\R^{m\times n}\to\R$ is bounded below and differentiable, and its gradient is $L_{\op}$-smooth with respect to the spectral norm: $\norm{\nabla\Loss(W)-\nabla\Loss(W')}_{\nuc}\le L_{\op}\norm{W-W'}_{\op}$ for all $W,W'$. When the Frobenius geometry is compared, $L_F$ is the constant with the Frobenius norm on both sides.
+\end{assumption}
+
+The nuclear norm on the left is the dual of the spectral norm (\cref{thm:spectral:lmo}). The comparison with gradient descent in \cref{sec:spectral:whenhelps} uses the loss of one linear layer with frozen inputs, $\Loss(W)=\frac1{2n}\norm{WX-Y}_F^2$, for which both constants can be computed.
+
+\begin{dictionary}
+a matrix $W\in\R^{m\times n}$ with the spectral norm & one hidden weight matrix (an attention projection, an MLP matrix, a flattened convolution)\\
+the gradient $G$ & the Nesterov combination of momentum and gradient that Muon orthogonalizes\\
+the polar factor $\polar(G)=UV^\top$ & the output of Newton--Schulz, exact only after many steps\\
+a normalized step of length $\eta$ in $\norm\cdot_{\op}$ & Muon's learning rate, ``in units of spectral norm per update''\\
+the RMS-to-RMS norm & how far a layer's outputs move per unit input; Muon's factor $\sqrt{\max(1,d_{\mathrm{out}}/d_{\mathrm{in}})}$\\
+normalized singular values $\sigma_i/\norm{G}_F$ & what Newton--Schulz sees after the normalization\\
+nuclear rank of $G$; stable rank of the inputs $X$ & how many directions carry the gradient; the effective dimension of the activations entering the layer\\
+$L_{\op}$ versus $L_F$ & the curvature felt by a spectral step and by a gradient step
+\end{dictionary}
+
+\paragraph{The optimizers.} Three optimizers are steepest descent in the spectral norm, with different ingredients.
+
+\begin{fieldguide}{Muon}{\textcite{JordanEtAl2024Muon}}
+\fgrow{update}{$M_t=\beta M_{t-1}+(1-\beta)G_t$, \ $N_t=(1-\beta)G_t+\beta M_t$, \ $W_{t+1}=W_t-\eta\,c_{\mathrm{shape}}\,\mathrm{NS}_5(N_t)$ with $c_{\mathrm{shape}}=\sqrt{\max(1,d_{\mathrm{out}}/d_{\mathrm{in}})}$}
+\fgrow{norm}{spectral; RMS-to-RMS when $d_{\mathrm{out}}\ge d_{\mathrm{in}}$ (\cref{prop:spectral:rms})}
+\fgrow{preconditioner}{none: orthogonalization is the duality map of the norm (\cref{thm:spectral:lmo})}
+\fgrow{averages}{moving average of $G$, $\beta=0.95$, Nesterov form (\cref{ch:momentum})}
+\fgrow{state}{one matrix per weight matrix}
+\fgrow{in the wild}{$\mathrm{NS}_5$: five quintic Newton--Schulz steps in bfloat16; $\eta=0.02$; AdamW for embeddings, output layer and gains; weight decay and update-size matching at scale}
+\fgrow{caution}{orthogonalization is approximate: singular values in $[0.681,1.203]$ (\cref{prop:spectral:quintic})}
+\end{fieldguide}
+
+\begin{fieldguide}{Shampoo}{\textcite{GuptaKorenSinger2018}}
+\fgrow{update}{$L_t=L_{t-1}+G_tG_t^\top$, \ $R_t=R_{t-1}+G_t^\top G_t$ (from $L_{-1}=R_{-1}=\eps I$), \ $W_{t+1}=W_t-\eta L_t^{-1/4}G_tR_t^{-1/4}$}
+\fgrow{norm}{spectral when memoryless (\cref{prop:spectral:shampoo})}
+\fgrow{preconditioner}{Kronecker-factored, from $L_t$ and $R_t$ (\cref{ch:kronecker})}
+\fgrow{averages}{sums, or moving averages, of $GG^\top$ and $G^\top G$}
+\fgrow{state}{an $m\times m$ and an $n\times n$ matrix per weight matrix}
+\fgrow{in the wild}{distributed implementations; the AlgoPerf external-tuning winner}
+\end{fieldguide}
+
+\begin{fieldguide}{Spectral descent}{\textcite{CarlsonEtAl2015a,CarlsonEtAl2015b}}
+\fgrow{update}{$W_{t+1}=W_t-\eta\norm{G_t}_{\nuc}\polar(G_t)$: unnormalized steepest descent in the spectral norm}
+\fgrow{norm}{spectral (Schatten-$\infty$) on weight matrices}
+\fgrow{preconditioner}{none at first; a preconditioned variant for deep networks (2015b)}
+\fgrow{in the wild}{restricted Boltzmann machines (2015a), feedforward and convolutional networks (2015b)}
+\end{fieldguide}
+
+\paragraph{What was thrown away.} The other layers, which share the step size and interact through the forward pass, are \cref{ch:modular}'s subject; the noise of minibatch gradients and the momentum that averages it, \cref{ch:momentum}'s; weight decay, \cref{ch:decay}'s. Here gradients are exact and memory is off. We keep two features that are often idealized away, because they are where Muon departs from exact steepest descent: the orthogonalization is a polynomial iteration with few steps, and it runs in low precision. For the comparison with gradient descent we freeze the layer's inputs and use the square loss, which makes the layer a quadratic problem whose two smoothness constants are explicit: the smallest model in which the two geometries can disagree about which step is better.
+
+\paragraph{What one had to notice.} A weight matrix acts on vectors, and what a training step must control is how much the layer's outputs change, an operator norm of the update, not the Euclidean norm of its entries.\sidenote{The RMS-to-RMS version of this requirement, with updates of spectral norm proportional to $\sqrt{d_{\mathrm{out}}/d_{\mathrm{in}}}$, is the spectral condition for feature learning of \textcite{YangSimonBernstein2023}; the modular norm of \textcite{LargeEtAl2024} extends it to whole networks (\cref{ch:modular}).} Once the norm is chosen, duality forces the update: the steepest direction is the polar factor \parencite{CarlsonEtAl2015a,BernsteinNewhouse2024}. The second thing to notice is computational: the polar factor is an odd function of the matrix, so odd polynomials, which need only matrix products, can approximate it.
+
+\section{The theory: the polar factor and how to compute it}\label{sec:spectral:theory}
+
+Throughout, $G\in\R^{m\times n}$ is nonzero of rank $r$ with compact singular value decomposition $G=U_r\Sigma V_r^\top$: the columns $u_1,\dots,u_r$ of $U_r$ and $v_1,\dots,v_r$ of $V_r$ are orthonormal, and $\Sigma=\diag(\sigma_1,\dots,\sigma_r)$ with $\sigma_1\ge\dots\ge\sigma_r>0$. We complete $U_r$ and $V_r$ to orthogonal matrices $[U_r\ U_\perp]$ and $[V_r\ V_\perp]$. The \term{polar factor}\index{polar factor} is $\polar(G)=U_rV_r^\top$, and $\polar(0)=0$; it does not depend on the choice of singular vectors, because $\polar(G)=G(G^\top G)^{-1/2}$ with the inverse square root taken on the range (\cref{prop:spectral:shampoo}), and $G=\polar(G)(G^\top G)^{1/2}$ is the polar decomposition of \cref{thm:toolkit:polar}.
+
+\subsection{The steepest direction}
+
+\begin{theorem}[Spectral steepest descent]\label{thm:spectral:lmo}
+Let $G\in\R^{m\times n}$ be nonzero, of rank $r$, with the notation above.
+\begin{enumerate}
+\item $\max\{\ip{G,D}:\norm{D}_{\op}\le1\}=\norm{G}_{\nuc}$. Hence the dual of the spectral norm is the nuclear norm, and the dual of the nuclear norm is the spectral norm.
+\item The maximizers are exactly the matrices
+\begin{equation}\label{eq:spectral:face}
+  D=U_rV_r^\top+U_\perp WV_\perp^\top,\qquad W\in\R^{(m-r)\times(n-r)},\quad\norm{W}_{\op}\le1 .
+\end{equation}
+The maximizer is unique, and then equal to $\polar(G)$, if and only if $r=\min(m,n)$.
+\item Among the maximizers, $\polar(G)$ is the unique one of least Frobenius norm and the unique one of least rank. So $\lmo_{\op}(G)=-\polar(G)$ is a valid oracle, the only one when $G$ has full rank; with this choice $G^\sharp=\norm{G}_{\nuc}\polar(G)$, and normalized and unnormalized steepest descent in the spectral norm are $W_{t+1}=W_t-\eta\polar(G_t)$ and $W_{t+1}=W_t-\eta\norm{G_t}_{\nuc}\polar(G_t)$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to expand $\ip{G,D}$ along the singular vectors of $G$, bound each term by $\norm{D}_{\op}$, and read off when every bound is attained. Since $G=\sum_{i\le r}\sigma_iu_iv_i^\top$ and $\ip{uv^\top,D}=u^\top Dv$,
+\begin{equation}\label{eq:spectral:expand}
+  \ip{G,D}=\sum_{i=1}^r\sigma_i\,u_i^\top Dv_i ,\qquad u_i^\top Dv_i\le\norm{Dv_i}_2\le\norm{D}_{\op},
+\end{equation}
+by the Cauchy--Schwarz inequality.
+
+(i) If $\norm{D}_{\op}\le1$, every term of \eqref{eq:spectral:expand} is at most $\sigma_i$, so $\ip{G,D}\le\norm{G}_{\nuc}$; for $D=U_rV_r^\top$, which has $\norm{D}_{\op}=1$ and $Dv_i=u_i$, every term equals $\sigma_i$. The maximum over the unit ball is the dual norm, and the second claim holds because every norm is the dual of its dual (\cref{lem:toolkit:dualnorm}).
+
+(ii) Let $\norm{D}_{\op}\le1$ attain the maximum. The terms are at most $\sigma_i>0$ and add up to $\sum_i\sigma_i$, so $u_i^\top Dv_i=1$ for each $i\le r$. Then $1=u_i^\top(Dv_i)\le\norm{Dv_i}_2\le1$, and equality in the Cauchy--Schwarz inequality forces $Dv_i=u_i$; the same argument applied to $D^\top$ gives $D^\top u_i=v_i$. In the bases $[U_r\ U_\perp]$ and $[V_r\ V_\perp]$ the blocks of $D$ are therefore $U_r^\top DV_r=I_r$, $U_\perp^\top DV_r=U_\perp^\top U_r=0$, $U_r^\top DV_\perp=(D^\top U_r)^\top V_\perp=V_r^\top V_\perp=0$, and $W\defeq U_\perp^\top DV_\perp$, with $\norm{W}_{\op}\le\norm{D}_{\op}\le1$: $D$ has the form \eqref{eq:spectral:face}. Conversely, a matrix of the form \eqref{eq:spectral:face} is $\diag(I_r,W)$ in these bases, so its spectral norm is $\max\{1,\norm{W}_{\op}\}=1$, and it satisfies $Dv_i=u_i$, so $\ip{G,D}=\norm{G}_{\nuc}$. The set is a single point exactly when $W$ is an empty matrix, that is, when $m=r$ or $n=r$.
+
+(iii) In the same bases $\norm{D}_F^2=r+\norm{W}_F^2$ and $\rank D=r+\rank W$, both smallest exactly when $W=0$. The oracle is the negative of a maximizer. For the sharp operator, every $D$ satisfies $\ip{G,D}-\frac12\norm{D}_{\op}^2\le\norm{G}_{\nuc}\norm{D}_{\op}-\frac12\norm{D}_{\op}^2\le\frac12\norm{G}_{\nuc}^2$, with equality if and only if $\norm{D}_{\op}=\norm{G}_{\nuc}$ and $D/\norm{D}_{\op}$ is a maximizer; $D=\norm{G}_{\nuc}\polar(G)$ is one (\cref{lem:toolkit:conjugate}).
+\end{proof}
+
+An orthogonalized update keeps the singular vectors of the gradient and discards its singular values: every direction $u_iv_i^\top$ in which the loss decreases receives the same step, however small its $\sigma_i$. For a rank-deficient gradient, the rule for a linear layer trained on a batch of $B<\min(m,n)$ examples, each of which contributes a rank-one term $\delta x^\top$, the steepest directions form the face \eqref{eq:spectral:face} of the unit ball, and the polar factor is its most conservative point: it moves nothing outside the row and column spaces of $G$.\sidenote{The face \eqref{eq:spectral:face} is the subdifferential of the nuclear norm at $G$, as \cref{lem:toolkit:subdiff} predicts for every norm: the maximizers of $\ip{G,\cdot}$ over the unit ball of a norm are the subgradients of the dual norm at $G$.} And the guarantees of \cref{ch:steepest} measure the gradient in the nuclear norm.
+
+\begin{proposition}[Memoryless Shampoo is orthogonalized descent]\label{prop:spectral:shampoo}
+Take negative powers of positive semidefinite matrices on their range (positive eigenvalues are raised to the power, zero eigenvalues stay zero). For every nonzero $G$,
+\[
+  (GG^\top)^{-1/4}G(G^\top G)^{-1/4}=(GG^\top)^{-1/2}G=G(G^\top G)^{-1/2}=\polar(G),
+\]
+and for $\eps>0$, $(\eps I+GG^\top)^{-1/4}G(\eps I+G^\top G)^{-1/4}=U_r\diag\bigl(\sigma_i(\sigma_i^2+\eps)^{-1/2}\bigr)V_r^\top$.
+\end{proposition}
+
+\begin{proof}
+From $GG^\top=U_r\Sigma^2U_r^\top$ and $G^\top G=V_r\Sigma^2V_r^\top$ we get $(GG^\top)^{-1/4}=U_r\Sigma^{-1/2}U_r^\top$ and $(G^\top G)^{-1/4}=V_r\Sigma^{-1/2}V_r^\top$, so the first product is $U_r\Sigma^{-1/2}\Sigma\Sigma^{-1/2}V_r^\top=U_rV_r^\top$, and the other two are $U_r\Sigma^{-1}\Sigma V_r^\top$ and $U_r\Sigma\Sigma^{-1}V_r^\top$. With damping, $(\eps I+GG^\top)^{-1/4}=U_r(\Sigma^2+\eps I)^{-1/4}U_r^\top+\eps^{-1/4}U_\perp U_\perp^\top$, and the second term vanishes against $G$ because $U_\perp^\top U_r=0$; the right factor acts in the same way.
+\end{proof}
+
+\term{Shampoo}\index{Shampoo} preconditions the gradient by fourth roots of the accumulated statistics $L_t=\eps I+\sum_{s\le t}G_sG_s^\top$ and $R_t=\eps I+\sum_{s\le t}G_s^\top G_s$ \parencite{GuptaKorenSinger2018}. Keeping only the current gradient and letting $\eps\to0$ turns its update into $-\eta\polar(G_t)$: memoryless Shampoo is Muon without momentum \parencite{BernsteinNewhouse2024}. The damped version maps each singular value to $\sigma(\sigma^2+\eps)^{-1/2}$, near one for $\sigma\gg\eps^{1/2}$ and near $\sigma\eps^{-1/2}$ for $\sigma\ll\eps^{1/2}$: a soft polar factor that, like Newton--Schulz with few steps, does not lift the smallest singular values. Accumulation is \cref{ch:kronecker}'s subject.
+
+\begin{corollary}[A deterministic rate]\label{cor:spectral:rate}
+Under \cref{ass:spectral:smooth}, $W_{t+1}=W_t-\eta\polar(\nabla\Loss(W_t))$ satisfies, for every $T\ge1$ and $\eta>0$,
+\[
+  \frac1T\sum_{t<T}\norm{\nabla\Loss(W_t)}_{\nuc}\le\frac{\Loss(W_0)-\Loss^\star}{\eta T}+\frac{L_{\op}\eta}2 ,
+\]
+which is $\sqrt{2L_{\op}(\Loss(W_0)-\Loss^\star)/T}$ at the best $\eta$.
+\end{corollary}
+
+\begin{proof}
+With $G_t=\nabla\Loss(W_t)$, the descent lemma in the spectral norm (\cref{lem:toolkit:descent}), $\ip{G_t,\polar(G_t)}=\norm{G_t}_{\nuc}$ and $\norm{\polar(G_t)}_{\op}\le1$ give $\Loss(W_{t+1})\le\Loss(W_t)-\eta\norm{G_t}_{\nuc}+\frac12L_{\op}\eta^2$. Sum over $t<T$ and use $\Loss(W_T)\ge\Loss^\star$.
+\end{proof}
+
+This is the spectral case of the rate of \cref{ch:steepest} for normalized steepest descent (\cref{thm:steepest:descent}). With stochastic gradients and momentum the analysis of \cref{ch:momentum} applies in every norm, and the published analyses of Muon follow that pattern \parencite{LiHong2025,Kovalev2025,ShenEtAl2025,PethickEtAl2025}. Why the spectral norm rather than the Frobenius norm, or the $\ell_\infty$ norm of \cref{ch:sign}? Because it controls what a step does to the outputs.
+
+\begin{proposition}[The RMS-to-RMS norm]\label{prop:spectral:rms}
+Let $W\in\R^{m\times n}$ act on inputs $x\in\R^n$, and let $\Delta W\ne0$.
+\begin{enumerate}
+\item $\norm{\Delta W\,x}_{\rms}\le\norm{\Delta W}_{\rms\to\rms}\norm{x}_{\rms}$ with $\norm{\Delta W}_{\rms\to\rms}=\sqrt{n/m}\,\norm{\Delta W}_{\op}$, with equality if and only if $x$ is a right singular vector of $\Delta W$ for its largest singular value or $x=0$; for $\Delta W=\sigma uv^\top$, if and only if $x$ is parallel to $v$.
+\item $\lmo_{\rms\to\rms}(G)=-\sqrt{m/n}\,\polar(G)$, so the normalized step $\Delta W=-\eta\sqrt{m/n}\,\polar(G)$ changes every output by at most $\eta\norm{x}_{\rms}$ in RMS, whatever the widths.
+\item If $m\ge n$ and $\rank G=n$, this step changes every output by exactly $\eta\norm{x}_{\rms}$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) Since $\norm{\Delta Wx}_2^2=x^\top\Delta W^\top\Delta W\,x\le\sigma_1(\Delta W)^2\norm{x}_2^2$, with equality exactly on the top eigenspace of $\Delta W^\top\Delta W$,
+\[
+  \norm{\Delta Wx}_{\rms}=\frac{\norm{\Delta Wx}_2}{\sqrt m}\le\frac{\norm{\Delta W}_{\op}\norm{x}_2}{\sqrt m}=\sqrt{\frac nm}\,\norm{\Delta W}_{\op}\norm{x}_{\rms}.
+\]
+(ii) The unit ball of $\norm\cdot_{\rms\to\rms}$ is the spectral ball of radius $\sqrt{m/n}$, so its oracle is $\sqrt{m/n}$ times that of \cref{thm:spectral:lmo}; the bound follows from (i). (iii) If $\rank G=n\le m$, then $V_r$ is square and orthogonal, so $\norm{\polar(G)x}_2=\norm{V_r^\top x}_2=\norm{x}_2$ and $\norm{\Delta Wx}_{\rms}=\eta\sqrt{m/n}\,\norm{x}_2/\sqrt m=\eta\norm{x}_{\rms}$.
+\end{proof}
+
+So Muon's shape factor converts the spectral norm into the RMS-to-RMS norm: for $d_{\mathrm{out}}\ge d_{\mathrm{in}}$ its step is the normalized RMS-to-RMS step of size $\eta$, and by (iii) a full-rank update moves every input's output by exactly $\eta$ in RMS. For $d_{\mathrm{out}}<d_{\mathrm{in}}$ the reference code uses the factor one, a step of RMS-to-RMS norm $\eta\sqrt{d_{\mathrm{in}}/d_{\mathrm{out}}}>\eta$. Moonlight's factor normalizes another quantity: a full-rank polar factor has entrywise RMS $\norm{\polar(G)}_F/\sqrt{mn}=\max(m,n)^{-1/2}$, so $0.2\sqrt{\max(m,n)}\,\polar(G)$ has entrywise RMS $0.2$ for every shape, like a sign-type update, and its RMS-to-RMS norm grows like $\sqrt{d_{\mathrm{in}}}$ when $d_{\mathrm{out}}\ge d_{\mathrm{in}}$. Which rule keeps the best learning rate fixed as the width grows is \cref{ch:modular}'s question.
+
+\subsection{Computing the polar factor}
+
+A singular value decomposition is slow on accelerators built for matrix products. But the polar factor maps singular values to one and keeps singular vectors, and odd matrix polynomials act on singular values in the same way.
+
+\begin{lemma}[Odd polynomials act on singular values]\label{lem:spectral:oddpoly}
+For an odd polynomial $p(s)=\sum_{j=0}^Jc_js^{2j+1}$ and $X\in\R^{m\times n}$ put $p(X)=\sum_jc_j(XX^\top)^jX$. If $X=UDV^\top$ with $U^\top U=I$, $V^\top V=I$ and $D$ diagonal, then $p(X)=U\,p(D)\,V^\top$. Hence the iteration $X_{k+1}=p_{k+1}(X_k)$ from $X_0=G/\gamma$, $\gamma>0$, satisfies $X_k=U_r\diag\bigl(p_k\circ\dots\circ p_1(\sigma_i/\gamma)\bigr)V_r^\top$.
+\end{lemma}
+
+\begin{proof}
+By induction on $j$, $(XX^\top)^jX=(UD^2U^\top)^jUDV^\top=UD^{2j+1}V^\top$, using only $U^\top U=I$; summing gives $p(X)=Up(D)V^\top$. The diagonal $p(D)$ may have negative or zero entries, but the identity needs only $U^\top U=V^\top V=I$, so induction on $k$ applies.
+\end{proof}
+
+The \term{Newton--Schulz iteration}\index{Newton--Schulz iteration} for the polar factor uses the cubic $p(s)=\frac32s-\frac12s^3$, the first-order correction toward $X^\top X=I$; Muon's quintic has a steeper start.\sidenote{\textcite{Schulz1933} gave the iteration $X\leftarrow X(2I-AX)$ for the inverse of $A$, which named the family; the cubic iteration for the orthogonal factor appears in \textcite{BjorckBowie1971}, and in machine learning it is also called Bj\"orck orthogonalization. \Textcite[Chapter 8]{Higham2008} treats iterations for the polar decomposition.} A quintic step costs three matrix products, $XX^\top$, its square and the product with $X$, and Muon transposes tall matrices so that $XX^\top$ is the smaller Gram matrix.
+
+\begin{theorem}[Newton--Schulz]\label{thm:spectral:ns}
+Let $G\ne0$ have rank $r$, condition number $\kappa=\sigma_1/\sigma_r$ and stable rank $\spectralrst(G)=\norm{G}_F^2/\norm{G}_{\op}^2$. Let $p(s)=\frac32s-\frac12s^3$, $X_0=G/\gamma$ and $X_{k+1}=\frac32X_k-\frac12X_kX_k^\top X_k$.
+\begin{enumerate}
+\item If $\gamma>\sigma_1/\sqrt3$, then $X_k\to\polar(G)$.
+\item If $\gamma\ge\sigma_1$, for instance $\gamma=\norm{G}_F$, then for each $s_i=\sigma_i/\gamma\in(0,1]$ the sequence $p^{\circ k}(s_i)$ is nondecreasing with limit $1$, and
+\[
+  \norm{X_k-\polar(G)}_{\op}=1-p^{\circ k}(s_r),\qquad 1-p(s)=\tfrac12(1-s)^2(2+s).
+\]
+\item Let $\gamma=\norm{G}_F$, $0<\eps<\frac23$, and write $\lceil x\rceil_+=\max\{0,\lceil x\rceil\}$. Then $\norm{X_k-\polar(G)}_{\op}\le\eps$ for every
+\[
+  k\ \ge\ \Bigl\lceil\frac{\log\bigl(\kappa\sqrt{\spectralrst(G)}/2\bigr)}{\log(11/8)}\Bigr\rceil_+ +\Bigl\lceil\log_2\frac{\log(2/(3\eps))}{\log(4/3)}\Bigr\rceil .
+\]
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to reduce to the scalar map with \cref{lem:spectral:oddpoly} and then follow $s\mapsto p(s)$: a monotone climb toward one, then quadratic convergence. By the lemma, $X_k-\polar(G)=U_r\diag(p^{\circ k}(s_i)-1)V_r^\top$, so $\norm{X_k-\polar(G)}_{\op}=\max_i\abs{p^{\circ k}(s_i)-1}$.
+
+Since $p(s)=\frac12s(3-s^2)$ and $p'(s)=\frac32(1-s^2)$, the map increases on $[0,1]$ from $p(0)=0$ to $p(1)=1$ and decreases on $[1,\sqrt3]$ to $p(\sqrt3)=0$; so $p$ maps $(0,\sqrt3)$ into $(0,1]$. On $(0,1)$, $p(s)/s=\frac12(3-s^2)>1$, so $s<p(s)<1$; a sequence started in $(0,1]$ is nondecreasing and bounded by one, and its limit is a fixed point of $p$ in $(0,1]$, which must be $1$ because $p(s)=s$ forces $s^2=1$. A start in $(1,\sqrt3)$ is mapped into $(0,1)$ by one step. This proves (i). In (ii) all $s_i$ lie in $(0,1]$, and because $p$ is increasing there the sequence from $s_r$ stays the smallest; the factorization of $1-p$ is checked by expanding.
+
+For (iii), $s_r=\sigma_r/\norm{G}_F=1/(\kappa\sqrt{\spectralrst(G)})$. While $s\le\frac12$, $p(s)/s\ge\frac{11}8$; and once $s\ge\frac12$, $p(s)\ge p(\frac12)=\frac{11}{16}>\frac12$, so the sequence never returns below $\frac12$. Hence after $k_1$ steps, $k_1$ the first term in (iii), $p^{\circ k_1}(s_r)\ge\frac12$: either an earlier iterate exceeded $\frac12$, or all were at most $\frac12$ and $p^{\circ k_1}(s_r)\ge(\frac{11}8)^{k_1}s_r\ge\frac12$. From then on, $e_j=1-p^{\circ(k_1+j)}(s_r)\in[0,\frac12]$ satisfies $e_{j+1}=\frac12e_j^2(3-e_j)\le\frac32e_j^2$ by (ii), so $f_j=\frac32e_j$ has $f_{j+1}\le f_j^2$ and $f_0\le\frac34$. Thus $e_j\le\frac23(\frac34)^{2^j}$, which is at most $\eps$ once $2^j\ge\log(2/(3\eps))/\log(4/3)$.
+\end{proof}
+
+The Frobenius normalization is safe, since $\norm{G}_F\ge\norm{G}_{\op}$, and cheap; it costs a factor $\sqrt{\spectralrst(G)}$ in the smallest normalized singular value, which is small for the low-stable-rank gradients of \cref{obs:spectral:shape}. The climb is what is slow: near zero the cubic multiplies a singular value by only $\frac32$ per step, so lifting $s=10^{-2}$ above $\frac12$ takes ten steps and reaching an error of $10^{-3}$ takes fourteen (the bound gives eighteen). Zero singular values stay zero, so in exact arithmetic the iteration returns the polar factor even for rank-deficient $G$, the most conservative point of the face \eqref{eq:spectral:face}.
+
+\begin{proposition}[Muon's quintic does not converge]\label{prop:spectral:quintic}
+Let $q(s)=as+bs^3+cs^5$ with $(a,b,c)=(3.4445,-4.7750,2.0315)$, with positive critical points $s_1=0.5545\ldots$ and $s_2=1.0501\ldots$.
+\begin{enumerate}
+\item $q>0$ on $(0,\infty)$; $q$ increases on $[0,s_1]$, decreases on $[s_1,s_2]$ and increases on $[s_2,\infty)$.
+\item $J=[q(s_2),q(s_1)]=[0.6818\ldots,1.2023\ldots]$ satisfies $q(J)=J'\subseteq J$ with $J'=[0.6818\ldots,1.1344\ldots]$, and $q(J')=J'$.
+\item If $s\in(0,1]$ and $q^{\circ k}(s)\ge q(s_2)$, then $q^{\circ j}(s)\in J$ for all $j\ge k$. After five steps every $s\ge1.6\cdot10^{-3}$ lies in $J$, and every $s\ge5.2\cdot10^{-3}$ lies in $J'$.
+\item The fixed points of $q$ in $(0,\infty)$ are $s_a=0.8680\ldots$ and $s_b=1.2637\ldots$, with $q'(s_a)=-1.58\ldots$ and $q'(s_b)=6.47\ldots$. For no $s\in(0,1]$ outside a countable set do the iterates $q^{\circ k}(s)$ converge.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to locate the critical and fixed points through quadratics in $u=s^2$ and to follow a lower envelope of the iterates by monotonicity; decimals are evaluations of explicit expressions. (i) $q(s)/s=a+bu+cu^2$ has discriminant $b^2-4ac=-5.19\ldots<0$, so $q>0$; $q'(s)=a+3bu+5cu^2$ is positive at $u=0$ and vanishes at $u=s_1^2=0.3075\ldots$ and $u=s_2^2=1.1028\ldots$.
+
+(ii) and (iii). By (i), for $0<\ell\le s_1$ the values of $q$ on $[\ell,q(s_1)]$ lie in $[\min\{q(\ell),q(s_2)\},q(s_1)]$: on $[\ell,s_1]$ they lie between $q(\ell)$ and $q(s_1)$, on $[s_1,s_2]$ between $q(s_2)$ and $q(s_1)$, and on $[s_2,q(s_1)]$ between $q(s_2)$ and $q(q(s_1))=0.9465\ldots$. For $s_1<\ell\le q(s_1)$ only the last two pieces occur, and the values lie in $J$. As $q(s_2)>s_1$, this gives $q(J)\subseteq J$; the maximum of $q$ on $J$ is at its left end, where $q$ decreases, and equals $q(q(s_2))=1.1344\ldots$, which identifies $q(J)=J'$, and the same computation gives $q(J')=J'$. Now start from $[s,1]\subseteq[s,q(s_1)]$: after $k$ steps the iterates of every point of $[s,1]$ lie in $[q^{\circ k}(s),q(s_1)]$ while the envelope $q^{\circ k}(s)$ stays below $s_1$, and in $J$ from the first $k$ with $q^{\circ k}(s)\ge q(s_2)$. Since $q$ increases on $[0,s_1]$, it suffices to check the left ends: $q^{\circ5}(1.6\cdot10^{-3})=0.718\ldots$ and $q^{\circ4}(5.2\cdot10^{-3})=0.6823\ldots$ exceed $q(s_2)$, and one more step maps $J$ into $J'$.
+
+(iv) The fixed points solve $a-1+bu+cu^2=0$, with roots $u=0.7535\ldots$ and $u=1.5970\ldots$. If $q^{\circ k}(s)\to s^*$, then $s^*$ is a fixed point by continuity, and it lies in the closed interval $J$, which excludes $s_b$; so $s^*=s_a$. As $\abs{q'(s_a)}>1$, there are $\delta>0$ and $\rho>1$ with $\abs{q(x)-s_a}\ge\rho\abs{x-s_a}$ for $\abs{x-s_a}<\delta$; iterates that stay within $\delta$ of $s_a$ without reaching it move away geometrically, so some iterate equals $s_a$. Then $s$ lies in $\bigcup_kq^{-k}(\{s_a\})$, which is countable because a point has at most five preimages under $q$.
+\end{proof}
+
+The quintic makes a deliberate trade. Its slope at zero is $3.4445$ instead of $\frac32$, so $s=10^{-2}$ passes $\frac12$ after four steps instead of ten, and five steps bring every normalized singular value above $1.6\cdot10^{-3}$ into $[0.681,1.203]$. The price is that $q(1)=0.701$, so one is not a fixed point, and the fixed points that exist repel: the singular values of the output never settle, they move about inside $J$. The documentation's spread over $[0.5,1.5]$ is a loose description of this band.
+
+\begin{remark}[Better polynomials and faster products]\label{rem:spectral:pe}
+A different polynomial can be used at each step. \Textcite{AmselEtAl2026} choose at step $k$ the odd quintic closest to the constant one in the worst case over the interval $[\ell_k,u_k]$ that contains the singular values, and prove that this greedy choice is optimal among compositions; their code starts from $\ell_0=10^{-3}$ and adds a safety factor against rounding. Their \term{Polar Express}\index{Polar Express} polynomials oscillate widely at first, mapping $[10^{-3},1]$ onto $[0.008,1.992]$ in one step, and then contract. Gram Newton--Schulz computes the same iterates while iterating on the small Gram matrix $XX^\top$ \parencite{ZhangEtAl2026Gram}.
+\end{remark}
+
+\section{The theory: when a spectral step beats a gradient step}\label{sec:spectral:whenhelps}
+
+When should the singular values of the gradient be discarded? Consider one linear layer $W\in\R^{d_{\mathrm{out}}\times d_{\mathrm{in}}}$ trained on $n$ examples, with inputs $X\in\R^{d_{\mathrm{in}}\times n}$ and targets $Y\in\R^{d_{\mathrm{out}}\times n}$, by
+\[
+  \Loss(W)=\frac1{2n}\norm{WX-Y}_F^2,\qquad A=\frac1nXX^\top\ne0 ,
+\]
+and let $\lambda_1\ge\dots\ge\lambda_{d_{\mathrm{in}}}\ge0$ be the eigenvalues of $A$, with orthonormal eigenvectors $q_1,\dots,q_{d_{\mathrm{in}}}$.
+
+\begin{definition}[Stable rank and nuclear rank]\label{def:spectral:ranks}
+For a nonzero matrix $M$, the \term{stable rank}\index{stable rank} is $\spectralrst(M)=\norm{M}_F^2/\norm{M}_{\op}^2$ and the \term{nuclear rank}\index{nuclear rank} is $\spectralrnuc(M)=\norm{M}_{\nuc}^2/\norm{M}_F^2$. Both lie in $[1,\rank M]$, and each equals $\rank M$ exactly when the nonzero singular values of $M$ are equal.
+\end{definition}
+
+The bounds follow from $\sigma_1^2\le\sum_i\sigma_i^2\le(\rank M)\sigma_1^2$ and, by the Cauchy--Schwarz inequality, $\sum_i\sigma_i^2\le(\sum_i\sigma_i)^2\le(\rank M)\sum_i\sigma_i^2$. For the inputs, $\spectralrst(X)=\tr A/\lambda_1$.
+
+\begin{lemma}[The two smoothness constants of a linear layer]\label{lem:spectral:layer}
+\begin{enumerate}
+\item $\Loss(W+\Delta)=\Loss(W)+\ip{\nabla\Loss(W),\Delta}+\frac12\tr(\Delta A\Delta^\top)$, with $\nabla\Loss(W)=\frac1n(WX-Y)X^\top$.
+\item In every norm, the smallest smoothness constant of $\Loss$ is $\sup\{\tr(\Delta A\Delta^\top):\norm{\Delta}\le1\}$.
+\item $L_F=\lambda_1$ and $L_{\op}=\sum_{i\le k}\lambda_i$ with $k=\min(d_{\mathrm{out}},d_{\mathrm{in}})$; so $L_{\op}=\tr A$ when $d_{\mathrm{out}}\ge\rank A$, for instance when $d_{\mathrm{out}}\ge d_{\mathrm{in}}$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to read everything off the exact quadratic (i), which follows by expanding $\norm{(W+\Delta)X-Y}_F^2$ with $\norm{\Delta X}_F^2=\tr(\Delta XX^\top\Delta^\top)$. (ii) By (i), $\nabla\Loss(W+\Delta)-\nabla\Loss(W)=\Delta A$, and $\beta(\Delta,\Delta')=\ip{\Delta A,\Delta'}$ is a positive semidefinite bilinear form. With $S=\sup_{\norm Z\le1}\beta(Z,Z)$, the Cauchy--Schwarz inequality for $\beta$ gives $\norm{\Delta A}_*=\sup_{\norm{\Delta'}\le1}\beta(\Delta,\Delta')\le S\norm{\Delta}$, and $\norm{\Delta A}_*\ge\beta(\Delta,\Delta)/\norm{\Delta}$ shows that no smaller constant works. (iii) With rows $\delta_j$ of $\Delta$, $\tr(\Delta A\Delta^\top)=\sum_j\delta_j^\top A\delta_j\le\lambda_1\norm{\Delta}_F^2$, with equality at $\Delta=e_1q_1^\top$. For the spectral norm put $P=\Delta^\top\Delta$ and $w_i=q_i^\top Pq_i$, so that $\tr(\Delta A\Delta^\top)=\sum_i\lambda_iw_i$. If $\norm{\Delta}_{\op}\le1$, then $0\preceq P\preceq I$ and $\rank P\le k$, so $w_i\in[0,1]$ and $\sum_iw_i=\tr P\le k$, and the sum is at most $\sum_{i\le k}\lambda_i$; $\Delta=\sum_{i\le k}e_iq_i^\top$ attains it and has spectral norm one, as $k\le d_{\mathrm{out}}$.
+\end{proof}
+
+\begin{theorem}[When spectral steps beat Frobenius steps]\label{thm:spectral:whenhelps}
+Let $G=\nabla\Loss(W)\ne0$, and compare the spectral step $-\polar(G)\norm{G}_{\nuc}/L_{\op}$ with the gradient step $-G/L_F$.
+\begin{enumerate}
+\item The spectral step decreases $\Loss$ by at least $\norm{G}_{\nuc}^2/(2L_{\op})$ and the gradient step by at least $\norm{G}_F^2/(2L_F)$. Each step minimizes the upper bound of the descent lemma in its norm, and so does the normalized step of the best length.
+\item The spectral guarantee is the larger if and only if $\spectralrnuc(G)>L_{\op}/L_F$. When $d_{\mathrm{out}}\ge d_{\mathrm{in}}$ this reads
+\[
+  \frac{\norm{G}_{\nuc}^2}{\norm{G}_F^2}>\frac{\norm{X}_F^2}{\norm{X}_{\op}^2},\qquad\text{that is,}\qquad\spectralrnuc(G)>\spectralrst(X):
+\]
+the nuclear rank of the gradient must exceed the stable rank of the inputs.
+\item The actual decreases are $(2-\rho_{\op})$ and $(2-\rho_F)$ times the guarantees, with $\rho_{\op}=\tr(V_r^\top AV_r)/L_{\op}$ and $\rho_F=\tr(GAG^\top)/(L_F\norm{G}_F^2)$ in $(0,1]$. If $d_{\mathrm{out}}\ge d_{\mathrm{in}}=\rank G$, then $\rho_{\op}=1$: the spectral guarantee is attained, and the ratio of the actual decreases lies between $\frac12$ and $1$ times the ratio of the guarantees. The gradient guarantee is attained if and only if every row of $G$ lies in the top eigenspace of $A$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to evaluate the exact quadratic of \cref{lem:spectral:layer}(i) along each step. (i) For a norm with constant $L$, \cref{lem:spectral:layer}(ii) gives $\Loss(W+\Delta)\le\Loss(W)+\ip{G,\Delta}+\frac L2\norm{\Delta}^2$. At fixed length $\norm{\Delta}=\tau$ the smallest $\ip{G,\Delta}$ is $-\tau\norm{G}_*$, at $\Delta=\tau\lmo(G)$, and $-\tau\norm{G}_*+\frac L2\tau^2$ is smallest at $\tau=\norm{G}_*/L$, with value $-\norm{G}_*^2/(2L)$; by \cref{thm:spectral:lmo} this step is $-\polar(G)\norm{G}_{\nuc}/L_{\op}$ in the spectral norm and $-G/L_F$ in the Frobenius norm. (ii) The comparison is $\spectralrnuc(G)>L_{\op}/L_F$, and \cref{lem:spectral:layer}(iii) gives $L_{\op}/L_F=\tr A/\lambda_1=\spectralrst(X)$ when $d_{\mathrm{out}}\ge d_{\mathrm{in}}$.
+
+(iii) Along $-\tau\polar(G)$, $\Loss$ changes by $-\tau\norm{G}_{\nuc}+\frac{\tau^2}2\tr(U_rV_r^\top AV_rU_r^\top)$, and the trace equals $\tr(V_r^\top AV_r)=\rho_{\op}L_{\op}$; at $\tau=\norm{G}_{\nuc}/L_{\op}$ the decrease is $(2-\rho_{\op})\norm{G}_{\nuc}^2/(2L_{\op})$. The same computation along $-G/L_F$ gives the factor $2-\rho_F$. The rows of $G=\frac1n(WX-Y)X^\top$, and hence the columns of $V_r$, lie in the range of $A$, where $A$ is positive definite, so $\rho_F>0$ and $\rho_{\op}>0$. Next, $\rho_F\le1$ because $\tr(GAG^\top)\le\lambda_1\norm{G}_F^2$, with equality exactly when every row of $G$ is an eigenvector for $\lambda_1$; and $\rho_{\op}\le1$ by the argument of \cref{lem:spectral:layer}(iii) applied to $P=V_rV_r^\top$, which has rank $r\le k$. If $\rank G=d_{\mathrm{in}}\le d_{\mathrm{out}}$, then $V_r$ is square and orthogonal and $\tr(V_r^\top AV_r)=\tr A=L_{\op}$; the ratio of actual decreases is then the ratio of guarantees divided by $2-\rho_F\in[1,2)$.
+\end{proof}
+
+A gradient step is limited by the stiffest input direction, through $\lambda_1$, and paid in the Frobenius norm of the gradient; a spectral step is limited by the total input energy $\tr A$ and paid in the nuclear norm. The spectral step wins when the gradient is spread over more directions than the inputs effectively occupy. It needs anisotropic inputs: the rows of $G$ lie in the span of the inputs, so $\spectralrnuc(G)\le\rank A$, and with isotropic inputs, $A=\lambda I$, the stable rank $d_{\mathrm{in}}$ is never beaten, while gradient descent with step $1/\lambda$ solves the problem in one step. This is the comparison of \textcite{DavisDrusvyatskiy2025}. One family makes every quantity explicit.
+
+\begin{proposition}[The aligned case is sign descent on the spectrum]\label{prop:spectral:aligned}
+Let $d_{\mathrm{out}}\ge d_{\mathrm{in}}$, $Y=W_\star X$ and $A=Q\diag(a)Q^\top$ with $Q$ orthogonal and $a_1\ge\dots\ge a_{d_{\mathrm{in}}}>0$, so that $\Loss(W)=\frac12\tr\bigl((W-W_\star)A(W-W_\star)^\top\bigr)$, and let $W_0-W_\star=U\diag(e)Q^\top$ with $U^\top U=I$. Then every iterate of gradient descent and of spectral descent has the form $W_t-W_\star=U\diag(e^{(t)})Q^\top$, and
+\begin{enumerate}
+\item gradient descent with step $\eta$ is $e^{(t+1)}_i=(1-\eta a_i)e^{(t)}_i$, gradient descent on $\frac12\sum_ia_ie_i^2$;
+\item spectral descent with steps $\eta_t$ is $e^{(t+1)}=e^{(t)}-\eta_t\sign(e^{(t)})$, sign descent on the same quadratic (\cref{ch:sign});
+\item with $g_i=a_ie_i$, $\norm{G}_{\nuc}=\norm{g}_1$, $\norm{G}_F=\norm{g}_2$, $L_{\op}=\sum_ia_i$ and $L_F=a_1$, and the criterion of \cref{thm:spectral:whenhelps} becomes $\norm{g}_1^2/\norm{g}_2^2>\sum_ia_i/a_1$, the criterion of \cref{ch:steepest} for preferring $\ell_\infty$ steps to $\ell_2$ steps on a diagonal quadratic.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+If $W-W_\star=U\diag(e)Q^\top$, then $G=(W-W_\star)A=U\diag(a_ie_i)Q^\top$, and $(W-W_\star)(I-\eta A)=U\diag\bigl(e_i(1-\eta a_i)\bigr)Q^\top$. As $U$ and $Q$ have orthonormal columns, the singular values of $G$ are the $\abs{a_ie_i}$ and $\polar(G)=U\diag(\sign(e_i))Q^\top$, with zeros where $e_i=0$. Part (iii) reads the norms off the singular values and uses \cref{lem:spectral:layer}(iii).
+\end{proof}
+
+So the spectral comparison contains the $\ell_\infty$ comparison of \cref{ch:steepest,ch:sign} as its diagonal case, and there Muon is sign descent on the singular values of the error.\index{aligned case} Outside the aligned case the singular vectors of the gradient move from step to step and the reduction fails (\cref{sec:spectral:misses}).
+
+\section{Reading the theory}\label{sec:spectral:reading}
+
+\paragraph{Newton--Schulz, step by step.} \Cref{fig:spectral:ns} draws the maps $p_k\circ\dots\circ p_1$ of \cref{lem:spectral:oddpoly} for $k\le5$ and three iterations, with singular values of matrices iterated in bfloat16 as in Muon's code. The cubic's curves rise like $(\frac32)^ks$ for small $s$ and flatten at one, where the error squares at every step; after five steps only the singular values above $0.27$ are within $10^{-2}$ of one. Muon's curves rise like $3.4445^ks$, overshoot to $1.2$ and fold back; after five steps they fill the band $J$ for every $s$ above $1.6\cdot10^{-3}$, and below it the output stays small, so Muon attenuates the smallest singular directions of its input rather than equalizing them. The Polar Express curves swing between nearly zero and nearly two and then contract: after five steps the singular values with $s\ge10^{-3}$ lie in $[0.857,1.131]$, after six in $[0.9967,1.0016]$. For $k\ge3$ the compositions oscillate faster than the plot resolves, and in the last decade the curves fill their bands.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=8mm},wplot,width=62mm,height=52mm,
+  xmode=log,xmin=1e-4,xmax=1,xtick={1e-4,1e-3,1e-2,1e-1,1},
+  xticklabels={$10^{-4}$,$10^{-3}$,$10^{-2}$,$10^{-1}$,$1$},xlabel={$s=\sigma/\norm{G}_F$},
+  title style={yshift=-1ex}]
+\nextgroupplot[title={cubic Newton--Schulz},ylabel={after $k$ steps},ymin=0,ymax=1.32,ytick={0,0.5,1}]
+\addplot[guide] coordinates {(1e-4,1) (1,1)};
+\addplot[sea!22,line width=0.9pt] table[x=s,y=cub1] {figures/data/03-spectral-ns-curves.dat};
+\addplot[sea!40,line width=0.9pt] table[x=s,y=cub2] {figures/data/03-spectral-ns-curves.dat};
+\addplot[sea!60,line width=0.9pt] table[x=s,y=cub3] {figures/data/03-spectral-ns-curves.dat};
+\addplot[sea!80,line width=0.9pt] table[x=s,y=cub4] {figures/data/03-spectral-ns-curves.dat};
+\addplot[seadeep,line width=1.1pt] table[x=s,y=cub5] {figures/data/03-spectral-ns-curves.dat};
+\addplot[simulation2,mark size=1.2pt] table[x=s,y=cub1] {figures/data/03-spectral-ns-points.dat};
+\addplot[simulation,mark size=1.4pt] table[x=s,y=cub5] {figures/data/03-spectral-ns-points.dat};
+\node[font=\scriptsize,text=seadeep,anchor=south east] at (axis cs:0.06,0.62) {$k=5$};
+\node[font=\scriptsize,text=sea!70,anchor=west] at (axis cs:0.12,0.12) {$k=1$};
+\nextgroupplot[title={Muon's quintic},ymin=0,ymax=1.32,ytick={0,0.5,1}]
+\fill[seamist] (axis cs:1e-4,0.6818) rectangle (axis cs:1,1.2024);
+\addplot[guide] coordinates {(1e-4,1) (1,1)};
+\addplot[sea!22,line width=0.9pt] table[x=s,y=muon1] {figures/data/03-spectral-ns-curves.dat};
+\addplot[sea!40,line width=0.9pt] table[x=s,y=muon2] {figures/data/03-spectral-ns-curves.dat};
+\addplot[sea!60,line width=0.9pt] table[x=s,y=muon3] {figures/data/03-spectral-ns-curves.dat};
+\addplot[sea!80,line width=0.9pt] table[x=s,y=muon4] {figures/data/03-spectral-ns-curves.dat};
+\addplot[seadeep,line width=1.1pt] table[x=s,y=muon5] {figures/data/03-spectral-ns-curves.dat};
+\addplot[simulation2,mark size=1.2pt] table[x=s,y=muon1] {figures/data/03-spectral-ns-points.dat};
+\addplot[simulation,mark size=1.4pt] table[x=s,y=muon5] {figures/data/03-spectral-ns-points.dat};
+\node[font=\scriptsize,text=ink,anchor=north west] at (axis cs:1.2e-4,1.3) {band $J$};
+\nextgroupplot[title={Polar Express},ymin=0,ymax=2.05,ytick={0,0.5,1,1.5,2}]
+\addplot[guide] coordinates {(1e-4,1) (1,1)};
+\addplot[sea!22,line width=0.9pt] table[x=s,y=pe1] {figures/data/03-spectral-ns-curves.dat};
+\addplot[sea!40,line width=0.9pt] table[x=s,y=pe2] {figures/data/03-spectral-ns-curves.dat};
+\addplot[sea!60,line width=0.9pt] table[x=s,y=pe3] {figures/data/03-spectral-ns-curves.dat};
+\addplot[sea!80,line width=0.9pt] table[x=s,y=pe4] {figures/data/03-spectral-ns-curves.dat};
+\addplot[seadeep,line width=1.1pt] table[x=s,y=pe5] {figures/data/03-spectral-ns-curves.dat};
+\addplot[simulation2,mark size=1.2pt] table[x=s,y=pe1] {figures/data/03-spectral-ns-points.dat};
+\addplot[simulation,mark size=1.4pt] table[x=s,y=pe5] {figures/data/03-spectral-ns-points.dat};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{What $k$ steps of three odd-polynomial iterations do to a singular value $s$ of the Frobenius-normalized input. Curves: the compositions $p_k\circ\dots\circ p_1(s)$ for $k=1,\dots,5$, light to dark (for Polar Express, of $s/1.01$, as in its code; coefficients by the recipe of its code). Points: $u_i^\top X_kv_i$ for the singular pairs $(u_i,v_i)$ of six $64\times128$ test matrices with prescribed singular values and random singular vectors (seed 3), iterated in bfloat16 exactly as in Muon's reference code; squares $k=1$, circles $k=5$. In float64 the same iterations agree with the curves to $3\cdot10^{-5}$. Shaded: the band $J=[0.681,1.203]$ of \cref{prop:spectral:quintic}. Script: \texttt{03-spectral-ns.py}.}
+\label{fig:spectral:ns}
+\end{figure}
+
+\paragraph{Where the lemma stops being exact.} In float64 the points lie on the curves; the largest deviation, $3\cdot10^{-5}$, comes from the constant $10^{-7}$ that the code adds to the Frobenius norm. In bfloat16, which keeps eight significant bits, the deviations grow with the slopes of the composed maps: after five steps they stay below $1.5\cdot10^{-3}$ for the cubic and $3.1\cdot10^{-2}$ for Muon's quintic but reach $0.25$ for Polar Express, whose early polynomials are steep near the top of the spectrum and multiply the rounding error of about $2^{-9}$ by their slopes. Below the rounding level the lemma fails differently: rounding perturbs every entry and so seeds every singular direction, and five quintic steps multiply small singular values by up to $3.4445^5\approx490$. An exactly rank-one $256\times512$ input leaves Muon's iteration in bfloat16 with $55$ singular values above $0.1$, the largest spurious one $0.36$ (\cref{ex:spectral:bf16}). These are below one, so to first order the noise lands in the face \eqref{eq:spectral:face}: in bfloat16 Newton--Schulz picks another steepest direction than the polar factor.
+
+\paragraph{The crossover.} \Cref{fig:spectral:crossover} tests \cref{thm:spectral:whenhelps} on the aligned problems of \cref{prop:spectral:aligned}, with $d_{\mathrm{in}}=d_{\mathrm{out}}=128$, input spectrum $a_i=i^{-1/2}$ of stable rank $21.2$, and initial errors $e_i=i^{-\beta}$. As $\beta$ grows the error concentrates on the stiff input directions: the gradient $g_i=i^{-1/2-\beta}$ loses nuclear rank, the spectral step loses its advantage, and gradient descent, which is fast on stiff directions, gains. At $\beta=0$ the error has equal singular values and one spectral step removes it, while gradient descent needs $17$ steps to reach $1\%$ of the initial loss. The theorem predicts the crossover where the nuclear rank of the first gradient equals $21.2$, at $\beta=0.450$; the actual one-step decreases cross at $\beta=0.386$, and the numbers of steps to reach $1\%$ at $\beta=0.388$. The prediction errs in the direction that \cref{thm:spectral:whenhelps}(iii) predicts: the spectral guarantee is attained, while gradient descent beats its own by the factor $2-\rho_F$, which falls from $1.55$ at $\beta=0$ to $1.03$ at $\beta=1.5$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=80mm,height=52mm,xmin=0,xmax=1.5,
+  xlabel={decay $\beta$ of the initial error, $e_i=i^{-\beta}$}]
+\nextgroupplot[ylabel={one-step decrease $/\,\Loss(W_0)$},ymin=0,ymax=1.05]
+\addplot[guide] coordinates {(0.450,0) (0.450,1.05)};
+\addplot[theory] table[x=beta,y=onestep_S] {figures/data/03-spectral-crossover-theory.dat};
+\addplot[theory3] table[x=beta,y=onestep_F] {figures/data/03-spectral-crossover-theory.dat};
+\addplot[theory2] table[x=beta,y=guar_F] {figures/data/03-spectral-crossover-theory.dat};
+\addplot[simulation2] table[x=beta,y=sim_onestep_S] {figures/data/03-spectral-crossover-sim.dat};
+\addplot[simulation] table[x=beta,y=sim_onestep_F] {figures/data/03-spectral-crossover-sim.dat};
+\node[font=\scriptsize,text=sea,anchor=south west] at (axis cs:0.95,0.24) {spectral (exact $=$ guarantee)};
+\node[font=\scriptsize,text=sandline!55!black,anchor=south east] at (axis cs:0.3,0.68) {gradient};
+\node[font=\scriptsize,text=seadeep,anchor=north west] at (axis cs:0.2,0.36) {gradient guarantee};
+\nextgroupplot[ylabel={steps to reach $10^{-2}\Loss(W_0)$},ymin=0,ymax=25]
+\addplot[guide] coordinates {(0.450,0) (0.450,25)};
+\addplot[theory,const plot mark mid] table[x=beta,y=iters_S] {figures/data/03-spectral-crossover-theory.dat};
+\addplot[theory3,const plot mark mid] table[x=beta,y=iters_F] {figures/data/03-spectral-crossover-theory.dat};
+\addplot[simulation2] table[x=beta,y=sim_iters_S] {figures/data/03-spectral-crossover-sim.dat};
+\addplot[simulation] table[x=beta,y=sim_iters_F] {figures/data/03-spectral-crossover-sim.dat};
+\node[font=\scriptsize,text=sea,anchor=west] at (axis cs:0.8,21.5) {spectral};
+\node[font=\scriptsize,text=sandline!55!black,anchor=west] at (axis cs:0.8,5.5) {gradient};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Spectral versus gradient steps on matrix least squares in the aligned case: $128\times128$ matrices, inputs with spectrum $a_i=i^{-1/2}$ (stable rank $21.2$), initial error $U\diag(i^{-\beta})Q^\top$ with Haar-random $U$ and eigenbasis $Q$ (seed 11), both methods with the step sizes of \cref{thm:spectral:whenhelps}. Left: decrease of the loss in the first step, relative to the initial loss. Right: steps to reach $1\%$ of the initial loss. Curves: the scalar recursions of \cref{prop:spectral:aligned}; points (squares spectral, circles gradient): the matrix iterations, with polar factors from a singular value decomposition, which agree with the curves to $6\cdot10^{-16}$ and in every step count. Dashed line: the crossover $\beta=0.450$ predicted by the theorem; the observed crossovers are at $\beta=0.386$ (left) and $0.388$ (right). Script: \texttt{03-spectral-crossover.py}.}
+\label{fig:spectral:crossover}
+\end{figure}
+
+\paragraph{What the numbers say.} Three predictions can be checked before a run. Accurate orthogonalization by the cubic needs about $\log(\kappa\sqrt{\spectralrst(G)})/\log\frac32$ steps, so for low-stable-rank gradients the smallest singular values, not the normalization, set the count. Five steps of Muon's quintic leave the singular values in $[0.681,1.203]$, so the step along different singular directions varies by a factor of up to $1.77$, which costs at most a factor $(0.681/1.203)^2=0.32$ in the guaranteed decrease of \cref{cor:spectral:rate} (\cref{ex:spectral:approx}). And spectral steps pay off on layers whose inputs have a stable rank below the nuclear rank of their gradients, which \cref{obs:spectral:shape} reports for hidden layers. The agreement must fail where the theorem's scope ends: it compares single steps, and \cref{fig:spectral:crossover} is a case in which the singular vectors of the gradient never move.
+
+\section{What the theory misses}\label{sec:spectral:misses}
+
+\paragraph{What was idealized away.} A network has many weight matrices that share a step size and feed into one another (\cref{ch:modular}). The gradients here are exact and memory is off, while Muon averages minibatch gradients with momentum $0.95$, without which a normalized step stalls at a noise floor (\cref{ch:momentum}). Embeddings, the output layer and gains are trained by AdamW for reasons the spectral norm does not supply: an embedding's inputs are one-hot, and its natural norm is not spectral (\cref{ch:modular}). The theorems about the oracle assume exact orthogonalization; \cref{prop:spectral:quintic} and the bfloat16 measurements quantify the gap for one step, not its effect on a run. Weight decay is absent (\cref{ch:decay}). The comparison with gradient descent freezes the layer's inputs, uses the square loss, and compares worst-case guarantees for one step.
+
+\paragraph{Where it breaks.} (1) \emph{One step does not predict many.} In the aligned case of \cref{fig:spectral:crossover} the theorem nearly does, placing the crossover at $\beta=0.45$ instead of $0.39$; for generic targets it does not. With the same inputs and target singular values $i^{-\beta}$, but right singular vectors drawn independently of the eigenvectors of the inputs, the ratio of guarantees stays above $2$ for every $\beta\le0.5$, so the first spectral step always beats the first gradient step; yet in our runs (five seeds) spectral descent needed more steps than gradient descent to reach $1\%$ of the initial loss once $\beta\ge0.4$: $36$ against $17$ at $\beta=0.4$ (\cref{ex:spectral:generic}). A spectral step moves every singular direction by the same amount, overshoots the small ones, and must correct them later, as sign descent does (\cref{ch:sign}); a guarantee for the first step cannot see this. \Textcite{ShenEtAl2025} reach a related conclusion by other means: Muon matches the rate of gradient descent in their star-convex setting and can beat it when the Hessians are of low rank and close to block diagonal. (2) \emph{The advantage shrinks with scale} (\cref{obs:spectral:shrink}), and a theory of one matrix and one step has no scale in it. (3) \emph{Muon at scale needs more than the norm.} Moonshot AI found weight decay crucial for scaling Muon and adjusted the update size per shape \parencite{LiuEtAl2025Muon}; in Kimi K2 attention logits exploded under Muon, and MuonClip rescales the query and key weights after each update to cap them \parencite{KimiTeam2025}. A normalized step bounds the change of a matrix per step, not its accumulated size: after $t$ steps its spectral norm may have grown by $\eta t$, and a logit bilinear in the query and key weights by about $(\eta t)^2$. This is a heuristic reading, not an analysis of those runs. (4) \emph{How exact must the orthogonalization be?} The reference code states that the approximate output does not hurt \parencite{Jordan2024}, while \textcite{AmselEtAl2026} report consistent gains in validation loss for GPT-2-sized models from more accurate polynomials; one-step theory cannot settle the question.
+
+\paragraph{Repairs and open problems.} Better polynomials \parencite{AmselEtAl2026} and cheaper ways to apply them \parencite{ZhangEtAl2026Gram} address the approximation. Norm control addresses the growth of the weights: with decoupled weight decay Muon solves a problem constrained to a spectral-norm ball \parencite{ChenLiLiu2026,PethickEtAl2025}, \cref{ch:decay}'s subject, and Hyperball fixes the Frobenius norms of the weights and of the updates, with token-equivalent speedups of $20$--$30\%$ over weight-decay baselines for Muon in models up to $1.2$B parameters \parencite{WenEtAl2026Hyperball}. Preconditioners with memory, among them SOAP \parencite{VyasEtAl2025}, are \cref{ch:kronecker}'s subject, and convergence with momentum and noise is \cref{ch:momentum}'s \parencite{LiHong2025,Kovalev2025}. Open: a multistep comparison of spectral and Euclidean descent outside the aligned case; why the gradients of trained networks keep a high nuclear rank while their activations keep a low stable rank, which \textcite{DavisDrusvyatskiy2025} prove for spiked random-feature models after a burn-in; why the advantage of matrix optimizers shrinks with scale; and how accurate, and in what precision, the orthogonalization must be.
+
+\section{Back in the wild}\label{sec:spectral:back}
+
+\fieldnotes{Muon orthogonalizes the momentum of each hidden matrix with five quintic Newton--Schulz steps in bfloat16; memoryless Shampoo computes the same matrix.}
+{Steepest descent on one matrix under the spectral (RMS-to-RMS) norm; a linear layer with frozen inputs for the comparison with gradient descent.}
+{The steepest direction is $\polar(G)$, with a whole face of them for rank-deficient $G$; the cubic converges, quadratically after a climb of about $\log_{3/2}(\kappa\sqrt{\spectralrst(G)})$ steps; Muon's quintic never converges and keeps singular values in $[0.681,1.203]$; spectral beats gradient guarantees iff $\spectralrnuc(G)>\spectralrst(X)$.}
+{Newton--Schulz step counts; the band of Muon's update; the crossover in the aligned case ($\beta=0.45$ predicted, $0.39$ observed); full-rank RMS-to-RMS steps move every output by exactly $\eta$.}
+{Momentum and noise, the other layers, many steps outside the aligned case, low precision beyond one step, why gradients keep a high nuclear rank, why the advantage shrinks with scale.}
+{Orthogonalized steps pay off on layers whose inputs have low stable rank and whose gradients are spread over many directions (proved for one step in the idealization); a band of singular values around one is good enough (folklore, supported by the speed records); at scale, add weight decay and an update-size rule (observed).}
+
+What the theory gives a practitioner is a reading of Muon's recipe. The orthogonalization is the duality map of the spectral norm, not an ad hoc normalization, and the factor $\sqrt{\max(1,d_{\mathrm{out}}/d_{\mathrm{in}})}$ converts it to the norm that measures how far a layer's outputs move. The quintic trades accuracy for speed in a precise way, and the cubic, the quintic and Polar Express can be compared on one plot before a single run. The rank criterion says which layers should benefit, at the cost of two singular value decompositions per layer. What the theory does not give is the size of the benefit over a long run, or a reason for its decline with scale.
+
+The rest of the unification line builds on this chapter. \Cref{ch:modular} assembles the layers' norms into a norm for the network and derives the width scaling of each layer's learning rate from \cref{prop:spectral:rms}; \cref{ch:momentum} supplies the momentum and the stochastic analysis that make normalized steps converge; \cref{ch:kronecker} returns to Shampoo with its memory, and to SOAP; and \cref{ch:decay} shows that Muon with weight decay is Frank--Wolfe on a spectral-norm ball.
+
+\begin{exercises}
+\item \consolidation (The face of steepest directions.) (a) For $G=e_1e_1^\top\in\R^{2\times2}$, show that the maximizers of $\ip{G,D}$ over $\norm{D}_{\op}\le1$ are the matrices $\diag(1,w)$ with $\abs w\le1$, and that Newton--Schulz returns $w=0$. (b) Show that all elements of the face \eqref{eq:spectral:face} give the same guarantee in \cref{cor:spectral:rate}, and that for $\Loss(W)=\frac12\norm{W-e_1e_1^\top}_F^2$ at $W=0$ the step $-\eta\diag(1,w)$ gives a loss that depends on $w$.\label{ex:spectral:face}
+
+\item \consolidation (The basin of the cubic.) Let $p(s)=\frac32s-\frac12s^3$. (a) Show that $p^{\circ k}(s)\to1$ for $s\in(0,\sqrt3)$, that $p(\sqrt3)=0$, and that $p^{\circ k}(s)\to-1$ for $s\in(\sqrt3,s_*)$, where $s_*=2.1478\ldots$ solves $p(s_*)=-\sqrt3$; so $(0,\sqrt3)$ is the largest interval $(0,c)$ on which the iteration converges to one. (b) Show that $\abs{p(s)}>s$ for $s>\sqrt5$, and that the iterates then diverge.\label{ex:spectral:basin}
+
+\item \consolidation (The nearest semi-orthogonal matrix.) Let $m\ge n$ and $\cO=\{Q\in\R^{m\times n}:Q^\top Q=I\}$. Show that $\norm{G-Q}_F^2=\norm{G}_F^2+n-2\ip{G,Q}$ on $\cO$ and that $\cO$ lies in the spectral unit ball, and deduce from \cref{thm:spectral:lmo} that the points of $\cO$ nearest to $G$ are those of the face \eqref{eq:spectral:face} with $W^\top W=I$; in particular $\polar(G)$ is the unique nearest one when $\rank G=n$ (\cref{thm:toolkit:polar}).\label{ex:spectral:nearest}
+
+\item \consolidation (One example.) For one example the gradient of a linear layer is $G=\delta x^\top$. (a) Show that $\polar(G)=\delta x^\top/(\norm{\delta}_2\norm{x}_2)$: a memoryless Muon step on one example is a normalized gradient step. (b) For $\Delta W=-\eta\sqrt{m/n}\,\polar(G)$ show that $\norm{\Delta Wx'}_{\rms}=\eta\abs{\cos\angle(x,x')}\norm{x'}_{\rms}$: the step moves the output of the training input by exactly $\eta$ and leaves orthogonal inputs alone.\label{ex:spectral:rankone}
+
+\item \consolidation (Designing a quintic.) For $a\in\R$ let $p_a(s)=as+\frac{5-4a}2s^3+\frac{2a-3}2s^5$. (a) Show that $p_a(1)=1$, $p_a'(1)=0$, $p_a''(1)=8a-15$, and that $a=\frac32$ gives the cubic. (b) Show that $1-p_{15/8}(s)=\frac18(1-s)^3(8+9s+3s^2)$, so that $a=\frac{15}8$ converges cubically near one; it is the polynomial that the Polar Express recipe uses once $[\ell_k,u_k]$ has shrunk to a point. (c) Show that no $p_a$ with Muon's slope $3.4445$ at zero has a local maximum at one, and that Muon's quintic is not of the form $p_a$.\label{ex:spectral:quintic}
+
+\item \consolidation (Approximate orthogonalization.) Let the update be $X=U_r\diag(\tau_i)V_r^\top$ with $\tau_{\min}\le\tau_i\le\tau_{\max}$ instead of $\polar(G)$. (a) Under \cref{ass:spectral:smooth}, show that $\Loss(W-\eta X)\le\Loss(W)-\eta\tau_{\min}\norm{G}_{\nuc}+\frac12L_{\op}\eta^2\tau_{\max}^2$, and that the best guaranteed decrease is $(\tau_{\min}/\tau_{\max})^2$ times that of the polar factor. (b) Evaluate the factor for Muon's band $J$ ($0.32$), for Polar Express after five steps ($0.57$) and for the cubic after five steps on singular values $s\ge0.3$ ($0.99$).\label{ex:spectral:approx}
+
+\item \variation (Schatten norms.) For $1<p<\infty$ and $\norm{G}_{S_p}=\norm{\sigma(G)}_p$, show with \cref{thm:toolkit:vonneumann} that the dual norm is $\norm\cdot_{S_q}$, $\frac1p+\frac1q=1$, and that $\lmo_{S_p}(G)=-U_r\diag(\sigma_i^{q-1})V_r^\top/\norm{\sigma(G)}_q^{q-1}$. Check that $p=2$ gives normalized gradient descent and that the oracle tends to $-\polar(G)$ as $p\to\infty$. Which $p$ moves each singular direction in proportion to $\sigma_i^{1/2}$?\label{ex:spectral:schatten}
+
+\item \variation (Momentum and scale.) (a) Show that $\polar(cM)=\polar(M)$ for $c>0$, and that Muon's Newton--Schulz output is unchanged when its input is multiplied by $c$, up to the constant $10^{-7}$ of the normalization. (b) Deduce that the moving-average form of the practice box and the summed form of Moonlight's code, $B_t=\beta B_{t-1}+G_t$ with input $G_t+\beta B_t$, give the same updates when both start from zero.\label{ex:spectral:momentum}
+
+\item \variation (Weight decay bounds the spectral norm.) Let $W_{t+1}=(1-\eta\lambda)W_t-\eta\polar(G_t)$ with $0<\eta\lambda\le1$. Show that $\norm{W_t}_{\op}\le1/\lambda+(1-\eta\lambda)^t\max\{0,\norm{W_0}_{\op}-1/\lambda\}$, so that the ball $\norm{W}_{\op}\le1/\lambda$ is invariant and attracting, and write the update as a convex combination of $W_t$ and a point of that ball (\cref{ch:decay}).\label{ex:spectral:decay}
+
+\item \simulation (Rounding fills the null space.) Run five steps of Muon's quintic, as in \texttt{03-spectral-ns.py}, in float64 and in bfloat16 on $G=AB$ with Gaussian $A\in\R^{256\times r}$ and $B\in\R^{r\times512}$, $r\in\{1,4,16,64\}$, and count the singular values of the output above $0.1$. In float64 there are exactly $r$; in bfloat16 we found $55$, $99$, $132$ and $170$, the largest spurious one between $0.2$ and $0.36$. Explain this with the rounding error of relative size $2^{-9}$ in each entry and \cref{fig:spectral:ns}.\label{ex:spectral:bf16}
+
+\item \simulation (Generic targets.) Modify \texttt{03-spectral-crossover.py} so that the initial error is $U\diag(i^{-\beta})V^\top$ with $V$ Haar-random and independent of $Q$, and average over five seeds. Check that $\spectralrnuc(G_0)/\spectralrst(X)$ stays above $2$ for $\beta\le0.5$, that gradient descent needs $17$ steps for every $\beta$, and that spectral descent needs about $1$, $5$, $15$, $36$ and $63$ steps at $\beta=0$, $0.2$, $0.3$, $0.4$, $0.5$. Explain why gradient descent does not depend on $\beta$ here, and why the first-step comparison misleads.\label{ex:spectral:generic}
+
+\item \research (Nuclear rank versus stable rank in trained networks.) Measure in a small transformer the nuclear rank of each hidden layer's minibatch gradient and the stable rank of its inputs along training, and test whether the criterion of \cref{thm:spectral:whenhelps} predicts the layers on which Muon helps. \Textcite{DavisDrusvyatskiy2025} prove that the ratio grows with dimension in spiked random-feature models after a burn-in; why trained deep networks keep a high nuclear rank is open.\label{ex:spectral:research1}
+
+\item \research (Polynomials for low precision.) \Textcite{AmselEtAl2026} find the optimal composition of odd polynomials in exact arithmetic. Add a rounding error of relative size $u$ at every multiplication and find the composition of five quintics that minimizes the worst deviation of the output singular values from one on $[\ell,1]$. As far as we know this is open; \cref{fig:spectral:ns} suggests that the answer is less steep than Polar Express in its first steps.\label{ex:spectral:research2}
+\end{exercises}
+
+\notesandrefs
+Steepest descent in the spectral norm entered machine learning with \textcite{CarlsonEtAl2015a}, who trained restricted Boltzmann machines by stochastic spectral descent, and \textcite{CarlsonEtAl2015b}, who added preconditioning for feedforward and convolutional networks. Shampoo is due to \textcite{GuptaKorenSinger2018}; \textcite{KasimbegEtAl2025} analyse the AlgoPerf competition that it won in the external-tuning ruleset. \Textcite{BernsteinNewhouse2024} observed that Adam, Shampoo and Prodigy are steepest descent under particular norms once their moving averages are switched off, and \textcite{BernsteinNewhouse2025} and \textcite{LargeEtAl2024} built norms and duality maps for whole networks.
+
+Muon was introduced by \textcite{JordanEtAl2024Muon}, with the reference code of \textcite{Jordan2024}. \Textcite{LiuEtAl2025Muon} scaled it to Moonlight with weight decay and a per-shape update scale, the Kimi team trained Kimi K2 with MuonClip \parencite{KimiTeam2025}, and \textcite{ShahEtAl2025} studied its compute and batch-size efficiency. Analyses of Muon and related methods include \textcite{LiHong2025}, \textcite{Kovalev2025}, who reads orthogonalized methods as non-Euclidean trust-region methods, \textcite{ShenEtAl2025}, and \textcite{PethickEtAl2025}, whose norm-constrained LMO methods include Muon and the Scion optimizer; \textcite{ChenLiLiu2026} show that Muon with decoupled weight decay solves a spectral-norm-constrained problem. \Textcite{WenEtAl2026Fantastic} benchmark ten optimizers with careful tuning, and \textcite{WenEtAl2026Hyperball} replace weight decay by fixed norms.
+
+The iteration for the inverse is due to \textcite{Schulz1933}, the iterative computation of the best orthogonal approximation to \textcite{BjorckBowie1971}; \textcite{Higham2008} is the standard reference on iterations for matrix functions and the polar decomposition. \Textcite{AmselEtAl2026} derive optimal polynomial compositions for Muon, and \textcite{ZhangEtAl2026Gram} reorganize the iteration around the Gram matrix. The rank comparison is due to \textcite{DavisDrusvyatskiy2025}; the exact constants of \cref{lem:spectral:layer}, the tightness statements of \cref{thm:spectral:whenhelps}(iii) and the aligned reduction of \cref{prop:spectral:aligned} are worked out here, and we know of no earlier reference for them, nor for the invariant band of \cref{prop:spectral:quintic}. GaLore \parencite{ZhaoEtAl2024GaLore} is built on low-rank gradient projections.
+
+\paragraph{Translating the literature.} In Muon's reference code \parencite{Jordan2024} \texttt{G} is the Nesterov combination of momentum and gradient, \texttt{X} our iterate $X_k$ and \texttt{steps} our $k$; \texttt{zeropower\_via\_newtonschulz5} approximates our $\polar(G)$; \texttt{lr} is our $\eta$, ``in units of spectral norm per update''; and \texttt{max(1, rows/cols)**0.5} is $\sqrt{\max(1,d_{\mathrm{out}}/d_{\mathrm{in}})}$ for PyTorch's (out, in) layout of a weight. \Textcite{GuptaKorenSinger2018} write $L_t$ and $R_t$ for the left and right statistics, as in our field guide. Moonlight's code writes $A,B$ for the two dimensions of a weight and scales the learning rate by $0.2\sqrt{\max(A,B)}$. \Textcite{DavisDrusvyatskiy2025} call our nuclear rank the squared nuclear-to-Frobenius ratio of the gradient and compare it with the stable rank of the incoming activations, our $\spectralrst(X)$. The Polar Express code \parencite{AmselEtAl2026} optimizes each polynomial on an interval $[\ell,u]$ of normalized singular values, our $[\ell_k,u_k]$.
+
+\printchapterbib
+\end{refsection}

@@ -1,0 +1,455 @@
+% Chapter 7 of Optimizers in the Wild: Kronecker preconditioners (Shampoo, K-FAC, SOAP).
+
+\casechapter{Kronecker Preconditioners}{Shampoo, K-FAC and SOAP}{Shampoo, K-FAC, SOAP}{ch:kronecker}
+\begin{refsection}[chapters/07-kronecker.bib]
+
+\begin{chaptersummary}
+Shampoo, K-FAC and SOAP precondition the gradient of each weight matrix by two small matrices, one for its rows and one for its columns, instead of the enormous matrix that full-matrix AdaGrad or the Fisher information would need. We study them on the vectorized gradient and on a layer loss whose Hessian is a Kronecker product. We prove that Shampoo's factors dominate full-matrix AdaGrad's statistics up to the rank of the gradients, which gives Shampoo its regret bound; that with stationary statistics a Kronecker preconditioner with power $s$ turns the condition number $\kappa$ into $\kappa^{\abs{1-qs}}$, where $q$ describes the statistics, so that Shampoo's power $1/4$, the power $1/2$ and K-FAC's inverse each win in a different regime; and that SOAP, Adam in Shampoo's eigenbasis, runs on Kronecker curvature as on an isotropic quadratic. The theory does not explain why these methods beat a well-tuned Adam when they do, and their measured advantage shrinks as models grow.
+\end{chaptersummary}
+
+\section{In the wild: two small matrices per layer}\label{sec:kronecker:wild}
+
+Adam treats a weight matrix as a bag of numbers: each entry gets a step size from its own past (\cref{ch:adaptive}), and nothing in the update knows that rows belong to output units and columns to inputs. Full-matrix AdaGrad, which preconditions the vectorized gradient by the inverse square root of the summed outer products of past gradients, captures every correlation between entries, but for an $m\times n$ matrix it needs $(mn)^2$ numbers: $2.8\times10^{14}$ for a $4096\times4096$ layer.\sidenote{At four bytes each, about a petabyte for one layer. Even the diagonal that Adam keeps has $1.7\times10^7$ entries.} The optimizers of this chapter keep one small matrix for the rows and one for the columns, $m^2+n^2$ numbers, and multiply the gradient by them on both sides.
+
+\begin{practice}[Shampoo, \textcite{GuptaKorenSinger2018,AnilEtAl2020}; K-FAC, \textcite{MartensGrosse2015}; SOAP, \textcite{VyasEtAl2025}]
+For each weight matrix $W\in\R^{m\times n}$ with minibatch gradient $G_t$, keep $L_t\in\R^{m\times m}$, a sum or moving average of $G_tG_t^\top$, and $R_t\in\R^{n\times n}$, the same for $G_t^\top G_t$; every so many steps recompute inverse roots, and step $W\leftarrow W-\eta(L_t+\eps I)^{-1/4}G_t(R_t+\eps I)^{-1/4}$ (Shampoo). Large-scale implementations take the step length from Adam or AdaGrad (grafting), add momentum, and some use the power $-1/2$. K-FAC averages $aa^\top$ over a layer's inputs $a$ and $\delta\delta^\top$ over the gradients $\delta$ with respect to its outputs, and steps with $(\E[\delta\delta^\top]+\eps I)^{-1}G_t(\E[aa^\top]+\eps I)^{-1}$, with an adaptive damping $\eps$. SOAP runs Adam on $Q_L^\top G_tQ_R$, where $Q_L$ and $Q_R$ hold eigenvectors of Shampoo's $L_t$ and $R_t$, recomputed every $f$ steps.
+\end{practice}
+
+\Textcite{GuptaKorenSinger2018} introduced \term{Shampoo}\index{Shampoo} for tensors of every order, with one factor per mode and the power $-1/(2k)$ for order $k$, which is $-1/4$ for matrices, and proved its regret bound, the main theorem of this chapter.\sidenote{For a tensor of order $k$ they prove an analogue of \cref{thm:kronecker:bound} with $k$ factors, each raised to the power $1/k$; AdaGrad's square root then gives $1/(2k)$.} \Textcite{AnilEtAl2020} made it practical at scale by computing the roots rarely and in parallel with training, and by grafting its step length onto that of a first-order method \parencite{AgarwalEtAl2020Grafting}; \textcite{ShiEtAl2023} describe a PyTorch implementation. \term{K-FAC}\index{K-FAC} comes from natural gradient descent \parencite{Amari1998}\index{natural gradient}: \textcite{MartensGrosse2015} approximated each layer's block of the Fisher matrix by the Kronecker product of the second moments of the layer's inputs and of its back-propagated gradients, so that inverting it takes two small inversions.\sidenote{\Textcite{GeorgeEtAl2018} kept K-FAC's Kronecker eigenbasis but re-estimated the scale of each eigendirection from the gradients, an eigenvalue-corrected K-FAC that anticipates SOAP.} SOAP \parencite{VyasEtAl2025} is Shampoo with Adam inside.
+
+\begin{observation}[AlgoPerf; \textcite{DahlEtAl2023,KasimbegEtAl2025}]\label[observation]{obs:kronecker:algoperf}
+AlgoPerf measures how long a training algorithm takes to reach fixed validation targets on a set of workloads; in one ruleset the submitters tune hyperparameters within a fixed budget, in the other they may not tune them. In the first competition, with results published in 2025, the tuning ruleset was won by a submission based on Distributed Shampoo \parencite{ShiEtAl2023}.
+\end{observation}
+
+\begin{observation}[Language models; \textcite{VyasEtAl2025,WenEtAl2026Fantastic}]\label[observation]{obs:kronecker:scale}
+On language models with $360$ million and $660$ million parameters trained with large batches, SOAP needed over $40\%$ fewer iterations than AdamW to reach the same loss, and about $20\%$ fewer than Shampoo. A later study that tuned every optimizer separately at every size found that the speedup of matrix-based optimizers over AdamW, SOAP's included, shrinks as the models grow, to about $1.1\times$ at a billion parameters.
+\end{observation}
+
+\begin{observation}[The heuristics carry weight; \textcite{VyasEtAl2025,EschenhagenEtAl2025}]\label[observation]{obs:kronecker:heuristics}
+Shampoo as used differs from Shampoo as analysed: grafting, $\eps$, moving averages in place of sums, the power, and the interval between root computations are all set by experiment. Computing the eigendecomposition less often degrades Shampoo, increasingly with the interval. In an unrefereed preprint, \textcite{EschenhagenEtAl2025} argue that grafting is needed mainly because the eigenvalues of the factors are stale and mis-scaled, and that correcting the eigenvalues directly, as SOAP does, makes grafting unnecessary.
+\end{observation}
+
+These are benchmark results, and \cref{obs:kronecker:scale} is a reminder that a speedup at one scale need not survive at the next. The three methods come with three stories: an online-learning algorithm with a regret bound, an approximation of the natural gradient, and a repair of the first by way of Adam. Why can two small matrices stand in for a large one, and at what price? What do they buy on curvature with Kronecker structure, and which power of them should one take? In an idealization the three methods differ mainly in two choices: the power of the factors, and the basis of a diagonal correction.
+
+\section{The idealization: AdaGrad on the vectorized gradient}\label{sec:kronecker:ideal}
+
+Throughout, $W\in\R^{m\times n}$ is one weight matrix ($m=d_{\mathrm{out}}$ and $n=d_{\mathrm{in}}$ for a linear layer), $G_t$ is its gradient at step $t$, and $g_t=\vect(G_t)\in\R^{mn}$, where $\vect$ stacks the columns. From \cref{lem:toolkit:kron} we use $\vect(MXN)=(N^\top\otimes M)\vect(X)$, so that $\vect(uv^\top)=v\otimes u$; the mixed product rule $(M\otimes N)(M'\otimes N')=MM'\otimes NN'$; that the eigenvalues of $M\otimes N$ are the products of those of $M$ and $N$; that $(M\otimes N)^s=M^s\otimes N^s$ for positive semidefinite $M,N$ and $s>0$; and that $M\otimes N\preceq M'\otimes N'$ when $0\preceq M\preceq M'$ and $0\preceq N\preceq N'$, where $\preceq$ is the Löwner order.\sidenote{Some papers stack rows instead of columns, which reverses the order of every Kronecker product (Exercise~\ref{ex:kronecker:vec}); it is the most common source of transposed formulas in this literature.}
+
+\paragraph{Full-matrix AdaGrad.} With $\Gamma_t=\sum_{\tau\le t}g_\tau g_\tau^\top$, \term{full-matrix AdaGrad}\index{AdaGrad!full-matrix} \parencite{DuchiHazanSinger2011} steps $\vect(W_{t+1})=\vect(W_t)-\eta(\eps I+\Gamma_t)^{-1/2}g_t$: unnormalized steepest descent in the norm $\norm{\cdot}_{P_t}$ with $P_t=(\eps I+\Gamma_t)^{1/2}$ (\cref{ch:adaptive}). \Cref{thm:adaptive:adagrad} gives the regret of the diagonal version; the full-matrix bound $\sqrt2D\tr((\eps I+\Gamma_T)^{1/2})$ follows from the proof of \cref{thm:kronecker:regret} below with $r=1$ and $(\eps I+\Gamma_t)^{1/2}$ as preconditioner. The trouble is the size of $\Gamma_t$. A preconditioner $P_R\otimes P_L$, with $P_L\in\R^{m\times m}$ and $P_R\in\R^{n\times n}$ positive definite, is cheap by comparison: $(P_R\otimes P_L)^{-1}\vect(G)=\vect(P_L^{-1}GP_R^{-1})$.
+
+\begin{definition}[Kronecker preconditioners]\label[definition]{def:kronecker:shampoo}
+Let $\eps>0$ and $s>0$, and let $L_t=\eps I_m+\sum_{\tau\le t}G_\tau G_\tau^\top$ and $R_t=\eps I_n+\sum_{\tau\le t}G_\tau^\top G_\tau$. \term{Shampoo with power $s$} updates $W_{t+1}=W_t-\eta\,L_t^{-s}G_tR_t^{-s}$, which on $\vect(W)$ is preconditioned gradient descent with the \term{Kronecker preconditioner}\index{Kronecker preconditioner} $R_t^s\otimes L_t^s$; Shampoo proper is the case $s=1/4$. A \term{frozen} Kronecker preconditioner uses fixed positive definite $P_L$ and $P_R$ in place of $L_t^s$ and $R_t^s$.
+\end{definition}
+
+Shampoo is to the spectral norm what Adam is to the max norm. With $\eps=0$ and a single gradient its step is $\polar(G_t)$, the steepest direction in the spectral norm and Muon's update without momentum (\cref{prop:spectral:shampoo}); with sums over many gradients it becomes a fixed preconditioner. Adam moves in the same way between sign descent, at $\beta_2=0$, and a fixed diagonal preconditioner (\cref{ch:sign,ch:adaptive}); \cref{prop:kronecker:between} makes the analogy exact \parencite{BernsteinNewhouse2024}. To ask what the factors buy, we need a loss whose curvature they can match.
+
+\begin{assumption}[Kronecker curvature]\label[assumption]{ass:kronecker:quadratic}
+Let $A\in\R^{m\times m}$ and $C\in\R^{n\times n}$ be symmetric positive definite, with eigenvalues $\alpha_1\ge\dots\ge\alpha_m>0$ and $\gamma_1\ge\dots\ge\gamma_n>0$ and condition numbers $\kappa_A=\alpha_1/\alpha_m$ and $\kappa_C=\gamma_1/\gamma_n$. The loss is the \term{Kronecker quadratic}\index{Kronecker quadratic}
+\[
+  \Loss(W)=\tfrac12\tr\bigl((W-W_\star)^\top A\,(W-W_\star)\,C\bigr)=\tfrac12\bigl\lVert A^{1/2}(W-W_\star)C^{1/2}\bigr\rVert_F^2 .
+\]
+\end{assumption}
+
+This is the expected loss of a linear layer $a\mapsto Wa$ whose inputs have second moment $\E[aa^\top]=C$ and whose output enters a loss that is quadratic with Hessian $A$: if $\ell(W;a)=\frac12(Wa-W_\star a)^\top A(Wa-W_\star a)$, then $\E[\ell(W;a)]=\Loss(W)$. A linear layer with a Gaussian likelihood is an instance (\cref{prop:kronecker:kfac}). For a matrix $M$ with positive eigenvalues we write $\kappa(M)=\lmax(M)/\lmin(M)$.
+
+\begin{dictionary}
+$W\in\R^{m\times n}$, its gradients $G_t$, and $\Gamma_T=\sum_tg_tg_t^\top$ & a weight matrix, its minibatch gradients, and full-matrix AdaGrad's statistics, never formed in practice\\
+the factors $L_t$, $R_t$; the rank bound $r$ & Shampoo's two matrices; $r$ is at most the number of examples (or tokens) in a minibatch\\
+the power $s$ & the exponent of the inverse roots: $\frac14$ in the theory, $\frac12$ in some implementations, $1$ in K-FAC\\
+the Kronecker quadratic, $H=C\otimes A$ & a layer with input second moment $C$ and output-side curvature $A$, as K-FAC models it\\
+$\E[gg^\top]\propto H^q$ with $q=1$; with $q=2$ & gradient noise near a minimum when the Fisher matrix is the Hessian; gradients dominated by an isotropic error, as after a random initialization
+\end{dictionary}
+
+\begin{fieldguide}{Shampoo}{\textcite{GuptaKorenSinger2018}}
+\fgrow{update}{$L_t=L_{t-1}+G_tG_t^\top$, \ $R_t=R_{t-1}+G_t^\top G_t$ \ ($L_0=\eps I$, $R_0=\eps I$), \ $W_{t+1}=W_t-\eta\,L_t^{-1/4}G_tR_t^{-1/4}$}
+\fgrow{norm}{spectral when memoryless: with $\eps=0$ and one gradient the step is $\polar(G_t)$ (\cref{ch:spectral})}
+\fgrow{preconditioner}{$R_t^{1/4}\otimes L_t^{1/4}$ on $\vect(W)$; its square dominates $\Gamma_t/r$ (\cref{thm:kronecker:bound})}
+\fgrow{averages}{sums or moving averages of $GG^\top$ and $G^\top G$; in practice also momentum}
+\fgrow{state}{$m^2+n^2$ numbers for the factors of an $m\times n$ matrix, plus their inverse roots}
+\fgrow{in the wild}{power $-\frac14$ or $-\frac12$; roots recomputed infrequently; step length grafted from Adam or AdaGrad}
+\end{fieldguide}
+
+\begin{fieldguide}{K-FAC}{\textcite{MartensGrosse2015}}
+\fgrow{update}{moving averages $\bar S_a$ of $aa^\top$ and $\bar S_\delta$ of $\delta\delta^\top$; \ $W\leftarrow W-\eta(\bar S_\delta+\eps I)^{-1}G(\bar S_a+\eps I)^{-1}$}
+\fgrow{norm}{the Fisher (natural-gradient) norm, approximated layer by layer by a Kronecker product}
+\fgrow{preconditioner}{$\bar S_a\otimes\bar S_\delta$ on $\vect(W)$, damped; power $-1$}
+\fgrow{state}{$m^2+n^2$ numbers per layer, plus inverses}
+\fgrow{in the wild}{targets sampled from the model (Fisher) or from the data (empirical Fisher); adaptive damping; momentum}
+\end{fieldguide}
+
+\begin{fieldguide}{SOAP}{\textcite{VyasEtAl2025}}
+\fgrow{update}{every $f$ steps $Q_L,Q_R\leftarrow$ eigenvectors of moving averages of $GG^\top$, $G^\top G$; every step Adam on $Q_L^\top G_tQ_R$, update rotated back by $D\mapsto Q_LDQ_R^\top$}
+\fgrow{norm}{$\ell_\infty$ in the rotated coordinates when memoryless: sign descent on $Q_L^\top WQ_R$}
+\fgrow{preconditioner}{diagonal in Shampoo's eigenbasis}
+\fgrow{state}{Adam's $2mn$, plus factors and eigenvectors, $2(m^2+n^2)$}
+\fgrow{in the wild}{Adam's $\beta_1,\beta_2$; one extra hyperparameter, the preconditioning frequency $f$}
+\end{fieldguide}
+
+\paragraph{What was thrown away.} Everything but one matrix: the other layers, the nonlinearities, and the couplings between layers that K-FAC's block-diagonal approximation also drops. The curvature is fixed, and in \cref{sec:kronecker:curvature} so are the statistics that build the factors. Momentum, grafting, $\eps$ and the infrequency of the roots are left out, and the regret theory is online and convex. These are the right first simplifications because the Kronecker structure is exact for one linear layer with independent inputs and back-propagated gradients (\cref{prop:kronecker:kfac}), and because stationary statistics are what the sums and averages in the factors estimate: whatever the factors can do, they do best here.
+
+\paragraph{What one had to notice.} Two facts. The accumulated outer products of matrix gradients are dominated, up to the rank, by a Kronecker product of the two Gram sums $\sum GG^\top$ and $\sum G^\top G$; seeing this takes the matrix geometric mean, whose square root, composed with AdaGrad's, is why Shampoo's power is $1/4$. And the per-example gradient of a layer is the rank-one matrix $\delta a^\top$, whose second moment $\E[(aa^\top)\otimes(\delta\delta^\top)]$ factorizes when $a$ and $\delta$ are independent; this is K-FAC's observation, and it makes Shampoo's two factors and K-FAC's two factors estimates of the same two matrices.
+
+\section{The theory: the Kronecker bound and Shampoo's regret}\label{sec:kronecker:bound}
+
+The comparison of Shampoo with full-matrix AdaGrad rests on one gradient at a time.
+
+\begin{lemma}[One gradient]\label[lemma]{lem:kronecker:single}
+Let $G\in\R^{m\times n}$ have rank $r\ge1$, and let $g=\vect(G)$. Then
+\begin{equation}\label{eq:kronecker:single}
+  gg^\top\ \preceq\ r\,(G^\top G)^{1/2}\otimes(GG^\top)^{1/2},
+\end{equation}
+and the factor $r$ cannot be replaced by a smaller number.
+\end{lemma}
+
+\begin{proof}
+The plan is to compute both quadratic forms in the singular basis of $G$ and compare them by the Cauchy--Schwarz inequality. Write a compact singular value decomposition $G=U\Sigma V^\top$, with $U\in\R^{m\times r}$ and $V\in\R^{n\times r}$ having orthonormal columns and $\Sigma=\diag(\sigma_1,\dots,\sigma_r)$ positive, so that $(GG^\top)^{1/2}=U\Sigma U^\top$ and $(G^\top G)^{1/2}=V\Sigma V^\top$. For $X\in\R^{m\times n}$ and $x=\vect(X)$, put $Y=U^\top XV$ and $Z=\Sigma^{1/2}Y\Sigma^{1/2}$. By the vec identity, the right side of \eqref{eq:kronecker:single} without the factor $r$ has the quadratic form
+\[
+  x^\top\bigl((V\Sigma V^\top)\otimes(U\Sigma U^\top)\bigr)x=\ip{X,U\Sigma U^\top XV\Sigma V^\top}=\tr\bigl(Y^\top\Sigma Y\Sigma\bigr)=\norm{Z}_F^2 ,
+\]
+and the left side has $(g^\top x)^2=\ip{G,X}^2=(\tr(\Sigma U^\top XV))^2=(\tr Z)^2$. The Cauchy--Schwarz inequality $(\tr Z)^2=\ip{I_r,Z}^2\le r\norm{Z}_F^2$ proves \eqref{eq:kronecker:single}. Equality holds for $Z=I_r$, that is, for $X=U\Sigma^{-1}V^\top$, where the two forms equal $r^2$ and $r$; so no smaller factor works.
+\end{proof}
+
+For a sum of gradients the two sides of \eqref{eq:kronecker:single} cannot simply be added, because the square root of a sum is not the sum of the square roots; the \term{matrix geometric mean}\index{matrix geometric mean} repairs this. From \cref{thm:toolkit:geomean} we use two facts about the geometric mean $P\#Q$ of positive definite $P$ and $Q$: (G1) if a symmetric $Y$ satisfies $\bigl(\begin{smallmatrix}P&Y\\Y&Q\end{smallmatrix}\bigr)\succeq0$, then $Y\preceq P\#Q$, which is the variational characterization; (G2) if $PQ=QP$, then $P\#Q=(PQ)^{1/2}$.\sidenote{\Textcite{Ando1979} proved the joint concavity of the geometric mean, \textcite{KuboAndo1980} placed it in a general theory of operator means, and \textcite[Chapter~4]{Bhatia2007} gives a modern account.}
+
+\begin{theorem}[The Kronecker bound; \textcite{GuptaKorenSinger2018}]\label{thm:kronecker:bound}
+Let $G_1,\dots,G_T\in\R^{m\times n}$ have rank at most $r\ge1$, let $g_t=\vect(G_t)$ and $\eps>0$, and let $L_T=\eps I_m+\sum_{t=1}^TG_tG_t^\top$ and $R_T=\eps I_n+\sum_{t=1}^TG_t^\top G_t$. Then
+\begin{equation}\label{eq:kronecker:bound}
+  \eps I_{mn}+\frac1r\sum_{t=1}^Tg_tg_t^\top\ \preceq\ \eps I_{mn}+\sum_{t=1}^T(G_t^\top G_t)^{1/2}\otimes(G_tG_t^\top)^{1/2}\ \preceq\ R_T^{1/2}\otimes L_T^{1/2} .
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+The first inequality is \cref{lem:kronecker:single} applied to each $G_t$; gradients equal to zero contribute nothing to either side. For the second, the plan is to write both sides as sums over the same commuting pairs and to apply (G1) once, to the sums. Put $P_0=Q_0=\eps I_{mn}$ and, for $t\ge1$, $P_t=(G_t^\top G_t)\otimes I_m$ and $Q_t=I_n\otimes(G_tG_t^\top)$. By the mixed product rule $P_tQ_t=Q_tP_t=(G_t^\top G_t)\otimes(G_tG_t^\top)$, so each pair commutes, and $Y_t=(P_tQ_t)^{1/2}$ is $(G_t^\top G_t)^{1/2}\otimes(G_tG_t^\top)^{1/2}$ for $t\ge1$ and $\eps I_{mn}$ for $t=0$.
+
+Each block matrix $M_t=\bigl(\begin{smallmatrix}P_t&Y_t\\Y_t&Q_t\end{smallmatrix}\bigr)$ is positive semidefinite: commuting symmetric matrices have a common orthonormal eigenbasis, in which $P_t$, $Q_t$ and $Y_t$ are diagonal with entries $p$, $q$ and $\sqrt{pq}$, so that $M_t$ splits into $2\times2$ blocks $\bigl(\begin{smallmatrix}p&\sqrt{pq}\\\sqrt{pq}&q\end{smallmatrix}\bigr)$ with nonnegative trace and zero determinant. Since $\sum_{t=0}^TP_t=R_T\otimes I_m$ and $\sum_{t=0}^TQ_t=I_n\otimes L_T$,
+\[
+  \sum_{t=0}^TM_t=\begin{pmatrix}R_T\otimes I_m&\sum_tY_t\\\sum_tY_t&I_n\otimes L_T\end{pmatrix}\succeq0 .
+\]
+The diagonal blocks are positive definite, since $\eps>0$, and commute, with product $R_T\otimes L_T$. By (G1) and (G2), $\sum_{t=0}^TY_t\preceq(R_T\otimes L_T)^{1/2}=R_T^{1/2}\otimes L_T^{1/2}$, and $\sum_{t=0}^TY_t$ is the middle term of \eqref{eq:kronecker:bound}.
+\end{proof}
+
+Letting $\eps\to0$, the outer inequality also holds without $\eps$. In words: the square of Shampoo's preconditioner dominates full-matrix AdaGrad's statistics divided by the rank. To see how large the constant is, and what Shampoo does when the statistics themselves are a Kronecker product, it helps to view the factors as functions of $\Gamma$.
+
+\begin{proposition}[Shampoo's factors are partial traces]\label[proposition]{prop:kronecker:partial}
+For positive semidefinite $\Gamma\in\R^{mn\times mn}$ define the \term{partial traces}\index{partial trace} $L(\Gamma)\in\R^{m\times m}$ and $R(\Gamma)\in\R^{n\times n}$ by $\tr(L(\Gamma)M)=\tr(\Gamma(I_n\otimes M))$ and $\tr(R(\Gamma)N)=\tr(\Gamma(N\otimes I_m))$ for all $M\in\R^{m\times m}$ and $N\in\R^{n\times n}$.
+\begin{enumerate}
+\item If $\Gamma=\sum_tg_tg_t^\top$, then $L(\Gamma)=\sum_tG_tG_t^\top$ and $R(\Gamma)=\sum_tG_t^\top G_t$; likewise $L(\E[gg^\top])=\E[GG^\top]$ and $R(\E[gg^\top])=\E[G^\top G]$.
+\item If $\Gamma=\Phi\otimes\Psi$ with $\Phi\in\R^{n\times n}$ and $\Psi\in\R^{m\times m}$ positive semidefinite, then $L(\Gamma)=(\tr\Phi)\Psi$, $R(\Gamma)=(\tr\Psi)\Phi$, and for every $s>0$
+\begin{equation}\label{eq:kronecker:power}
+  R(\Gamma)^s\otimes L(\Gamma)^s=(\tr\Gamma)^s\,\Gamma^s .
+\end{equation}
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The trace pairing determines $L(\Gamma)$ and $R(\Gamma)$, which are linear in $\Gamma$, so for (i) it suffices to take $\Gamma=gg^\top$: then $\tr(gg^\top(I_n\otimes M))=g^\top\vect(MG)=\tr(GG^\top M)$ and $\tr(gg^\top(N\otimes I_m))=g^\top\vect(GN^\top)=\tr(NG^\top G)$. For (ii), $\tr((\Phi\otimes\Psi)(I_n\otimes M))=\tr(\Phi)\tr(\Psi M)$ and $\tr((\Phi\otimes\Psi)(N\otimes I_m))=\tr(\Phi N)\tr(\Psi)$; then \eqref{eq:kronecker:power} follows from $(\Phi\otimes\Psi)^s=\Phi^s\otimes\Psi^s$ and $\tr(\Phi\otimes\Psi)=\tr\Phi\tr\Psi$.
+\end{proof}
+
+So for Kronecker statistics Shampoo's preconditioner is $(\tr\Gamma)^{1/4}\Gamma^{1/4}$, the square root of what full-matrix AdaGrad uses, and the power $1/2$ gives full-matrix AdaGrad's $\Gamma^{1/2}$ up to a scalar. The partial traces have a second reading. The Kronecker product nearest to $\Gamma$ in Frobenius norm is a rank-one approximation of a rearrangement of $\Gamma$ \parencite{VanLoanPitsianis1993}, and one step of the power method for it, started from identity matrices, returns $R(\Gamma)$ and $L(\Gamma)$ (Exercise~\ref{ex:kronecker:constant}). \Textcite{MorwaniEtAl2025} made this observation and found the one-step approximation close to optimal in neural networks, so that the square of Shampoo's preconditioner, not the preconditioner itself, approximates full-matrix AdaGrad.
+
+\begin{proposition}[How large the constant is]\label[proposition]{prop:kronecker:constant}
+For positive semidefinite $\Gamma\ne0$ let $c^\star(\Gamma)$ be the smallest $c$ with $\Gamma\preceq c\,R(\Gamma)^{1/2}\otimes L(\Gamma)^{1/2}$. For gradients of rank at most $r$, \cref{thm:kronecker:bound} gives $c^\star\le r$, with equality for a single gradient of rank $r$ (\cref{lem:kronecker:single}). Moreover:
+\begin{enumerate}
+\item If $G_t=\sum_{i=1}^ks_{ti}u_iv_i^\top$ for orthonormal $u_1,\dots,u_k$, orthonormal $v_1,\dots,v_k$ and a matrix $S=(s_{ti})\in\R^{T\times k}$ without zero columns, then $c^\star$ is the largest eigenvalue of the cosine matrix $D^{-1/2}S^\top SD^{-1/2}$, with $D$ the diagonal of $S^\top S$; it lies between $1$ and $k$.
+\item If $\Gamma=\Phi\otimes\Psi$, then $c^\star=(\lmax(\Gamma)/\tr\Gamma)^{1/2}$, which can be as small as $(mn)^{-1/2}$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan in (i) is to find a common invariant subspace. The vectors $w_i=v_i\otimes u_i=\vect(u_iv_i^\top)$ are orthonormal, $g_t=\sum_is_{ti}w_i$, and $\Gamma=\sum_{i,j}(S^\top S)_{ij}w_iw_j^\top$ vanishes off their span. By orthonormality $L(\Gamma)=\sum_iD_{ii}u_iu_i^\top$ and $R(\Gamma)=\sum_iD_{ii}v_iv_i^\top$, so $K=R(\Gamma)^{1/2}\otimes L(\Gamma)^{1/2}$ has the eigenvectors $w_i$ with eigenvalues $D_{ii}$, and leaves their span invariant. On the span, $\Gamma\preceq cK$ reads $S^\top S\preceq cD$, that is, $D^{-1/2}S^\top SD^{-1/2}\preceq cI$; off it, $\Gamma=0\preceq cK$. A unit diagonal puts the largest eigenvalue between $1$ and the trace $k$. For (ii), \eqref{eq:kronecker:power} with $s=\frac12$ gives $K=(\tr\Gamma)^{1/2}\Gamma^{1/2}$, and $\Gamma\preceq cK$ means $\lambda_i\le c(\tr\Gamma)^{1/2}\lambda_i^{1/2}$ for every eigenvalue $\lambda_i$ of $\Gamma$.
+\end{proof}
+
+The factor $r$ is the price of coherence. A single gradient pays it in full, and so do gradients whose singular coefficients rise and fall together; gradients with independent sign-symmetric coefficients in a shared basis pay about one, and gradients with nearly Kronecker statistics much less than one (\cref{fig:kronecker:constant}). The regret bound uses the worst case.
+
+\begin{lemma}[A matrix AdaGrad inequality]\label[lemma]{lem:kronecker:trace}
+If $M\succ0$ and $N\succeq0$ are symmetric of the same size, then $\tr(M^{-1/2}(M-N))\le2\tr(M^{1/2}-N^{1/2})$. Consequently, if $A_0\succ0$ and $A_t=A_{t-1}+h_th_t^\top$ for vectors $h_1,\dots,h_T$, then $\sum_{t=1}^Th_t^\top A_t^{-1/2}h_t\le2\tr(A_T^{1/2})$.
+\end{lemma}
+
+\begin{proof}
+Expanding the square and using the cyclicity of the trace,
+\[
+  2\tr\bigl(M^{1/2}-N^{1/2}\bigr)-\tr\bigl(M^{-1/2}(M-N)\bigr)=\tr\bigl(M^{-1/2}(M^{1/2}-N^{1/2})^2\bigr),
+\]
+which is $\norm{(M^{1/2}-N^{1/2})M^{-1/4}}_F^2\ge0$. Then $h_t^\top A_t^{-1/2}h_t=\tr(A_t^{-1/2}(A_t-A_{t-1}))\le2\tr(A_t^{1/2}-A_{t-1}^{1/2})$; the sum telescopes, and $-2\tr(A_0^{1/2})\le0$.
+\end{proof}
+
+For $1\times1$ matrices this is \cref{lem:toolkit:adagrad}. The losses are now convex functions $\ell_t$ on $\R^{m\times n}$, revealed one at a time, and the \term{regret}\index{regret} against a fixed $W^\star$ is $\sum_t(\ell_t(W_t)-\ell_t(W^\star))$.
+
+\begin{theorem}[Shampoo's regret; \textcite{GuptaKorenSinger2018}]\label{thm:kronecker:regret}
+Let $\ell_1,\dots,\ell_T$ be convex and differentiable on $\R^{m\times n}$, and run Shampoo ($s=1/4$, $\eps>0$) from $W_1$: $G_t=\nabla\ell_t(W_t)$, with $L_t$ and $R_t$ as in \cref{def:kronecker:shampoo}, and $W_{t+1}=W_t-\eta L_t^{-1/4}G_tR_t^{-1/4}$. Suppose that every $G_t$ has rank at most $r$. Then for every $W^\star$, with $D=\max_{t\le T}\norm{W_t-W^\star}_F$,
+\begin{equation}\label{eq:kronecker:regret}
+  \sum_{t=1}^T\bigl(\ell_t(W_t)-\ell_t(W^\star)\bigr)\ \le\ \Bigl(\frac{D^2}{2\eta}+r\eta\Bigr)\tr\bigl(L_T^{1/4}\bigr)\tr\bigl(R_T^{1/4}\bigr).
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+The plan is the analysis of full-matrix AdaGrad, with \cref{thm:kronecker:bound} at the one place where Shampoo's preconditioner must be compared with AdaGrad's. Write $x_t=\vect(W_t)$, $x^\star=\vect(W^\star)$, $H_t=R_t^{1/4}\otimes L_t^{1/4}$ and $\norm{x}_{H_t}^2=x^\top H_tx$; then $x_{t+1}=x_t-\eta H_t^{-1}g_t$ and $\tr(H_t)=\tr(L_t^{1/4})\tr(R_t^{1/4})$.
+
+\emph{One step.} By convexity $\ell_t(W_t)-\ell_t(W^\star)\le\ip{g_t,x_t-x^\star}$, and expanding $\norm{x_{t+1}-x^\star}_{H_t}^2=\norm{x_t-x^\star-\eta H_t^{-1}g_t}_{H_t}^2$ gives
+\[
+  \ip{g_t,x_t-x^\star}=\frac1{2\eta}\Bigl(\norm{x_t-x^\star}_{H_t}^2-\norm{x_{t+1}-x^\star}_{H_t}^2\Bigr)+\frac\eta2\,g_t^\top H_t^{-1}g_t .
+\]
+
+\emph{The distance terms.} The factors grow, so $L_t^{1/4}\succeq L_{t-1}^{1/4}$ and $R_t^{1/4}\succeq R_{t-1}^{1/4}$ by \cref{thm:toolkit:loewner}, and $H_t\succeq H_{t-1}$ by the monotonicity of Kronecker products. Regrouping the sum by iterates, and then using $v^\top Mv\le\norm{v}_2^2\tr M$ for $M\succeq0$ and telescoping the traces,
+\[
+  \sum_{t=1}^T\Bigl(\norm{x_t-x^\star}_{H_t}^2-\norm{x_{t+1}-x^\star}_{H_t}^2\Bigr)\le\norm{x_1-x^\star}_{H_1}^2+\sum_{t=2}^T\norm{x_t-x^\star}_{H_t-H_{t-1}}^2 ,
+\]
+which is at most $D^2\tr(H_T)$.
+
+\emph{The gradient terms.} Put $A_t=\eps I_{mn}+\frac1r\sum_{\tau\le t}g_\tau g_\tau^\top$. \Cref{thm:kronecker:bound} at time $t$ gives $A_t\preceq R_t^{1/2}\otimes L_t^{1/2}=H_t^2$, hence $A_t^{1/2}\preceq H_t$ by \cref{thm:toolkit:loewner}, and $H_t^{-1}\preceq A_t^{-1/2}$, because inversion reverses the Löwner order: if $0\prec X\preceq Y$, then $Y^{-1/2}XY^{-1/2}\preceq I$, so $Y^{1/2}X^{-1}Y^{1/2}\succeq I$, that is, $X^{-1}\succeq Y^{-1}$. With $h_t=g_t/\sqrt r$, $A_t=A_{t-1}+h_th_t^\top$ and $A_0=\eps I$, so by \cref{lem:kronecker:trace}
+\[
+  \sum_{t=1}^Tg_t^\top H_t^{-1}g_t\le r\sum_{t=1}^Th_t^\top A_t^{-1/2}h_t\le2r\tr\bigl(A_T^{1/2}\bigr)\le2r\tr(H_T).
+\]
+The distance terms over $2\eta$ plus the gradient terms times $\eta/2$ give \eqref{eq:kronecker:regret}.
+\end{proof}
+
+The bound holds for every step size. If the iterates are known to stay within Frobenius distance $D$ of $W^\star$, for instance because every step is followed by a projection, in the norm $\norm{\cdot}_{H_t}$, onto a convex set of Frobenius diameter $D$ (the proof is unchanged, since such a projection does not increase $\norm{x-x^\star}_{H_t}$), then $\eta=D/\sqrt{2r}$ gives $\sqrt{2r}\,D\tr(L_T^{1/4})\tr(R_T^{1/4})$, the form in which \textcite{GuptaKorenSinger2018} state it. Compared with full-matrix AdaGrad, Shampoo pays the factor $\sqrt r$ and replaces $\tr((\eps I+\Gamma_T)^{1/2})$ by the larger $\tr(L_T^{1/4})\tr(R_T^{1/4})$, in exchange for storing $m^2+n^2$ numbers instead of $(mn)^2$.
+
+\section{The theory: Kronecker curvature and the power of the factors}\label{sec:kronecker:curvature}
+
+The regret bound is a guarantee, not a speed. To see what Kronecker preconditioners buy, we run them on the Kronecker quadratic, where everything can be computed.
+
+\begin{proposition}[Kronecker preconditioners on Kronecker curvature]\label[proposition]{prop:kronecker:conditioning}
+Under \cref{ass:kronecker:quadratic}:
+\begin{enumerate}
+\item $\nabla\Loss(W)=A(W-W_\star)C$, and the Hessian of $\Loss$ on $\vect(W)$ is $H=C\otimes A$, with eigenvalues $\alpha_i\gamma_j$ and condition number $\kappa(H)=\kappa_A\kappa_C$.
+\item Let $P_L\in\R^{m\times m}$ and $P_R\in\R^{n\times n}$ be positive definite, and $W_{t+1}=W_t-\eta P_L^{-1}\nabla\Loss(W_t)P_R^{-1}$. The matrices $P_L^{-1}A$ and $P_R^{-1}C$ have positive eigenvalues; let $\mu_{\min}$ and $\mu_{\max}$ be the smallest and largest product of an eigenvalue of the first and one of the second, and $\kappa=\mu_{\max}/\mu_{\min}=\kappa(P_L^{-1}A)\kappa(P_R^{-1}C)$. With $\eta=2/(\mu_{\min}+\mu_{\max})$,
+\begin{equation}\label{eq:kronecker:rate}
+  \Loss(W_t)\le\Bigl(\frac{\kappa-1}{\kappa+1}\Bigr)^{2t}\Loss(W_0)\qquad\text{for every }t\ge0,
+\end{equation}
+with equality for some $W_0\ne W_\star$, and no constant step size gives a smaller factor for every $W_0$.
+\item Gradient descent ($P_L=I$, $P_R=I$) has $\kappa=\kappa_A\kappa_C$; one-sided preconditioning ($P_L=A$, $P_R=I$) has $\kappa=\kappa_C$; K-FAC's two-sided step ($P_L=A$, $P_R=C$) has $\kappa=1$ and with $\eta=1$ reaches $W_\star$ in one step; and frozen Shampoo factors $P_L=L^s$, $P_R=R^s$ with $L=c_LA^q$, $R=c_RC^q$, for constants $c_L,c_R>0$ and $q\ge0$, have $\kappa=(\kappa_A\kappa_C)^{\abs{1-qs}}$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) With $E=W-W_\star$ and symmetric $A$ and $C$, $\Loss(W+\Delta)=\Loss(W)+\ip{AEC,\Delta}+\frac12\tr(\Delta^\top A\Delta C)$, and by the vec identity $\tr(\Delta^\top A\Delta C)=\vect(\Delta)^\top(C\otimes A)\vect(\Delta)$.
+
+(ii) The plan is to symmetrize the iteration and read the rate off its eigenvalues. With $e_t=\vect(W_t-W_\star)$ and $P=P_R\otimes P_L$, $e_{t+1}=(I-\eta P^{-1}H)e_t$. Put $z_t=P^{1/2}e_t$; then $z_{t+1}=(I-\eta S)z_t$ with
+\[
+  S=P^{-1/2}HP^{-1/2}=\bigl(P_R^{-1/2}CP_R^{-1/2}\bigr)\otimes\bigl(P_L^{-1/2}AP_L^{-1/2}\bigr),
+\]
+symmetric positive definite, with eigenvalues the products of those of the two factors, which are those of the similar matrices $P_R^{-1}C$ and $P_L^{-1}A$. The loss is $\frac12e_t^\top He_t=\frac12z_t^\top Sz_t$. In an orthonormal eigenbasis of $S$, with eigenvalues $\mu_k$ and $z_0=\sum_k\zeta_kw_k$,
+\[
+  \Loss(W_t)=\tfrac12\sum_k\mu_k(1-\eta\mu_k)^{2t}\zeta_k^2\le\max_k(1-\eta\mu_k)^{2t}\,\Loss(W_0),
+\]
+with equality when $z_0$ is an eigenvector for an eigenvalue attaining the maximum. The function $\eta\mapsto\max\{\abs{1-\eta\mu_{\min}},\abs{1-\eta\mu_{\max}}\}$ is smallest where the two terms agree, at $\eta=2/(\mu_{\min}+\mu_{\max})$, where it is $(\kappa-1)/(\kappa+1)$.
+
+(iii) For K-FAC, $P^{-1}H=I$. For frozen Shampoo factors, $P_L^{-1}A=c_L^{-s}A^{1-qs}$ has the eigenvalues $c_L^{-s}\alpha_i^{1-qs}$ and the condition number $\kappa_A^{\abs{1-qs}}$, and likewise $\kappa(P_R^{-1}C)=\kappa_C^{\abs{1-qs}}$.
+\end{proof}
+
+When are Shampoo's factors powers of $A$ and $C$? When they average gradients whose second moment is a power of the Hessian. Two cases matter. Gradients taken at errors $E=W-W_\star$ that are isotropic random matrices, $\E[\vect(E)\vect(E)^\top]=\sigma^2I$, as after a random initialization, have $g=H\vect(E)$ and $\E[gg^\top]=\sigma^2H^2$. Gradients dominated by noise with covariance proportional to the Hessian, as near the minimum of a model whose Fisher matrix equals its Hessian (\cref{prop:kronecker:kfac}), have $\E[gg^\top]=\sigma^2H$.
+
+\begin{corollary}[Which power]\label[corollary]{cor:kronecker:power}
+Under \cref{ass:kronecker:quadratic}, let Shampoo's factors be the second moments $L=\E[GG^\top]$ and $R=\E[G^\top G]$ of random gradients with $\E[gg^\top]=\sigma^2H^q$, for some $\sigma>0$ and $q\ge0$. Then the frozen step $W\leftarrow W-\eta L^{-s}\nabla\Loss(W)R^{-s}$ has, at its best constant step size, the rate \eqref{eq:kronecker:rate} with
+\begin{equation}\label{eq:kronecker:exponent}
+  \kappa=\kappa(H)^{\abs{1-qs}} .
+\end{equation}
+\end{corollary}
+
+\begin{proof}
+Since $H^q=C^q\otimes A^q$, \cref{prop:kronecker:partial} gives $L=\sigma^2\tr(C^q)A^q$ and $R=\sigma^2\tr(A^q)C^q$, and \cref{prop:kronecker:conditioning}(iii) applies.
+\end{proof}
+
+The exponent $\abs{1-qs}$ is a V-shaped law\index{effective condition number} in the power:
+\[
+  \begin{array}{l|cccc}
+    & s=0\ \text{(gradient descent)} & s=\frac14\ \text{(Shampoo)} & s=\frac12 & s=1\ \text{(K-FAC)}\\\hline
+    q=2 & 1 & \frac12 & 0 & 1\\
+    q=1 & 1 & \frac34 & \frac12 & 0
+  \end{array}
+\]
+Shampoo's power never removes the conditioning: it takes the square root of $\kappa(H)$ for isotropic errors and only the power $3/4$ away for Hessian-shaped noise. The power $1/2$ is exact for $q=2$, where by \cref{prop:kronecker:partial} it is full-matrix AdaGrad. The inverse, K-FAC's power, is exact for $q=1$, where the factors estimate curvature, and for $q=2$ it is no better than gradient descent: since then $L^{-1}A\propto A^{-1}$, it inverts the spectrum instead of flattening it. This is a precise form of the warning that the second moment of the gradients is not the curvature \parencite{KunstnerHennigBalles2019}: the inverse is right for the one, its square root for the other.\sidenote{The same arithmetic says why AdaGrad and Adam take square roots: on a diagonal quadratic with isotropic errors, the second moment of the $i$th gradient coordinate is proportional to $h_i^2$, and only its square root, not its inverse, flattens the curvatures $h_i$.}
+
+\begin{proposition}[K-FAC's approximation]\label[proposition]{prop:kronecker:kfac}
+Let a layer with weights $W\in\R^{m\times n}$ receive the input $a\in\R^n$ and the back-propagated output gradient $\delta\in\R^m$, so that its per-example gradient is $G=\delta a^\top$, with $(a,\delta)$ random with finite fourth moments.
+\begin{enumerate}
+\item $\vect(G)\vect(G)^\top=(aa^\top)\otimes(\delta\delta^\top)$, so the layer's block of the Fisher matrix (with targets sampled from the model) or of the empirical Fisher matrix\index{Fisher matrix!empirical} (with the data's targets) is $F=\E[(aa^\top)\otimes(\delta\delta^\top)]$.
+\item If $a$ and $\delta$ are independent, then $F=\E[aa^\top]\otimes\E[\delta\delta^\top]$, so K-FAC is exact, and Shampoo's per-example factors $\E[GG^\top]=\E\norm{a}_2^2\,\E[\delta\delta^\top]$ and $\E[G^\top G]=\E\norm{\delta}_2^2\,\E[aa^\top]$ are multiples of K-FAC's.
+\item For the mean $G_B$ of $B$ independent per-example gradients, $\E[G_BG_B^\top]=\frac1B\E[\norm{a}_2^2\,\delta\delta^\top]+(1-\frac1B)\bar G\bar G^\top$ with $\bar G=\E[\delta a^\top]$, and similarly for $G_B^\top G_B$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) $\vect(\delta a^\top)=a\otimes\delta$, and $(a\otimes\delta)(a\otimes\delta)^\top=(aa^\top)\otimes(\delta\delta^\top)$ by the mixed product rule. (ii) The entries $a_ja_l\delta_i\delta_k$ of $(aa^\top)\otimes(\delta\delta^\top)$ have factoring expectations, and $GG^\top=\norm{a}_2^2\delta\delta^\top$, $G^\top G=\norm{\delta}_2^2aa^\top$. (iii) Of the terms of $G_BG_B^\top=B^{-2}\sum_{k,k'}\delta_ka_k^\top a_{k'}\delta_{k'}^\top$, the $B$ with $k=k'$ have expectation $\E[\norm{a}_2^2\delta\delta^\top]$ and the others $\bar G\bar G^\top$.
+\end{proof}
+
+\begin{example}[The Gaussian linear layer]
+Let $a\sim\cN(0,C)$ and let the model predict $y\sim\cN(Wa,A^{-1})$, with negative log-likelihood $\frac12(y-Wa)^\top A(y-Wa)$. For data from the model with weights $W_\star$, the expected loss is the Kronecker quadratic plus a constant. With targets sampled from the model, $\delta=-A\xi$ with $\xi=y-Wa\sim\cN(0,A^{-1})$ independent of $a$, so $\E[\delta\delta^\top]=A$ and $F=C\otimes A=H$ at every $W$: K-FAC is Newton's method and converges in one step. Shampoo's per-example factors are $\tr(C)A$ and $\tr(A)C$, the statistics with $q=1$; at the minimum, where the data's targets give the same $\delta$, so are a minibatch's, divided by $B$.
+\end{example}
+
+\Cref{prop:kronecker:kfac}(iii) shows what changes along training: far from a minimum the mean gradient dominates the factors, near a minimum the per-example noise does, and the right power drifts with them. Three statements remain: Shampoo between Muon and AdaGrad, and its relation to Adafactor and Adam.
+
+\begin{proposition}[Shampoo between Muon and AdaGrad]\label[proposition]{prop:kronecker:between}
+\begin{enumerate}
+\item For a single gradient and $\eps=0$, with pseudo-inverse powers, $(GG^\top)^{-1/4}G(G^\top G)^{-1/4}=\polar(G)$.
+\item If $G_\tau=U\diag(\sigma_\tau)V^\top$ for $\tau\le t$, where $U\in\R^{m\times k}$ and $V\in\R^{n\times k}$ have orthonormal columns and $\sigma_\tau\in\R^k$ has entries of either sign, then
+\[
+  L_t^{-1/4}G_tR_t^{-1/4}=U\diag\biggl(\frac{\sigma_{t,i}}{\bigl(\eps+\sum_{\tau\le t}\sigma_{\tau,i}^2\bigr)^{1/2}}\biggr)V^\top ,
+\]
+diagonal AdaGrad on the coefficients. With exponential moving averages (coefficient $\beta_2$) in place of the sums it is RMSProp on them, and for $\beta_2=0$ and $\eps\to0$ it tends to $U\diag(\sign\sigma_t)V^\top=\polar(G_t)$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) is \cref{prop:spectral:shampoo}: for $G=U\Sigma V^\top$, the left side is $U\Sigma^{-1/2}U^\top U\Sigma V^\top V\Sigma^{-1/2}V^\top=UV^\top$. (ii) By orthonormality, $L_t=\eps I+U\diag(\varsigma_t)U^\top$ with $\varsigma_{t,i}=\sum_{\tau\le t}\sigma_{\tau,i}^2$, so $L_t^{-1/4}U=U\diag(\eps+\varsigma_t)^{-1/4}$, and likewise $R_t^{-1/4}V=V\diag(\eps+\varsigma_t)^{-1/4}$; multiplying out gives the formula. With moving averages $\varsigma_{t,i}$ becomes the average of $\sigma_{\tau,i}^2$, and for $\beta_2=0$ the $i$th coefficient is $\sigma_{t,i}/(\eps+\sigma_{t,i}^2)^{1/2}\to\sign\sigma_{t,i}$.
+\end{proof}
+
+Without memory Shampoo is spectral steepest descent; with memory, in a fixed singular basis, it is AdaGrad or RMSProp on the singular values, as Adam is RMSProp with momentum on the coordinates (\cref{ch:sign,ch:spectral}; \textcite{BernsteinNewhouse2024}). Part (ii) also shows when the power $1/4$ is the right one: if in addition $\sum_{\tau\le t}\sigma_{\tau,i}\sigma_{\tau,j}=0$ for $i\ne j$, then $\Gamma_t=\sum_i\varsigma_{t,i}w_iw_i^\top$ with $w_i=v_i\otimes u_i$, and Shampoo's step is exactly full-matrix AdaGrad's. For Kronecker statistics the right power is $1/2$ (\cref{prop:kronecker:partial}). Which structure the gradients of a network have is an empirical question (Exercise~\ref{ex:kronecker:kron}).
+
+\begin{proposition}[Shampoo with the power $1/2$ is Adafactor in its eigenbasis; \textcite{VyasEtAl2025}]\label[proposition]{prop:kronecker:adafactor}
+Let $L_t=\sum_{\tau\le t}G_\tau G_\tau^\top=Q_L\diag(\lambda)Q_L^\top$ and $R_t=\sum_{\tau\le t}G_\tau^\top G_\tau=Q_R\diag(\mu)Q_R^\top$ be positive definite, put $G'_\tau=Q_L^\top G_\tau Q_R$, and let $V=\sum_{\tau\le t}G'_\tau\odot G'_\tau$ (entrywise squares). Adafactor's rank-one estimate $\hat V=(V\mathbf1)(\mathbf1^\top V)/(\mathbf1^\top V\mathbf1)$ of $V$ (\cref{ch:adaptive}) has entries $\hat V_{ij}=\lambda_i\mu_j/\tr(L_t)$, and Adafactor's step, rotated back, is
+\[
+  Q_L\bigl(G'_t\oslash\hat V^{\odot1/2}\bigr)Q_R^\top=\sqrt{\tr(L_t)}\;L_t^{-1/2}G_tR_t^{-1/2},
+\]
+where $\oslash$ and $\hat V^{\odot1/2}$ are the entrywise quotient and square root.
+\end{proposition}
+
+\begin{proof}
+The row sums of $V$ are $\sum_\tau(G'_\tau G_\tau'^\top)_{ii}=(Q_L^\top L_tQ_L)_{ii}=\lambda_i$, the column sums are $(Q_R^\top R_tQ_R)_{jj}=\mu_j$, and the total is $\tr(L_t)$. So the rotated step is $\sqrt{\tr(L_t)}\diag(\lambda)^{-1/2}G'_t\diag(\mu)^{-1/2}$, and rotating back gives $\sqrt{\tr(L_t)}\,Q_L\diag(\lambda)^{-1/2}Q_L^\top G_tQ_R\diag(\mu)^{-1/2}Q_R^\top$.
+\end{proof}
+
+The same holds with moving averages. \term{SOAP}\index{SOAP} keeps the eigenbasis and replaces Adafactor's rank-one $\hat V$ by Adam's full matrix of second moments in that basis. On Kronecker curvature this removes the conditioning for a reason that has nothing to do with Kronecker products: Adam with $\epsilon=0$ does not see a positive rescaling of a coordinate's gradients.\sidenote{\Textcite{KingmaBa2015} list invariance to diagonal rescaling of the gradients among Adam's properties. It is exact only for $\epsilon=0$; for coordinates with gradients much smaller than $\epsilon$, Adam is momentum gradient descent with step size $\eta/\epsilon$ (\cref{ch:adaptive}).}
+
+\begin{proposition}[Adam in the Kronecker eigenbasis]\label[proposition]{prop:kronecker:soap}
+Under \cref{ass:kronecker:quadratic}, let $A=U_A\diag(\alpha)U_A^\top$ and $C=U_C\diag(\gamma)U_C^\top$, and run Adam with $\epsilon=0$ (with or without bias correction), or AdaGrad, on the rotated gradients $U_A^\top\nabla\Loss(W_t)U_C$, rotating each update back. Then the rotated errors $\tilde E_t=U_A^\top(W_t-W_\star)U_C$ do not depend on $\alpha$ and $\gamma$; in particular they are those of the same method on the isotropic loss $\frac12\norm{W-W_\star}_F^2$. If Shampoo's factors are $f(A)$ and $h(C)$ for injective $f,h$ on $(0,\infty)$, as in \cref{cor:kronecker:power} with $q>0$, then every orthonormal eigenbasis of the factors is one of $A$ and $C$, and SOAP with these frozen factors and $\epsilon=0$ is this method.
+\end{proposition}
+
+\begin{proof}
+The plan is an induction on $t$, based on one invariance. In the rotated coordinates the gradient is $\diag(\alpha)\tilde E\diag(\gamma)$, with entries $\alpha_i\gamma_j\tilde E_{ij}$. If every gradient of one coordinate is multiplied by $c>0$, Adam's moments become $cm$ and $c^2v$ and its update, a function of $m/\sqrt v$, does not change; nor does AdaGrad's $g/(\sum g^2)^{1/2}$. So if the rotated errors of the problem with curvatures $\alpha_i\gamma_j$ and of the isotropic problem agree up to step $t$, their gradients in coordinate $(i,j)$ differ by the factor $\alpha_i\gamma_j$ at every step so far, their updates agree, and so do their errors at step $t+1$. For the last claim, $f(A)=U_A\diag(f(\alpha))U_A^\top$ and, $f$ being injective, $f(A)$ and $A$ have the same eigenspaces; likewise $h(C)$ and $C$. In a fixed basis, SOAP's moving averages of rotated gradients are rotated moving averages, so SOAP is Adam in that basis.
+\end{proof}
+
+Adam is curvature-free on every diagonal quadratic; it is the rotation of the problem that hurts it (\cref{ch:sign,ch:transformers}), and on Kronecker curvature with stationary statistics SOAP undoes the rotation. Curvature-free does not mean fast: each mode moves as it would on the isotropic quadratic, at the method's pace there. And the basis must be right, which with estimated factors it is only approximately (\cref{fig:kronecker:ladder}).
+
+\section{Reading the theory}\label{sec:kronecker:reading}
+
+\paragraph{The ladder.} Take $\kappa_A=\kappa_C=30$, so $\kappa(H)=900$. Once the slowest mode dominates, the best constant step reduces the loss tenfold in about $\ln10/(2\ln\frac{\kappa+1}{\kappa-1})\approx0.58\kappa$ steps: $520$ for gradient descent, $95$ for Shampoo with Hessian-shaped statistics ($\kappa=900^{3/4}\approx164$), $17$ for Shampoo with isotropic-error statistics or for the power $\frac12$ with Hessian-shaped ones ($\kappa=30$), and one step for K-FAC with exact factors. \Cref{fig:kronecker:ladder} (left) runs these iterations with factors estimated from $1000$ sampled gradients and compares them with the exact formulas for exact factors. The estimated factors reproduce the predicted conditioning to within one percent ($\kappa=164.7$ against $164.3$, $29.7$ against $30$), and the simulated losses follow the theory over seventeen decades. AdaGrad in Shampoo's eigenbasis, the idealized SOAP of \cref{prop:kronecker:soap}, beats Shampoo with Hessian-shaped statistics, and with the step size $0.5$ instead of $0.3$ also the one with isotropic-error statistics ($7\times10^{-22}$ against $2\times10^{-17}$ at $t=250$); AdaGrad in the original coordinates, the same method in the wrong basis, gains only one decade on gradient descent. With the eigenbasis of the estimated factors, whose eigenvectors are off by about a tenth of a radian, the simulated SOAP stays within a factor of three of its prediction over ten decades, the ratio growing slowly as the loss falls; how a basis error enters the rate is not covered by \cref{prop:kronecker:soap}.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},wplot,width=82mm,height=54mm]
+\nextgroupplot[xlabel={step $t$},ylabel={$\Loss(W_t)/\Loss(W_0)$},ymode=log,xmin=0,xmax=250,ymin=1e-18,ymax=4,
+  ytick={1,1e-4,1e-8,1e-12,1e-16},
+  legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize},legend columns=3]
+\addplot[muted,line width=1.0pt] table[x=t,y=gd_th] {figures/data/07-kronecker-ladder.dat};
+\addplot[sandline!55!black,line width=1.1pt] table[x=t,y=shq1_th] {figures/data/07-kronecker-ladder.dat};
+\addplot[sea,line width=1.1pt] table[x=t,y=shq2_th] {figures/data/07-kronecker-ladder.dat};
+\addplot[seadeep,line width=1.0pt,dashed] table[x=t,y=soap_th] {figures/data/07-kronecker-ladder.dat};
+\addplot[muted,line width=0.7pt,densely dotted] table[x=t,y=ada_sim] {figures/data/07-kronecker-ladder.dat};
+\addplot[only marks,mark=*,mark size=1.3pt,color=muted,mark options={fill=muted,draw=white,line width=0.2pt},each nth point=10,filter discard warning=false,forget plot] table[x=t,y=gd_sim] {figures/data/07-kronecker-ladder.dat};
+\addplot[only marks,mark=square*,mark size=1.2pt,color=sandline!55!black,mark options={fill=sandline!55!black,draw=white,line width=0.2pt},each nth point=10,filter discard warning=false,forget plot] table[x=t,y=shq1_sim] {figures/data/07-kronecker-ladder.dat};
+\addplot[only marks,mark=*,mark size=1.4pt,color=sea,mark options={fill=sea,draw=white,line width=0.2pt},each nth point=10,filter discard warning=false,forget plot] table[x=t,y=shq2_sim] {figures/data/07-kronecker-ladder.dat};
+\addplot[only marks,mark=triangle*,mark size=1.6pt,color=seadeep,mark options={fill=seadeep,draw=white,line width=0.2pt},each nth point=10,filter discard warning=false,forget plot] table[x=t,y=soap_sim] {figures/data/07-kronecker-ladder.dat};
+\legend{gradient descent,{Shampoo, $q=1$},{Shampoo, $q=2$},{AdaGrad, eigenbasis},{AdaGrad, original basis}}
+\nextgroupplot[xlabel={power $s$ of the factors},ylabel={exponent $\log\kappa/\log\kappa(H)$},xmin=0,xmax=1,ymin=0,ymax=1.08,
+  xtick={0,0.25,0.5,0.75,1},xticklabels={$0$,$\frac14$,$\frac12$,$\frac34$,$1$},
+  legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize},legend columns=2]
+\addplot[guide,forget plot] coordinates {(0.25,0) (0.25,1.08)};
+\addplot[guide,forget plot] coordinates {(0.5,0) (0.5,1.08)};
+\addplot[sandline!55!black,line width=1.1pt] table[x=s,y=q1_th] {figures/data/07-kronecker-power.dat};
+\addplot[sea,line width=1.1pt] table[x=s,y=q2_th] {figures/data/07-kronecker-power.dat};
+\addplot[only marks,mark=square*,mark size=1.6pt,color=sandline!55!black,mark options={fill=sandline!55!black,draw=white,line width=0.2pt},forget plot] table[x=s,y=q1_sim] {figures/data/07-kronecker-power.dat};
+\addplot[only marks,mark=*,mark size=1.7pt,color=sea,mark options={fill=sea,draw=white,line width=0.2pt},forget plot] table[x=s,y=q2_sim] {figures/data/07-kronecker-power.dat};
+\node[font=\scriptsize,text=muted,anchor=south west,rotate=90] at (axis cs:0.24,0.02) {Shampoo};
+\node[font=\scriptsize,text=muted,anchor=north east] at (axis cs:0.995,0.12) {K-FAC};
+\legend{{$q=1$: $\abs{1-s}$},{$q=2$: $\abs{1-2s}$}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Kronecker preconditioners on the Kronecker quadratic with $m=16$, $n=24$, $\kappa_A=\kappa_C=30$ and Haar-random eigenvectors. Shampoo's factors are estimated from $1000$ sampled gradients with statistics $\E[gg^\top]\propto H^q$: Hessian-shaped noise ($q=1$) or gradients at isotropic errors ($q=2$). Left: relative loss from one random start; curves are the exact formulas of \cref{prop:kronecker:conditioning,prop:kronecker:soap} for exact factors, marks (every tenth step) the matrix iterations with estimated factors, each frozen preconditioner at its best constant step size. AdaGrad uses the step size $0.3$ in Shampoo's eigenbasis (exact basis for the curve, that of the estimated $q=1$ factors for the marks) and $1.0$ in the original coordinates (simulation only, dotted). Right: the exponent of \eqref{eq:kronecker:exponent} against the power $s$; lines $\abs{1-qs}$, marks measured from the asymptotic rate of the iteration with estimated factors. Script: \texttt{07-kronecker-ladder.py}.}
+\label{fig:kronecker:ladder}
+\end{figure}
+
+\paragraph{Which power.} \Cref{fig:kronecker:ladder} (right) measures \cref{cor:kronecker:power}: for each power $s$ the iteration runs with the estimated factors at its best step size, and its asymptotic rate $\rho$ gives $\kappa=(1+\rho)/(1-\rho)$. The marks follow $\abs{1-qs}$ to within about $0.01$ except at the bottoms of the V, where theory predicts perfect conditioning and the measured exponents are $0.03$ ($q=2$, $s=\frac12$) and $0.04$ ($q=1$, $s=1$), that is, $\kappa\approx1.2$ and $1.35$. This floor is the sampling error of the factors, a few percent per eigenvalue with $1000$ gradients, and it shrinks like the inverse square root of their number (Exercise~\ref{ex:kronecker:simV}). Three lessons follow. The power matters as much as preconditioning at all: past the bottom of the V, an inverse that over-corrects is as bad as none. Shampoo's $1/4$ never hurts but never finishes the job. And the right power is set by what the factors estimate, which is why K-FAC inverts curvature estimates while AdaGrad-type methods take square roots of second moments of gradients.
+
+\paragraph{How loose the constant is.} \Cref{fig:kronecker:constant} shows $c^\star$ of \cref{prop:kronecker:constant} for $T$ gradients of rank $4$ in four families. One gradient attains $c^\star=r$, and a coherent sequence, all multiples of one matrix, stays there. In a shared singular basis $c^\star$ falls toward the top eigenvalue of the limiting cosine matrix: $1+\frac34(r-1)=3.25$ for independent coefficients uniform on $(0,1)$, whose cosines tend to $\E[s]^2/\E[s^2]=\frac34$, and $1$ for sign-symmetric ones. Generic gradients $X_tY_t^\top$, with independent Gaussian factors, have statistics tending to the Kronecker product $rI_n\otimes I_m$, and their constant falls toward $(mn)^{-1/2}=1/16$, as fast as the sample second moment converges. The factor $\sqrt r$ in \cref{thm:kronecker:regret} is the worst case over sequences; for incoherent gradients the domination that the proof needs holds with room to spare.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[wplot,width=\linewidth,height=0.52\linewidth,xmode=log,ymode=log,log basis x=2,xmin=0.8,xmax=5200,ymin=0.04,ymax=6,
+  xlabel={number of gradients $T$},ylabel={tight constant $c^\star$},
+  xtick={1,4,16,64,256,1024,4096},xticklabels={$1$,$4$,$16$,$64$,$256$,$1024$,$4096$},
+  ytick={0.0625,0.25,1,4},yticklabels={$\frac1{16}$,$\frac14$,$1$,$4$},
+  legend style={at={(0.02,0.03)},anchor=south west,font=\scriptsize},legend columns=2]
+\addplot[guide,forget plot] table[x=T,y=th_coherent] {figures/data/07-kronecker-constant.dat};
+\addplot[guide,forget plot] table[x=T,y=th_positive] {figures/data/07-kronecker-constant.dat};
+\addplot[guide,forget plot] table[x=T,y=th_signed] {figures/data/07-kronecker-constant.dat};
+\addplot[guide,forget plot] table[x=T,y=th_generic] {figures/data/07-kronecker-constant.dat};
+\addplot[only marks,mark=diamond*,mark size=2.0pt,color=muted,mark options={fill=muted,draw=white,line width=0.2pt}] table[x=T,y=coherent] {figures/data/07-kronecker-constant.dat};
+\addplot[only marks,mark=square*,mark size=1.6pt,color=sandline!55!black,mark options={fill=sandline!55!black,draw=white,line width=0.2pt}] table[x=T,y=positive] {figures/data/07-kronecker-constant.dat};
+\addplot[only marks,mark=*,mark size=1.8pt,color=sea,mark options={fill=sea,draw=white,line width=0.2pt}] table[x=T,y=signed] {figures/data/07-kronecker-constant.dat};
+\addplot[only marks,mark=triangle*,mark size=2.0pt,color=seadeep,mark options={fill=seadeep,draw=white,line width=0.2pt}] table[x=T,y=generic] {figures/data/07-kronecker-constant.dat};
+\legend{coherent,{shared basis, positive},{shared basis, signed},generic}
+\end{axis}
+\end{tikzpicture}
+\caption{The tight constant $c^\star$ of the Kronecker bound for $T$ gradients of rank $r=4$ in $\R^{16\times16}$ (marks: mean over five seeds of $c^\star$ computed from the $256\times256$ matrices) and its limits from \cref{prop:kronecker:constant} (dashed): $4$ for coherent gradients, $3.25$ and $1$ for a shared singular basis with positive and with sign-symmetric coefficients, and $1/16$ for generic gradients. Script: \texttt{07-kronecker-constant.py}.}
+\label{fig:kronecker:constant}
+\end{figure}
+
+\paragraph{What a step costs.} For an $m\times n$ matrix Shampoo stores $m^2+n^2$ numbers for its factors, twice the matrix when $m=n$, against $(mn)^2$; SOAP adds Adam's $2mn$ and the eigenvectors. The roots cost of order $m^3+n^3$ operations, about $1.4\times10^{11}$ times a modest constant for a $4096\times4096$ layer, comparable to running the layer forward and backward on some thousands of tokens. That is why practice computes them every so many steps, and why the interval is the first heuristic to tune (\cref{obs:kronecker:heuristics}).
+
+\paragraph{What the regret bound says.} Since $\tr(M^{1/4})\ge(\tr M)^{1/4}$ for positive semidefinite $M$, $\tr(L_T^{1/4})\tr(R_T^{1/4})\ge(\tr L_T\tr R_T)^{1/4}\ge(\sum_t\norm{G_t}_F^2)^{1/2}$, so the right side of \eqref{eq:kronecker:regret} is at least $\sqrt{2r}D(\sum_t\norm{G_t}_F^2)^{1/2}$ for every step size. Online gradient descent with steps $\eta_t=D/(2\sum_{\tau\le t}\norm{G_\tau}_F^2)^{1/2}$ has regret at most $\sqrt2D(\sum_t\norm{G_t}_F^2)^{1/2}$ (\cref{thm:toolkit:ogd,lem:toolkit:adagrad}). With the same Frobenius distance $D$, Shampoo's guarantee is never better than gradient descent's: it certifies Shampoo as a sound online method but cannot explain an advantage. Against diagonal AdaGrad, whose bound depends on the coordinates, it can be better by up to $\sqrt{mn}$ for dense low-rank gradients (Exercise~\ref{ex:kronecker:onesided}).
+
+\section{What the theory misses}\label{sec:kronecker:misses}
+
+\paragraph{What was idealized away.} The Kronecker structure itself. It is exact for one linear layer whose inputs and back-propagated gradients are independent (\cref{prop:kronecker:kfac}); in a network the gradient flowing back into a layer depends on its own output and hence on its input, minibatches add the mean term of \cref{prop:kronecker:kfac}(iii), and the blocks of different layers are coupled (Exercise~\ref{ex:kronecker:twolayer}). Stationarity: the factors are sums or averages over a trajectory along which the statistics drift from error-dominated to noise-dominated, so \cref{cor:kronecker:power} describes a frozen snapshot, and plain Shampoo on a deterministic quadratic never becomes stationary at all (Exercise~\ref{ex:kronecker:transient}). Convex online losses in the regret theory. Exact roots at every step, where practice recomputes them infrequently and in finite precision, and the inverse fourth root of an ill-conditioned factor depends strongly on $\eps$. And grafting, momentum, weight decay, and the parameters that are not matrices.
+
+\paragraph{Where it breaks.} (1) The regret bound does not rank optimizers: it is never better than that of gradient descent with an adaptive step (\cref{sec:kronecker:reading}), so it does not explain \cref{obs:kronecker:algoperf,obs:kronecker:scale}. (2) The theorem needs the power $1/4$, implementations also use $1/2$, and \cref{cor:kronecker:power} shows that no power is right for all statistics; \textcite{MorwaniEtAl2025} find the square of Shampoo's preconditioner the better approximation of full-matrix AdaGrad in neural networks, consistent with Kronecker-like statistics. (3) Performance rests on heuristics the theory does not cover: grafting, $\eps$, and the interval between root computations (\cref{obs:kronecker:heuristics}). (4) For K-FAC the curvature story is incomplete: the empirical Fisher is not the Fisher and can be a poor curvature estimate \parencite{KunstnerHennigBalles2019}, and \textcite{Benzing2022} found that a variant keeping only the input-side factor, a one-sided preconditioner in the sense of \cref{prop:kronecker:conditioning}, performs as well as K-FAC or better, which suggests that K-FAC's advantage is not mainly second-order. (5) The advantage of matrix-based optimizers over a tuned AdamW shrinks with scale \parencite{WenEtAl2026Fantastic}, which an idealization with one layer and fixed curvature cannot address. (6) SOAP is curvature-free only in the exact eigenbasis. With estimated factors it is so approximately (in \cref{fig:kronecker:ladder}, to within a factor of three over ten decades), but the theory does not say how the basis error enters the rate, nor how often to refresh the basis, which \cref{obs:kronecker:heuristics} says matters.
+
+\paragraph{Repairs and open problems.} Correcting the eigenvalues in the Kronecker eigenbasis repairs the mismatch between the factors and the true scales: eigenvalue-corrected K-FAC \parencite{GeorgeEtAl2018}, SOAP \parencite{VyasEtAl2025}, and the decoupled updates of eigenvalues and eigenbasis studied by \textcite{EschenhagenEtAl2025}. Better Kronecker approximations iterate the power method of \cref{prop:kronecker:partial} \parencite{VanLoanPitsianis1993,MorwaniEtAl2025}. Low-rank approximations of full-matrix AdaGrad avoid the Kronecker assumption \parencite{AgarwalEtAl2019GGT}, and preconditioned stochastic gradient descent fits Kronecker-factored and other structured preconditioners by a different criterion \parencite{Li2018PSGD}. Open: how close the gradient statistics of trained networks are to Kronecker products (Exercise~\ref{ex:kronecker:kron}); a theory of the power, or of a schedule for it, under drifting statistics (Exercise~\ref{ex:kronecker:schedule}); a nonconvex convergence theory in which Shampoo or SOAP provably beats Adam in a measurable quantity; and why the advantage of matrix-based optimizers shrinks with scale.
+
+\section{Back in the wild}\label{sec:kronecker:back}
+
+\fieldnotes{Precondition each weight matrix by inverse roots of row and column second-moment matrices (Shampoo), by inverses of input and output-gradient covariances (K-FAC), or by Adam in the eigenbasis of those matrices (SOAP).}
+{Full-matrix AdaGrad on $\vect(W)$; the Kronecker quadratic with Hessian $C\otimes A$; stationary statistics $\E[gg^\top]\propto H^q$.}
+{The Kronecker bound, with constant $r$ attained by single gradients; Shampoo's regret; $\kappa\mapsto\kappa^{\abs{1-qs}}$ for frozen factors; K-FAC exact under independence; Shampoo with power $\frac12$ is Adafactor in its eigenbasis; Adam in that basis is curvature-free.}
+{Shampoo's power $\frac14$ leaves $\kappa^{1/2}$ or $\kappa^{3/4}$; the power $\frac12$ is full-matrix AdaGrad for Kronecker statistics; inverses are Newton for curvature-like statistics and over-correct for gradient-like ones.}
+{Why these methods beat a tuned Adam when they do; grafting, $\eps$ and stale roots; non-Kronecker and drifting statistics; shrinking gains at scale.}
+{Match the power to what the factors estimate: inverses for curvature, inverse square roots for second moments of gradients (proved in the idealization); keep SOAP's eigenbasis fresh (observed); expect the gain over a tuned AdamW to shrink with scale (observed).}
+
+What the theory tells a practitioner is that a Kronecker preconditioner is a genuine approximation of full-matrix AdaGrad, whose factors dominate its statistics up to the rank; that the power of the factors is the decisive choice and should match what the factors estimate, so that the theory's $1/4$ is chosen for the proof, not for speed, consistent with the use of $1/2$ with grafting and with K-FAC's inverses of curvature estimates; and that SOAP's advantage comes from the basis, since Adam is curvature-free in a basis that diagonalizes the curvature. What it does not tell a practitioner is when this beats a well-tuned AdamW. The benchmarks say that it sometimes does, by margins that shrink with scale, and the reasons are not understood.
+
+The chapter closes the unification line of Parts~I and~II. Without memory, Shampoo is the orthogonalized gradient of \cref{ch:spectral}, as Adam without memory is the sign descent of \cref{ch:sign}; with memory, both become preconditioners, diagonal (\cref{ch:adaptive}) or Kronecker-factored, and SOAP runs the diagonal one in the Kronecker one's basis. The dynamics line takes over: preconditioned sharpness at the edge of stability (\cref{ch:eos}), preconditioning and the critical batch size (\cref{ch:noise}), and rotations and heterogeneous curvature in the gap between Adam and gradient descent (\cref{ch:transformers}).
+
+\begin{exercises}
+\item \consolidation (Vectorization.) (a) Show that $\vect(uv^\top)=v\otimes u$ and $\ip{X,AYC}=\vect(X)^\top(C\otimes A)\vect(Y)$ for symmetric $C$, and that $(C\otimes A)(v_j\otimes u_i)=\gamma_j\alpha_i(v_j\otimes u_i)$ for eigenvectors $Au_i=\alpha_iu_i$, $Cv_j=\gamma_jv_j$. (b) With the row-stacking $\overline{\vect}(X)=\vect(X^\top)$, show that $\overline{\vect}(MXN)=(M\otimes N^\top)\overline{\vect}(X)$, so that every Kronecker product of this chapter reverses its order; write \eqref{eq:kronecker:bound} in that convention.\label{ex:kronecker:vec}
+
+\item \consolidation (One-sided bounds.) Let $G$ have rank $r$ and $g=\vect(G)$. (a) Show that $gg^\top\preceq r(I_n\otimes GG^\top)$ and $gg^\top\preceq r(G^\top G\otimes I_m)$, with sharp constants. \hint{$\ip{G,X}=\ip{VV^\top,G^\top X}$ for $G=U\Sigma V^\top$.} (b) Deduce that one-sided Shampoo, $W_{t+1}=W_t-\eta L_t^{-1/2}G_t$, has regret at most $(\frac{D^2}{2\eta}+r\eta)\,n\tr(L_T^{1/2})$. (c) For $G_t=c_tuv^\top$ with fixed unit vectors $u,v$, show that as $\eps\to0$ the bound of \cref{thm:kronecker:regret} at its best step size tends to $\sqrt2D(\sum_tc_t^2)^{1/2}$, while diagonal AdaGrad's bound with $D$ as $\ell_\infty$ radius is $\sqrt2D\norm{u}_1\norm{v}_1(\sum_tc_t^2)^{1/2}$, up to $\sqrt{mn}$ times larger.\label{ex:kronecker:onesided}
+
+\item \consolidation (Geometric means.) (a) For commuting positive semidefinite $P,Q$, show that $\bigl(\begin{smallmatrix}P&(PQ)^{1/2}\\(PQ)^{1/2}&Q\end{smallmatrix}\bigr)\succeq0$. (b) For positive definite $P,Q$, show with a Schur complement that $\bigl(\begin{smallmatrix}P&Y\\Y&Q\end{smallmatrix}\bigr)\succeq0$ if and only if $YP^{-1}Y\preceq Q$, and deduce, using \cref{thm:toolkit:loewner} and $\abs{Z}\succeq Z$ for symmetric $Z$, that for commuting $P,Q$ every such $Y$ satisfies $Y\preceq(PQ)^{1/2}$. (c) Give $2\times2$ positive definite $P,Q$ for which $PQ$ is not symmetric, so that $(PQ)^{1/2}$ cannot be their geometric mean.\label{ex:kronecker:geomean}
+
+\item \consolidation (The constant.) Let $u_1,u_2$ and $v_1,v_2$ be orthonormal pairs. With \cref{prop:kronecker:constant}, compute $c^\star$ for (a) the single gradient $u_1v_1^\top+u_2v_2^\top$; (b) the gradients $u_1v_1^\top+u_2v_2^\top$ and $u_1v_1^\top-u_2v_2^\top$; (c) the gradients $u_1v_1^\top+u_2v_2^\top$ and $u_1v_1^\top$. (d) With the rearrangement $\cR$ defined by $\cR(\Phi\otimes\Psi)=\vect(\Phi)\vect(\Psi)^\top$ and extended linearly, show that $\cR(\Gamma)\vect(I_m)=\vect(R(\Gamma))$ and $\cR(\Gamma)^\top\vect(I_n)=\vect(L(\Gamma))$: one step of the power method for the nearest Kronecker product, from identities, returns the partial traces. \hint{(c) gives $1+1/\sqrt2$.}\label{ex:kronecker:constant}
+
+\item \consolidation (K-FAC for a two-layer linear network.) Let $f(x)=W_2W_1x$ with $W_1\in\R^{d_1\times d_0}$, $W_2\in\R^{d_2\times d_1}$, $x\sim\cN(0,\Sigma)$, and the model $y\sim\cN(f(x),I)$ with sampled targets. (a) Show that the Fisher matrix has diagonal blocks $F_{11}=\Sigma\otimes W_2^\top W_2$ and $F_{22}=W_1\Sigma W_1^\top\otimes I_{d_2}$, on which K-FAC is exact. (b) Show that $F_{12}=\Sigma W_1^\top\otimes W_2^\top$, which K-FAC drops. (c) Show that the full Fisher matrix is singular, because $(W_1,W_2)\mapsto(MW_1,W_2M^{-1})$ leaves $f$ unchanged.\label{ex:kronecker:twolayer}
+
+\item \variation (Tensors.) For a parameter tensor of order $k$, Shampoo keeps one factor per mode, the sum of the mode-$i$ unfolding of the gradient times its transpose. If the vectorized gradient has second moment $\Gamma=\Phi_k\otimes\dots\otimes\Phi_1$, show that the factors are $\prod_{j\ne i}\tr(\Phi_j)\,\Phi_i$ and that the preconditioner with power $p$ on each is $(\tr\Gamma)^{(k-1)p}\Gamma^p$. So Shampoo's $p=1/(2k)$ gives $\Gamma^{1/(2k)}$, and $p=\frac12$ reproduces full-matrix AdaGrad at every order.\label{ex:kronecker:tensor}
+
+\item \variation (The power $\frac12$ and grafting.) (a) With $\eps=0$, show that $L_t^{-1/2}G_tR_t^{-1/2}$ is homogeneous of degree $-1$ in the gradients, while Shampoo's step is homogeneous of degree $0$. (b) Grafting replaces a step $\Delta$ by $\Delta\norm{\Delta_{\mathrm{ref}}}_F/\norm{\Delta}_F$, with $\Delta_{\mathrm{ref}}$ the step of a reference method. Show that the grafted step has the degree of the reference, and that for Kronecker statistics it does not depend on the scalar $(\tr\Gamma)^{1/2}$ of \eqref{eq:kronecker:power}; with full-matrix AdaGrad as reference it is full-matrix AdaGrad's step.\label{ex:kronecker:graft}
+
+\item \variation (Other noise.) Let Shampoo's factors average gradients $\nabla\Loss(W)+\Xi$ of the Kronecker quadratic in the noise-dominated limit. (a) If $\vect(\Xi)\sim\cN(0,\sigma^2I)$, show that the factors are multiples of identities, so Shampoo is gradient descent ($q=0$). (b) If $\vect(\Xi)\sim\cN(0,\sigma^2H)$, show that the effective condition number is $\kappa(H)^{3/4}$ and that the power $1$ is exact. (c) If the covariance is $\sigma^2H^q$ with $q$ unknown in $[1,2]$, find the power that minimizes the worst-case exponent $\max_q\abs{1-qs}$. \hint{$s=2/3$, exponent $1/3$.}\label{ex:kronecker:noise}
+
+\item \variation ($\epsilon$ and momentum.) (a) Show that \cref{prop:kronecker:soap} holds for Adam with momentum and bias correction, and for SOAP with moving-average factors as long as the basis is fixed. (b) For one coordinate whose gradients are all multiplied by $c>0$, show that Adam's update with $\epsilon>0$ tends to the $\epsilon=0$ update as $c\to\infty$ and, as $c\to0$, to that of momentum gradient descent with step size $\eta/\epsilon$ on the rescaled gradients. Which modes of the Kronecker quadratic lose the curvature-free property first?\label{ex:kronecker:eps}
+
+\item \simulation (The V and its floor.) Run \texttt{07-kronecker-ladder.py} (a) with $\kappa_A=900$ and $\kappa_C=1$, and check that the exponents still follow $\abs{1-qs}$ relative to $\kappa(H)=900$, although one-sided preconditioning is now exact; (b) with $100$, $1000$ and $10\,000$ sampled gradients, and check that the exponent at the bottom of each V falls roughly like the inverse square root of their number (we measured $0.15$, $0.05$ and $0.016$ for $q=1$ and $s=1$), as the relative sampling error of the factors does.\label{ex:kronecker:simV}
+
+\item \simulation (Shampoo's transient.) Run plain Shampoo (sums, $\eps=10^{-12}$, power $\frac14$) on the Kronecker quadratic with $m=20$, $n=30$, $\kappa_A=\kappa_C=64$ and a standard Gaussian initial error, with step sizes $1$, $3$, $10$ and $30$. (a) Observe that for the two larger step sizes the loss first rises (in our runs by factors of about $4$ and $50$) and then falls faster than with the smaller ones. (b) Explain the transient: a step that is too long makes the gradients grow until the accumulated factors make it stable. (c) Compare the late-time rate with \cref{cor:kronecker:power} for $q=2$, and explain why the agreement is only rough.\label{ex:kronecker:transient}
+
+\item \research (Are gradient statistics Kronecker?) For layers of a trained network, measure the relative distance $\min_{\Phi,\Psi}\norm{\Gamma-\Phi\otimes\Psi}_F/\norm{\Gamma}_F$ of the gradient second moment to the nearest Kronecker product \parencite{VanLoanPitsianis1993}, the constant $c^\star$, and the shared-basis structure of \cref{prop:kronecker:between}. Find conditions on the joint law of inputs and back-propagated gradients, beyond independence, under which the distance is provably small. As far as we know no general theory exists.\label{ex:kronecker:kron}
+
+\item \research (A schedule for the power.) Along a run the statistics pass from error-dominated ($q\approx2$) to noise-dominated ($q\approx1$) as the mean gradient shrinks (\cref{prop:kronecker:kfac}(iii)). In the noisy Kronecker quadratic started from an isotropic error, find the schedule of the power $s_t$, or of a mixture of factors, that minimizes the number of steps to a target loss, and compare it with a fixed power with grafting. This is open.\label{ex:kronecker:schedule}
+\end{exercises}
+
+\notesandrefs
+AdaGrad, diagonal and full-matrix, is due to \textcite{DuchiHazanSinger2011} and, independently, \textcite{McMahanStreeter2010}; \textcite{Hazan2016} gives the analysis that \cref{thm:kronecker:regret} follows. \Textcite{GuptaKorenSinger2018} introduced Shampoo for tensors of every order and proved \cref{thm:kronecker:bound} (their Lemma~8) and the regret bound; our proof of the bound passes through \cref{lem:kronecker:single}, which yields the middle term of \eqref{eq:kronecker:bound}. \Textcite{AnilEtAl2020} and \textcite{ShiEtAl2023} made Shampoo practical for large models, grafting comes from \textcite{AgarwalEtAl2020Grafting}, and \textcite{KasimbegEtAl2025} analyse the first AlgoPerf competition, whose benchmark \textcite{DahlEtAl2023} describe.
+
+Natural gradient descent is due to \textcite{Amari1998}, and \textcite{Martens2020} surveys it. K-FAC is due to \textcite{MartensGrosse2015}, with extensions to convolutions \parencite{GrosseMartens2016} and distributed training \parencite{BaGrosseMartens2017}, and its eigenvalue correction to \textcite{GeorgeEtAl2018}. \Textcite{KunstnerHennigBalles2019} explain why the empirical Fisher is a poor substitute for the Fisher, and \textcite{Benzing2022} questions the second-order reading of K-FAC.
+
+The nearest Kronecker product is due to \textcite{VanLoanPitsianis1993}. \Textcite{MorwaniEtAl2025} connect Shampoo's factors with the optimal Kronecker approximation of full-matrix AdaGrad's statistics and of the Gauss--Newton matrix: one step of the power method gives the factors, and the square of Shampoo's approximation, not the approximation itself, is close to optimal. SOAP and the identity of \cref{prop:kronecker:adafactor} with Adafactor \parencite{ShazeerStern2018} are due to \textcite{VyasEtAl2025}, and \textcite{EschenhagenEtAl2025} take Shampoo's heuristics apart. That Shampoo without accumulation is the orthogonalized gradient, Muon's update without momentum \parencite{JordanEtAl2024Muon}, is observed by \textcite{BernsteinNewhouse2024}. We know no reference for the exponent law of \cref{cor:kronecker:power}, for the exact constants of \cref{prop:kronecker:constant}, or for \cref{prop:kronecker:soap}; all three are elementary consequences of \cref{prop:kronecker:partial,prop:kronecker:conditioning} and of Adam's invariance to diagonal rescaling \parencite{KingmaBa2015}.
+
+\paragraph{Translating the literature.} \Textcite{GuptaKorenSinger2018} vectorize matrices by rows, so their Kronecker products appear in the reverse of our order (Exercise~\ref{ex:kronecker:vec}): the right side of their bound, $(\eps I_m+\sum_tG_tG_t^\top)^{1/2}\otimes(\eps I_n+\sum_tG_t^\top G_t)^{1/2}$, is our $R_T^{1/2}\otimes L_T^{1/2}$; their $L_t$, $R_t$, $r$ and $D$ are ours. \Textcite{MartensGrosse2015} write a layer's gradient as $g\bar a^\top$, with $g$ our $\delta$ and $\bar a$ our $a$ with a coordinate one appended for the bias, and approximate the Fisher block by $\bar A\otimes G$: their $\bar A$ is our $\E[aa^\top]$ and their $G$ is our $\E[\delta\delta^\top]$, not a gradient; their vectorization stacks columns, as ours does. \Textcite{VyasEtAl2025} write $L$, $R$, $Q_L$ and $Q_R$ as we do, and their Shampoo with the $1/2$ power is our $s=\frac12$.
+
+\printchapterbib
+\end{refsection}
