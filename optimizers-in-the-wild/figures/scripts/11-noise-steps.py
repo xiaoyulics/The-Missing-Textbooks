@@ -14,7 +14,7 @@ T_min, and McCandlish's product computed with the real-valued crossing times.
 Model: d = 1000, h_i = 1/i, Sigma = H, theta_0 = (1,...,1), target 5% of the initial loss.
 Writes figures/data/11-noise-steps.dat (theory), figures/data/11-noise-steps-mom.dat (momentum,
 theory) and figures/data/11-noise-steps-mc.dat (simulation).
-Runtime: about 80 s on one CPU core. Deterministic seed.
+Runtime: about 100 s on one CPU core. Deterministic seed.
 """
 import os
 import numpy as np
