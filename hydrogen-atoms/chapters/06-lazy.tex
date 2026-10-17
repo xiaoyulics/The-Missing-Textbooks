@@ -1,0 +1,500 @@
+% Chapter 6 of The Hydrogen Atoms of Deep Learning: lazy training and the neural tangent kernel.
+\casechapter{Lazy Training}{The neural tangent kernel and what it cannot learn}{Linearization around initialization}{ch:lazy}
+\begin{refsection}[chapters/06-lazy.bib]
+
+\begin{chaptersummary}
+Very wide networks, trained with small steps from a standard random initialization, fit their training data while each weight barely moves, and their predictions follow those of kernel regression with a fixed kernel, the neural tangent kernel. The model is the first-order Taylor expansion of the network around its initialization. We prove that a smooth parametric model whose Jacobian is well conditioned at initialization and varies slowly converges to zero training loss inside a small ball, and that a two-layer network of width of order $n^2$ satisfies these conditions; training then learns the eigenmodes of the kernel one by one, the large ones first. We then prove what the linearization costs: no method that predicts from a fixed $n$-dimensional space of functions, kernel regression included, can learn a degree-$k$ function of one unknown direction on the sphere from fewer than about $d^k/k!$ samples. Trained networks do far better because their features move, which is what the model throws away.
+\end{chaptersummary}
+
+\section{The phenomenon: weights that do not move}\label{sec:lazy:phenomenon}
+
+A network with millions of parameters is trained by gradient descent on a loss that is not convex in them. One would expect the optimization to wander, to stall at saddles, and to find solutions that depend delicately on where it started. For very wide networks trained with small steps, none of this happens. The training loss decreases to zero at an exponential rate, and the weights at the end are close to the weights at the start: the \emph{relative} change of each weight matrix decreases as the width grows. \Textcite{LiLiang2018} observed that in a wide two-layer ReLU network trained by stochastic gradient descent most neurons keep the activation pattern they had at initialization, and turned this into a convergence proof; \textcite{DuEtAl2019} proved that gradient descent drives the training loss of a two-layer ReLU network to zero at a linear rate when the width is a large polynomial in the number of examples and no two inputs are parallel, and \textcite{AllenZhuEtAl2019} extended such guarantees to deep fully connected, convolutional, and residual networks.
+
+\Textcite{JacotEtAl2018} gave the phenomenon its name and its mathematics. During gradient descent the function computed by the network moves along the gradient of the loss in function space, preconditioned by a kernel, the \term{neural tangent kernel}\index{neural tangent kernel}
+\[
+  K_\theta(x,x')=\ip{\nabla_\theta f(x;\theta),\nabla_\theta f(x';\theta)} .
+\]
+In a suitable scaling, as the widths of all hidden layers go to infinity the kernel at initialization converges to a deterministic limit $K^\infty$, and it stays equal to $K^\infty$ throughout training. The trained network is then kernel regression with $K^\infty$. \Textcite{LeeEtAl2019} went further: a wide network trained by gradient descent is close to its own first-order Taylor expansion around the initialization, a linear model in the parameters, and in their experiments with fully connected, convolutional, and residual networks the predictions of the two agreed closely along the whole trajectory. Because $K^\infty$ is explicit, the infinitely wide network can be computed without training it; \textcite{AroraEtAl2019b} computed the kernel of an $11$-layer convolutional network with global average pooling and reached $77\%$ test accuracy on CIFAR-10 with kernel regression, about ten points above the best result reported before for a Gaussian-process kernel.
+
+The kernel picture also predicts \emph{which} functions are learned fast. Training reduces the error along each eigenfunction of the kernel at a rate equal to its eigenvalue, and for the kernels of standard architectures the eigenvalues decrease with frequency. \Textcite{RahamanEtAl2019} named the resulting tendency of networks to fit low frequencies first the \term{spectral bias}\index{spectral bias}, and \textcite{BasriEtAl2019} predicted the time needed to learn each frequency for data uniform on a sphere, where the eigenfunctions are spherical harmonics, and confirmed the prediction in shallow and deep networks.
+
+\begin{observation}[\textcite{JacotEtAl2018,LeeEtAl2019,DuEtAl2019,BasriEtAl2019}]\label[observation]{obs:lazy:lazy}
+Train a network with $m$ units per hidden layer, initialized with independent Gaussian weights of variance proportional to $1/(\text{fan-in})$, by gradient descent with a small step on the square loss. As $m$ grows, the training loss converges to zero exponentially fast, the relative change $\norm{\theta_t-\theta_0}/\norm{\theta_0}$ of the parameters decreases to zero, the tangent kernel changes less and less during training, and the outputs on new inputs approach those of the network linearized at its initialization. Components of the target along eigenfunctions of the tangent kernel with larger eigenvalues are learned first.
+\end{observation}
+
+The observation is robust in the regime it describes, and it is a regime, not a law of deep learning. The same papers that established it measured its price. \Textcite{ChizatEtAl2019} found that deep convolutional networks trained so as to stay in the lazy regime perform worse than the same networks trained normally, \textcite{LeeEtAl2020} found in a large study that kernels beat finite fully connected networks but lose to finite convolutional networks trained with standard practice, and \textcite{GeigerEtAl2020} found that feature learning helps convolutional networks while fully connected networks often do better in the lazy regime. \Textcite{FortEtAl2020} measured the tangent kernel of networks trained in the usual way and found that it changes fast during the first few epochs, in a way the infinite-width theory does not describe.\sidenote{The term \emph{lazy training} is due to \textcite{ChizatEtAl2019}, whose note first appeared in December 2018 under the title ``A note on lazy training in supervised differentiable programming''.}
+
+Two questions follow. Why does a nonlinear, nonconvex training problem behave like a linear one when the network is wide, and how wide is wide enough? And what does the linear behavior cost: which targets can a network that does not move its features never learn efficiently? The model of this chapter answers both.
+
+\section{The model: linearization around initialization}\label{sec:lazy:model}
+
+Strip the network down to what gradient descent sees. Let $x_1,\dots,x_n$ be the training inputs and $y\in\R^n$ the labels, and collect the outputs of the network on the training set into one map
+\[
+  F\colon\R^P\to\R^n,\qquad F(\theta)=\bigl(f(x_1;\theta),\dots,f(x_n;\theta)\bigr),
+\]
+with $P$ the number of parameters. The training loss is $\Lhat(\theta)=\frac12\norm{F(\theta)-y}^2$ (we do not divide by $n$, so that the kernel below has entries of order one), and we study its \term{gradient flow}\index{gradient flow}
+\begin{equation}\label{eq:lazy:flow}
+  \dot\theta_t=-\nabla\Lhat(\theta_t)=-J(\theta_t)^\top u_t,\qquad u_t=F(\theta_t)-y ,
+\end{equation}
+where $J(\theta)\in\R^{n\times P}$ is the Jacobian of $F$ and $u_t$ is the \term{residual}.\sidenote{We write $u$ for the residual because $r$ is reserved for overlaps throughout the book; \textcite{DuEtAl2019} write $u(t)$ for the outputs $F(\theta_t)$ themselves.} The chain rule gives the equation of motion of the outputs,
+\begin{equation}\label{eq:lazy:residual}
+  \dot u_t=J(\theta_t)\dot\theta_t=-K_t\,u_t,\qquad K_t=J(\theta_t)J(\theta_t)^\top\in\R^{n\times n},
+\end{equation}
+and the \term{tangent kernel}\index{tangent kernel} $K_t$ is the matrix of the kernel $K_{\theta_t}$ of \cref{sec:lazy:phenomenon} on the training inputs. If $K_t$ did not depend on $t$, then \eqref{eq:lazy:residual} would be a linear equation with the solution $u_t=\exp(-tK_0)u_0$, and every question about training would be a question about the spectrum of one fixed positive semidefinite matrix. This is exactly the dynamics of the linear model
+\begin{equation}\label{eq:lazy:lin}
+  f^{\mathrm{lin}}(x;\theta)=f(x;\theta_0)+\ip{\nabla_\theta f(x;\theta_0),\theta-\theta_0},
+\end{equation}
+the \term{linearized network}\index{linearized network}, whose tangent kernel is $K_{\theta_0}$ at every $\theta$. Lazy training is the statement that the network and its linearization stay close.
+
+The general theorem of \cref{sec:lazy:convergence} is about $F$; to see when its hypotheses hold we specialize to the simplest network.
+
+\begin{assumption}[Two-layer network]\label[assumption]{ass:lazy:twolayer}
+The inputs are unit vectors $x_1,\dots,x_n\in\Sph^{d-1}$, no two of which are parallel ($x_i\ne\pm x_j$ for $i\ne j$), and the labels satisfy $\abs{y_i}\le1$. The network is
+\[
+  f(x;W)=\frac1{\sqrt m}\sum_{r=1}^ma_r\,\phi(\ip{w_r,x}),
+\]
+with first-layer weights $w_1,\dots,w_m\in\R^d$, the rows of $W\in\R^{m\times d}$, and output weights $a_r\in\{-1,1\}$ that are not trained. At initialization the $w_r$ are independent $\cN(0,I_d)$ and the $a_r$ are independent uniform signs, independent of $W$. The activation $\phi$ is twice continuously differentiable, is not affine, and satisfies $\abs{\phi'}\le\beta$ and $\abs{\phi''}\le\beta$.
+\end{assumption}
+
+The activation $\tanh$ qualifies with $\beta=1$; ReLU does not, because its derivative jumps, although the conclusions survive with more work \parencite{DuEtAl2019}. The factor $m^{-1/2}$ is the \term{NTK parameterization}\index{NTK parameterization}: with $\ip{w_r,x}\sim\cN(0,1)$ each term is of order one, the output at initialization is a sum of $m$ independent terms of mean zero, and the scale makes it of order one. For this network $\partial f(x;W)/\partial w_r=m^{-1/2}a_r\phi'(\ip{w_r,x})\,x$ and $a_r^2=1$, so the tangent kernel and its expectation at initialization are
+\begin{equation}\label{eq:lazy:kinf}
+\begin{gathered}
+  K_W(x,x')=\frac{\ip{x,x'}}m\sum_{r=1}^m\phi'(\ip{w_r,x})\phi'(\ip{w_r,x'}),\\
+  K^\infty(x,x')=\ip{x,x'}\,\kappa(\ip{x,x'}),
+\end{gathered}
+\end{equation}
+where $\kappa(\rho)=\E[\phi'(g)\phi'(g')]$ for standard Gaussians $g,g'$ with correlation $\rho$: for unit $x,x'$ the pair $(\ip{w,x},\ip{w,x'})$ is such a pair with $\rho=\ip{x,x'}$. By the law of large numbers $K_{W_0}\to K^\infty$ as $m\to\infty$. We write $K^\infty$ also for the $n\times n$ matrix $(K^\infty(x_i,x_j))_{ij}$, and $\lmin=\lmin(K^\infty)$.
+
+\begin{dictionary}
+parameters $\theta\in\R^P$, map $F$ & all weights; the outputs on the training set\\
+Jacobian $J(\theta_0)$ & per-example gradients at initialization\\
+tangent kernel $K_t=J_tJ_t^\top$ & empirical neural tangent kernel on the training set\\
+limit kernel $K^\infty$ & kernel of the infinitely wide architecture (fully connected, convolutional, \dots)\\
+$\lmin(K^\infty)$ & how distinguishable the training inputs are to the architecture\\
+residual $u_t$ & training errors\\
+linearized model \eqref{eq:lazy:lin} & the network in the lazy regime\\
+eigenvectors of $K^\infty$ & modes learned in order of their eigenvalues: spectral bias\\
+width $m$, scale $m^{-1/2}$ & hidden-layer width; NTK versus standard or mean-field parameterization\\
+a fixed space of $n$ functions & a kernel method, random features, or a lazy network\\
+\end{dictionary}
+
+\paragraph{What was thrown away, and why first.} The features: the model is linear in the parameters, so the functions $x\mapsto\nabla_\theta f(x;\theta_0)$ are fixed before training, and learning is regression on them. Finite step sizes and stochastic gradients: we study the gradient flow. The second layer and depth: in \cref{ass:lazy:twolayer} only one layer is trained (\cref{ex:lazy:bothlayers} trains both, and \cref{thm:lazy:deepntk} states the kernel of deep networks). Every one of these simplifications points in the same direction, toward a model in which the parameters move as little as the data allow. That is the right first model because it is the regime in which a nonconvex problem becomes solvable, and the price of solvability is what \cref{sec:lazy:kernels} computes.
+
+\paragraph{What one had to notice.} Two facts, one about scale and one about geometry. The gradient of a wide network with respect to each single weight is small, of order $m^{-1/2}$, while the outputs depend on all $m$ weights; so the outputs can change by order one while every weight changes by order $m^{-1/2}$. And the curvature of the outputs, which is what makes $K_t$ move, is a sum of $m$ terms each of order $1/m$ in the same scaling, so it disappears in the limit while the kernel itself does not. A third fact makes the model useful: the limit kernel is computable in closed form for many architectures, by the same Gaussian recursions that describe signal propagation at initialization (\cref{ch:signalprop}).
+
+\section{The solution: convergence without moving}\label{sec:lazy:convergence}
+
+The first theorem isolates what is needed of $F$: a Jacobian that is well conditioned at initialization and changes slowly over a ball whose radius is set by the initial error.
+
+\begin{theorem}[Lazy training]\label{thm:lazy:lazy}\index{lazy training}
+Let $F\colon\R^P\to\R^n$ be continuously differentiable with Jacobian $J$, let $y\in\R^n$ and $\theta_0\in\R^P$, and let $u_0=F(\theta_0)-y$. Let $\mu>0$, let $R=\norm{u_0}/\mu$, and let $B$ be the closed ball of radius $R$ around $\theta_0$. Assume
+\begin{enumerate}
+\item $\lmin\bigl(J(\theta_0)J(\theta_0)^\top\bigr)\ge4\mu^2$;
+\item $\norm{J(\theta)-J(\theta')}_{\op}\le L_J\norm{\theta-\theta'}$ for all $\theta,\theta'\in B$;
+\item $L_JR\le\mu$.
+\end{enumerate}
+Then the gradient flow \eqref{eq:lazy:flow} started at $\theta_0$ exists for all $t\ge0$, and for every $t\ge0$,
+\begin{equation}\label{eq:lazy:lazy}
+  \norm{u_t}\le e^{-\mu^2t}\norm{u_0},\qquad \norm{\theta_t-\theta_0}\le\frac{\norm{u_0}-\norm{u_t}}\mu .
+\end{equation}
+In particular $\theta_t$ stays in $B$, and it converges to a point $\theta_\infty\in B$ with $F(\theta_\infty)=y$.
+\end{theorem}
+
+\begin{proof}
+The plan is to show that the kernel $K_t$ stays at least $\mu^2$ on the ball, which makes the residual decay, and that the path length is controlled by the decrease of the residual, which keeps the flow inside the ball.
+
+\emph{The degenerate case.} If $u_0=0$, then $\theta_0$ is a stationary point of \eqref{eq:lazy:flow}, the flow is constant, and \eqref{eq:lazy:lazy} holds with $R=0$. From now on $u_0\ne0$, so $R>0$.
+
+\emph{The Jacobian stays well conditioned on $B$.} Let $\theta\in B$ and $v\in\R^n$. Hypothesis (i) gives $\norm{J(\theta_0)^\top v}^2=v^\top J(\theta_0)J(\theta_0)^\top v\ge4\mu^2\norm v^2$, and hypotheses (ii) and (iii) give $\norm{J(\theta)-J(\theta_0)}_{\op}\le L_JR\le\mu$. By the triangle inequality,
+\begin{equation}\label{eq:lazy:cond}
+  \norm{J(\theta)^\top v}\ge\norm{J(\theta_0)^\top v}-\norm{(J(\theta)-J(\theta_0))^\top v}\ge2\mu\norm v-\mu\norm v=\mu\norm v .
+\end{equation}
+
+\emph{Local existence.} On $B$ the map $J$ is Lipschitz by (ii), hence bounded, say $\norm{J(\theta)}_{\op}\le b$, and $F$ is then Lipschitz with constant $b$. So the vector field $\theta\mapsto-J(\theta)^\top(F(\theta)-y)$ is Lipschitz on $B$, and by the Picard--Lindel\"of theorem the flow has a unique solution on a maximal interval $[0,T^*)$ during which it stays in the open ball $B^\circ$; if $T^*<\infty$, then $\theta_t$ leaves every compact subset of $B^\circ$ as $t\uparrow T^*$.
+
+\emph{The residual decays.} For $t<T^*$, \eqref{eq:lazy:residual} and \eqref{eq:lazy:cond} give
+\[
+  \frac{\dd}{\dd t}\norm{u_t}^2=-2u_t^\top K_tu_t=-2\norm{J(\theta_t)^\top u_t}^2\le-2\mu^2\norm{u_t}^2 ,
+\]
+so $\norm{u_t}\le e^{-\mu^2t}\norm{u_0}$. The same identity and $\norm{J(\theta_t)^\top u_t}\le b\norm{u_t}$ give $\frac{\dd}{\dd t}\norm{u_t}^2\ge-2b^2\norm{u_t}^2$, hence $\norm{u_t}\ge e^{-b^2t}\norm{u_0}>0$.
+
+\emph{The path length is bounded by the decrease of the residual.} Since $u_t\ne0$, the norm $\norm{u_t}$ is differentiable, and \eqref{eq:lazy:cond} with $v=u_t$ gives
+\[
+  \frac{\dd}{\dd t}\norm{u_t}=-\frac{\norm{J(\theta_t)^\top u_t}^2}{\norm{u_t}}\le-\mu\norm{J(\theta_t)^\top u_t}=-\mu\norm{\dot\theta_t}.
+\]
+Integrating from $0$ to $t$ gives $\norm{\theta_t-\theta_0}\le\int_0^t\norm{\dot\theta_s}\dd s\le(\norm{u_0}-\norm{u_t})/\mu$, which is \eqref{eq:lazy:lazy} on $[0,T^*)$.
+
+\emph{The flow never leaves.} Suppose $T^*<\infty$. By the last two steps, for $t<T^*$,
+\[
+  \norm{\theta_t-\theta_0}\le R-\frac{\norm{u_t}}\mu\le R-\frac{e^{-b^2T^*}\norm{u_0}}\mu ,
+\]
+so $\theta_t$ stays in a closed ball of radius strictly less than $R$, a compact subset of $B^\circ$, which contradicts the maximality of $T^*$. Hence $T^*=\infty$ and \eqref{eq:lazy:lazy} holds for all $t$.
+
+\emph{Convergence.} The total path length $\int_0^\infty\norm{\dot\theta_s}\dd s$ is at most $\norm{u_0}/\mu$, so $\theta_t$ is Cauchy as $t\to\infty$ and converges to some $\theta_\infty\in B$. By continuity of $F$, $F(\theta_\infty)-y=\lim_tu_t=0$.
+\end{proof}
+
+The hypothesis is never convexity; it is a lower bound on $\norm{J^\top u}$ in terms of $\norm u$, which says that $\norm{\nabla\Lhat}^2\ge2\mu^2\Lhat$ on $B$, a Polyak--{\L}ojasiewicz inequality, and \textcite{LiuEtAl2022} build a theory of overparameterized optimization on this observation. And the radius $R=\norm{u_0}/\mu$ does not involve $L_J$: the parameters travel a distance set by the initial error and the conditioning, while the curvature only has to be small \emph{on that distance}. Wide networks will make $R$ independent of the width and $L_J$ of order $m^{-1/2}$.
+
+Under the same hypotheses the network stays close to its linearization. Let $\theta^{\mathrm{lin}}_t$ be the gradient flow of $\frac12\norm{F^{\mathrm{lin}}(\theta)-y}^2$ with $F^{\mathrm{lin}}(\theta)=F(\theta_0)+J(\theta_0)(\theta-\theta_0)$, from $\theta_0$, and $u^{\mathrm{lin}}_t$ its residual. Its kernel is the constant $K_0=J(\theta_0)J(\theta_0)^\top$, so $u^{\mathrm{lin}}_t=\exp(-tK_0)u_0$.
+
+\begin{corollary}[Closeness to the linearized model]\label[corollary]{cor:lazy:linear}
+Under the hypotheses of \cref{thm:lazy:lazy}, let $\beta_0=\norm{J(\theta_0)}_{\op}$. For every $t\ge0$,
+\[
+  \norm{u_t-u^{\mathrm{lin}}_t}\le\frac{\beta_0L_J\norm{u_0}^2}{\mu^3}\,e^{-\mu^2t},\qquad
+  \norm{\theta_t-\theta^{\mathrm{lin}}_t}\le\frac{2\beta_0^2L_J\norm{u_0}^2}{\mu^5}.
+\]
+If, moreover, a test input $x$ has $\norm{\nabla_\theta f(x;\theta)-\nabla_\theta f(x;\theta')}\le L_x\norm{\theta-\theta'}$ on $B$, then $\abs{f(x;\theta_t)-f^{\mathrm{lin}}(x;\theta^{\mathrm{lin}}_t)}\le\frac12L_xR^2+\norm{\nabla_\theta f(x;\theta_0)}\,\norm{\theta_t-\theta^{\mathrm{lin}}_t}$.
+\end{corollary}
+
+\begin{proof}
+The plan is to write the difference of the two residuals by variation of constants around the linear equation and to bound the forcing term by the motion of the kernel.
+
+\emph{The kernel moves little.} Hypothesis (i) gives $4\mu^2\le\lmin(K_0)\le\beta_0^2$, so $\mu\le\beta_0/2$. By \cref{thm:lazy:lazy}, $\norm{\theta_s-\theta_0}\le R$, so $\epsilon\defeq\sup_s\norm{J(\theta_s)-J(\theta_0)}_{\op}\le L_JR\le\mu$. Writing $J_s=J(\theta_s)$ and $J_0=J(\theta_0)$,
+\[
+  \norm{K_s-K_0}_{\op}=\norm{(J_s-J_0)J_s^\top+J_0(J_s-J_0)^\top}_{\op}\le\epsilon(2\beta_0+\epsilon),
+\]
+which is at most $3\beta_0L_JR$.
+
+\emph{Variation of constants.} The difference $\delta_t=u_t-u^{\mathrm{lin}}_t$ satisfies $\delta_0=0$ and $\dot\delta_t=-K_0\delta_t-(K_t-K_0)u_t$, so $\delta_t=-\int_0^t\exp(-(t-s)K_0)(K_s-K_0)u_s\dd s$. Since $K_0\succeq4\mu^2I_n$, $\norm{\exp(-(t-s)K_0)}_{\op}\le e^{-4\mu^2(t-s)}$, and with $\norm{u_s}\le e^{-\mu^2s}\norm{u_0}$,
+\begin{align*}
+  \norm{\delta_t}&\le3\beta_0L_JR\norm{u_0}\int_0^te^{-4\mu^2(t-s)}e^{-\mu^2s}\dd s\\
+  &\le3\beta_0L_JR\norm{u_0}\,\frac{e^{-\mu^2t}}{3\mu^2}=\frac{\beta_0L_J\norm{u_0}^2}{\mu^3}e^{-\mu^2t}.
+\end{align*}
+
+\emph{Parameters.} Integrating $\dot\theta_s-\dot\theta^{\mathrm{lin}}_s=-(J_s-J_0)^\top u_s-J_0^\top\delta_s$ and using the bounds above,
+\begin{align*}
+  \norm{\theta_t-\theta^{\mathrm{lin}}_t}&\le\int_0^\infty\Bigl(L_JR\norm{u_s}+\beta_0\norm{\delta_s}\Bigr)\dd s\\
+  &\le\frac{L_J\norm{u_0}^2}{\mu^3}+\frac{\beta_0^2L_J\norm{u_0}^2}{\mu^5}\le\frac{2\beta_0^2L_J\norm{u_0}^2}{\mu^5},
+\end{align*}
+the last step by $\mu\le\beta_0$.
+
+\emph{A test input.} Taylor's theorem with a Lipschitz gradient bounds the difference between $f(x;\theta_t)$ and $f^{\mathrm{lin}}(x;\theta_t)$ by $\frac12L_x\norm{\theta_t-\theta_0}^2\le\frac12L_xR^2$. The linearized model changes by $\ip{\nabla_\theta f(x;\theta_0),\theta_t-\theta^{\mathrm{lin}}_t}$ between $\theta^{\mathrm{lin}}_t$ and $\theta_t$.
+\end{proof}
+
+The linearized model is solved in closed form, and its solution is kernel regression.
+
+\begin{proposition}[Lazy training is kernel regression]\label[proposition]{prop:lazy:kernelreg}
+Suppose $K_0=J(\theta_0)J(\theta_0)^\top$ is invertible, and write $K_0(x,X)$ for the row vector $(K_{\theta_0}(x,x_i))_{i\le n}$. The linearized flow satisfies, for every $t\ge0$ and every input $x$,
+\begin{equation}\label{eq:lazy:krr}
+  f^{\mathrm{lin}}(x;\theta^{\mathrm{lin}}_t)=f(x;\theta_0)-K_0(x,X)\,K_0^{-1}\bigl(I_n-\exp(-tK_0)\bigr)u_0 .
+\end{equation}
+As $t\to\infty$ it converges to the kernel interpolant $f(x;\theta_0)+K_0(x,X)K_0^{-1}(y-F(\theta_0))$. The parameters move by $\norm{\theta^{\mathrm{lin}}_t-\theta_0}^2=u_0^\top K_0^{-1}(I_n-\exp(-tK_0))^2u_0$, which increases to $u_0^\top K_0^{-1}u_0$, the smallest $\norm{\theta-\theta_0}^2$ among all $\theta$ with $F^{\mathrm{lin}}(\theta)=y$.
+\end{proposition}
+
+\begin{proof}
+With $J_0=J(\theta_0)$, the linearized flow is $\dot\theta=-J_0^\top\exp(-tK_0)u_0$, so $\theta^{\mathrm{lin}}_t-\theta_0=-J_0^\top\int_0^t\exp(-sK_0)\dd s\,u_0=-J_0^\top K_0^{-1}(I_n-\exp(-tK_0))u_0$. Since $\nabla_\theta f(x;\theta_0)^\top J_0^\top=K_0(x,X)$, inserting this in \eqref{eq:lazy:lin} gives \eqref{eq:lazy:krr}. The squared norm is $v^\top K_0^{-1}J_0J_0^\top K_0^{-1}v=v^\top K_0^{-1}v$ with $v=(I_n-\exp(-tK_0))u_0$; in an eigenbasis of $K_0$ with eigenvalues $\lambda_k>0$ it is $\sum_k(1-e^{-\lambda_kt})^2c_k^2/\lambda_k$, with $c_k$ the coordinates of $u_0$, which increases in $t$. Finally every $\Delta$ with $J_0\Delta=-u_0$ splits as $\Delta=J_0^\top c+\Delta^\perp$ with $J_0\Delta^\perp=0$; then $K_0c=-u_0$, and $\norm\Delta^2=u_0^\top K_0^{-1}u_0+\norm{\Delta^\perp}^2$.
+\end{proof}
+
+The interpolant is the kernel analogue of the minimum-norm least-squares estimator of \cref{ch:doubledescent}: among all functions in the span of the tangent features that fit the residual labels, gradient flow from $\theta_0$ picks the one of smallest norm, here the norm of the reproducing kernel Hilbert space of $K_0$.
+
+We now check the hypotheses of \cref{thm:lazy:lazy} for the two-layer network. Everything rests on one fact about the limit kernel.
+
+\begin{lemma}[The limit kernel is positive definite]\label[lemma]{lem:lazy:pd}
+Under \cref{ass:lazy:twolayer}, the matrix $K^\infty=(K^\infty(x_i,x_j))_{i,j\le n}$ is positive definite.
+\end{lemma}
+
+\begin{proof}
+The plan is to expand $K^\infty$ in tensor powers of the inputs and to show that a vector annihilated by infinitely many of them vanishes.
+
+\emph{Expansion.} Since $\phi'$ is bounded, it has a Hermite expansion $\phi'=\sum_kb_kh_k$ in $L^2(\cN(0,1))$ with $\sum_kb_k^2=\E\phi'(g)^2\le\beta^2$, and \cref{cor:toolkit:dual} gives $\kappa(\rho)=\sum_kb_k^2\rho^k$. Hence $K^\infty_{ij}=\sum_kb_k^2\ip{x_i,x_j}^{k+1}$, and since $\ip{x_i,x_j}^{p}=\ip{x_i^{\otimes p},x_j^{\otimes p}}$, for every $v\in\R^n$
+\[
+  v^\top K^\infty v=\sum_{k\ge0}b_k^2\,\Bigl\|\sum_{i=1}^nv_i\,x_i^{\otimes(k+1)}\Bigr\|^2\ge0 .
+\]
+
+\emph{Infinitely many terms.} If only finitely many $b_k$ were nonzero, then $\phi'$ would agree almost everywhere, hence everywhere by continuity, with a polynomial; a bounded polynomial is constant, and $\phi$ would be affine, which \cref{ass:lazy:twolayer} excludes. So the set $S=\{k\colon b_k\ne0\}$ is infinite.
+
+\emph{A vector in the kernel vanishes.} Suppose $v^\top K^\infty v=0$. Then $\sum_iv_ix_i^{\otimes(k+1)}=0$ for each $k\in S$, and pairing with $z^{\otimes(k+1)}$ gives $\sum_iv_i\ip{x_i,z}^{k+1}=0$ for every $z\in\R^d$. The vectors $z$ with $\ip{x_i,z}=0$ for some $i$, or with $\ip{x_i,z}=\pm\ip{x_j,z}$ for some $i\ne j$, lie in finitely many hyperplanes, the orthogonal complements of the nonzero vectors $x_i$ and $x_i\mp x_j$ (nonzero because no two inputs are parallel); these do not cover $\R^d$. Choose $z$ outside them and relabel the inputs so that $c_i=\abs{\ip{x_i,z}}$ satisfies $c_1>c_2>\dots>c_n>0$, with signs $\epsilon_i=\sgn\ip{x_i,z}$. If $v\ne0$, let $i_0$ be the first index with $v_{i_0}\ne0$; dividing by $c_{i_0}^{k+1}$,
+\[
+  v_{i_0}\epsilon_{i_0}^{k+1}=-\sum_{i>i_0}v_i\epsilon_i^{k+1}\Bigl(\frac{c_i}{c_{i_0}}\Bigr)^{k+1}\qquad(k\in S),
+\]
+and the right side tends to $0$ as $k\to\infty$ in $S$, while the left side has absolute value $\abs{v_{i_0}}>0$. This contradiction shows $v=0$.
+\end{proof}
+
+The hypothesis on parallel inputs is needed: for $\tanh$ the function $\phi'$ is even, $\kappa(-1)=\kappa(1)$, and an input $x$ together with $-x$ gives two proportional rows of $K^\infty$ (\cref{ex:lazy:pd}). Positivity is qualitative. How large $\lmin$ is depends on the data and the activation, and it can be very small: for $32$ equally spaced points on a circle with a bias coordinate and $\phi=\tanh$, the setting of \cref{fig:lazy:modes}, $\lmin\approx2.6\times10^{-8}$, because the eigenvalues of a smooth kernel decay fast with frequency.
+
+\begin{lemma}[The network at initialization]\label[lemma]{lem:lazy:init}
+Under \cref{ass:lazy:twolayer}, let $J(W)\in\R^{n\times md}$ be the Jacobian of $W\mapsto(f(x_i;W))_{i\le n}$, let $c_\phi=\E\phi(g)^2$ for $g\sim\cN(0,1)$, and let $\delta\in(0,1)$.
+\begin{enumerate}
+\item For all $W,W'$, $\norm{J(W)}_{\op}\le\beta\sqrt n$ and $\norm{J(W)-J(W')}_{\op}\le\beta\sqrt{n/m}\,\norm{W-W'}_F$.
+\item If $m\ge\frac{8\beta^4n^2}{\lmin^2}\log\frac{4n^2}\delta$, then with probability at least $1-\frac\delta2$, $\norm{K_0-K^\infty}_{\op}\le\frac{\lmin}2$, and hence $\lmin(K_0)\ge\frac{\lmin}2$.
+\item With probability at least $1-\frac\delta2$, $\norm{u_0}^2\le2n(c_\phi+1)/\delta$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+\emph{Part (i).} The entry of $J(W)$ in row $i$ and in the block of coordinates of $w_r$ is $m^{-1/2}a_r\phi'(\ip{w_r,x_i})x_i^\top$. With $\abs{\phi'}\le\beta$, $a_r^2=1$, and $\norm{x_i}=1$, the squared Frobenius norm is at most $\sum_i\sum_r\beta^2/m=n\beta^2$, which bounds the operator norm. For the difference, $\abs{\phi'(s)-\phi'(s')}\le\beta\abs{s-s'}$ and the Cauchy--Schwarz inequality $\abs{\ip{w_r-w_r',x_i}}\le\norm{w_r-w_r'}$ give
+\[
+  \norm{J(W)-J(W')}_F^2=\frac1m\sum_{i=1}^n\sum_{r=1}^m\bigl(\phi'(\ip{w_r,x_i})-\phi'(\ip{w_r',x_i})\bigr)^2\le\frac{n\beta^2}m\norm{W-W'}_F^2 .
+\]
+
+\emph{Part (ii).} By \eqref{eq:lazy:kinf}, $K_0=\frac1m\sum_rZ_r$, where the matrix $Z_r$ has the entries $(Z_r)_{ij}=\ip{x_i,x_j}\phi'(\ip{w_r,x_i})\phi'(\ip{w_r,x_j})$. The matrices $Z_r$ are independent, have mean $K^\infty$, and have entries in $[-\beta^2,\beta^2]$. Hoeffding's inequality (\cref{thm:toolkit:hoeffding}) for the entry $(i,j)$, with deviation $ms$ and $m$ summands of range $2\beta^2$, gives
+\[
+  \Pr\Bigl(\abs{(K_0-K^\infty)_{ij}}\ge s\Bigr)\le2\exp\Bigl(-\frac{2m^2s^2}{m(2\beta^2)^2}\Bigr)=2\exp\Bigl(-\frac{ms^2}{2\beta^4}\Bigr).
+\]
+Take $s=\lmin/(2n)$ and a union bound over the $n^2$ entries: with probability at least $1-2n^2\exp(-m\lmin^2/(8n^2\beta^4))\ge1-\frac\delta2$, every entry is below $s$, so $\norm{K_0-K^\infty}_{\op}\le\norm{K_0-K^\infty}_F\le ns=\lmin/2$. Weyl's inequality then gives $\lmin(K_0)\ge\lmin-\lmin/2$.
+
+\emph{Part (iii).} The output $f(x_i;W_0)=m^{-1/2}\sum_ra_r\phi(\ip{w_r,x_i})$ is a normalized sum of $m$ independent terms; each has mean zero, because $a_r$ is a symmetric sign independent of $w_r$, and second moment $c_\phi$, which is finite because $\abs{\phi(s)}\le\abs{\phi(0)}+\beta\abs s$. Hence $\E f(x_i;W_0)=0$, $\E f(x_i;W_0)^2=c_\phi$, and $\E\norm{u_0}^2=\sum_i(c_\phi+y_i^2)\le n(c_\phi+1)$. Markov's inequality gives (iii).
+\end{proof}
+
+\begin{theorem}[Wide two-layer networks train lazily]\label{thm:lazy:twolayer}
+Under \cref{ass:lazy:twolayer}, let $\delta\in(0,1)$ and suppose
+\begin{equation}\label{eq:lazy:width}
+  m\ge\frac{n^2}{\lmin^2}\max\Bigl\{8\beta^4\log\frac{4n^2}\delta,\ \frac{128\beta^2(c_\phi+1)}\delta\Bigr\}.
+\end{equation}
+With probability at least $1-\delta$ over the initialization, the gradient flow of $\Lhat(W)=\frac12\sum_i(f(x_i;W)-y_i)^2$ from $W_0$ satisfies, for all $t\ge0$,
+\begin{align*}
+  \norm{u_t}&\le e^{-\lmin t/8}\norm{u_0},\\
+  \norm{W_t-W_0}_F&\le\sqrt{8/\lmin}\,\norm{u_0}\le4\sqrt{n(c_\phi+1)/(\lmin\delta)},\\
+  \max_{r\le m}\norm{w_r(t)-w_r(0)}&\le8\beta\sqrt n\,\norm{u_0}/(\lmin\sqrt m),\\
+  \norm{K_t-K_0}_{\op}&\le3\sqrt8\,\beta^2n\norm{u_0}/\sqrt{\lmin m} .
+\end{align*}
+\end{theorem}
+
+\begin{proof}
+The plan is to apply \cref{thm:lazy:lazy} with $\mu^2=\lmin/8$ on the event where parts (ii) and (iii) of \cref{lem:lazy:init} hold, which has probability at least $1-\delta$ by a union bound.
+
+\emph{The hypotheses.} The first term of \eqref{eq:lazy:width} and \cref{lem:lazy:init}(ii) give $\lmin(K_0)\ge\lmin/2=4\mu^2$, hypothesis (i). \Cref{lem:lazy:init}(i) gives hypothesis (ii) on all of $\R^{m\times d}$ with $L_J=\beta\sqrt{n/m}$. For hypothesis (iii), $L_JR=\beta\sqrt{n/m}\,\norm{u_0}/\mu\le\mu$ is equivalent to $m\ge n\beta^2\norm{u_0}^2/\mu^4=64n\beta^2\norm{u_0}^2/\lmin^2$, which holds by \cref{lem:lazy:init}(iii) and the second term of \eqref{eq:lazy:width}.
+
+\emph{The conclusions.} \Cref{thm:lazy:lazy} gives the decay of $u_t$ and $\norm{W_t-W_0}_F\le R=\norm{u_0}/\mu$, and \cref{lem:lazy:init}(iii) bounds $\norm{u_0}$. For one neuron, $\dot w_r=-m^{-1/2}a_r\sum_iu_{t,i}\phi'(\ip{w_r,x_i})x_i$, so $\norm{\dot w_r}\le\beta m^{-1/2}\sum_i\abs{u_{t,i}}\le\beta\sqrt{n/m}\,\norm{u_t}$; integrating $e^{-\mu^2t}\norm{u_0}$ over $t\ge0$ gives the factor $1/\mu^2=8/\lmin$. For the kernel, the first step of the proof of \cref{cor:lazy:linear} gives $\norm{K_t-K_0}_{\op}\le3\beta_0L_JR$ with $\beta_0\le\beta\sqrt n$ by \cref{lem:lazy:init}(i).
+\end{proof}
+
+Read the theorem as a statement about scales. The displacement $\norm{W_t-W_0}_F$ is bounded independently of $m$, while $\norm{W_0}_F\approx\sqrt{md}$, so the relative change of the weights is of order $m^{-1/2}$; so is the largest move of a single neuron, and so is the change of the kernel. The width needed is of order $n^2/\lmin^2$ up to factors in $\delta$ and $\log n$. The exponents are not sharp: \textcite{DuEtAl2019} needed a larger power of $n$ for ReLU, and \textcite{OymakSoltanolkotabi2020} reduced the requirement for smooth activations to a number of parameters of order $n^2$. \Cref{sec:lazy:reading} shows that the kernel in fact moves by order $1/m$, not $m^{-1/2}$.
+
+\section{The solution: what a kernel can and cannot learn}\label{sec:lazy:kernels}
+
+In the lazy regime training is kernel regression, so what lazy networks learn is decided by the kernel. Two questions remain: in which order the kernel learns, and what no kernel can learn.
+
+\paragraph{Learning by modes.} On the training set the answer is in \eqref{eq:lazy:krr}: if $v_k$ is an eigenvector of $K_0$ with eigenvalue $\lambda_k$, then $\ip{v_k,u^{\mathrm{lin}}_t}=e^{-\lambda_kt}\ip{v_k,u_0}$, the normal modes of the quadratic of \cref{ch:prologue}. For the population, let $x\sim\Unif(\Sph^{d-1})$, let $K(x,x')=\psi(\ip{x,x'})$ be a bounded rotation-invariant kernel, and let $T_K$ be its integral operator, $(T_Kg)(x)=\E_{x'}[K(x,x')g(x')]$. The \term{population linearized flow} is the gradient flow of $\frac12\norm{f-f_\star}^2$ in the geometry of the kernel,
+\begin{equation}\label{eq:lazy:popflow}
+  \partial_tf_t=-T_K(f_t-f_\star),
+\end{equation}
+which is what \eqref{eq:lazy:krr} becomes for the loss $\frac1{2n}\sum_i(f(x_i)-y_i)^2$ when $n\to\infty$ and time is measured in units of $n$.
+
+\begin{proposition}[Spectral bias on the sphere]\label[proposition]{prop:lazy:spectral}\index{spectral bias}
+Let $\Pi_k$ be the orthogonal projection of $L^2(\Sph^{d-1})$ onto the spherical harmonics $\cH_k$ of degree $k$, and let $\lambda_k=\frac{\abs{\Sph^{d-2}}}{\abs{\Sph^{d-1}}}\int_{-1}^1\psi(t)P_{d,k}(t)(1-t^2)^{(d-3)/2}\dd t$, with $P_{d,k}$ the Gegenbauer polynomial normalized by $P_{d,k}(1)=1$. The solution of \eqref{eq:lazy:popflow} with $f_0-f_\star\in L^2$ satisfies $\Pi_k(f_t-f_\star)=e^{-\lambda_kt}\,\Pi_k(f_0-f_\star)$ for every $k\ge0$ and $t\ge0$.
+\end{proposition}
+
+\begin{proof}
+The operator $T_K$ is bounded on $L^2$, with norm at most $\sup\abs\psi$, so \eqref{eq:lazy:popflow} is a linear equation with a bounded operator and the unique solution $f_t-f_\star=\exp(-tT_K)(f_0-f_\star)$. By the Funk--Hecke formula (\cref{thm:toolkit:addition}(iii)), $T_KY=\lambda_kY$ for every $Y\in\cH_k$, so $T_K$ commutes with $\Pi_k$ and $\exp(-tT_K)\Pi_k=e^{-\lambda_kt}\Pi_k$.
+\end{proof}
+
+For the two-layer network, $K^\infty(x,x')=\rho\,\kappa(\rho)$ with $\rho=\ip{x,x'}$ and $\kappa(\rho)=\sum_jb_j^2\rho^j$, so the eigenvalues are determined by the Hermite coefficients of $\phi'$, and their decay by the smoothness of $\phi$. For ReLU, $\kappa(\rho)=(\pi-\arccos\rho)/(2\pi)$, a classical arc-cosine kernel \parencite{ChoSaul2009}, and the eigenvalues decay like $k^{-d}$ \parencite{BiettiMairal2019}; for smooth activations they decay faster, geometrically for $\tanh$ in our examples. The parity of $\phi'$ matters too. For ReLU, $\rho\kappa(\rho)=\frac\rho4+\frac{\rho\arcsin\rho}{2\pi}$ is a degree-one term plus an even function, so $\lambda_k=0$ for every odd $k\ge3$ (\cref{ex:lazy:relu}): a two-layer ReLU network without bias cannot learn odd harmonics of degree three or more in the lazy regime at all \parencite{BasriEtAl2019}. A bias, implemented as a constant input coordinate, removes these zeros.
+
+\paragraph{What no fixed space of functions can learn.} Low-degree harmonics come first; high-degree harmonics are not only slow but expensive in samples, for every kernel. The reason is a counting argument, and it does not care how the kernel was chosen.
+
+\begin{theorem}[What a kernel cannot learn]\label{thm:lazy:lower}\index{kernel lower bound}
+Let $d\ge3$, $k\ge0$, and $N=N_{d,k}=\dim\cH_k$. For $w\in\Sph^{d-1}$ let
+\[
+  f_w(x)=\frac{Z_k(x,w)}{\sqrt N}=\sqrt N\,P_{d,k}(\ip{w,x}),
+\]
+with $Z_k$ the reproducing kernel of $\cH_k$ (\cref{thm:toolkit:addition}(ii)), so that $\norm{f_w}_{L^2}=1$. Let $w\sim\Unif(\Sph^{d-1})$, and let $V\subset L^2(\Sph^{d-1})$ be a random subspace of dimension at most $n$, spanned by a random orthonormal family independent of $w$. Then
+\[
+  \E\norm{f_w-\Pi_Vf_w}^2=1-\frac{\E\tr(\Pi_V\Pi_k)}N\ge1-\frac nN .
+\]
+Consequently, every estimator $\hat f$ that takes values in $V$, whatever it does with the labels, satisfies $\E\norm{\hat f-f_w}^2\ge1-n/N$.
+\end{theorem}
+
+\begin{proof}
+The plan is to compute the energy of $f_w$ in one fixed direction, averaged over $w$, with the reproducing property, and to add over an orthonormal basis of $V$.
+
+\emph{Normalization.} The reproducing property gives $\norm{Z_k(\cdot,w)}^2=Z_k(w,w)=N$, so $\norm{f_w}=1$; the second expression for $f_w$ is $Z_k(x,w)=N\,P_{d,k}(\ip{x,w})$ from \cref{thm:toolkit:addition}(ii).
+
+\emph{One direction.} Let $e\in L^2$. Since $Z_k$ is the kernel of $\Pi_k$, $\ip{e,f_w}=N^{-1/2}\int e(x)Z_k(x,w)\dd x=N^{-1/2}(\Pi_ke)(w)$, the integral being against the uniform probability measure. Averaging over $w\sim\Unif(\Sph^{d-1})$,
+\[
+  \E_w\ip{e,f_w}^2=\frac1N\norm{\Pi_ke}^2\le\frac{\norm e^2}N .
+\]
+
+\emph{The subspace.} Condition on $V$, which is independent of $w$, and let $e_1,\dots,e_{n'}$, $n'\le n$, be its orthonormal basis. Then $\norm{f_w-\Pi_Vf_w}^2=1-\sum_j\ip{e_j,f_w}^2$, and the previous step gives $\E_w\sum_j\ip{e_j,f_w}^2=\frac1N\sum_j\norm{\Pi_ke_j}^2=\frac1N\tr(\Pi_V\Pi_k)\le\frac{n'}N$. Take expectations over $V$.
+
+\emph{Estimators.} If $\hat f\in V$, then $\hat f-\Pi_Vf_w\in V$ is orthogonal to $f_w-\Pi_Vf_w$, so $\norm{\hat f-f_w}^2\ge\norm{f_w-\Pi_Vf_w}^2$.
+\end{proof}
+
+The theorem applies to every method that predicts from a fixed space of at most $n$ functions. Kernel ridge regression and kernel interpolation with \emph{every} bounded kernel predict in the span of $K(\cdot,x_i)$, whose dimension is at most $n$ and which depends on the inputs only. The linearized network of \cref{prop:lazy:kernelreg}, started from an initialization independent of $w$, predicts in $f(\cdot;\theta_0)+\mathrm{span}\{K_0(\cdot,x_i)\}$, inside a space of dimension $n+1$. A random-features model with $p$ features predicts in a space of dimension $p$ whatever $n$ is. Each therefore needs $n$ (or $p$) of order $N_{d,k}=\frac{d^k}{k!}(1+O(1/d))$ to reach error $\frac12$ on a target that depends on one unknown direction through a polynomial of degree $k$. For $d=30$ that is $N_{30,2}=464$ for $k=2$ and $N_{30,3}=4930$ for $k=3$.
+
+A network whose first layer moves can first find $w$ and then fit a function of one variable. \Cref{ch:singleindex} shows that one neuron trained by online stochastic gradient descent finds the direction of a target of information exponent $k$ from about $d^{k-1}$ samples (up to logarithms), and \textcite{DamianEtAl2022} prove that gradient descent on a two-layer network outside the kernel regime learns functions of $r$ hidden directions of degree $p$ from about $d^2r+dr^p$ samples, against $d^p$ for kernels. The kernel pays for not knowing the direction: it must be ready for all $N_{d,k}$ of them.
+
+\paragraph{The kernel of a deep network.} The limit kernel of a deep fully connected network obeys the same Gaussian recursion as its forward signals (\cref{ch:signalprop}), with one more term.
+
+\begin{theorem}[\textcite{JacotEtAl2018}; nonasymptotic form by \textcite{AroraEtAl2019b}]\label{thm:lazy:deepntk}
+Consider $h^1(x)=\sigma_wd^{-1/2}W^1x+\sigma_bb^1$ and $h^{\ell+1}=\sigma_wm^{-1/2}W^{\ell+1}\phi(h^\ell)+\sigma_bb^{\ell+1}$ for $\ell<L$, with independent standard Gaussian entries in all $W^\ell$ and $b^\ell$, hidden widths $m$, one output, and $\phi$ Lipschitz and twice differentiable with bounded second derivative. Define $\Sigma^1(x,x')=\sigma_w^2\ip{x,x'}/d+\sigma_b^2$ and, with $(g,g')$ centered Gaussian with covariance $\Sigma^\ell$ restricted to $\{x,x'\}$,
+\begin{gather*}
+  \Sigma^{\ell+1}=\sigma_w^2\E[\phi(g)\phi(g')]+\sigma_b^2,\qquad \dot\Sigma^{\ell+1}=\sigma_w^2\E[\phi'(g)\phi'(g')],\\
+  \Theta^{\ell+1}=\Theta^\ell\,\dot\Sigma^{\ell+1}+\Sigma^{\ell+1},
+\end{gather*}
+with $\Theta^1=\Sigma^1$. As the hidden widths tend to infinity one after the other, the tangent kernel of the output with respect to all weights and biases converges in probability to $\Theta^L$ at initialization, and, along gradient flow on the square loss over a fixed horizon, stays equal to $\Theta^L$ in the limit.
+\end{theorem}
+
+\begin{proofsketch}
+The gradient with respect to the last layer contributes $\frac{\sigma_w^2}m\sum_j\phi(h^{L-1}_j(x))\phi(h^{L-1}_j(x'))+\sigma_b^2\to\Sigma^L$ by the law of large numbers, as in \cref{ch:signalprop}. By the chain rule the gradient with respect to earlier layers is the tangent kernel of $h^{L-1}_j$, which converges to $\Theta^{L-1}$ for each $j$ by induction, multiplied by $\frac{\sigma_w^2}m\sum_j\phi'(h^{L-1}_j(x))\phi'(h^{L-1}_j(x'))\to\dot\Sigma^L$; the cross terms average out. Constancy during training follows the argument of \cref{thm:lazy:lazy}: the weights of each layer move by $O(m^{-1/2})$ in operator norm. The details are in \textcite[Theorems~1 and~2]{JacotEtAl2018}; \textcite{AroraEtAl2019b} give a version with explicit widths, and \textcite{LeeEtAl2019} the closeness of the network to its linearization.
+\end{proofsketch}
+
+For the two-layer network of \cref{ass:lazy:twolayer} ($L=2$, $\sigma_w=1$, $\sigma_b=0$, unit inputs scaled by $\sqrt d$) the part of $\Theta^2$ coming from the first layer is $\Sigma^1\dot\Sigma^2=\ip{x,x'}\kappa(\ip{x,x'})$, which is \eqref{eq:lazy:kinf}; training the second layer adds $\Sigma^2$ (\cref{ex:lazy:bothlayers}).
+
+\paragraph{The other infinite width.} Laziness comes from the factor $m^{-1/2}$, not from the width itself \parencite{ChizatEtAl2019}. The following derivation shows how.
+
+\begin{heuristic}[Lazy and mean-field scalings]
+Write $f(x)=m^{-\gamma}\sum_ra_r\phi(\ip{w_r,x})$ with $\frac12\le\gamma\le1$, and train with the step (or time scale) $\eta$. The function moves at speed $\partial_tf=-\eta\sum_r\nabla_{w_r}f\cdot\nabla_{w_r}\Lhat$, a sum of $m$ terms each of order $m^{-2\gamma}$, so it changes by order one per unit time only if $\eta\asymp m^{2\gamma-1}$. Each neuron then moves at speed $\eta\norm{\nabla_{w_r}\Lhat}\asymp m^{2\gamma-1}m^{-\gamma}=m^{\gamma-1}$. For $\gamma=\frac12$, the NTK parameterization with step of order one, each neuron moves by $O(m^{-1/2})$ while the function changes by $O(1)$: lazy. For $\gamma=1$, the \term{mean-field parameterization}\index{mean-field limit} with step of order $m$, each neuron moves by $O(1)$, and the kernel $\eta\sum_r\nabla_{w_r}f(x)\cdot\nabla_{w_r}f(x')$, an average of $m$ terms of order one, changes by order one: the features are learned. Between the two, the motion of one neuron is $m^{\gamma-1}$ and laziness sets in as $m\to\infty$ for every $\gamma<1$.
+\end{heuristic}
+
+The mean-field limit is not a linear model but a nonlinear partial differential equation for the distribution of neurons. Let $\rho^m_t=\frac1m\sum_r\delta_{(a_r(t),w_r(t))}$ for a network $f(x)=\frac1m\sum_ra_r\phi(\ip{w_r,x})$ trained in both layers, and write $f_\rho(x)=\int a\phi(\ip{w,x})\dd\rho(a,w)$.
+
+\begin{theorem}[\textcite{MeiEtAl2018,ChizatBach2018,RotskoffVandenEijnden2022,SirignanoSpiliopoulos2020}; stated without proof]\label{thm:lazy:meanfield}
+Under regularity conditions on $\phi$ and on the data, and with initial neurons independent with law $\rho_0$, the empirical measure $\rho^m_t$ of gradient flow on the population loss $\frac12\E(f(x)-f_\star(x))^2$, run with time scale $m$, converges weakly as $m\to\infty$, uniformly on bounded time intervals, to the solution of
+\[
+  \partial_t\rho_t=\nabla\cdot\bigl(\rho_t\nabla\Psi(\cdot;\rho_t)\bigr),
+\]
+with $\Psi(a,w;\rho)=\E_x[(f_\rho(x)-f_\star(x))\,a\,\phi(\ip{w,x})]$: a Wasserstein gradient flow of the loss as a function of $\rho$.
+\end{theorem}
+
+\Textcite{ChizatBach2018} prove that, under homogeneity conditions and for an initialization of full support, if the flow converges, then its limit is a global minimizer; \textcite{MeiEtAl2019} recover kernel ridge regression as a limit of the mean-field equation; and \textcite{YangHu2021} classify the scalings of all layers of deep networks: in each, the infinite-width limit either learns features or follows kernel gradient descent, and their maximal-update parameterization ($\mu$P) is the one in which every layer learns features.
+
+\section{Reading the solution}\label{sec:lazy:reading}
+
+\paragraph{Modes.} \Cref{fig:lazy:modes} tests the linearized solution where it can be solved exactly. With equally spaced inputs on the circle the infinite-width kernel is circulant, its eigenvectors on the training set are the Fourier modes, and the linearized model predicts that the Fourier coefficient of frequency $k$ of the residual is multiplied by $1-\eta\lambda_k$ at each step of gradient descent. The eigenvalues $\lambda_1=3.62$, $\lambda_2=0.317$, and $\lambda_3=0.086$ of $K^\infty$ decrease by factors of $11$ and $4$, so the three frequencies of the target are learned on time scales separated by the same factors, one after the other. A network of width $16384$ follows the three predicted curves until each coefficient has decayed to about $10^{-2}$; below that, the residual leaks between modes, because the kernel of a finite network is not exactly circulant and drifts slightly during training. A network of width $64$ learns the first frequency faster and the second and third slower than predicted: at that width the kernel at initialization already differs from $K^\infty$ by about $15\%$ in operator norm.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,height=0.55\linewidth,xlabel={training time $t$},ylabel={$\ip{\cos(k\vartheta),u_t}/\ip{\cos(k\vartheta),u_0}$},
+  xmin=0,xmax=30,ymode=log,ymin=1e-3,ymax=1.3,unbounded coords=discard,legend pos=south west,legend columns=2]
+\addplot[theory] table[x=t,y=k1] {figures/data/06-lazy-modes-theory.dat};
+\addlegendentry{$k=1$}
+\addplot[theory2] table[x=t,y=k2] {figures/data/06-lazy-modes-theory.dat};
+\addlegendentry{$k=2$}
+\addplot[theory3] table[x=t,y=k3] {figures/data/06-lazy-modes-theory.dat};
+\addlegendentry{$k=3$}
+\addlegendimage{simulation}
+\addlegendentry{$m=16384$}
+\addplot[simulation,forget plot] table[x=t,y=m16384_k1] {figures/data/06-lazy-modes-sim.dat};
+\addplot[simulation,forget plot] table[x=t,y=m16384_k2] {figures/data/06-lazy-modes-sim.dat};
+\addplot[simulation,forget plot] table[x=t,y=m16384_k3] {figures/data/06-lazy-modes-sim.dat};
+\addplot[simulation2,mark size=1.1pt,forget plot] table[x=t,y=m64_k1] {figures/data/06-lazy-modes-sim.dat};
+\addplot[simulation2,mark size=1.1pt,forget plot] table[x=t,y=m64_k2] {figures/data/06-lazy-modes-sim.dat};
+\addplot[simulation2,mark size=1.1pt,forget plot] table[x=t,y=m64_k3] {figures/data/06-lazy-modes-sim.dat};
+\addlegendimage{simulation2,mark size=1.1pt}
+\addlegendentry{$m=64$}
+\end{axis}
+\end{tikzpicture}
+\caption{Learning by modes. Training set: $n=32$ equally spaced angles $\vartheta_i$ on the circle, inputs $(\cos\vartheta_i,\sin\vartheta_i,1)/\sqrt2$, labels $y_i=\cos\vartheta_i+\cos2\vartheta_i+\cos3\vartheta_i$. Network: \cref{ass:lazy:twolayer} with $\phi=\tanh$ and an antisymmetric initialization ($w_{r+m/2}=w_r$, $a_{r+m/2}=-a_r$), so that $f(\cdot;W_0)=0$ and $u_0=-y$; full-batch gradient descent with step $\eta=0.02$ (seed $6$). Curves: the linearized prediction $(1-\eta\lambda_k)^{t/\eta}$ with the eigenvalues of $K^\infty$, computed by Gauss--Hermite quadrature. Circles: width $m=16384$; squares: $m=64$. Ratios below $10^{-3}$ are not shown.}
+\label{fig:lazy:modes}
+\end{figure}
+
+\paragraph{How far things move.} \Cref{fig:lazy:width} measures the motion of the parameters and of the kernel. \Cref{prop:lazy:kernelreg} predicts the displacement exactly in the limit: after $s$ steps the linearized model has moved by $D^2=u_0^\top(K^\infty)^{-1}(I-(I-\eta K^\infty)^s)^2u_0$, the squared norm of the fitted part of the target in the reproducing kernel Hilbert space of $K^\infty$ (here $D=7.40$), whatever the width is, while $\E\norm{W_0}_F^2=3m$. The predicted relative change $D/\sqrt{3m}$ matches the simulation to within $2\%$ from $m=512$ on, and the absolute displacement is $7.4$ at every width above $10^3$. The largest move of a single neuron also decreases like $m^{-1/2}$ (from $0.45$ at $m=1024$ to $0.11$ at $m=16384$). The kernel, however, moves by order $1/m$, not $m^{-1/2}$: its relative change falls by a factor of about $2$ for each doubling of the width. \Cref{thm:lazy:twolayer} bounds the change by $m^{-1/2}$, but the leading-order change cancels.
+
+\begin{heuristic}[Why the kernel moves by $1/m$]
+Expand the kernel to first order in the displacements:
+\[
+  K_t(x,x')-K_0(x,x')\approx\frac{\ip{x,x'}}m\sum_r\nabla_w\bigl[\phi'(\ip{w,x})\phi'(\ip{w,x'})\bigr]_{w=w_r}\cdot(w_r(t)-w_r(0)).
+\] The displacement of neuron $r$ is $-m^{-1/2}a_r\int_0^t\sum_iu_{s,i}\phi'(\ip{w_r(s),x_i})x_i\dd s$, a sign $a_r$ times a vector $m^{-1/2}g_r$ that depends on $w_r$ and on the common residual. The first-order change is therefore $m^{-3/2}\sum_ra_rh_r$ with $h_r$ of order one. The signs $a_r$ are independent of $w_r$ and enter the residual only through averages over all neurons, so the sum behaves like a sum of $m$ terms of random sign, of order $\sqrt m$, and the first-order change is of order $m^{-1}$. The second-order terms are $\frac1m\sum_rO(\norm{w_r(t)-w_r(0)}^2)=O(1/m)$. For the antisymmetric initialization of the figure, the first-order terms of each pair of neurons cancel exactly.
+\end{heuristic}
+
+The $1/m$ rate agrees with the analyses of \textcite{DyerGurAri2020} and \textcite{HuangYau2020}, in which the tangent kernel is constant during training up to corrections of order $1/m$.\sidenote{\Textcite{DyerGurAri2020} derive this from a conjecture on the scaling of Gaussian correlation functions, which they prove for deep linear networks; \textcite{HuangYau2020} prove the corresponding statement for their hierarchy of equations for the kernel, under conditions on the width and the data.} We checked that the same rate holds with independent random signs (\cref{ex:lazy:simwidth}).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,height=0.55\linewidth,xmode=log,ymode=log,xlabel={width $m$},ylabel={relative change},
+  xmin=20,xmax=26000,ymin=3e-4,ymax=1.5,log basis x=2,legend pos=south west,
+  xtick={32,128,512,2048,8192},xticklabels={$2^5$,$2^7$,$2^9$,$2^{11}$,$2^{13}$}]
+\addplot[theory] table[x=m,y=relWtheory] {figures/data/06-lazy-width.dat};
+\addlegendentry{$D/\sqrt{3m}$, linearized}
+\addplot[simulation] table[x=m,y=relW] {figures/data/06-lazy-width.dat};
+\addlegendentry{$\norm{W_T-W_0}_F/\norm{W_0}_F$}
+\addplot[simulation2] table[x=m,y=relK] {figures/data/06-lazy-width.dat};
+\addlegendentry{$\norm{K_T-K_0}_{\op}/\norm{K_0}_{\op}$}
+\addplot[guide,domain=20:26000,samples=2] {1.82/sqrt(x)};
+\addlegendentry{slope $-\frac12$}
+\addplot[muted,line width=0.5pt,dotted,domain=20:26000,samples=2] {9.67/x};
+\addlegendentry{slope $-1$}
+\end{axis}
+\end{tikzpicture}
+\caption{Motion of the weights and of the tangent kernel during training, against the width. Same training set, network, and initialization as \cref{fig:lazy:modes}, labels $y_i=\cos\vartheta_i+\cos2\vartheta_i$, gradient descent with $\eta=0.02$ for time $T=25$, at which the training residual is between $0.2\%$ and $2\%$ of $\norm y$. Points: means over $4$ seeds. Curve: the exact linearized displacement $D=7.40$ of \cref{prop:lazy:kernelreg} divided by $\sqrt{3m}$. Dashed and dotted lines: reference slopes through the kernel change at $m=32$ and $m=1024$.}
+\label{fig:lazy:width}
+\end{figure}
+
+\paragraph{The price.} \Cref{fig:lazy:gap} compares kernel ridge regression with a trained network on the target $f_w$ of \cref{thm:lazy:lower} with $k=2$ in dimension $d=30$, where $N_{30,2}=464$. Kernel ridge regression with a two-layer ReLU tangent kernel, given the best ridge parameter in hindsight, learns nothing below $n=100$, has error $0.6$ at $n=400$, and needs about $n=1000$ samples to reach error $0.2$; the theorem's bound $1-n/464$ lies below it, as it must. A two-layer network with $256$ units, trained in both layers from a small output scale, reaches error $0.2$ at $n=240$ and $0.1$ at $n=480$. At this dimension the gap is a factor of four to five in samples; the bound says it grows like $d$ (the kernel needs $d^2/2$, the network order $d$ up to logarithms, \cref{ch:singleindex}). The kernel curve also shows what the bound does not: having enough samples is not enough, because the kernel spends its capacity on the degree-$0$ and degree-$1$ harmonics first and its eigenvalue for degree $2$ is small, so even at $n=600$, well above $N$, its error is $0.4$.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[hplot,height=0.55\linewidth,xmode=log,xlabel={number of samples $n$},ylabel={relative test error},
+  xmin=20,xmax=2200,ymin=0,ymax=1.4,legend pos=north east]
+\addplot[theory,domain=20:464,samples=60] {1-x/464};
+\addlegendentry{bound $1-n/N_{30,2}$}
+\addplot[simulation2] table[x=n,y=krr] {figures/data/06-lazy-gap-kernel.dat};
+\addlegendentry{kernel ridge regression}
+\addplot[simulation] table[x=n,y=net] {figures/data/06-lazy-gap-net.dat};
+\addlegendentry{trained network}
+\addplot[guide] coordinates {(464,0) (464,1.4)};
+\end{axis}
+\end{tikzpicture}
+\caption{A kernel against a network that learns its features, on the target $f_w=\sqrt N\,P_{d,2}(\ip{w,x})$ with $x\sim\Unif(\Sph^{29})$ and no noise; dashed line at $n=N_{30,2}=464$. Squares: kernel ridge regression with the two-layer ReLU tangent kernel with a bias coordinate (both layers), ridge parameter chosen from $\{10^{-8},\dots,10\}$ by test error. Circles: a network $m^{-1/2}\sum_ra_r\relu(\sqrt d\ip{w_r,x}+b_r)$ with $m=256$ trained in all parameters by full-batch Adam (step $0.02$, $2000$ steps, weight decay $10^{-4}$), from $a_r\sim\cN(0,10^{-2})$. Relative errors $\norm{\hat f-f_w}^2/\norm{f_w}^2$ on $4000$ test points, averaged over $3$ draws of $w$ and of the data.}
+\label{fig:lazy:gap}
+\end{figure}
+
+\paragraph{Regimes.} Training is lazy when the scale-free quantity $L_J\norm{u_0}/\mu^2$ is small, which large width or a large output scale (\cref{ex:lazy:scale}) achieves; then mode $k$ is learned in time $1/\lambda_k$ and the sample complexity is that of the kernel. When it is not small the chapter says nothing, and \cref{thm:lazy:meanfield} describes the other end.
+
+\section{What the model gets wrong}\label{sec:lazy:wrong}
+
+\paragraph{What was thrown away.} The features: in the lazy regime the representation is the random one at initialization, and everything learned is a linear combination of fixed tangent features. Width that is large compared with the data: \cref{thm:lazy:twolayer} needs $m$ of order $n^2/\lmin^2$, and $\lmin$ shrinks with $n$ and is tiny for smooth activations (\cref{sec:lazy:convergence}), so the theorem covers widths that no practical network has. Finite step sizes: gradient descent with a large step leaves the linear regime even at large width, and its catapult dynamics are the subject of \cref{ch:stability}. Depth and architecture enter only through the kernel, and the interaction of layers, in which one layer learns features that the next one uses, is absent. And the initialization is data independent, so the kernel knows nothing about the task.
+
+\paragraph{Where it breaks.} \emph{Performance.} Kernels from the lazy limit underperform the networks they come from on the tasks that made deep learning famous. The CNTK reaches $77\%$ on CIFAR-10 \parencite{AroraEtAl2019b}, well below what the same kind of architecture reaches when trained in the usual way; in the controlled comparisons of \textcite{LeeEtAl2020} the infinite-width kernels beat finite fully connected networks but lose to finite convolutional networks trained with large steps and weight decay, the very ingredients that break the correspondence. \Textcite{ChizatEtAl2019} trained deep convolutional networks with a large output scale, forcing them into the lazy regime, and their test error rose; \textcite{GeigerEtAl2020} found the same for convolutional networks across the lazy-to-feature crossover, though not for fully connected ones.
+
+\emph{The kernel moves.} In networks trained in the usual way the tangent kernel is not constant. \Textcite{FortEtAl2020} found that it changes rapidly during the first few epochs and then slowly, and that kernel regression with the kernel reached partway through training comes close to the performance of the fully trained network, which the initial kernel does not. \Textcite{AtanasovEtAl2022} observed, in networks trained from small initializations, a \emph{silent alignment}: early in training, while it is still small, the kernel rotates toward the task, and the network then behaves like kernel regression with the final kernel; the network is a kernel machine, but with a learned kernel. \Textcite{HaninNica2020} showed that the tangent kernel of a deep ReLU network at initialization is not deterministic when depth and width grow together, its fluctuations being exponential in depth over width, and that its first gradient step moves it by an amount set by the same ratio, so a wide network can learn features if it is deep enough.
+
+\emph{Sample complexity.} \Cref{thm:lazy:lower} is the cleanest instance of a family of separations. \Textcite{GhorbaniEtAl2021} show that kernel ridge regression with a rotation-invariant kernel learns, in the limit of infinite width, only the projection of the target on polynomials of degree $\ell$ when $d^\ell\ll n\ll d^{\ell+1}$, and that the linearized two-layer models with finite width are limited by the number of their features in the same way; \textcite{YehudaiShamir2019} prove that random features cannot learn even a single ReLU neuron with Gaussian inputs unless their number or their weights are exponential in $d$, while gradient methods learn it; \textcite{AllenZhuLi2019} exhibit functions learned efficiently by three-layer residual networks through hierarchical feature learning but not by kernels; and \textcite{DamianEtAl2022} prove the separation for gradient descent on two-layer networks.
+
+\paragraph{Fine structure.} \emph{Corrections in $1/m$.} \Textcite{DyerGurAri2020} computed the corrections to the infinite-width dynamics order by order in $1/m$ with Feynman diagrams, \textcite{HuangYau2020} wrote the evolution of the kernel as an infinite hierarchy of equations whose truncations approximate it, and \textcite{BaiLee2020} replaced the linearization by a quadratic model that can escape the kernel regime and gains a factor of $d$ in sample complexity. \emph{The other limits.} The mean-field limit of \cref{thm:lazy:meanfield} keeps feature learning at infinite width, and $\mu$P extends it to deep networks \parencite{YangHu2021}. \emph{Crossovers.} \Textcite{ChizatEtAl2019} showed that laziness is set by the output scale, \textcite{WoodworthEtAl2020} solved the crossover from kernel to rich implicit bias in diagonal linear networks (\cref{ch:diagonal}), and \textcite{GeigerEtAl2020} mapped the crossover in width and scale for deep networks. \emph{One step of feature learning.} \Textcite{BaEtAl2022} and \textcite{DamianEtAl2022} analyze networks whose first layer takes one or a few large gradient steps, enough to align the features with the target's directions and to beat every kernel. Open: a quantitative theory, for a realistic deep architecture and data, of how much the tangent kernel moves during training, in which directions, and how much the motion improves the test error.
+
+\section{Model card}\label{sec:lazy:card}
+
+\modelcard{Very wide networks fit their training data while each weight barely moves; their predictions track kernel regression with the neural tangent kernel; low frequencies are learned first.}
+{A smooth map $F$ from parameters to outputs, trained by gradient flow on the square loss; specialized to a two-layer network $m^{-1/2}\sum_ra_r\phi(\ip{w_r,x})$ with Gaussian initialization.}
+{Convergence inside a ball of radius $\norm{u_0}/\mu$ when $L_J\norm{u_0}\le\mu^2$ (\cref{thm:lazy:lazy}); closeness to the linearization (\cref{cor:lazy:linear}); width $n^2/\lmin^2$ suffices for two-layer networks (\cref{thm:lazy:twolayer}); kernel lower bound $1-n/N_{d,k}$ (\cref{thm:lazy:lower}).}
+{Exponential decay of each kernel mode at rate $\lambda_k$; relative weight change of order $m^{-1/2}$, with the exact displacement $\sqrt{u_0^\top K^{-1}u_0}$; kernel methods need about $d^k/k!$ samples for a degree-$k$ function of one direction.}
+{The features never move; the widths covered are unrealistic; kernels underperform trained networks; the kernel of practical networks changes early and aligns with the task.}
+{$1/m$ corrections and the tangent hierarchy; quadratic models; mean-field limits and $\mu$P; one-step feature learning; lazy-to-rich crossovers.}
+
+The chapter is the lazy end of a thread that runs through the book. Large initializations made deep linear networks learn all modes at once instead of in stages (\cref{ch:deeplinear}) and made diagonal networks find the minimum-$\ell_2$ interpolator instead of a sparse one (\cref{ch:diagonal}); grokking is read in \cref{ch:grokking} as a transition from an early lazy phase that memorizes to a late rich phase that generalizes; and the single-index model of \cref{ch:singleindex} shows what the network gains by moving its features: $d^{k-1}$ samples instead of the kernel's $d^k$. The limit kernel is computed by the same Gaussian recursion as the signal propagation of \cref{ch:signalprop}, and kernel interpolation is the minimum-norm interpolation of \cref{ch:doubledescent} in a different norm.
+
+Spectra are the second thread. The time scale $1/\lambda_k$ of each mode here, the Marchenko--Pastur spectrum of \cref{ch:doubledescent}, and the power-law spectra that turn kernel regression into scaling laws in \cref{ch:scaling} are three readings of one principle: a linear model learns its target eigenvalue by eigenvalue. The kernel lower bound rests on rotational invariance, as the risk computations of \cref{ch:doubledescent} did; on the Boolean cube the same counting argument, with characters instead of spherical harmonics, shows why kernels cannot learn sparse parities (\cref{ch:parity}).
+
+\begin{exercises}
+\item \consolidation (Gradient descent on the linearized model.) Run gradient descent $\theta_{s+1}=\theta_s-\eta J_0^\top(F^{\mathrm{lin}}(\theta_s)-y)$ with $K_0=J_0J_0^\top$ invertible. (a) Show that $u_s=(I_n-\eta K_0)^su_0$ and that $u_s\to0$ for every $u_0$ if and only if $0<\eta<2/\lmax(K_0)$. (b) Show that $\norm{\theta_s-\theta_0}^2=u_0^\top K_0^{-1}(I_n-(I_n-\eta K_0)^s)^2u_0$, and that for $\eta\le1/\lmax(K_0)$ it increases with $s$ to $u_0^\top K_0^{-1}u_0$. (c) Explain why this is the curve $D/\sqrt{3m}$ of \cref{fig:lazy:width}.\label{ex:lazy:gd}
+
+\item \consolidation (Arc-cosine kernels and odd harmonics.) Let $g,g'$ be standard Gaussians with correlation $\rho$. (a) Show that $\Pr(g>0,g'>0)=(\pi-\arccos\rho)/(2\pi)$ and $\E[\relu(g)\relu(g')]=(\sqrt{1-\rho^2}+(\pi-\arccos\rho)\rho)/(2\pi)$. (b) For $\phi=\relu$ in \eqref{eq:lazy:kinf}, show that $K^\infty(x,x')=\frac\rho4+\frac{\rho\arcsin\rho}{2\pi}$ with $\rho=\ip{x,x'}$, and deduce from the parity of $P_{d,k}$ and the orthogonality of the Gegenbauer polynomials that $\lambda_k=0$ for every odd $k\ge3$. (c) On $\Sph^2$, where $P_{3,k}$ is the Legendre polynomial and the weight in \cref{prop:lazy:spectral} is $\frac12$, show that $\lambda_0=\frac1{16}$ and $\lambda_1=\frac1{12}$, and check numerically that $\lambda_2=\frac7{256}$. \hint{in (a), the event $\{g>0,g'>0\}$ is a wedge of angle $\pi-\arccos\rho$ in the plane; in (c), $\int_0^1t\arcsin t\dd t=\frac\pi8$.}\label{ex:lazy:relu}
+
+\item \consolidation (Parallel inputs.) (a) For $\phi=\tanh$ and inputs $x_1$ and $x_2=-x_1$, show that the two rows of $K^\infty$ are proportional, so $\lmin(K^\infty)=0$. (b) Show that appending a bias coordinate, $\tilde x=(x,1)/\sqrt2$, makes distinct unit inputs pairwise non-parallel, so that \cref{lem:lazy:pd} applies to every set of distinct inputs.\label{ex:lazy:pd}
+
+\item \consolidation (Counting dimensions.) (a) Check that $N_{30,2}=464$ and $N_{30,3}=4930$. (b) A two-layer network of width $m$ on inputs in $\R^d$ has $md$ tangent features. Show that its linearization, trained on $n$ examples from an initialization independent of $w$, has expected error at least $1-(\min\{n,md\}+1)/N_{d,k}$ on the target of \cref{thm:lazy:lower}. (c) Show that a random-features model with $p$ features has expected error at least $1-p/N_{d,k}$ however many samples it sees.\label{ex:lazy:count}
+
+\item \consolidation (The tangent kernel of a deep ReLU network.) In \cref{thm:lazy:deepntk} take $\phi=\relu$, $\sigma_w^2=2$, and $\sigma_b=0$. (a) Show that $\Sigma^\ell(x,x)=2\norm x^2/d$ and $\dot\Sigma^\ell(x,x)=1$ for every $\ell$. (b) Deduce that $\Theta^L(x,x)=2L\norm x^2/d$: the diagonal of the tangent kernel grows linearly with depth while that of the Gaussian-process kernel of \cref{ch:signalprop} stays constant. (c) Explain why a step size of order one in this parameterization must shrink like $1/L$.\label{ex:lazy:deep}
+
+\item \variation\hard (Training both layers.) In \cref{ass:lazy:twolayer} let the $a_r$ be trained too, starting from $\pm1$. (a) Show that the tangent kernel becomes $K_W+K_a$ with $K_a(x,x')=\frac1m\sum_r\phi(\ip{w_r,x})\phi(\ip{w_r,x'})$, whose expectation is the Gaussian-process kernel $\E[\phi(g)\phi(g')]$, so that $\lmin$ can only increase. (b) Show that on the ball of radius $R$ around the initialization, $\norm{J(\theta)-J(\theta')}_{\op}\le\beta\sqrt{n/m}\,\sqrt{1+2(1+R)^2}\,\norm{\theta-\theta'}$. (c) Deduce a version of \cref{thm:lazy:twolayer} with $m$ of order $n^2/\lmin^2$ up to factors depending on $\beta$, $c_\phi$, $\lmin$, and $\delta$. \hint{in (b), $\abs{a_r}\le1+R$ on the ball, and $a\phi'(s)-a'\phi'(s')=(a-a')\phi'(s)+a'(\phi'(s)-\phi'(s'))$.}\label{ex:lazy:bothlayers}
+
+\item \variation (Laziness is a matter of scale.) Let $F$ satisfy hypotheses (i) and (ii) of \cref{thm:lazy:lazy} with constants $\mu$ and $L_J$ on every ball around $\theta_0$, with $F(\theta_0)=0$, and train $\alpha F$ on $\frac12\norm{\alpha F(\theta)-y}^2$ for a scale $\alpha>0$. (a) Show that the theorem applies to $\alpha F$ as soon as $\alpha\ge L_J\norm y/\mu^2$. (b) Show that the parameters then move by at most $\norm y/(\alpha\mu)$, which tends to $0$ as $\alpha\to\infty$, and that the linearization error of \cref{cor:lazy:linear} is of order $1/\alpha$. (c) Compare with the initialization scale $\alpha$ of diagonal linear networks in \cref{ch:diagonal}, where $F(\theta_0)\ne0$ is avoided by the parameterization $u\odot u-v\odot v$.\label{ex:lazy:scale}
+
+\item \variation (Mean-field scaling defeats the theorem.) Replace $m^{-1/2}$ by $m^{-1}$ in \cref{ass:lazy:twolayer}. (a) Show that the tangent kernel and $\lmin(K_0)$ are divided by $m$, so the best $\mu^2$ in \cref{thm:lazy:lazy} is of order $\lmin/m$, while $L_J$ is of order $\beta\sqrt n/m$. (b) Show that the ratio $L_J\norm{u_0}/\mu^2$, which must be at most one, does not decrease with $m$: no width makes the mean-field network lazy. (c) Relate this to the heuristic derivation of \cref{sec:lazy:kernels}.\label{ex:lazy:meanfield}
+
+\item \variation\hard (Gaussian inputs.) Let $x\sim\cN(0,I_d)$, let $w\sim\Unif(\Sph^{d-1})$, and let $f_w(x)=h_2(\ip{w,x})$. (a) Show that $h_2(\ip{w,x})=\sum_{\abs\alpha=2}\sqrt{2/\alpha!}\,w^\alpha H_\alpha(x)$, with $H_\alpha=\prod_ih_{\alpha_i}(x_i)$. (b) For $g$ in the span of the $H_\alpha$ with $\abs\alpha=2$, write $\ip{g,f_w}=w^\top Aw$ with $A$ symmetric and show that $\norm g=\norm A_F$. (c) Using $\E_w(w^\top Aw)^2=\frac{2\tr A^2+(\tr A)^2}{d(d+2)}$, show that the operator $g\mapsto\E_w[\ip{g,f_w}f_w]$ has the eigenvalue $\frac1d$ once (on $g\propto\norm x^2-d$) and $\frac2{d(d+2)}$ on the rest of its range. (d) Deduce that every $n$-dimensional $V$ independent of $w$ has $\E\norm{f_w-\Pi_Vf_w}^2\ge1-\frac1d-\frac{2(n-1)}{d(d+2)}$, and explain the term $\frac1d$, which the sphere does not have. \hint{for (d), the sum of $\ip{e_j,Ce_j}$ over an orthonormal family of size $n$ is at most the sum of the $n$ largest eigenvalues of $C$.}\label{ex:lazy:gauss}
+
+\item \simulation (Weights and kernel against width.) Repeat the experiment of \cref{fig:lazy:width} with independent uniform signs $a_r$ and independent $w_r\sim\cN(0,I_3)$, for $m\in\{256,1024,4096\}$ and $3$ seeds. Observe a relative weight change of about $0.32$, $0.14$, and $0.067$, and a relative kernel change of about $0.05$, $0.010$, and $0.0024$. (a) Which quantity follows $m^{-1/2}$ and which $m^{-1}$? (b) Explain both with \cref{prop:lazy:kernelreg} and the heuristic derivation of \cref{sec:lazy:reading}. (c) Why is the weight change larger than in \cref{fig:lazy:width} at small $m$? \hint{with random signs $f(\cdot;W_0)\ne0$, and the network must also fit $-f(x_i;W_0)$.}\label{ex:lazy:simwidth}
+
+\item \simulation (A kernel that cannot see odd harmonics.) On $\Sph^2$, fit kernel interpolation with $K(x,x')=\rho\,(\pi-\arccos\rho)/(2\pi)$, $\rho=\ip{x,x'}$ (a regularization of $10^{-10}$ suffices), to $n\in\{50,200,800,2000\}$ uniform samples of the targets $\sqrt5P_2(\ip{w,x})$ and $\sqrt7P_3(\ip{w,x})$, with $P_k$ the Legendre polynomials. (a) Observe that the relative test error for degree $2$ falls below $10^{-4}$ by $n=200$, and that for degree $3$ it stays above $1$ (about $1.6$ at $n=50$ and $1.4$ at $n=2000$). (b) Explain both with \cref{ex:lazy:relu}. (c) Add a bias coordinate as in \cref{fig:lazy:modes} and observe that the degree-$3$ target is learned.\label{ex:lazy:simodd}
+
+\item \research (The lazy-to-rich crossover.) Train the network of \cref{fig:lazy:gap} with output $\alpha(f(x;\theta)-f(x;\theta_0))$ and loss $\frac1{\alpha^2}$ times the square loss, for a range of $\alpha$ and $m$. For large $\alpha$ its test error approaches that of kernel regression with its initial tangent kernel; for small $\alpha$ it learns the direction $w$. \Textcite{GeigerEtAl2020} map such crossovers empirically and \textcite{WoodworthEtAl2020} solve one for diagonal linear networks. Open: for a nonlinear network on high-dimensional data, predict the scale $\alpha_c(m,n,d)$ at which the test error leaves the kernel curve, and the shape of the transition.\label{ex:lazy:crossover}
+
+\item \research (The early kernel.) \Textcite{FortEtAl2020} find that most of the motion of the tangent kernel happens in the first epochs, and \textcite{AtanasovEtAl2022} explain an early alignment for linear networks. Open: a solvable nonlinear model that predicts how far and in which direction the kernel moves early in training, and the test error of kernel regression with the kernel it reaches.\label{ex:lazy:early}
+\end{exercises}
+
+\notesandrefs
+The neural tangent kernel was introduced by \textcite{JacotEtAl2018}, first posted in June 2018; within months several groups proved global convergence with explicit widths (\cref{sec:lazy:phenomenon}), and the plan of \cref{thm:lazy:twolayer} follows \textcite{DuEtAl2019}. \Textcite{AroraEtAl2019a} used the kernel to explain why random labels are fitted more slowly than true ones and to bound the generalization error, and \textcite{LeeEtAl2019} showed experimentally and proved that wide networks stay close to their linearization. The abstract form of \cref{thm:lazy:lazy}, with a condition on the Jacobian at initialization and its Lipschitz constant, follows \textcite{OymakSoltanolkotabi2020} and \textcite{ChizatEtAl2019}; \textcite{LiuEtAl2020} explain the constancy of the kernel by the vanishing of the Hessian of the outputs with width, and show that it fails when the last layer is nonlinear.
+
+The Gaussian-process limit of wide networks at initialization goes back to \textcite{Neal1996}, and the arc-cosine kernels to \textcite{ChoSaul2009}. Spherical-harmonic analyses of tangent kernels are in \textcite{BasriEtAl2019} and \textcite{BiettiMairal2019}, and \textcite{BordelonEtAl2020} computed learning curves of kernel regression mode by mode, the starting point of the scaling laws of \cref{ch:scaling}. \Cref{thm:lazy:lower} is a simple instance of the lower bounds of \textcite{GhorbaniEtAl2021}, who prove matching upper bounds for kernel ridge regression and analyze random-features and tangent models of finite width; our proof uses only the addition theorem.
+
+The mean-field limit was found independently by \textcite{MeiEtAl2018}, \textcite{ChizatBach2018}, \textcite{RotskoffVandenEijnden2022}, and \textcite{SirignanoSpiliopoulos2020}, all first posted in 2018. \Textcite{ChizatEtAl2019} made the point that laziness is caused by scaling rather than by width, and \textcite{YangHu2021} turned the choice of scaling into a classification of infinite-width limits.
+
+\paragraph{Translating the literature.} \Textcite{JacotEtAl2018} write $\Theta$ for our $K^\infty$ and $\Theta^{(L)}$ for our $\Theta^L$, $n_\ell$ for the widths, $\beta$ for our $\sigma_b$, and $\Sigma^{(\ell)}$ and $\dot\Sigma^{(\ell)}$ as we do; they train with the loss normalized by the number of examples, which rescales time by $n$. \Textcite{DuEtAl2019} write $u(t)$ for our outputs $F(\theta_t)$, so their $y-u(t)$ is our $-u_t$, $\mathbf H(t)$ and $\mathbf H^\infty$ for our $K_t$ and $K^\infty$, $\lambda_0$ for our $\lmin$, $\sigma$ for the activation $\phi$, and $\mathbf w_r$ and $a_r$ as we do. \Textcite{LeeEtAl2019} write $n$ for the width (our $m$), $\hat\Theta_t$ for the empirical kernel $K_t$ and $\Theta$ for its limit, $f^{\mathrm{lin}}_t$ for our linearized network, and $\mathcal X$ for the training inputs. \Textcite{ChizatEtAl2019} write $h$ for our $F$, $Dh(w_0)$ for $J(\theta_0)$, $\alpha$ for the output scale of \cref{ex:lazy:scale}, and measure laziness by $\kappa_h=\norm{h(w_0)-y^\star}\,\norm{D^2h(w_0)}/\norm{Dh(w_0)}^2$, the analogue of our $L_J\norm{u_0}/\mu^2$.
+
+\printchapterbib
+\end{refsection}

@@ -10,9 +10,9 @@ Theory only (Gauss--Hermite quadrature):
   cbar = 1 in the ordered phase (chi_1 < 1), the fixed point of C in [0, 1) otherwise;
   xi = -1/log C'(cbar), C'(c) = sigma_w^2 E[sech^2(sqrt(qbar) u) sech^2(sqrt(qbar) v)].
 
-Writes figures/data/05-signalprop-phase.dat (critical line and contours xi = 3, 10
+Writes figures/data/05-signalprop-phase.dat (critical line and contours xi = 5, 20
 on both sides) and figures/data/05-signalprop-xi.dat (xi along sigma_b^2 = 0.05).
-Deterministic; about 30 s on a laptop.
+Deterministic; about 40 s on a laptop.
 """
 import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
@@ -23,12 +23,17 @@ from scipy import optimize
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "..", "data")
 
-Z1, W1 = np.polynomial.hermite_e.hermegauss(120)
+# Gaussian expectations by the trapezoid rule on fine grids (Gauss--Hermite nodes are
+# too sparse for sech^2(sqrt(q) z) when q is large).
+Z1 = np.linspace(-9, 9, 3601)
+W1 = np.exp(-Z1 ** 2 / 2)
 W1 = W1 / W1.sum()
-Z2, W2 = np.polynomial.hermite_e.hermegauss(60)
+Z2 = np.linspace(-8, 8, 481)
+W2 = np.exp(-Z2 ** 2 / 2)
 W2 = W2 / W2.sum()
 U, V = np.meshgrid(Z2, Z2, indexing="ij")
 WW = np.outer(W2, W2)
+SWMAX = 8.0
 sech2 = lambda t: 1.0 / np.cosh(t) ** 2
 
 
@@ -70,7 +75,7 @@ def xi(sw2, sb2):
         cb = 0.0          # tanh is odd: C(0) = 0
     else:
         eps = 1e-2
-        while g(1 - eps) >= 0:
+        while g(1 - eps) >= 0 and eps > 1e-9:
             eps /= 3
         cb = optimize.brentq(g, 0.0, 1 - eps, xtol=1e-13)
     return -1.0 / np.log(dcorr(cb, sw2, q))
@@ -83,26 +88,25 @@ def critical(sb2):
 
 
 def main():
-    sb2s = np.linspace(0.0, 2.0, 41)
+    sb2s = np.linspace(0.0, 2.0, 26)
     rows = []
     for sb2 in sb2s:
         sc = critical(sb2)
         row = [sb2, sc]
-        for x0 in (3.0, 10.0):
+        for x0 in (5.0, 20.0):
             row.append(optimize.brentq(lambda s: xi(s, sb2) - x0, 0.05, sc * (1 - 1e-6), xtol=1e-10))
-        for x0 in (10.0, 3.0):
+        for x0 in (20.0, 5.0):
             f = lambda s: xi(s, sb2) - x0
-            hi = sc * 1.0001
-            while f(hi) > 0:
-                hi *= 1.3
-            row.append(optimize.brentq(f, sc * (1 + 1e-3), hi, xtol=1e-10))
+            lo = sc * (1 + 1e-3)
+            row.append(optimize.brentq(f, lo, SWMAX, xtol=1e-10)
+                       if f(lo) > 0 and f(SWMAX) < 0 else np.nan)
         rows.append(row)
         print(" ".join(f"{v:.5f}" for v in row), flush=True)
     np.savetxt(os.path.join(DATA, "05-signalprop-phase.dat"), np.array(rows),
-               header="sb2 crit ord3 ord10 cha10 cha3", comments="", fmt="%.6f")
+               header="sb2 crit ord5 ord20 cha20 cha5", comments="", fmt="%.6f")
 
     sb2 = 0.05
-    sws = np.concatenate([np.linspace(0.5, 1.74, 60), np.linspace(1.74, 1.785, 40), np.linspace(1.79, 5.0, 80)])
+    sws = np.concatenate([np.linspace(0.5, 1.74, 60), np.linspace(1.74, 1.785, 40), np.linspace(1.79, 8.0, 80)])
     out = [(s, xi(s, sb2), chi1(s, sb2)) for s in sws]
     np.savetxt(os.path.join(DATA, "05-signalprop-xi.dat"), np.array(out),
                header="sw2 xi chi1", comments="", fmt="%.6f")
