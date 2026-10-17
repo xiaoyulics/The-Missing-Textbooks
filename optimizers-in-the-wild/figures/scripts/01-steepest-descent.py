@@ -3,7 +3,8 @@
 Problem: the diagonal quadratic L(theta) = sum_i h_i theta_i^2 / 2 with d = 1000 and h_i = 1/i, so
 that lambda_max(H) = 1 and tr H = H_1000 = 7.4855 (the l-infinity smoothness constant of a diagonal
 quadratic); theta_0 has i.i.d. N(0,1) entries (numpy seed 9, a draw whose one-step ratio rho of
-guaranteed decreases is the median of the ratios for seeds 0..199; the script checks this). L* = 0.
+guaranteed decreases, 4.02, is close to the median 3.91 of the ratios for seeds 0..199; the script
+prints both). L* = 0.
 
 Output 1: figures/data/01-steepest-descent-onestep.dat  (one step from theta_0, g = H theta_0)
   eta       step length, in the norm of each method
@@ -16,7 +17,7 @@ Output 2: figures/data/01-steepest-descent-floor.dat  (sign descent theta <- the
   avgA, bdA running average (1/T) sum_{t<T} |grad L(theta_t)|_1 and the bound Delta_0/(eta T) + eta trH/2,
             for eta = 0.1;  avgB, bdB for eta = 0.01
   env       the bound at the best step for each horizon, sqrt(2 trH Delta_0 / T)
-The script also prints the numbers quoted in the text. Deterministic; runs in about ten seconds.
+The script also prints the numbers quoted in the text. Deterministic; runs in a few seconds.
 """
 import os
 import numpy as np

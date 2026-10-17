@@ -20,7 +20,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "..", "data")
-PHI = np.deg2rad(28.0)          # direction of -g, as in the title-page emblem
+PHI = np.deg2rad(28.0)          # direction of -g (the title-page emblem draws g at this angle)
 
 
 def lmo(g, norm):
