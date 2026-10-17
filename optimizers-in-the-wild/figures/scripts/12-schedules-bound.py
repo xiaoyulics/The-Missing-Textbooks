@@ -15,7 +15,7 @@ of the discrete bound; SGD: best of 17 log-spaced peaks between eta_0/4 and 4 et
 final value relative to linear decay (c = 1).
 
 Output: figures/data/12-schedules-bound.dat, -bound-sgd.dat, -bound-tuned.dat, -bound-tunedcurve.dat.
-Runtime: about 30 seconds (numpy only, seeds 21 and 22).
+Runtime: about 15 seconds (numpy only, seeds 21 and 22).
 """
 import os
 import numpy as np
