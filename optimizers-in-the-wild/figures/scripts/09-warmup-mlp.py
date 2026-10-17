@@ -7,7 +7,8 @@ warmed up linearly to eta_peak = 0.1 over Tw steps, eta_t = eta_peak min(1, (t+1
 without warmup the same peak diverges.  The sharpness (top Hessian eigenvalue) is computed
 every 20 steps by power iteration with Hessian-vector products.
 
-Writes figures/data/09-warmup-mlp.dat and figures/data/09-warmup-mlp-nowarm.dat.
+Writes figures/data/09-warmup-mlp.dat and figures/data/09-warmup-mlp-nowarm.dat, and prints the
+numbers quoted in the chapter.
 torch with 2 threads, fixed seeds; under a minute on a laptop CPU.
 """
 import math
@@ -93,6 +94,18 @@ def main():
         S_end = [s for (t, e, l, s) in r if t >= max(Tw, 1) and math.isfinite(s)]
         print(f"Tw = {Tw}: final loss {last[2]:.3e}; sharpness after warmup in"
               f" [{min(S_end):.2f}, {max(S_end):.2f}], 2/eta_peak = {2 / ETA_PEAK:.1f}")
+        # numbers quoted in the chapter: where S meets 2/eta_t, the ratio S/(2/eta_t) during the rest
+        # of the warmup (after the largest loss, the catapult), the mean of S over the last 500 steps
+        pts = [(t, e, l, s) for (t, e, l, s) in r if math.isfinite(s)]
+        meet = next(t for (t, e, l, s) in pts if s >= 2 / e)
+        peak = max((l, t) for (t, e, l, s) in pts if 0 < t <= Tw)[1]
+        rat = [s * e / 2 for (t, e, l, s) in pts if max(meet, peak) < t <= Tw]
+        tail = [s for (t, e, l, s) in pts if t >= 1500]
+        t01, s01 = next((t, s) for (t, e, l, s) in pts if l <= 0.0102)
+        print(f"   S meets 2/eta_t between t = {meet - 20} and {meet}; largest loss of the warmup at t = {peak}"
+              f" ({[(t, round(l, 3), round(s, 1)) for (t, e, l, s) in pts if abs(t - peak) <= 20]});"
+              f" then S/(2/eta_t) in [{min(rat):.3f}, {max(rat):.3f}] until t = {Tw};"
+              f" mean S over t >= 1500: {sum(tail) / len(tail):.2f}; first loss <= 0.0102 at t = {t01}, S = {s01:.1f}")
     nw = train(0, 30, every=1)
     with open(os.path.join(OUT, "09-warmup-mlp-nowarm.dat"), "w") as f:
         f.write("t loss\n")

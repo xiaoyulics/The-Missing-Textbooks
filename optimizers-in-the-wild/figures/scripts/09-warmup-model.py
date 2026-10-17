@@ -9,7 +9,8 @@ Delta_{t+1} = (1 - mu eta_t)^2 Delta_t, and with the guarantee of the warmup the
 Writes figures/data/09-warmup-model.dat (curves and points, every 25 steps),
 figures/data/09-warmup-model-nowarm.dat (the run without warmup, every step), and
 figures/data/09-warmup-lengths.dat (steps to the target against the warmup length).
-Deterministic (no randomness); runs in well under a minute.
+Also prints the other step counts quoted in the chapter. Deterministic (no randomness); runs in
+well under a minute.
 """
 import math
 import os
@@ -167,6 +168,68 @@ def main():
             ss = steps_to(ls)
             f.write(f"{Tw} {fmt(ss)} {steps_to(lr)} {max(ls):.6g}\n")
             print(f"   Tw = {Tw:6d}: simulation {ss}, recursion {steps_to(lr)}, largest loss {max(ls):.3g}")
+    quoted_numbers()
+
+
+def quoted_numbers():
+    """Print the other step counts quoted in the chapter (nothing is written to disk)."""
+    S0 = K0 + K1 * DELTA0
+    Phi = lambda D: K0 * math.log(D) + K1 * D
+    dPhi = Phi(DELTA0) - Phi(EPS)
+    # Proposition (warmup is optimal among stable schedules), eps = 1e-8
+    for c in (1.0, 2.0):
+        s = steps_to(gd(lambda t, L: c / (K0 + K1 * L), 10 ** 5, stop=EPS)[0])
+        print(f"loss-indexed c = {c:g}: {s} steps; upper bound (ii) {dPhi / (c * MU * (2 - c * MU / K0)):.1f}")
+    print(f"lower bound (i) for stable schedules: {(1 - 2 * MU / K0) ** 2 * dPhi / (4 * MU):.1f}")
+    s = steps_to(gd(lambda t, L: 2.0 / S0, 10 ** 6, stop=EPS)[0])
+    print(f"best stable constant step 2/S0: {s} steps;"
+          f" lower bound (iii) {(1 - 2 * MU / S0) * S0 * math.log(DELTA0 / EPS) / (4 * MU):.1f}")
+    Ds = [DELTA0]
+    while len(Ds) < 10 ** 5:
+        Ds.append(Ds[-1] - MU * Ds[-1] / (K0 + K1 * Ds[-1]))
+    s = steps_to(gd(lambda t, L: 1.0 / (K0 + K1 * Ds[t]), 10 ** 5, stop=EPS)[0])
+    print(f"scheduled warmup of the theorem, part (ii): {s} steps")
+    # linear warmups to 1/K0 with spacing 10: divergence, catapults, step counts
+    res = {}
+    for Tw in range(10, 6200, 10):
+        ls = gd(linear(Tw), 10 ** 5, stop=EPS)[0]
+        res[Tw] = (steps_to(ls), max(ls), steps_to(manifold(linear(Tw), 10 ** 5, stop=EPS)[0]))
+    short = [Tw for Tw in res if Tw < 1500]
+    print(f"linear warmups shorter than 1500: {sum(res[Tw][0] is None for Tw in short)} of {len(short)} diverge")
+    win = [Tw for Tw in res if 1500 <= Tw <= 3000 and res[Tw][0] is not None and res[Tw][1] > DELTA0 * (1 + 1e-9)]
+    st = sorted(res[Tw][0] for Tw in win)
+    med = st[len(st) // 2] if len(st) % 2 else (st[len(st) // 2 - 1] + st[len(st) // 2]) / 2
+    print(f"catapults for Tw in [{min(win)}, {max(win)}] ({len(win)} runs): largest loss from"
+          f" {min(res[Tw][1] for Tw in win):.3g} to {max(res[Tw][1] for Tw in win):.3g}; steps from {st[0]}"
+          f" to {st[-1]}, median {med:g}; beat their recursion {sum(res[Tw][0] < res[Tw][2] for Tw in win)},"
+          f" beat 1805: {sum(v < 1805 for v in st)}, beat 833: {sum(v < 833 for v in st)}")
+    cat = [Tw for Tw in res if res[Tw][0] is not None and res[Tw][1] > DELTA0 * (1 + 1e-9)]
+    print(f"all runs that survive a catapult: {len(cat)}, of which {sum(res[Tw][0] < 1805 for Tw in cat)}"
+          f" beat the loss-indexed warmup")
+    cross = [Tw for Tw in res if Tw >= 3000 and any(linear(Tw)(t, 0) * (K0 + K1 * D) > 2 for t, D in
+                                                     enumerate(manifold(linear(Tw), Tw + 1)[0]))]
+    print(f"Tw >= 3000 that cross the edge: up to {max(cross)}")
+    # the instance of the proposition on constant steps: (mu/2) x^2 + L_c(z), eps = 1e-6
+    eps, a = 1e-6, math.acosh(1 + K1 * DELTA0 / (2 * K0))
+    etastar = 2 * a / (K0 * math.sinh(a))
+
+    def cosh_gd(sched, T):
+        x, z = math.sqrt(DELTA0 / MU), a / math.sqrt(K1)
+        for t in range(T):
+            if abs(math.sqrt(K1) * z) > 700:
+                return None
+            L = 0.5 * MU * x * x + K0 / K1 * (math.cosh(math.sqrt(K1) * z) - 1)
+            if L <= eps:
+                return t
+            e = sched(t, L)
+            x, z = x - e * MU * x, z - e * K0 / math.sqrt(K1) * math.sinh(math.sqrt(K1) * z)
+        return None
+    counts = [cosh_gd(lambda t, L: etastar * (1 - 10 ** (-k / 8)), 5000) for k in range(8, 49)]
+    best = min(c for c in counts if c is not None)
+    bound = ((K0 + K1 * DELTA0 / 2) * math.tanh(a) / (4 * MU * a) - 0.5) * math.log(DELTA0 / (2 * eps))
+    print(f"constant-step instance: best constant step {best} steps (lower bound {bound:.1f}),"
+          f" loss-indexed warmup {cosh_gd(lambda t, L: 1 / (K0 + K1 * L), 10 ** 5)},"
+          f" theorem {(K0 * math.log(DELTA0 / eps) + K1 * (DELTA0 - eps)) / MU:.1f}, a coth a = {a / math.tanh(a):.3f}")
 
 
 if __name__ == "__main__":

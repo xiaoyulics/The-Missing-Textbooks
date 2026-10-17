@@ -61,7 +61,7 @@ def main():
                 r = simulate(u, b, rng)
                 worst = max(worst, abs(r / ratio(u, b) - 1))
                 f.write(f"{b:.2f} {u:.4f} {r:.6f}\n")
-    print(f"largest relative deviation of Monte Carlo from the exact formula: {worst:.3f}")
+    print(f"largest relative deviation of Monte Carlo from the exact formula: {worst:.4f}")
 
 
 if __name__ == "__main__":

@@ -6,7 +6,10 @@ Curves: exact expected-loss formulas (thm:noise:nqm, closed form for SGD and pre
 exact second-moment recursion for momentum), minimized over the step size. Points: the first step at
 which the average loss of R independent runs (R = 64 for B <= 32, 256 above), at the step size chosen
 by the theory and smoothed by a centred moving average over 2% of the predicted time, is below the
-target. Also writes the optimal step sizes and the two limits of thm:noise:critical.
+target. Also writes the optimal step sizes (for SGD and H^{-1/2}, the minimizers of the real-valued
+crossing time; for momentum, whose count is minimized on narrow intervals of step sizes, the step
+size with the smallest expected loss at step T(B)), the hyperbolas T_min + E_min/B with the integer
+T_min, and McCandlish's product computed with the real-valued crossing times.
 
 Model: d = 1000, h_i = 1/i, Sigma = H, theta_0 = (1,...,1), target 5% of the initial loss.
 Writes figures/data/11-noise-steps.dat (theory), figures/data/11-noise-steps-mom.dat (momentum,
@@ -112,7 +115,48 @@ def mom_T(etas, B, Tmax):
     return res
 
 
+def mom_grid_min(etas, B, Tmax):
+    """for each step t <= Tmax, the smallest expected loss over the step sizes etas, and its index."""
+    E = etas[:, None]
+    a = 1 + BETA - E * h[None, :]
+    qp = np.zeros((len(etas), d))
+    q = np.ones_like(qp)
+    S2 = np.zeros_like(qp)
+    ncoef = 0.5 * h[None, :] * E**2 * c[None, :] / B
+    Lmin, kmin = np.empty(Tmax + 1), np.zeros(Tmax + 1, int)
+    for t in range(Tmax + 1):
+        L = np.sum(l0[None, :] * (q - BETA * qp) ** 2 + ncoef * S2, axis=1)
+        kmin[t] = int(np.argmin(L))
+        Lmin[t] = L[kmin[t]]
+        S2 += q * q
+        qp, q = q, a * q - BETA * qp
+    return Lmin, kmin
+
+
+def mom_loss(eta, B, t):
+    """exact expected loss of the heavy ball at step t, for one step size."""
+    a = 1 + BETA - eta * h
+    qp, q, S2 = np.zeros(d), np.ones(d), np.zeros(d)
+    for _ in range(t):
+        S2 += q * q
+        qp, q = q, a * q - BETA * qp
+    return np.sum(l0 * (q - BETA * qp) ** 2 + 0.5 * h * eta**2 * c / B * S2)
+
+
+def mom_refine(B, t, lo, hi, e0):
+    """the step size in [lo, hi] with the smallest loss at step t (the better of a search and e0)."""
+    r = minimize_scalar(lambda e: mom_loss(e, B, t), bounds=(lo, hi), method="bounded",
+                        options={"xatol": 1e-10 * hi})
+    L0 = mom_loss(e0, B, t)
+    return (r.fun, r.x) if r.fun < L0 else (L0, e0)
+
+
 def mom_best(B, Tmax):
+    """T(B) for the heavy ball, the smallest t at which some stable step size gives an expected loss
+    below eps, and the step size that minimizes the expected loss at that t. A coarse search over
+    first-passage times suffices where the loss is smooth in the step size (many steps, small B).
+    With few steps the heavy ball oscillates and the step sizes that reach the target first form
+    narrow intervals, so there the loss at every step is minimized over a dense grid and refined."""
     lim = (2 + 2 * BETA) / S
     etas = lim * np.logspace(-6, 0, 49, endpoint=False)
     T = mom_T(etas, B, Tmax)
@@ -121,7 +165,21 @@ def mom_best(B, Tmax):
     etas2 = np.linspace(lo, hi, 33)
     T2 = mom_T(etas2, B, int(min(Tmax, T[k])))
     k2 = int(np.argmin(T2))
-    return (T2[k2], etas2[k2]) if T2[k2] <= T[k] else (T[k], etas[k])
+    Tc, ec = (T2[k2], etas2[k2]) if T2[k2] <= T[k] else (T[k], etas[k])
+    if Tc > 200:
+        j = int(np.argmin(np.abs(etas2 - ec)))
+        _, e = mom_refine(B, int(Tc), etas2[max(j - 1, 0)], etas2[min(j + 1, len(etas2) - 1)], ec)
+        return Tc, e
+    grid = lim * np.concatenate([np.logspace(-3, np.log10(0.5), 300, endpoint=False),
+                                 np.linspace(0.5, 0.99999, 900)])
+    Lmin, kmin = mom_grid_min(grid, B, int(Tc))
+    for t in range(1, int(Tc) + 1):
+        if Lmin[t] < 1.3 * eps:
+            j = kmin[t]
+            L, e = mom_refine(B, t, grid[max(j - 1, 0)], grid[min(j + 1, len(grid) - 1)], grid[j])
+            if L < eps:
+                return float(t), e
+    return Tc, ec
 
 
 # ---------------- Monte Carlo ----------------
@@ -174,15 +232,16 @@ if __name__ == "__main__":
     with open(os.path.join(OUT, "11-noise-steps.dat"), "w") as f:
         f.write("B sgd etasgd pre etapre hypsgd hyppre linsgd linpre prodsgd prodpre\n")
         for B, T0, e0, T1, e1, r0, r1 in rows:
-            prod0 = (r0 / tm0 - 1) * (B * r0 / Emin0 - 1)        # McCandlish's product, real-valued t*
+            # McCandlish's product, with the real-valued crossing times: rounding T(B) up to an
+            # integer changes E(B) = B T(B) by up to B, the order that the product measures
+            prod0 = (r0 / tm0 - 1) * (B * r0 / Emin0 - 1)
             prod1 = (r1 / tm1 - 1) * (B * r1 / Emin1 - 1)
-            f.write(f"{B:.6g} {T0} {e0:.6e} {T1} {e1:.6e} {tm0 + Emin0 / B:.6e} {tm1 + Emin1 / B:.6e} "
+            f.write(f"{B:.6g} {T0} {e0:.6e} {T1} {e1:.6e} {Tmin0 + Emin0 / B:.6e} {Tmin1 + Emin1 / B:.6e} "
                     f"{g0 * B:.6e} {g1 * B:.6e} {prod0:.4f} {prod1:.4f}\n")
             print(f"B={B:8.1f}  SGD {T0:6d} (eta {e0:.4f})  pre {T1:5d} (eta {e1:.5f})  "
-                  f"t*/hyperbola {r0 / (tm0 + Emin0 / B):.3f} {r1 / (tm1 + Emin1 / B):.3f}  "
+                  f"T/(T_min+E_min/B) {T0 / (Tmin0 + Emin0 / B):.3f} {T1 / (Tmin1 + Emin1 / B):.3f}  "
                   f"products {prod0:.3f} {prod1:.3f}")
     # momentum on a coarser grid of batch sizes
-    Bm = 2.0 ** np.arange(0, 15)
     mrows = []
     for B, T0 in zip(Bs[::2], [r[1] for r in rows][::2]):  # B = 1, 2, 4, ..., 16384
         Tm, em = mom_best(B, int(1.3 * T0) + 50)
