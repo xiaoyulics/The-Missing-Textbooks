@@ -181,7 +181,8 @@ def lindecay_steps(a, c, B):
     T1 = least_T(coarse)
     best = coarse[int(np.argmin(final_losses(T1, coarse)))]
     fine = np.exp(np.linspace(np.log(best / 2), np.log(min(2 * best, 0.999 * emax)), 16))
-    return least_T(fine, lo=max(1, T1 // 2), hi=T1)
+    fine = np.unique(np.concatenate([fine, [best]]))
+    return least_T(fine, lo=0, hi=T1)
 
 
 def mc_steps(a, B, eta, R, Tmax, rng, opt="sgd", b2=0.999):
@@ -219,7 +220,10 @@ def main():
         Tsi, _ = last_iterate_steps(a0, C_ISO, B)
         Tpi, _ = last_iterate_steps(ah, C_ISO, B)
         Tsa, Tpa = averaged_steps(a0, C_PROP, B), averaged_steps(ah, C_PROP, B)
-        Tsl, Tpl = lindecay_steps(a0, C_PROP, B), lindecay_steps(ah, C_PROP, B)
+        if int(B) in (1, 4, 16, 64, 256, 1024, 4096):
+            Tsl, Tpl = lindecay_steps(a0, C_PROP, B), lindecay_steps(ah, C_PROP, B)
+        else:
+            Tsl, Tpl = np.nan, 1.0
         rows.append([B, Ts, Tp, nsgd / B, npre / B, dsgd, dpre, Ts / Tp, Tsa / Tpa, Tsl / Tpl,
                      Tsi / Tpi, Tsa, Tpa, Tsl, Tpl])
         print("B %5d  sgd %6d pre %5d  ratio %.2f  avg %.2f  lin %.2f  iso %.2f" %
