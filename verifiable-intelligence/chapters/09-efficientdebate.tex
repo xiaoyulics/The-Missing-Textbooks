@@ -1,0 +1,398 @@
+% Chapter 9 of Verifiable Intelligence: doubly-efficient debate, noisy judgments, and obfuscated arguments.
+\newcommand{\efficientdebatenext}{\operatorname{next}}
+\newcommand{\efficientdebateacc}{\operatorname{acc}}
+\newcommand{\efficientdebatefbs}{\operatorname{fbs}}
+\newcommand{\efficientdebatescript}[1]{\texttt{09-}\allowbreak\texttt{efficientdebate-}\allowbreak\texttt{#1.py}}
+
+\protocolchapter{Efficient Debate}{When the honest side must be efficient too}{doubly-efficient debate}{P,A,P,A,P,A,P,A,H,D}{ch:efficientdebate}
+\begin{refsection}[chapters/09-efficientdebate.bib]
+
+\begin{chaptersummary}
+A model's long piece of work rests on thousands of human judgment calls, and the overseer can pay a person to make only a few. Doubly-efficient debate \parencite{BrownCohenEtAl2024} sets a second model to find the call worth paying for: the debaters bisect the run of an agreed procedure until one step is in dispute, and the judge checks it with one question to a person. We prove that the side telling the truth wins against every opponent while simulating at most $2T-1$ steps of the procedure, prove a version for noisy judgments under a Lipschitz condition, and show with obfuscated arguments why the procedure must be fixed in advance. Honesty is a winning strategy the honest model can afford; the judge spends $\log_2T$ rounds and one human question, or $O(K^2)$ human samples when judgments are noisy; a lie is always caught, or with probability at least $3/5$ per run when judgments are noisy. The model leaves out where the procedure comes from, and its human oracle's systematic errors become the truth.
+\end{chaptersummary}
+
+\section{The oversight problem: a long argument that rests on human judgment}\label{sec:efficientdebate:problem}
+
+Some work is long because it is wide: a review of thousands of studies, a contract of hundreds of clauses. Each step is easy for a trained person to check, and there are too many to check them all.
+
+\begin{oversight}[four thousand judgment calls]
+A model has screened $4{,}096$ studies for a systematic review under a protocol written in advance: for each study, decide whether it has a clear methodological flaw and whether it reports the agreed outcome, then pool the studies that pass. Each decision is a judgment call that a trained reviewer makes in about ten minutes. The model reports the pooled conclusion, that the treatment reduces relapse, with its $4{,}096$ decisions. The overseer can pay a reviewer for a few studies, not for all, and wants to accept the conclusion only if it is what the protocol would give if a reviewer made every call.
+\end{oversight}
+
+The scenario is invented; it is close to an example of \textcite{BrownCohenEtAl2024}, a meta-analysis whose plan is written in natural language and includes judgment calls such as whether a study has a clear methodological flaw.\sidenote{Their other motivating example is the drafting of laws and contracts, where one passage can change what a long document means. Checking all $4{,}096$ decisions of the scenario would take about $683$ reviewer-hours.} A random sample does not help against an adversary: if one decisive call is wrong, say the exclusion of the study that tips the pooled result, a sample of $20$ decisions finds it with probability $20/4{,}096$, under half a percent. The overseer needs someone to point at the call worth checking, with a reason to point at the right one.
+
+A single prover can convince a weak verifier of the result of a long computation (\cref{ch:sumcheck,ch:delegation}), but those protocols evaluate a low-degree polynomial at points that are not Boolean, and a person can be asked a question, not its arithmetization. The human is an \term{oracle}, a black box that answers the questions it is asked, and relative to oracles the algebraic theorems fail: for almost every oracle $\cO$, interactive proofs whose verifier may query $\cO$ decide strictly less than polynomial space relative to $\cO$ \parencite{ChangEtAl1994}, although $\cc{IP}=\cc{PSPACE}$ (\cref{thm:sumcheck:ippspace}).\sidenote{The title of \textcite{ChangEtAl1994}, ``The random oracle hypothesis is false'', refers to the conjecture, which they attribute to Bennett and Gill, that relations between classes that hold relative to almost every oracle also hold without one.} \Textcite{IrvingMarshall2025}, in a forum post, propose as a heuristic that an interactive-proof result is relevant to oversight only if it \term{relativizes}\index{relativization}, holding relative to every oracle \parencite{Fortnow1994}, and observe that the $\cc{PSPACE}$ theorem of debate (\cref{thm:debate:pspace}) does. But it lets the honest debater be all-powerful: the bisection debate (\cref{thm:debate:bisection}) narrows a claim about $T$ steps to one step, and the honest debater must produce the configuration at whichever midpoint the debate reaches, an exponential amount of work when $T$ is exponential. If the honest model must out-compute its opponent, then debate protects only against weaker liars; \textcite{Barnes2020} concluded that with bounded debaters one can essentially trust only conclusions that the debaters' own resources can verify.
+
+\Textcite{BrownCohenEtAl2024}, posted in November 2023 and published at ICML 2024, asked for debate protocols in which the honest debater's work is close to that of the computation, the judge's work is small, and the judge consults the human a constant number of times, against a dishonest debater of unlimited power. They called them \emph{doubly efficient}, after the interactive proofs of \textcite{GoldwasserKalaiRothblum2015} (\cref{ch:delegation}; \textcite{Goldreich2018}). Competing provers are older: refereed games pit two unbounded players before a polynomial-time referee \parencite{FeigeKilian1997}, and in refereed delegation a client that hands a computation to several servers, one of them honest, obtains the correct result in logarithmically many rounds \parencite{CanettiRivaRothblum2011,CanettiRivaRothblum2013}. The overseer's question: can a judge who consults a person a constant number of times check a computation that consults people $T$ times, against a liar of unlimited power, when the honest side may spend only about as much as running the computation once?
+
+\section{The protocol: bisection over configurations}\label{sec:efficientdebate:protocol}
+
+The computation is a procedure written in advance that would settle the question if a person made every judgment call it requires.
+
+\begin{definition}[Computations that consult a human]\label{def:efficientdebate:computation}
+The \term{human oracle}\index{human oracle} is a function $\party{H}\colon\bits^*\to\bits$ that answers a question $z$ with $\party{H}(z)$. A computation that consults it is a deterministic oracle machine $M$ (\cref{sec:toolkit:machines}), whose query tape we count among its work tapes, such that on inputs of length $n$ the machine $M^{\party{H}}$ halts within $T=2^k$ steps (otherwise round $T$ up). A \term{configuration}\index{configuration} records the state, the contents of the work tapes and the positions of the heads, in $w$ bits. For an input $x$, the \emph{successor} $\efficientdebatenext(u)$ of a configuration $u$ is the configuration one step later; it depends on $u$, on the bit of $x$ under the input head and, if $u$ is in the query state, on $\party{H}(z)$ for the question $z$ on the query tape. A halting configuration is its own successor. The \emph{run} on $x$ is $\gamma_0,\dots,\gamma_T$, with $\gamma_0$ the initial configuration and $\gamma_{\tau+1}=\efficientdebatenext(\gamma_\tau)$, and $M^{\party{H}}$ accepts $x$ if $\gamma_T$ is accepting. A \emph{claim} $(u,v,\tau)$ asserts that $M$, started in $u$, is in $v$ after $\tau$ steps; it is \emph{true} if $\efficientdebatenext^{\tau}(u)=v$.
+\end{definition}
+
+Up to a constant factor, $w$ is the number of work cells $M$ uses plus $O(\log n)$ bits for its head positions, the configuration length of \cref{ch:debate}.
+
+\begin{definition}[Debate protocols; \textcite{BrownCohenEtAl2024}]\label{def:efficientdebate:protocol}
+A \term{debate protocol}\index{debate!doubly efficient} for a language $L$ has debaters $\party{A}$ and $\party{B}$ and a judge $\V$, all oracle machines with access to $\party{H}$. On input $x$, $\party{A}$ argues that $x\in L$ and $\party{B}$ that $x\notin L$; $\V$ reads their messages, consults $\party{H}$, and accepts or rejects. It decides $L$ with completeness $c$ and soundness error $s$, where $1\ge c>\frac12>s\ge0$, if for every $x\in L$ the prescribed $\party{A}$ makes $\V$ accept with probability at least $c$ against every strategy of $\party{B}$, of unbounded power, and for every $x\notin L$ the prescribed $\party{B}$ holds the acceptance probability to at most $s$ against every strategy of $\party{A}$, of unbounded power. It is a $(P_{\mathrm{time}},V_{\mathrm{time}},q)$-protocol if the prescribed debaters run in time $P_{\mathrm{time}}$ and $\V$ in time $V_{\mathrm{time}}$ with $q$ queries to $\party{H}$; it decides $L$ \emph{deterministically} if $c=1$ and $s=0$.
+\end{definition}
+
+\Textcite{BrownCohenEtAl2024} call the protocol doubly efficient when $P_{\mathrm{time}}$ is polynomial in $n$, $V_{\mathrm{time}}$ is linear in the length of a question and at most linear, ideally sublinear, in $n$, and $q$ is sublinear, ideally $O(1)$. The debaters' own queries to $\party{H}$ are free, standing for the models' predictions of what a person would answer, and only the judge's cost human time \parencite[Section~4.2]{BrownCohenEtAl2024}. The order of quantifiers is the point: the honest side, limited to time $P_{\mathrm{time}}$, must beat opponents of unlimited power.
+
+\begin{protocol}{Bisection over configurations}\label{prot:efficientdebate:bisection}
+\item[\msg{A}{V}] Send a configuration $v_0$, the claimed final configuration. The judge rejects unless $v_0$ is accepting. The current claim is $(u,v,\tau)=(\gamma_0,v_0,T)$.
+\phase{Round $j=1,\dots,k$, with the current claim $(u,v,\tau)$, $\tau=2^{k-j+1}$}
+\item[\msg{A}{V}] Send a configuration $\mu$, the claimed configuration $\tau/2$ steps after $u$. The honest $\party{A}$ sends $\efficientdebatenext^{\tau/2}(u)$.
+\item[\msg{B}{V}] Send a bit $b$. The honest $\party{B}$ sends $b=0$ if $\mu\ne\efficientdebatenext^{\tau/2}(u)$ and $b=1$ otherwise.
+\item[\act{V}] The new claim is $(u,\mu,\tau/2)$ if $b=0$ and $(\mu,v,\tau/2)$ if $b=1$.
+\phase{Final check, with the claim $(u,v,1)$}
+\item[\msg{V}{H}] If $u$ is in the query state, ask the question $z$ on its query tape.
+\item[\msg{H}{V}] Answer $\party{H}(z)$.
+\item[\act{V}] Compute $\efficientdebatenext(u)$, reading one bit of $x$. Accept if $u$ and $v$ are configurations and $\efficientdebatenext(u)=v$; otherwise reject.
+\end{protocol}
+
+The debater $\party{A}$ commits to the end of the computation and then to midpoints of whatever stretch is in dispute, and $\party{B}$ chooses the half it disputes; after $k=\log_2T$ rounds one step is in dispute, and the judge checks it with at most one question. This is \term{bisection}\index{bisection} over configurations, the device of Savitch's theorem \parencite{Savitch1970} and of the bisection debate of \cref{ch:debate}.\sidenote{Savitch used it to show that nondeterministic machines can be simulated deterministically with only a quadratic increase in space: whether one configuration reaches another in $\tau$ steps is decided by trying every midpoint and recursing on both halves.}
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}c l l l c@{}}
+\toprule
+round & claim $(u,v,\tau)$ & $\party{A}'$ sends $\mu$ & true midpoint & $b$\\
+\midrule
+$1$ & $\bigl((0,0),(8,5),8\bigr)$ & $(4,3)$ & $\gamma_4=(4,3)$ & $1$\\
+$2$ & $\bigl((4,3),(8,5),4\bigr)$ & $(6,4)$ & $\gamma_6=(6,4)$ & $1$\\
+$3$ & $\bigl((6,4),(8,5),2\bigr)$ & $(7,5)$ & $\gamma_7=(7,4)$ & $0$\\
+final & $\bigl((6,4),(7,5),1\bigr)$ & \multicolumn{3}{l}{study $7$ is unsound: $(7,4)\ne(7,5)$, \rej}\\
+\bottomrule
+\end{tabular}
+\caption{\Cref{prot:efficientdebate:bisection} on eight studies. The configuration $(\tau,c)$ records that $\tau$ studies have been read and $c$ judged sound, and the procedure accepts if $c\ge5$. The verdicts are $1,1,0,1,0,1,0,0$, so $\gamma_8=(8,4)$; the liar $\party{A}'$ claims $(8,5)$.}
+\label{tab:efficientdebate:run}
+\end{table}
+
+In \cref{tab:efficientdebate:run} the procedure asks about eight studies in turn and accepts if at least five are sound; four are. The honest $\party{B}$ checks each midpoint by replaying the procedure from the start of the disputed stretch, for $4$, $2$ and $1$ steps, and the judge pays for one verdict, on study $7$, instead of eight.
+
+\begin{dictionary}
+the human oracle $\party{H}$ & a person asked one narrowly posed question, with the context to answer it\\
+the machine $M$ & the agreed procedure, which settles the question if a person makes every call\\
+a configuration $\gamma_\tau$ & the state of the work after $\tau$ steps: decisions, totals, notes\\
+the debaters $\party{A}$, $\party{B}$ & the model that did the work, and a second model (or a copy) paid to find the error\\
+the judge's one query & the one judgment call the overseer pays a person to make
+\end{dictionary}
+
+What one had to notice is that debate theory had left two costs out: oversight measures the judge by its queries to $\party{H}$, the human time it consumes, and it cannot assume that the honest model is stronger than the dishonest one, since training delivers a model about as capable as its opponent.
+
+\section{The theory: deterministic judgments}\label{sec:efficientdebate:deterministic}
+
+\begin{theorem}[{Doubly-efficient debate; \textcite[Theorem~5.1]{BrownCohenEtAl2024}}]\label{thm:efficientdebate:main}
+Let $\party{H}$ be a human oracle and $M$ a deterministic oracle machine that on inputs of length $n$ halts within $T=2^k$ steps and has configurations of $w$ bits. Run \cref{prot:efficientdebate:bisection} on an input $x$ of length $n$.
+\begin{enumerate}
+\item (Completeness.) If $M^{\party{H}}$ accepts $x$, then the honest $\party{A}$ makes $\V$ accept against every strategy of $\party{B}$.
+\item (Soundness.) If $M^{\party{H}}$ rejects $x$, then the honest $\party{B}$ makes $\V$ reject against every strategy of $\party{A}$.
+\item (Costs.) Whatever the opponent does, the honest $\party{A}$ simulates at most $2T-1$ steps of $M^{\party{H}}$ and the honest $\party{B}$ at most $T-1$, each step making at most one query to $\party{H}$. The debate has $k$ rounds and $(k+1)w+k$ bits of messages; $\V$ reads them, computes one step of $M$, reading one bit of $x$ and making at most one query to $\party{H}$, and compares two configurations.
+\end{enumerate}
+\end{theorem}
+
+With head positions kept as binary counters a simulated step costs $O(\log T)$ time, as \textcite{BrownCohenEtAl2024} count it, and the theorem gives their $(O(T\log T),O(S\log T),O(1))$-protocol deciding $L$ deterministically, for $M$ of space $S$, with the configuration length $w$ in place of $S$ and a single query.
+
+\begin{proof}
+The plan is to follow the disputed claim from round to round and show that the honest debater keeps it true (for completeness) or false while anchored on the true run (for soundness), so that the final check of one step decides correctly. Fix $x$ and its run. Since $M^{\party{H}}$ halts within $T$ steps and a halting configuration is its own successor, $\gamma_T$ is accepting exactly when $M^{\party{H}}$ accepts $x$. When $k=0$ there are no rounds and the final check applies to $(\gamma_0,v_0,1)$; the arguments below cover this case.
+
+(i) Let $M^{\party{H}}$ accept $x$, and let $\party{B}'$ be arbitrary. The honest $\party{A}$ sends the accepting $v_0=\gamma_T$. Every claim of the debate has the form $(\gamma_\sigma,\gamma_{\sigma+\tau},\tau)$: the first does, and if the current claim does, then $\party{A}$ sends $\mu=\gamma_{\sigma+\tau/2}$, and whichever bit $\party{B}'$ sends, the new claim $(\gamma_\sigma,\gamma_{\sigma+\tau/2},\tau/2)$ or $(\gamma_{\sigma+\tau/2},\gamma_{\sigma+\tau},\tau/2)$ has it too. The final claim is $(\gamma_\sigma,\gamma_{\sigma+1},1)$, and $\V$ accepts.
+
+(ii) Let $M^{\party{H}}$ reject $x$, and let $\party{A}'$ be arbitrary. If $v_0$ is not accepting, then $\V$ rejects at once; otherwise $v_0\ne\gamma_T$. Every claim then has the form $(\gamma_\sigma,v,\tau)$ with $v\ne\gamma_{\sigma+\tau}$: it starts on the true run and is false. The first claim does. Given such a claim and a midpoint $\mu$, the honest $\party{B}$ computes $\gamma_{\sigma+\tau/2}$. If $\mu\ne\gamma_{\sigma+\tau/2}$, as when $\mu$ is not a configuration, then $b=0$ and the new claim $(\gamma_\sigma,\mu,\tau/2)$ has the form. If $\mu=\gamma_{\sigma+\tau/2}$, then $b=1$, and $(\gamma_{\sigma+\tau/2},v,\tau/2)$ has the form because $\gamma_{\sigma+\tau}\ne v$. The final claim is $(\gamma_\sigma,v,1)$ with $v\ne\efficientdebatenext(\gamma_\sigma)$, and $\V$ rejects. Neither part used anything about the opponent's computing power.
+
+(iii) In the round that starts with the claim $(\gamma_\sigma,\cdot,\tau)$, the honest debater knows $\gamma_\sigma$ (it is $\gamma_0$ or a midpoint it sent or checked) and obtains $\gamma_{\sigma+\tau/2}$ by simulating $\tau/2$ steps, for $\sum_{j=1}^k2^{k-j}=T-1$ steps over the rounds; the honest $\party{A}$ also simulates $T$ steps to find $\gamma_T$. The messages are $v_0$, the $k$ midpoints and the $k$ bits.
+\end{proof}
+
+The argument is the bisection of \cref{thm:debate:bisection}, which counts the same $2T-1$ and $T-1$ steps; \cref{cor:debate:oracle} runs it on oracle machines with the same single question. What is new is the setting: there the computation is a polynomial-space machine that may run for exponentially many steps, so honest play costs exponential time, while here $T$ is the length of a procedure the honest model can afford, and \cref{def:efficientdebate:protocol} makes that affordability, against an opponent of unlimited power, part of what is proved. For comparison, \textcite{BrownCohenEtAl2024} note that the best known single-prover doubly-efficient proofs for bounded-space computations \parencite{ReingoldRothblumRothblum2021}, whose verifier time is polynomial in the space rather than nearly linear, rest on machinery, including the PCP theorem, that does not apply when the computation consults a black box.
+
+Debate is meant to be trained by self-play, so the theorem should be read as a statement about a game, as \textcite[Appendix~C]{BrownCohenEtAl2024} do for the zero-sum game that a protocol defines; we add a choice of side. In the \emph{debate game}, $\party{A}$ announces a bit $b$, then \cref{prot:efficientdebate:bisection} is played for $M$ if $b=1$ and for the machine $\bar M$ with accepting and rejecting states exchanged if $b=0$; $\party{A}$ receives $1$ if $\V$ accepts and $0$ otherwise, $\party{B}$ the rest. The \emph{honest} strategies announce the output $b^*$ of $M^{\party{H}}$ on $x$ and play as prescribed.
+
+\begin{corollary}[Honesty is an affordable equilibrium]\label{cor:efficientdebate:game}
+In the debate game the pair of honest strategies is a Nash equilibrium (\cref{def:toolkit:nash}), each honest strategy simulates at most $2T-1$ steps of $M^{\party{H}}$, and in every Nash equilibrium, pure or mixed, $\party{A}$ announces $b^*$ with probability $1$ and $\V$ accepts with probability $1$.
+\end{corollary}
+
+\begin{proof}
+By \cref{thm:efficientdebate:main}(i), applied to $M$ or $\bar M$, the honest $\party{A}$ wins against every $\party{B}$; its payoff is maximal, every $\party{B}$ earns $0$ against it, and neither player gains by deviating. Let $(\sigma_{\party{A}},\sigma_{\party{B}})$ be an equilibrium. Since $\party{A}$ could deviate to the honest strategy and win for sure, its payoff is $1$. If $\sigma_{\party{A}}$ announced $1-b^*$ with probability $\omega>0$, then the strategy of $\party{B}$ that plays $\sigma_{\party{B}}$ after $b^*$ and honestly after $1-b^*$ would earn at least $\omega$ by \cref{thm:efficientdebate:main}(ii), while $\sigma_{\party{B}}$ earns $0$, a contradiction; so $\omega=0$.
+\end{proof}
+
+Whether training finds an equilibrium is a separate question (\cref{ch:pvg}).
+
+\paragraph{Cross-examination.} With \term{cross-examination}\index{cross-examination} \parencite{BarnesChristiano2020}, questioning saved copies of the opponent (\cref{ch:crossexam}),\sidenote{They state that in theory it raises the power of debate from $\cc{PSPACE}$ to $\cc{NEXP}$, nondeterministic exponential time (\cref{def:toolkit:classes}), with the argument in a linked document.} and a judge who reads selected parts of the transcript, $\party{A}$ writes the whole transcript, $\party{B}$ names one wrong step, and the judge checks it: an $(O(T\log T),O(\abs{z}\log T),O(1))$-protocol for questions of length $\abs{z}$, whose judge no longer reads $O(w\log T)$ bits \parencite[Theorem~5.3]{BrownCohenEtAl2024}.
+
+\section{The theory: noisy judgments and obfuscated arguments}\label{sec:efficientdebate:noisy}
+
+\subsection{Noisy judgments}\label{sec:efficientdebate:stochastic}
+
+People disagree, and one person may answer differently on different days. \Textcite{BrownCohenEtAl2024} also treat a stochastic $\party{H}$, which answers each question with a fresh random bit, and computations that decide with probability $2/3$; since errors of order $1/T$ per step can add up to order $1$, they assume a Lipschitz condition. We state it in the model of their Lean~4 formalization, in which every step is a bit drawn with a probability that depends on the history.
+
+\begin{definition}[Stochastic computations]\label{def:efficientdebate:stochastic}
+A \term{stochastic computation}\index{stochastic computation} of length $T$ is a family $\pi=(\pi_h)$ of numbers in $[0,1]$, one for each string $h$ of fewer than $T$ bits. Its run is the random string $y=(y_1,\dots,y_T)$ in which, given the history $y_{<\tau}=y_1\cdots y_{\tau-1}$, the bit $y_\tau$ is $1$ with probability $\pi_{y_{<\tau}}$; its output is $y_T$, and $\efficientdebateacc(\pi)=\Prob[y_T=1]$. With $\norm{\pi-\pi'}=\max_h\abs{\pi_h-\pi'_h}$, the computation $\pi$ is $K$-\term{Lipschitz}\index{Lipschitz computation} if $\abs{\efficientdebateacc(\pi)-\efficientdebateacc(\pi')}\le K\norm{\pi-\pi'}$ for every $\pi'$ of length $T$.
+\end{definition}
+
+For a machine that consults a stochastic $\party{H}$, the bits can be the person's answers, $\pi_h$ being the probability of a yes to the question the machine asks after the answers $h$, followed by one step that outputs the verdict; sampling a step costs one question to a person, and the debaters sample by predicting. \Textcite[Definition~6.1]{BrownCohenEtAl2024} define $K$ by perturbing only the oracle; the formalization, like our definition, perturbs every conditional probability, which can only make $K$ larger, and much larger if the machine's deterministic steps are written as bits of their own, since a liar may tilt them too (\cref{ex:efficientdebate:bits}). Like the formalization, our model leaves aside how the judge learns which question a disputed step asks.
+
+\begin{lemma}[Perturbed runs]\label{lem:efficientdebate:perturb}
+Let $\pi$ be a stochastic computation of length $T$.
+\begin{enumerate}
+\item Let $y_1,\dots,y_T$ be random bits produced with other random variables so that, given everything produced before $y_\tau$, the bit $y_\tau$ is $1$ with probability $g_\tau$, where $g_\tau$ is determined by what was produced before $y_\tau$ and $\abs{g_\tau-\pi_{y_{<\tau}}}\le\theta$. Then $y$ has the law of the run of some $\bar\pi$ with $\norm{\bar\pi-\pi}\le\theta$; if $\pi$ is $K$-Lipschitz, then $\abs{\Prob[y_T=1]-\efficientdebateacc(\pi)}\le K\theta$.
+\item Every stochastic computation of length $T$ is $T$-Lipschitz.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to read off the conditional probabilities of the bits given their history for (i), and to run two computations on common coins for (ii). (i) For a history $h$ of positive probability, $\bar\pi_h=\Prob[y_\tau=1\mid y_{<\tau}=h]$ is an average of the values of $g_\tau$ on that event, all within $\theta$ of $\pi_h$; put $\bar\pi_h=\pi_h$ for histories of probability zero. By the chain rule, $\Prob[y=b]$ is the product of the conditional probabilities of the bits of $b$ given their prefixes, both sides vanishing from the first prefix of probability zero on; so $y$ has the law of the run of $\bar\pi$, and the bound is the Lipschitz condition. (ii) Let $\theta=\norm{\pi-\pi'}$, take independent uniform $U_1,\dots,U_T$ in $[0,1)$, and set $y_\tau=\ind[U_\tau<\pi_{y_{<\tau}}]$ and $y'_\tau=\ind[U_\tau<\pi'_{y'_{<\tau}}]$. If the runs agree before step $\tau$, with history $h$, then they differ at step $\tau$ only if $U_\tau$ falls between $\pi_h$ and $\pi'_h$, with probability at most $\theta$; so they differ somewhere with probability at most $T\theta$, and $\abs{\efficientdebateacc(\pi)-\efficientdebateacc(\pi')}\le\Prob[y_T\ne y'_T]\le T\theta$.
+\end{proof}
+
+\begin{protocol}{Step-by-step debate with noisy judgments}\label{prot:efficientdebate:stochastic}
+\phase{Step $\tau=1,\dots,T$, after the history $h=y_{<\tau}$}
+\item[\msg{A}{V}] Announce $\hat p_\tau\in[0,1]$, the claimed $\pi_h$. The honest $\party{A}$ announces the mean of $m'$ fresh samples of the step.
+\item[\msg{B}{V}] Pass or object. The honest $\party{B}$ objects if the mean $\bar q$ of $m'$ fresh samples has $\abs{\bar q-\hat p_\tau}>4\eta$.
+\item[\msg{V}{H}] On an objection, ask the question of step $\tau$ after $h$ of $m$ people.
+\item[\msg{H}{V}] Return $m$ answers, with mean $\bar p$.
+\item[\act{V}] On an objection, accept if $\abs{\bar p-\hat p_\tau}\le2\eta$ and reject otherwise; the debate ends. On a pass, set $y_\tau=\ind[U_\tau<\hat p_\tau]$ for a fresh public coin $U_\tau$, uniform on $[0,1)$.
+\phase{End, if no one objected}
+\item[\act{V}] Accept if $y_T=1$.
+\end{protocol}
+
+The debater $\party{A}$ narrates the computation as predicted probabilities, the bits are drawn by coins neither debater controls, and $\party{B}$ may stop the debate where it thinks a prediction is wrong, whereupon the judge asks people. \Textcite{BrownCohenEtAl2024} have the debaters produce each coin jointly, so that it is uniform if either is honest; the formalization takes it from a trusted source.
+
+\begin{theorem}[{Debate with noisy judgments; after \textcite[Theorem~6.2]{BrownCohenEtAl2024}}]\label{thm:efficientdebate:stochastic}
+Let $L$ be decided by $K$-Lipschitz stochastic computations $\pi=\pi(x)$ of length $T$, with $\efficientdebateacc(\pi)\ge2/3$ if $x\in L$ and $\le1/3$ if $x\notin L$. Run \cref{prot:efficientdebate:stochastic} with
+\[
+\eta=\frac1{150K},\qquad m=\Bigl\lceil\frac{\ln120}{2\eta^2}\Bigr\rceil,\qquad m'=\Bigl\lceil\frac{\ln(240T)}{2\eta^2}\Bigr\rceil.
+\]
+\begin{enumerate}
+\item If $x\in L$, then for every strategy of $\party{B}$ the honest $\party{A}$ makes $\V$ accept with probability at least $3/5$.
+\item If $x\notin L$, then for every strategy of $\party{A}$ the honest $\party{B}$ makes $\V$ accept with probability at most $2/5$.
+\item Each honest debater draws at most $m'T=O(K^2T\log T)$ samples, and $\V$ draws $m=\lceil11250K^2\ln120\rceil$, about $5.4\cdot10^4K^2$, only on an objection.
+\end{enumerate}
+The probabilities are over all samples, the public coins and the debaters' coins.
+\end{theorem}
+
+\begin{proof}
+The plan is to compare the debate with the run of a nearby computation, in which every announcement that an accurate estimate would expose is replaced by the truth, and to bound the difference with \cref{lem:efficientdebate:perturb}. Call an estimate of $\pi_h$ \emph{accurate} if it is within $\eta$ of $\pi_h$. By Hoeffding's inequality (\cref{thm:toolkit:chernoff}), a mean of $m'$ fresh samples is inaccurate with probability at most $\xi=2e^{-2m'\eta^2}$, and a mean of $m$ samples with probability at most $\zeta=2e^{-2m\eta^2}$; the choice of $m'$ and $m$ gives $T\xi\le\frac1{120}$ and $\zeta\le\frac1{60}$. Fix the dishonest debater's strategy and coins (randomized strategies follow by averaging). For the analysis only, let the \emph{continued run} be $y^c_\tau=\ind[U_\tau<g_\tau]$, with the same coins and $g_\tau$ chosen below as a function of the continued run's past, ignoring objections. Until the first objection the debate coincides with the continued run as long as every $g_\tau$ so far equals the announced probability.
+
+(i) Let $x\in L$ and $\party{B}'$ be arbitrary. Put $g_\tau=\hat p_\tau$ if $\party{A}$'s estimate at step $\tau$ of the continued run is accurate and $g_\tau=\pi_h$ otherwise. Then $\abs{g_\tau-\pi_h}\le\eta$, and \cref{lem:efficientdebate:perturb}(i) gives $\Prob[y^c_T=1]\ge\efficientdebateacc(\pi)-K\eta$. Let $E$ be the event that all $T$ of $\party{A}$'s estimates along the continued run are accurate; they use fresh samples, so $\Prob[E]\ge1-T\xi$. On $E$ the debate follows the continued run until an objection. If no one objects, then $\V$ accepts exactly when $y^c_T=1$. If $\party{B}'$ objects at history $h$, then $\hat p_\tau$ is within $\eta$ of $\pi_h$, and $\V$ rejects only if $\abs{\bar p-\pi_h}>\eta$, with probability at most $\zeta$. This case analysis and the two bounds give
+\[
+\Prob[\V\text{ accepts}]\ge\Prob[E\text{ and }y^c_T=1]-\zeta\ge\efficientdebateacc(\pi)-K\eta-T\xi-\zeta,
+\]
+which the choice of parameters makes at least $\frac23-\frac1{150}-\frac1{120}-\frac1{60}>\frac35$.
+
+(ii) Let $x\notin L$ and $\party{A}'$ be arbitrary, with announcements $a_\tau$. Put $g_\tau=a_\tau$ if $\abs{a_\tau-\pi_h}\le5\eta$ and $g_\tau=\pi_h$ otherwise; then $\abs{g_\tau-\pi_h}\le5\eta$, and $\Prob[y^c_T=1]\le\efficientdebateacc(\pi)+5K\eta$. Let $E$ be the event that $\party{B}$'s estimates along the continued run are all accurate, so $\Prob[E]\ge1-T\xi$. On $E$, $\party{B}$ passes only announcements with $\abs{a_\tau-\pi_h}\le5\eta$, where $g_\tau=a_\tau$, and objects only to announcements with $\abs{a_\tau-\pi_h}>3\eta$. So on $E$, without an objection the debate is the continued run, and after an objection $\V$ accepts only if $\abs{\bar p-a_\tau}\le2\eta$, which forces $\abs{\bar p-\pi_h}>\eta$ and has probability at most $\zeta$. By the same steps, $\Prob[\V\text{ accepts}]\le(1-\Prob[E])+\Prob[y^c_T=1]+\zeta$, which is at most $\frac1{120}+\frac13+\frac1{30}+\frac1{60}<\frac25$.
+
+(iii) Each honest debater estimates once per step, and $1/(2\eta^2)=11250K^2$.
+\end{proof}
+
+\Textcite{BrownCohenEtAl2024} state the theorem for $K$-Lipschitz probabilistic oracle machines, with cross-examination, as an $(O(K^2T\log T),O(K^2+\abs{z}\log T),O(K^2))$-protocol with completeness $3/5$ and soundness error $2/5$, in which the term $\abs{z}\log T$ pays for reading the disputed step's question from the transcript; our proof follows theirs in outline, with other constants.\sidenote{The Lean formalization is at \url{https://github.com/google-deepmind/debate}. Its README says that it counts only queries as time and fixes the oracle in the definition of a Lipschitz machine, which strengthens the theorem slightly; the paper advises trusting the formalized constants when in doubt.} The protocol saves human time only if $m$, about $5.4\cdot10^4K^2$, is below the $T$ questions that running the computation takes, that is, only if $K$ is far below $\sqrt T$, whereas \cref{lem:efficientdebate:perturb}(ii) guarantees only $K\le T$. Robust aggregation keeps $K$ small: for a majority vote of $m_v$ judgments, each yes with probability $p<\frac12$, followed by its output step, $K$ grows with $m_v$ toward $1/(\frac12-p)$; at $p=0.35$ it is $4.37$, $5.45$ and $6.14$ for $m_v=101$, $1{,}001$ and $10{,}001$. A conjunction of $T-1$ checks that all pass has $K=T$ (\cref{ex:efficientdebate:bits}), and for it the theorem saves nothing.
+
+\subsection{Obfuscated arguments}\label{sec:efficientdebate:obfuscation}
+
+\Textcite{Barnes2020} reported in a forum post, from debates with human debaters and judges on physics questions, that a dishonest debater can often build an argument with a fatal error that is very hard to locate, the \term{obfuscated arguments}\index{obfuscated arguments} problem; she proposed no fix and saw it as a possible limit on both debate and amplification.\sidenote{She published argument trees for physics questions, among them an iceberg problem, in which she saw no way to find the flaw except by inspecting every node. The post is signed by Barnes alone; its text credits the research to Barnes and Christiano.} Her illustration, which she calls simplistic, asks whether RSA-2048 has prime factors: the honest debater cites a primality test, the dishonest one argues that there is no prime factor below some $X$ and none above it, and the honest debater knows that one claim is false but cannot say which without factoring. She does not expect this example itself to defeat debate, since the honest side might persuade the judge that its primality proof is far easier than factoring; her realistic cases are the physics trees.
+
+In \term{recursive debate}\index{recursive debate} on an argument tree, the debater $\party{A}$ supports a claim by subclaims that together imply it, down to depth $D$, where each leaf is a claim the judge can settle with one question to $\party{H}$; from the root, $\party{B}$ picks one child per level and wins if the leaf it reaches is false. Barnes also gave a recipe, for formal logic, that spreads a single flaw over the leaves; write $Q\to P$ for the claim that $P$ holds if $Q$ does.
+
+\begin{proposition}[A flaw that cannot be found]\label{prop:efficientdebate:needle}
+\begin{enumerate}
+\item (Barnes's recipe.) For claims $P$ and $Q$, the claims $Q\to P$ and $(Q\to P)\to P$ together imply $P$. If $P$ is true, then both are true; if $P$ is false, then exactly one is false, the first if and only if $Q$ is true.
+\item (Searching for the flaw.) In recursive debate on a tree with $N$ leaves, suppose exactly one leaf is false, at a position uniformly distributed given everything $\party{B}$ observes except its own checks, and that $\party{B}$ learns whether a leaf is false only by checking it. If $\party{B}$ checks at most $a<N$ leaves, then it reaches the false leaf with probability at most $(a+1)/N$, and checking $a$ distinct leaves, then moving to an unchecked one, attains $(a+1)/N$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is a truth table for (i) and, for (ii), the observation that a search which has not found the flaw has learned nothing. (i) The two claims imply $P$ by modus ponens, and an implication with a true conclusion is true. If $P$ is false, then $Q\to P$ has the truth value of ``not $Q$'' and $(Q\to P)\to P$ that of ``not $(Q\to P)$'', that is, of $Q$, so exactly one of them is false. (ii) Fix $\party{B}$'s coins and other observations. Until it checks the false leaf every check returns ``true'', so the leaves $\ell_1,\dots,\ell_a$ it checks, and the leaf $\ell_*$ it reaches if it never finds the flaw, are fixed. It wins only if the false leaf is among these $a+1$ leaves, which has probability at most $(a+1)/N$. The strategy described wins with probability $a/N+(1-a/N)/(N-a)=(a+1)/N$.
+\end{proof}
+
+With fresh claims $Q$ at every node, each true with probability $1/2$ independently of everything $\party{B}$ can work out, part (i) builds an argument of depth $D$ for a false claim with one uniformly placed false leaf, which by part (ii) a $\party{B}$ checking $a$ leaves finds with probability at most $(a+1)/2^D$. Whether people can settle such leaves depends on the claims $Q$; the factoring version needs no such caveat.
+
+\begin{proposition}[Winning is factoring]\label{prop:efficientdebate:factoring}
+Let $R=pp'$ with primes $p<p'$, and let $\party{A}'$ argue that $R$ has no divisor in $[2,\lfloor\sqrt R\rfloor]$ by halving: the claim for $[i,j]$, $i<j$, has as children the claims for $[i,\mu]$ and $[\mu+1,j]$, $\mu=\lfloor(i+j)/2\rfloor$, and a leaf claims that one number $d$ does not divide $R$, which the judge settles by a division. The argument has depth $\lceil\log_2(\lfloor\sqrt R\rfloor-1)\rceil$, $\party{A}'$ spends $O(1)$ operations per round, and the only false leaf is $d=p$. Hence a $\party{B}$ that wins with probability $\omega$ in time $t_{\party{B}}$ yields an algorithm that finds $p$ with probability $\omega$ in time $t_{\party{B}}+O(\log R)$.
+\end{proposition}
+
+\begin{proof}
+Since $p<p'$, we have $p^2<R<p'^2$, so $2\le p\le\lfloor\sqrt R\rfloor<p'$; the divisors of $R$ are $1,p,p',R$, so $p$ is its only divisor in the interval. A claim of the tree is false exactly when its interval contains $p$, the only false leaf is $d=p$, and $\party{B}$ wins exactly when it reaches it; running $\party{B}$ against $\party{A}'$ and reading off its leaf finds $p$. Halving an interval of $\ell\ge1$ integers down to single integers takes $\lceil\log_2\ell\rceil$ levels, since for $\ell\ge2$ the longer half has $\lceil\ell/2\rceil$ integers and $\lceil\log_2\lceil\ell/2\rceil\rceil=\lceil\log_2\ell\rceil-1$.
+\end{proof}
+
+The honest $\party{B}$ can know that $R$ is composite, since primality is decidable in deterministic polynomial time \parencite{AgrawalKayalSaxena2004}, and still lose unless it can factor $R$, a problem whose hardness for such products the RSA cryptosystem relies on \parencite{RivestShamirAdleman1978}. \Cref{thm:efficientdebate:main} escapes because its decomposition is fixed in advance: every midpoint is determined by $M$ and computable by running $M$, whereas the halving argument bisects the run of trial division, about $\sqrt R$ steps. \Textcite{BrownCohenIrving2024}, in a forum post, show that the natural extension, a recursive debate in which fast steps only a model can judge are expanded on demand into steps a person can judge, meets exactly this problem; \textcite{LiEtAl2026} note that \cref{prot:efficientdebate:bisection} cuts the human queries of every recursive decomposition of width $q$ and depth $D$ to one, at a time cost $q^D$.
+
+\subsection{Three responses}\label{sec:efficientdebate:responses}
+
+\paragraph{An estimator instead of a challenger.} In \term{prover--estimator debate}\index{prover--estimator debate} \parencite{BrownCohenEtAl2026} the prover $\party{A}$ decomposes each claim into $q$ subclaims, the estimator $\party{B}$ assigns them probabilities, and $\party{A}$ chooses where to continue, saying in which direction $\party{B}$'s probability is wrong; $\party{A}$ is rewarded when $\party{B}$'s estimates at successive levels are inconsistent in that direction, with rewards growing by a factor $\beta$ per level, and people judge the leaves. The estimator need not find a flaw: against an obfuscated argument it hedges. Inputs come from a distribution $\cD$. A decomposition of depth $D$ and width $q$ is \emph{$\cA$-provable} if a strategy $A^*$ in a class $\cA$ answers all its subclaims correctly, and \emph{$\beta$-stable} at a node if changing each child's answer with probability at most $\kappa$ changes the node's answer with probability at most $\beta\kappa$, for every $\kappa>0$.
+
+\begin{theorem}[{Prover--estimator debate; \textcite{BrownCohenEtAl2026}, statement}]\label{thm:efficientdebate:estimator}
+Let $0<\gamma<\frac12$.
+\begin{enumerate}
+\item If some $A^*\in\cA$ makes the decomposition $\cA$-provable with probability at least $1-\gamma$ over $x\sim\cD$, and the decomposition is $\beta$-stable along the debates of $A^*$ with probability at least $1-\gamma$, then some $A\in\cA$ earns expected reward at least $\beta^{-(D+1)}$ against every estimator, with probability at least $1-2\gamma$ over $x$.
+\item For every $A\in\cA$ and every $\vartheta>0$ there is an estimator, a circuit of size $O(q2^{3q}nD^2/\vartheta^2)$ whose gates may query $A$, against which $A$'s expected reward, averaged over $x\sim\cD$, is at most $\Prob[A(x)=L(x)]\,\beta^{-(D+1)}+\vartheta$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proofsketch}
+This is their Theorem~6.1 (Appendix~A): completeness uses the growing rewards and stability, and soundness builds, by online gradient descent, estimates that the prover cannot distinguish from the truth.
+\end{proofsketch}
+
+Their Theorem~6.2 deduces that in approximate $\party{A}$-leading Stackelberg equilibria (\cref{def:toolkit:stackelberg}) the prover errs on at most a $5\varepsilon$ fraction of inputs when provability and stability fail on at most an $\varepsilon\beta^{-(D+1)}$ fraction. The first version (June 2025, three authors) defined stability with conditional probabilities, and its main theorem was wrong; the second (July 2026, six authors) uses marginal probabilities, a correction by the last three authors. Both are preprints. The guarantees are on average over inputs, and stability is needed only for completeness: an unstable argument loses. The signal per debate is of order $\beta^{-D}$, where naive recursion with a random challenger gives $q^{-D}$.
+
+\paragraph{A sensitivity test.} \Textcite{LiEtAl2026}, in an October 2026 preprint, make honest play a dominant strategy with worst-case guarantees. For a Boolean function $f$ of $q$ answers and an assignment $z$, a nonempty set of positions is a \emph{sensitive block} if flipping $z$ there changes $f$; the \term{fractional block sensitivity}\index{fractional block sensitivity} $\efficientdebatefbs_z(f)$ is the largest total of nonnegative weights on sensitive blocks in which the blocks containing each position weigh at most $1$. It is $4$ for majority with two thirds of the answers true and $q$ for the conjunction at the all-true assignment, and $\beta$-stability is $\efficientdebatefbs_z\le\beta$ \parencite[Observation~A.7]{BrownCohenEtAl2026}. Alice decomposes and answers the subclaims, and loses at once if her answers do not give her claim or $\efficientdebatefbs_z>\beta$; otherwise Bob samples a subclaim with probabilities from an optimal dual solution.
+
+\begin{theorem}[{Sensitive debate; \textcite{LiEtAl2026}, statement}]\label{thm:efficientdebate:sensitive}
+\begin{enumerate}
+\item If $x$ has a decomposition tree of depth $D$ all of whose nodes have fractional block sensitivity at most $\beta$ at the correct answers, an honest Alice who can decompose and solve its nodes wins with probability $1$.
+\item If Alice's answer is wrong, then whatever she does she loses with probability at least $\beta^{-D}$, so $O(\beta^D\log n)$ repetitions catch her except with probability $1/\poly(n)$.
+\item If every internal node of a tree of depth $D$ has fractional block sensitivity at least $\beta$ at the correct answers, then for every checker that sees the tree and makes $m$ adaptive queries to $\party{H}$, some oracle changes the root's value yet is distinguished from $\party{H}$ with advantage at most $\min\{1,m\beta^{-D}\}$; deciding with error at most $1/3$ needs $m\ge\beta^D/3$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proofsketch}
+These are their Theorems~4.1, 4.2 and~5.1. For (ii), a wrong claim has a sensitive block of wrong subclaims, which Bob's sample hits with probability at least $1/\beta$ by the dual constraints; for (iii), the whole tree has fractional block sensitivity at least $\beta^D$.
+\end{proofsketch}
+
+For a conjunctive argument $\beta=q$, so every protocol that only queries people needs on the order of $q^D=N$ queries in the worst case, the scale of \cref{prop:efficientdebate:needle}(ii): with a black-box human, stability is necessary, not an artifact of one protocol.
+
+\paragraph{A single prover.} \Textcite{ChenKalaiXi2026} avoid the second debater for computations, given as log-space uniform circuits with oracle gates, that are $\varepsilon$-robust: their output does not change when at most an $\varepsilon$ fraction of the oracle answers change. They give doubly-efficient proofs with soundness error $2^{-\sigma}$ and $O(\sigma/\varepsilon)$ oracle queries ($O(\sigma d/\varepsilon)$ with $d$ levels of adaptivity), an argument with $O(1/\varepsilon)$ queries and constant rounds if collision-resistant hash functions exist, and, for an oracle that is a polynomial of polynomial degree, an argument with one query under the hardness of SIS. Citing \textcite{BarbaraChiesaGuan2025}, they note that relativizing proofs cannot exist for all oracle computations; robustness lets the verifier spot-check.
+
+\paragraph{Systematic errors.} A deterministic $\party{H}$ that is wrong is still an oracle, and \cref{thm:efficientdebate:main} computes $M^{\party{H}}$, errors included. \Textcite{Irving2025} proposes, in a forum post, to let $\party{B}$ first fix a rewrite $\party{H}'$ of the human's answers that is \emph{admissible}: it differs from $\party{H}$ only on a set of questions of probability at most $\varepsilon$ under a distribution $\cD$ on questions; the debate is then played relative to $\party{H}'$.
+
+\begin{proposition}[Dodging a fraction of systematic errors]\label{prop:efficientdebate:rewrite}
+In this debate with rewrites, $\party{A}$ has a strategy that wins against every $\party{B}$ if and only if $M^{\party{H}'}$ accepts $x$ for every admissible $\party{H}'$. In particular, if $\party{H}$ differs from an error-free $\party{H}^*$ only on a set of $\cD$-probability at most $\varepsilon$, then $\party{A}$ can be sure to win only if $M^{\party{H}^*}$ accepts $x$.
+\end{proposition}
+
+\begin{proof}
+Once $\party{H}'$ is fixed, the debate is \cref{prot:efficientdebate:bisection} relative to $\party{H}'$, and the proof of \cref{thm:efficientdebate:main} used nothing about the oracle: if every admissible $\party{H}'$ accepts, the honest $\party{A}$ wins by part (i), and if some admissible $\party{H}'$ rejects, the honest $\party{B}$ that fixes it wins by part (ii). The last claim holds because $\party{H}^*$ is admissible.
+\end{proof}
+
+This is the deterministic form of Irving's statement that, with unbounded players, Alice can win exactly when some argument is robust to an $\varepsilon$ fraction of errors; he notes that admissibility must be checked by sampling from $\cD$, and that $\cD$ must be the right distribution.
+
+\section{Running the protocol}\label{sec:efficientdebate:running}
+
+The script \efficientdebatescript{bisection} runs \cref{prot:efficientdebate:bisection} on a machine that, for $T$ steps, asks a simulated reviewer a question determined by the step and its notes, a $32$-bit summary of everything seen so far, folds the answer into the notes and a count of yes answers, and accepts if at least $70$ percent are yes. The reviewer says yes to about $70$ percent of questions,\sidenote{It answers yes when a fixed hash of the question, reduced modulo $1{,}000$, is below $700$; every fixed function would do, since \cref{thm:efficientdebate:main} holds relative to every oracle.} and a configuration takes $w=2(\log_2T+1)+32$ bits. The honest debaters simulate the machine for real, and the script counts every step.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},vplot,width=0.5\linewidth,height=0.30\linewidth]
+\nextgroupplot[title={(a) what each party spends},xlabel={length $T$ of the procedure},ylabel={count},xmode=log,ymode=log,
+  xmin=2.5,xmax=4e5,ymin=0.4,ymax=1e12,ytick={1,1e4,1e8,1e12},legend style={at={(0.02,0.98)},anchor=north west,font=\scriptsize},legend cell align=left]
+\addplot[theory,forget plot] table[x=T,y=Abound] {figures/data/09-efficientdebate-costs.dat};
+\addplot[honest] table[x=T,y=Asteps] {figures/data/09-efficientdebate-costs.dat};
+\addplot[theory2,forget plot] table[x=T,y=Bbound] {figures/data/09-efficientdebate-costs.dat};
+\addplot[honest,mark=square*] table[x=T,y=Bsteps] {figures/data/09-efficientdebate-costs.dat};
+\addplot[bound,forget plot] table[x=T,y=Vbitsbound] {figures/data/09-efficientdebate-costs.dat};
+\addplot[only marks,mark=triangle*,mark size=1.9pt,color=verifier] table[x=T,y=Vbits] {figures/data/09-efficientdebate-costs.dat};
+\addplot[only marks,mark=diamond*,mark size=2.2pt,color=oracle] table[x=T,y=Vqueries] {figures/data/09-efficientdebate-costs.dat};
+\addplot[guide] table[x=T,y=direct] {figures/data/09-efficientdebate-costs.dat};
+\legend{steps of honest $\party{A}$; curve $2T-1$,steps of honest $\party{B}$; curve $T-1$,bits read by $\V$; curve $(k+1)w+k$,questions $\V$ asks,$T$ (asking at every step)}
+\nextgroupplot[title={(b) the judge's test at an objection},xlabel={human samples $m$},ylabel={judge sides with announcement},xmode=log,
+  xmin=7,xmax=3e4,ymin=-0.03,ymax=1.5,ytick={0,0.5,1},legend columns=2,legend style={at={(0.02,0.98)},anchor=north west,font=\scriptsize,/tikz/every even column/.append style={column sep=6pt}},legend cell align=left]
+\addplot[theory] table[x=m,y=honexact] {figures/data/09-efficientdebate-judge.dat};
+\addplot[theory,forget plot] table[x=m,y=lieexact] {figures/data/09-efficientdebate-judge.dat};
+\addplot[honest,ebars] table[x=m,y=hon,y error plus=honhi,y error minus=honlo] {figures/data/09-efficientdebate-judge.dat};
+\addplot[cheat,ebars] table[x=m,y=lie,y error plus=liehi,y error minus=lielo] {figures/data/09-efficientdebate-judge.dat};
+\addplot[bound] table[x=m,y=honbound] {figures/data/09-efficientdebate-judge.dat};
+\addplot[bound,forget plot] table[x=m,y=liebound] {figures/data/09-efficientdebate-judge.dat};
+\addplot[guide,forget plot] coordinates {(5985,-0.03) (5985,1.03)};
+\legend{exact,off by $\eta$ (measured),off by $3\eta$ (measured),bounds $1-\zeta$ and $\zeta$}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Costs and the judge's test. (a) \Cref{prot:efficientdebate:bisection} on the review machine, $T=4,16,\dots,2^{18}$: honest $\party{A}$ against random bits on an accepted input, honest $\party{B}$ against the forger on a rejected one (one debate each; the counts are deterministic). Points: counts from the script; curves: \cref{thm:efficientdebate:main}; dashed grey: the $T$ questions that running the procedure takes. (b) The judge's test of \cref{prot:efficientdebate:stochastic}, $\eta=0.02$, at a step of true probability $0.7$, for announcements off by $\eta$ (an honest estimate at the edge of accuracy) and by $3\eta$ (the size above which an accurate challenger may object); $4{,}000$ tests per point, seed $91$, Clopper--Pearson $95$ percent intervals. Curves: exact binomial values and the bounds $1-\zeta$ and $\zeta=2e^{-2m\eta^2}$ of the proof of \cref{thm:efficientdebate:stochastic}; vertical line: its $m=5{,}985$. Scripts \efficientdebatescript{bisection}, \efficientdebatescript{stochastic}.}
+\label{fig:efficientdebate:costs}
+\end{figure}
+
+In \cref{fig:efficientdebate:costs}(a) the honest $\party{A}$ simulated exactly $2T-1$ steps and the honest $\party{B}$ exactly $T-1$, up to $524{,}287$ and $262{,}143$ at $T=2^{18}$, and the judge asked one question in every debate; its reading grew like $\log^2T$, from $116$ to $1{,}348$ bits. The theorem makes acceptance rates $0$ or $1$, and the script checks them. On $200$ accepted inputs for each of $T=16$, $256$ and $4{,}096$, the honest $\party{A}$ won all $1{,}800$ debates against challengers that send random bits, always dispute the first half, or always the second; on $200$ rejected inputs for each $T$, the honest $\party{B}$ won all $1{,}800$ debates against a forger that claims a fake final configuration, a liar that flips just enough of the reviewer's no answers to yes and narrates the corrupted run consistently, and a liar that sends random configurations (the $95$ percent upper bound on a liar's acceptance rate is $0.0020$).
+
+Panel (b), from \efficientdebatescript{stochastic}, isolates the judge's test at an objection. With few samples the judge is little better than a coin: at $m=50$ it sides with an honest announcement about half the time and with a lie $40$ percent of the time. The rates follow the exact binomial values, and the Hoeffding bounds of the proof are valid and loose: vacuous up to $866$ samples, and at $m=5{,}000$ thirty-six times the exact error of the lie, $0.0010$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},vplot,width=0.5\linewidth,height=0.30\linewidth]
+\nextgroupplot[title={(a) a liar who tilts every step by $\theta$},xlabel={tilt $\theta$},ylabel={acceptance rate},xmode=log,
+  xmin=7e-5,xmax=0.7,ymin=-0.03,ymax=1.03,legend style={at={(0.02,0.98)},anchor=north west,font=\scriptsize},legend cell align=left]
+\addplot[bound] table[x=delta,y=bound] {figures/data/09-efficientdebate-tilt-theory.dat};
+\addplot[theory] table[x=delta,y=exact] {figures/data/09-efficientdebate-tilt-theory.dat};
+\addplot[cheat,ebars] table[x=delta,y=lax,y error plus=laxhi,y error minus=laxlo] {figures/data/09-efficientdebate-tilt.dat};
+\addplot[cheat2,ebars] table[x=delta,y=thm,y error plus=thmhi,y error minus=thmlo] {figures/data/09-efficientdebate-tilt.dat};
+\addplot[guide] coordinates {(7e-5,0.4) (0.7,0.4)};
+\addplot[guide,forget plot] coordinates {(0.00256,-0.03) (0.00256,1.03)};
+\addplot[guide,forget plot] coordinates {(0.00426,-0.03) (0.00426,1.03)};
+\legend{$\efficientdebateacc(\pi)+K\theta$,tilted computation (exact),lax challenger,challenger of \cref{thm:efficientdebate:stochastic},$2/5$}
+\nextgroupplot[title={(b) searching for the flaw},xlabel={leaves checked plus one, $a+1$},ylabel={probability the flaw is reached},xmode=log,ymode=log,
+  xmin=0.7,xmax=1500,ymin=4e-4,ymax=1.5,legend style={at={(0.98,0.03)},anchor=south east,font=\scriptsize},legend cell align=left]
+\addplot[theory] table[x=a1,y=n64] {figures/data/09-efficientdebate-needle-theory.dat};
+\addplot[honest,ebars] table[x=a1,y=win,y error plus=hi,y error minus=lo] {figures/data/09-efficientdebate-needle-64.dat};
+\addplot[theory2] table[x=a1,y=n1024] {figures/data/09-efficientdebate-needle-theory.dat};
+\addplot[honest,mark=square*,ebars] table[x=a1,y=win,y error plus=hi,y error minus=lo] {figures/data/09-efficientdebate-needle-1024.dat};
+\legend{$(a+1)/64$,measured,$(a+1)/1024$,measured}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Lies that are not checked. (a) \Cref{prot:efficientdebate:stochastic} on a vote of $101$ simulated judgments, each yes with probability $0.46$, then the deterministic step ``output $1$ if at least $51$ said yes'' ($\efficientdebateacc(\pi)=0.210$, $K=7.82$); the liar announces every probability $\theta$ too high. Ochre: a lax challenger that passes announcements within $\theta$ of the truth; teal: the challenger of \cref{thm:efficientdebate:stochastic} ($\eta=1/(150K)$, $m'\approx7.0\cdot10^6$, $m\approx3.3\cdot10^6$); $4{,}000$ debates per point, seed $92$, $95$ percent intervals. Curves: exact acceptance of the tilted computation, its Lipschitz bound, and $2/5$; vertical lines at $3\eta$ and $5\eta$. (b) Recursive debate with one false leaf among $N=64$ or $1{,}024$, uniformly placed; the challenger checks $a$ random leaves, then moves to the flaw if found and to an unchecked leaf otherwise; $3{,}000$ debates per point, seed $94$, $95$ percent intervals; lines: $(a+1)/N$. Scripts \efficientdebatescript{stochastic}, \efficientdebatescript{obfuscation}.}
+\label{fig:efficientdebate:lies}
+\end{figure}
+
+\Cref{fig:efficientdebate:lies}(a) shows why the challenger's tolerance must shrink like $1/K$. The vote's Lipschitz constant, computed exactly, is $7.82$, attained by a tilt of about $0.05$. A liar who announces every probability $\theta$ too high runs the tilted computation, and against a lax challenger its acceptance follows the exact curve ($0.60$ at $\theta=0.05$, $0.90$ at $\theta=0.1$), below the bound $\efficientdebateacc(\pi)+K\theta$ and touching it near $0.05$. Against the challenger of \cref{thm:efficientdebate:stochastic}, with $\eta=0.00085$, the liar gains a few hundredths at most: up to $0.002$, below $3\eta$, the challenger passes and acceptance stays between $0.20$ and $0.23$; from $0.004$, about $5\eta$, it objects at the first step and the judge's $3.3$ million samples expose the lie in all $4{,}000$ debates. Running this vote directly takes $101$ judgments: it is too sensitive for the protocol to save anything.
+
+The script \efficientdebatescript{obfuscation} builds Barnes's argument trees from random truth values: each of $6{,}400$ trees of depth $6$ for a false claim had exactly one false leaf, at positions consistent with the uniform distribution (chi-square $52.4$ on $63$ degrees of freedom), and in $500$ trees for a true claim every leaf was true. In \cref{fig:efficientdebate:lies}(b) the probability of reaching the flaw follows $(a+1)/N$. One interval, at $N=1{,}024$ and $a=31$, lies just above its line ($0.039$ against $0.031$); among sixteen random points with $95$ percent intervals, a miss somewhere has probability up to $0.56$. On five products of two random $12$-bit primes, the script also confirms that the halving argument's only false leaf is the smaller prime (\cref{prop:efficientdebate:factoring}).
+
+\section{The three questions}\label{sec:efficientdebate:questions}
+
+\questionone Yes, and affordably, when the procedure is fixed and short enough to run: in the zero-sum debate game the true side has a winning strategy that simulates at most $2T-1$ steps, the honest pair is a Nash equilibrium, and every equilibrium gives the true answer (\cref{cor:efficientdebate:game}). With noisy judgments honest play wins with probability at least $3/5$ against every opponent, at $O(K^2T\log T)$ samples (\cref{thm:efficientdebate:stochastic}). When the debaters choose the decomposition, honest play may be unaffordable: against an obfuscated argument it can require factoring (\cref{prop:efficientdebate:factoring}). Prover--estimator debate restores correctness at approximate prover-leading Stackelberg equilibria, on average and under stability, and sensitive debate makes honest play dominant for stable decompositions at $\beta^D$ repetitions; both are 2026 preprints. That training reaches these equilibria is an assumption, the first claim of the safety-case sketch of \textcite{BuhlEtAl2025}, a preprint.
+
+\questiontwo With deterministic judgments: $\log_2T$ rounds, $(\log_2T+1)w+\log_2T$ bits, one step of the procedure and at most one question to a person, against $T$ to run it; $O(\abs{z}\log T)$ time with cross-examination. With noisy judgments: $m=\lceil11250K^2\ln120\rceil$ human samples on an objection and none otherwise, a saving only when $K$ is far below $\sqrt T$; for $K=1$ our proof asks $53{,}860$ people.
+
+\questionthree With deterministic judgments, always: every lie is rejected in one run, against every opponent of unlimited power, if the honest challenger simulates $T-1$ steps. With noisy judgments and a $K$-Lipschitz procedure, a lie survives a run with probability at most $2/5$, and $t$ runs decided by majority with probability at most $e^{-t/50}$ (\cref{prop:toolkit:amplification}). Against an obfuscated argument there is no guarantee: checking $a$ of $N$ leaves catches a uniformly hidden flaw with probability at most $(a+1)/N$. Sensitive debate catches a wrong answer with probability at least $\beta^{-D}$ per run, and no protocol that only queries people does much better.
+
+\protocolcard{the output of an agreed procedure of $T$ steps, each a judgment call a person could make}
+{debaters $\party{A}$ (defends) and $\party{B}$ (challenges), the judge $\V$, the human oracle $\party{H}$}
+{zero-sum; the true side wins with at most $2T-1$ simulated steps and every equilibrium is truthful; unaffordable against obfuscated decompositions}
+{$\log_2T$ rounds, $O(w\log T)$ time, one human question; $O(K^2)$ human samples if judgments are noisy}
+{always, against every opponent; at least $3/5$ per run if judgments are noisy and the procedure is $K$-Lipschitz}
+{a procedure fixed in advance and short enough to run; consistent or independently noisy human answers; one debater honest and able to run the procedure}
+
+\section{What the model leaves out}\label{sec:efficientdebate:leavesout}
+
+\paragraph{What was idealized away.} The procedure $M$ is the strongest assumption: someone must write down in advance a procedure that settles the question if a person makes every call, and the theorem certifies only that the debate reproduces its output, not that it asks the right questions. The honest model must be able to run it, so $T$ counts steps a person can judge, not steps a model takes, and \textcite{BrownCohenIrving2024} note that if the shortest human-judgeable version is longer by a large polynomial factor, a bound of $O(T\log T)$ is useless in practice.\sidenote{They note that under the extended Church--Turing thesis the gap is at most polynomial, and that a polynomial such as $n^{100}$ is gap enough.} The human answers each question the same way whatever surrounds it, or with independent noise, while real judgments depend on framing, fatigue and order, and here optimizers choose the questions. The debaters are assumed to play the game's equilibrium; \textcite{BuhlEtAl2025} list among the assumptions of a safety case a guarantee that models do not avoid exploring strategies so as not to have them reinforced. And the noisy theorem's ``constant'' is tens of thousands times $K^2$ samples.
+
+\paragraph{Where it breaks.} (1) Obfuscated arguments: when the debaters choose the decomposition, a dishonest debater can force an honest one to solve an intractable problem; \textcite{Barnes2020} met such arguments in human debates on physics and found them hard to tell from honest ones, and \textcite{BrownCohenIrving2024} show that recursive debate, the natural way to handle procedures too long to run, fails for this reason. (2) Systematic human error: a question on which people are reliably wrong is decided wrongly, and \cref{prop:efficientdebate:rewrite} protects the verdict only for arguments robust to every rewrite of an $\varepsilon$ fraction, under a distribution that must be right. (3) Sensitive procedures: by \cref{thm:efficientdebate:sensitive}(iii), a decomposition whose conclusion hinges on single subclaims needs human queries exponential in its depth under every protocol that only queries people. (4) Untested: the UK AI Security Institute's alignment team listed implementing prover--estimator debate with human participants or current AI systems as an open empirical problem in a May 2025 forum post \parencite{HiltonEtAl2025}, and the 2026 version of the prover--estimator paper still names bringing its recommendations into training experiments as the central empirical question.
+
+\paragraph{Open problems.} \Textcite{BrownCohenEtAl2024} ask whether the debaters' exact simulation of human judgment can be relaxed to an approximate one, and whether debate can verify computations whose oracle errs on an arbitrary or a random small set of questions. \Textcite{BrownCohenIrving2024} ask for problem distributions on which the challenger can plant trapdoor instances that defeat obfuscation. \Textcite{HiltonEtAl2025} ask for weaker accuracy requirements on the prover in prover--estimator debate, threshold theorems that turn unstable arguments into stable ones, and protocols robust to systematic human error; \textcite{Irving2025} notes that with bounded debaters it is unclear what his rewriting rule guarantees. \Textcite{BrownCohenEtAl2026} ask whether stability is necessary; \cref{thm:efficientdebate:sensitive}(iii) answers for protocols that treat the human as a black box.
+
+\begin{exercises}
+\item \consolidation (Where the judge looks.) Show, as in \cref{thm:debate:bisection}, that the judge of \cref{prot:efficientdebate:bisection} can decide after reading $\party{B}$'s $k$ bits, $v_0$ and two configurations, at most $3w+k$ bits: the final $u$ is the midpoint of the last round in which $\party{B}$ sent $1$ (or $\gamma_0$), the final $v$ that of the last round in which it sent $0$ (or $v_0$).\label{ex:efficientdebate:selective}
+
+\item \consolidation (Which steps are bits.) (a) A stochastic computation of length $T$ runs $T-1$ checks that each pass with probability $1$, and its last step outputs their conjunction. Show that the smallest $K$ for which it is $K$-Lipschitz is $T$, so \cref{lem:efficientdebate:perturb}(ii) is tight. (b) A machine asks a person one question, answered yes with probability $p$, and copies the answer through $T-1$ further steps, the last of which is its output. Show that written with one bit per step it is $K$-Lipschitz only for $K\ge1+(T-1)\max(p,1-p)\ge(T+1)/2$, and that written as the answer followed by one output step it is $2$-Lipschitz.\label{ex:efficientdebate:bits}
+
+\item \consolidation (Dishonest equilibria.) In the debate game, give a Nash equilibrium in which $\party{B}$ plays dishonestly, and explain why it does not contradict \cref{cor:efficientdebate:game}.\label{ex:efficientdebate:equilibria}
+
+\item \consolidation (Amplification and constants.) (a) Show with \cref{prop:toolkit:amplification}(ii) that $691$ independent runs of \cref{prot:efficientdebate:stochastic} decided by majority leave an error below $10^{-6}$. (b) Show that the proof of \cref{thm:efficientdebate:stochastic}, with $m$ and $m'$ given by the same formulas in $\eta$, still gives $3/5$ and $2/5$ with $\eta=1/(120K)$ but not with a larger multiple of $1/K$, and that the judge then needs $34{,}470$ samples for $K=1$. (c) Which multiples of $1/K$ can the proof reach if $m$ and $m'$ may grow?\label{ex:efficientdebate:constants}
+
+\item \variation (A log instead of midpoints.) Let $\party{A}$ write all $T+1$ configurations as a string the judge reads selectively, let $\party{B}$ name a step $\tau$, and let the judge check that entry $0$ is $\gamma_0$, that entry $T$ is accepting, and that entry $\tau+1$ is the successor of entry $\tau$. Prove completeness and soundness, and compare the costs with \cref{thm:efficientdebate:main}.\label{ex:efficientdebate:log}
+
+\item \variation (A fallible person.) In \cref{prot:efficientdebate:bisection}, let the person the judge asks answer wrongly with probability $\nu<\frac12$, independently, while the debaters predict the correct answer, and let the successor of a query configuration depend on the answer. Show completeness at least $1-\nu$ and soundness error at most $\nu$, and that asking $2j+1$ people and taking the majority reduces both errors to at most $e^{-2(2j+1)(1/2-\nu)^2}$.\label{ex:efficientdebate:fallible}
+
+\item \attack (Who flips the coins.) A proposed variant of \cref{prot:efficientdebate:stochastic} saves the public coins: on a pass, $\party{A}$ reports the bit $y_\tau$ itself. (a) For the vote of \cref{fig:efficientdebate:lies}(a), show that a liar who announces every probability truthfully and reports only yes votes is accepted with probability at least $59/60$ against the honest $\party{B}$ of \cref{thm:efficientdebate:stochastic}, although $\efficientdebateacc(\pi)=0.210$. (b) \Textcite{BrownCohenEtAl2024} instead combine a number in $[0,1)$ from each side, adding them modulo $1$. Show that the sum is uniform whenever one of the two numbers is uniform and independent of the other, whatever the other's distribution.\label{ex:efficientdebate:coins}
+
+\item \attack\hard (A lax challenger.) For the vote of \cref{fig:efficientdebate:lies}(a) and a challenger that passes every announcement within $\theta$ of the truth, show that among liars it never objects to, the best announces every probability $\theta$ too high and is accepted with probability $(1-\theta)\Prob[\mathrm{Bin}(101,0.46+\theta)\ge51]+\theta$; evaluate it at $\theta=0.05$. \hint{by backward induction, the chance of acceptance after a history of votes never decreases when a no is changed to a yes.}\label{ex:efficientdebate:lax}
+
+\item \simulation (Who the judge asks about.) When the honest $\party{B}$ faces the liar that flips answers, record the step that the judge checks, by changing the script \efficientdebatescript{bisection}. Explain why it is the liar's first flipped step whenever the narration never returns to the true run afterward, why that holds here unless two $32$-bit notes collide, and check it on $1{,}000$ debates.\label{ex:efficientdebate:simwhere}
+
+\item \research (Recursion without obfuscation.) \Textcite{BrownCohenIrving2024} show that recursive debate over a model's fast but unjudgeable reasoning is defeated by obfuscation. Find natural problem distributions on which the challenger can plant trapdoor instances the prover cannot recognize; their proof-of-work counterexample rules out the strongest form of this hope.\label{ex:efficientdebate:trapdoor}
+
+\end{exercises}
+
+\notesandrefs
+Debate was proposed by \textcite{IrvingEtAl2018}; cross-examination and obfuscated arguments come from human-debate experiments by Barnes and Christiano \parencite{BarnesChristiano2020,Barnes2020}. \Textcite{BrownCohenEtAl2024} introduced doubly-efficient debate; besides Theorems~5.1, 5.3 and~6.2, presented here, they treat debates in which $\party{A}$ first proposes a witness, for $\cc{NP}$ and $\cc{MA}$ (\cref{def:toolkit:ip}) relative to $\party{H}$ (Theorems~7.1 and~7.2). Our proof of \cref{thm:efficientdebate:stochastic} uses the model of their Lean formalization and our own constants.
+
+Competing provers include refereed games \parencite{FeigeKilian1997}, the debates of \cref{ch:debate}, refereed delegation \parencite{CanettiRivaRothblum2011,CanettiRivaRothblum2013} and protocols for circuit evaluation \parencite{KolRaz2014}; the doubly-efficient debate paper does not discuss refereed delegation, and the prover--estimator paper does. \Textcite{Goldreich2018} surveys doubly-efficient interactive proofs (\cref{ch:delegation}).
+
+Obfuscation was formalized by \textcite{BrownCohenIrving2024}. \Textcite{BuhlEtAl2025} sketch a safety case resting on four claims: training reaches an approximate equilibrium, such equilibria err rarely, online training keeps errors rare in deployment, and the deployment tolerates them; \textcite{HiltonEtAl2025} list the open problems it exposes.
+
+\paragraph{Translating the literature.} \Textcite{BrownCohenEtAl2024} write $\cO$ for the human oracle, our $\party{H}$; $A$, $B$, $V$ for our $\party{A}$, $\party{B}$ and judge $\V$; $l$ for our question length $\abs{z}$; and the space $S$ of $M$ where we use the configuration length $w$, as \cref{ch:debate} does. In their protocol for Theorem~5.1, $z_k$, $z'_k$, $a_k$ are our $u$, $v$, $\mu$, and $b_k$ is $\party{B}$'s bit; their figure describes $b_k=1$ as disputing the first half while recursing into the second, and we follow the evident intent. \Textcite{BrownCohenEtAl2026} and \textcite{LiEtAl2026} write $\cO$ for $\party{H}$, Alice and Bob for $\party{A}$ and $\party{B}$, $d$ for our depth $D$, and $\rho$ for our stability and sensitivity bound $\beta$, renamed because $\rho$ denotes random bits in this book; the prover--estimator paper's $\epsilon$ in its definition of stability is our $\kappa$, its $\eta$ our $\vartheta$, and its input distribution $\mu$ our $\cD$, as is the distribution $\mu$ on questions of \textcite{Irving2025}. \Textcite{ChenKalaiXi2026} write $\ell$ for the number of oracle gates, $d$ for levels of adaptivity and $\sigma$ for the soundness parameter.
+
+\printchapterbib
+\end{refsection}

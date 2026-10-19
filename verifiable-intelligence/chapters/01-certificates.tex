@@ -1,0 +1,379 @@
+% Chapter 1 of Verifiable Intelligence: certificates, NP, and the length of refutations.
+\newcommand{\certificatesPHP}[2]{\mathrm{PHP}^{#1}_{#2}}
+\newcommand{\certificatesSAT}{\mathrm{SAT}}
+\newcommand{\certificatesUNSAT}{\mathrm{UNSAT}}
+\newcommand{\certificateslv}{\operatorname{lv}}
+\newcommand{\certificatesscript}[1]{\texttt{01-certificates-\allowbreak#1.py}}
+
+\protocolchapter{Certificates}{What one message can prove}{the certificate check}{P,D}{ch:certificates}
+\begin{refsection}[chapters/01-certificates.bib]
+
+\begin{chaptersummary}
+A model can attach to its answer a certificate, a single message that a small trusted program checks: a timetable, a dual solution, a formal proof. The check accepts every true claim that has a certificate and rejects every false claim. We prove that the claims with short certificates are exactly those in $\cc{NP}$, that verdicts can be turned into certificates, that duality certifies optimality of linear programs, and that all unsatisfiable formulas have short refutations in some proof system exactly when $\cc{NP}=\cc{coNP}$; the main theorem, proved with the Prover--Delayer game, is that every tree-like resolution refutation of the pigeonhole principle with $n$ holes has at least $2^n$ leaves. Honesty is a best response, since no lie is accepted; the verifier's time is polynomial in a certificate that may be exponentially long; and a lie is caught with probability one, relative to a formal statement and a checker taken on trust.
+\end{chaptersummary}
+
+\section{The oversight problem: answers that carry their own evidence}\label{sec:certificates:problem}
+
+The simplest way to oversee a stronger system is to make it show its work in a form that a weaker one can check. This chapter is about when that works and when it cannot.
+
+\begin{oversight}[two timetables]
+A model is asked to place $300$ examinations into time slots so that no student sits two examinations in the same slot. It returns a timetable with $20$ slots, and it adds that no timetable with $19$ slots exists. A clerk can check the timetable against the enrollment lists with a short program in a fraction of a second. What can the clerk check about the second claim? (The scenario is invented.)
+\end{oversight}
+
+The first claim carries its own evidence. The timetable is a \term{certificate}\index{certificate}: the clerk checks every pair of examinations that share a student, and needs neither to trust the model nor to know how it found the timetable. The second claim says that something does not exist. There is no object to exhibit, and the natural evidence is the record of a search through every way of placing $300$ examinations into $19$ slots.
+
+Computer science met this problem before it met capable AI systems. \Textcite{Necula1997} proposed proof-carrying code: an untrusted producer ships with its program a proof that the program respects the host's safety policy, and the host checks the proof quickly before running the code. \Textcite{McConnellEtAl2011} argue that programs for complex tasks should be \term{certifying algorithms}\index{certifying algorithm}, returning with each output a witness that a simple checker verifies. Their motivating story is a bug: in 1993 a researcher sent the authors of the LEDA library a graph, with a planar drawing of it, that the library's planarity test had declared non-planar. A certifying test returns a drawing for a planar graph and, for a non-planar one, a subdivision of $K_5$ or $K_{3,3}$.\sidenote{To check that certificate one needs only that such a subdivision cannot be drawn without crossings, not Kuratowski's theorem that every non-planar graph contains one \parencite[Section~2.6]{McConnellEtAl2011}.}
+
+Satisfiability solvers face the second claim every day. A solver that reports a formula unsatisfiable can emit a proof in the DRAT format, which an independent program such as DRAT-trim checks \parencite{WetzlerHeuleHunt2014}. A proof of this kind settled the Boolean Pythagorean triples problem:\sidenote{Ronald Graham had repeatedly offered a prize of \$100 for its solution \parencite{HeuleKullmannMarek2016}.} the numbers $1,\dots,7824$ can be colored with two colors so that no triple with $a^2+b^2=c^2$ is monochromatic, and the numbers $1,\dots,7825$ cannot \parencite{HeuleKullmannMarek2016}. The certificate for the first claim is a coloring, one bit per number. The certificate for the second was a DRAT proof of almost 200 terabytes, found in about $35{,}000$ CPU hours and checked in about $16{,}000$ more; a checker extracted from a formal proof of its own correctness later verified it \parencite{CruzFilipeEtAl2017}.
+
+Language models now write certificates of this kind. AlphaProof \parencite{HubertEtAl2026} writes proofs in the language of the proof assistant Lean, whose kernel checks every proof. At the 2024 International Mathematical Olympiad, on statements that experts formalized in Lean after the competition, it proved three of the five problems outside geometry, with two to three days of computation for each.\sidenote{Four of those five problems ask for an answer, such as all functions with a property. Gemini 1.5 Pro proposed hundreds of candidate answers, and AlphaProof refuted most of the wrong ones before attempting proofs \parencite{HubertEtAl2026}.} DeepSeek-Prover \parencite{XinEtAl2024,RenEtAl2025} is a family of models trained to write Lean proofs; a 2025 preprint on its second version reported proofs for $88.9\%$ of the miniF2F test problems and $49$ of the $658$ PutnamBench problems. Such proofs are trusted because a small program checks them, the principle that \textcite{BarendregtWiedijk2005} call the \term{de Bruijn criterion}\index{de Bruijn criterion}. For AI systems themselves, \textcite{DalrympleEtAl2024} propose, in a preprint, ``guaranteed safe AI'': a world model, a safety specification, and a verifier that provides an auditable proof certificate that the system meets the specification relative to the model.
+
+The complexity-theoretic ancestor is the class $\cc{NP}$ of claims with short certificates checkable in polynomial time, whose complete problems \textcite{Cook1971} and, independently, \textcite{Levin1973} discovered;\sidenote{Levin's paper, in \emph{Problemy Peredachi Informatsii}, is two pages long; it was received in June 1972.} \textcite{Karp1972} showed that twenty-one combinatorial problems are complete for it, graph coloring, and so timetabling, among them. \Textcite{CookReckhow1979} asked the question of the second claim: is there a proof system in which every unsatisfiable formula has a short refutation? The clerk cannot reproduce the model's answer, which would mean solving an $\cc{NP}$-complete problem; a certificate moves the search to the prover and leaves the verifier the reading. Which true claims have short certificates, and what does an accepted certificate guarantee?
+
+\section{The protocol: the certificate check}\label{sec:certificates:protocol}
+
+A claim is a statement ``$x\in L$'' about an input $x\in\bits^*$ of length $n=\abs{x}$, for a language $L\subseteq\bits^*$. The protocols of this book have a prover and a verifier (the prologue; \cref{def:toolkit:ip}); in the simplest, the prover sends one message and the verifier decides without coins.
+
+\begin{definition}[Certificate system]\label[definition]{def:certificates:system}
+Let $L\subseteq\bits^*$ be a language. A \term{certificate system}\index{certificate system} for $L$ is a deterministic algorithm $\V$, the \emph{checker}, which on inputs $x$ and $w$ halts with \acc{} or \rej, such that
+\begin{enumerate}
+\item (completeness) for every $x\in L$ there is a string $w$ with $\V(x,w)=\acc$;
+\item (soundness) for every $x\notin L$ and every string $w$, $\V(x,w)=\rej$.
+\end{enumerate}
+A string $w$ with $\V(x,w)=\acc$ is a \emph{certificate} for $x$. The system is \emph{efficient} if $\V$ runs in time $T(\abs{x})$ for a polynomial $T$, and it is a \term{proof system}\index{proof system} if $\V$ runs in time $T(\abs{x}+\abs{w})$ for a polynomial $T$.
+\end{definition}
+
+An efficient checker cannot read more than $T(\abs{x})$ symbols of a certificate; the checker of a proof system may read all of it, however long. In the terms of the appendix, a certificate system is a one-message protocol with completeness $c=1$ and soundness error $s=0$: a checker without coins accepts each message with probability $0$ or $1$. Soundness is relative to $L$ as the checker defines it, not to properties that $L$ fails to express.
+
+\begin{protocol}{The certificate check}\label{prot:certificates:check}
+\item[\act{P}] Find a certificate $w$ for the claim ``$x\in L$'' (or give up).
+\item[\msg{P}{V}] Send $w$.
+\item[\act{V}] Run the checker on $(x,w)$; \acc{} if it accepts, else \rej.
+\end{protocol}
+
+\begin{example}[Three certificates]\label[example]{exa:certificates:three}
+\emph{A timetable.} Six examinations $A,\dots,F$ have the conflicts $AB$, $AC$, $BC$, $BD$, $CE$, $DE$, $DF$, $EF$. The honest prover sends $A,D\mapsto1$, $B,E\mapsto2$, $C,F\mapsto3$, and the checker compares the slots of the eight conflicting pairs. That no timetable with two slots exists is certified by the triangle $A,B,C$ of pairwise conflicts.
+
+\emph{A dual solution.} The model claims that $18$ is the largest value of $4z_1+3z_2$ subject to $z_1+z_2\le5$, $2z_1+z_2\le8$, $z_2\le4$ and $z\ge0$, attained at $z^*=(3,2)$. Its certificate is the vector of multipliers $u^*=(2,1,0)$: twice the first constraint plus the second gives $4z_1+3z_2\le18$ for every feasible $z$. The checker verifies $5\le5$, $8\le8$, $2\le4$ for $z^*$; $u^*\ge0$ with $2+2\ge4$ and $2+1+0\ge3$; and $4\cdot3+3\cdot2=18=5\cdot2+8\cdot1+4\cdot0$.
+
+\emph{A prime.} The claim that $97$ is prime says that no divisor exists, yet it has a short certificate \parencite{Pratt1975}: an element $a$ of order $96$ modulo $97$, the factorization $96=2^5\cdot3$, and recursively a certificate that $3$ is prime. With $a=5$ the checker computes $5^{96}\equiv1$, $5^{48}\equiv96$ and $5^{32}\equiv35\pmod{97}$, and for $3$, with $a=2$, $2^2\equiv1$ and $2^1\equiv2\pmod 3$ (\cref{ex:certificates:pratt}).
+\end{example}
+
+\begin{dictionary}
+claim $x\in L$ & the property the overseer wants, stated formally\\
+checker $\V$ & a small trusted program: a proof assistant's kernel, a proof checker, a test harness\\
+certificate $w$ & the evidence that comes with an answer: a timetable, a dual solution, a formal proof\\
+soundness error $s=0$ & no false claim passes; the risk left lies in the formal statement and the checker's code\\
+length of $w$ & what must be stored and read: $7824$ bits, or 200 terabytes\\
+$\cc{NP}$ and $\cc{coNP}$ & claims that some object exists, and claims that none does
+\end{dictionary}
+
+To see oversight this way one has to notice that an overseer need not be able to find an answer to hold a model to it: it needs a definition of evidence and a program that checks it. The two asymmetries of $\cc{NP}$, between finding and checking and between existence and nonexistence, separate what a capable model can show from what it can only assert.
+
+\section{The theory: what one message can prove}\label{sec:certificates:np}
+
+The appendix defines $\cc{NP}$ by certificates checked in polynomial time (\cref{def:toolkit:classes}); the classical definition uses machines that guess, accepting exactly the strings of $L$ and halting on every input $x$ within $T(\abs{x})$ steps, for a polynomial $T$. A language is \emph{computably enumerable} (in $\cc{RE}$) if some Turing machine accepts exactly its strings, possibly running forever on the others.
+
+\begin{theorem}[$\cc{NP}$ is the class of claims with efficient certificates]\label{thm:certificates:np}
+For every language $L$ the following are equivalent:
+\begin{enumerate}
+\item some nondeterministic Turing machine accepts $L$ in polynomial time;
+\item $L\in\cc{NP}$: there are a polynomial $T$ and a relation $R$ decidable in polynomial time such that $x\in L$ if and only if $(x,w)\in R$ for some $w$ with $\abs{w}\le T(\abs{x})$;
+\item $L$ has an efficient certificate system.
+\end{enumerate}
+Moreover, a language has a proof system if and only if it is computably enumerable; in particular the halting problem, which is not in $\cc{NP}$, has one.
+\end{theorem}
+
+What limits one-message protocols is thus the verifier's time measured against the claim; measured against the certificate instead, it allows every claim that can be verified at all.
+
+\begin{proof}
+The plan is to prove (i)$\Rightarrow$(iii)$\Rightarrow$(ii)$\Rightarrow$(i), and then the statement about proof systems. For (i)$\Rightarrow$(iii), let $M$ be a nondeterministic machine that accepts $L$ within $T(\abs{x})$ steps, with at most two choices at each step. A certificate for $x$ is the sequence of choices of an accepting computation of $M$ on $x$. The checker simulates $M$ on $x$ for at most $T(\abs{x})$ steps, taking its $t$-th choice from the $t$-th symbol of $w$, and accepts if the simulation accepts; it runs in time polynomial in $\abs{x}$. If $x\in L$, then an accepting computation exists, and its choices are accepted. Conversely, an accepted $w$ describes an accepting computation of $M$ on $x$, so $x\in L$.
+
+For (iii)$\Rightarrow$(ii), let $\V$ run in time $T(\abs{x})$. It reads at most the first $T(\abs{x})$ symbols of $w$, so truncating $w$ to that length does not change its run. The relation $R$ of pairs $(x,w)$ with $\abs{w}\le T(\abs{x})$ and $\V(x,w)=\acc$ is decidable in polynomial time, and by completeness and soundness it satisfies (ii). For (ii)$\Rightarrow$(i), a nondeterministic machine guesses $w$ of length at most $T(\abs{x})$ and decides whether $(x,w)\in R$.
+
+For proof systems, let $M$ accept exactly the computably enumerable language $L$. A certificate for $x$ is the sequence of configurations of an accepting run of $M$ on $x$, and the checker verifies in time polynomial in $\abs{x}+\abs{w}$ that it starts with the initial configuration on $x$, follows the transitions of $M$, and ends in an accepting configuration. Conversely, the checker of a proof system halts on every pair, so running it on all pairs $(x,w)$ in order of length and listing the $x$ it accepts enumerates $L$. The halting problem is computably enumerable and undecidable, and every language in $\cc{NP}$ is decidable by trying all $w$ in (ii).
+\end{proof}
+
+\subsection{Ask for the witness, not the verdict}
+
+Often the model gives a verdict without evidence. For satisfiability the overseer can turn verdicts into a certificate, because a formula is satisfiable exactly when one of the two formulas obtained by fixing a variable is. Let $F$ be a formula in conjunctive normal form with variables $x_1,\dots,x_N$; given values $a_1,\dots,a_i$, write $F_i$ for $F$ with $x_1,\dots,x_i$ replaced by them, and $F_{i-1}[x_i{=}b]$ for $F_{i-1}$ with $x_i$ replaced by $b$. The model is a function $D$ that answers each question ``is this formula satisfiable?'' yes or no, rightly or wrongly.
+
+\begin{protocol}{Asking for the witness}\label{prot:certificates:search}
+\item[\msg{V}{P}] Is $F$ satisfiable? If no, stop: nothing is certified.
+\phase{Steps $i=1,\dots,N$}
+\item[\msg{V}{P}] Is $F_{i-1}[x_i{=}1]$ satisfiable? If yes, set $a_i=1$.
+\item[\msg{V}{P}] Otherwise, is $F_{i-1}[x_i{=}0]$ satisfiable? If yes, set $a_i=0$; if no, \rej: the model contradicted itself.
+\item[\act{V}] After step $N$: output $a$ if it satisfies $F$; otherwise \rej, since the model called the false closed formula $F_N$ satisfiable.
+\end{protocol}
+
+\begin{proposition}[Search from decision]\label[proposition]{prop:certificates:search}
+\Cref{prot:certificates:search} asks at most $2N+1$ questions and otherwise runs in time polynomial in the length of $F$. For every answering function $D$:
+\begin{enumerate}
+\item if $F$ is satisfiable and $D$ answers every question correctly, then the protocol outputs a satisfying assignment of $F$;
+\item every assignment it outputs satisfies $F$, and whenever it rejects, at least one of at most three answers that it names is wrong;
+\item if $D$ says that $F$ is unsatisfiable, the protocol certifies nothing.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to follow the invariant that $F_{i-1}$ is satisfiable at the start of step $i$ when the answers are correct. Each step asks at most two questions, and substituting values and evaluating $F$ take polynomial time. For (i), the invariant holds for $i=1$ because $F$ is satisfiable, and it persists because a satisfiable $F_{i-1}$ has a satisfiable restriction, which correct answers find; so the protocol never rejects at a step, and at the end the closed formula $F_N$ is true, that is, $a$ satisfies $F$. For (ii), the final check outputs only satisfying assignments. A rejection at step $i$ names the answer yes for $F_{i-1}$ and the answers no for its two restrictions, and these are not all correct because $F_{i-1}$ is satisfiable exactly when one of its restrictions is. A rejection at the end names the answer yes for $F_N$, a false closed formula. Part (iii) is the first line of the protocol.
+\end{proof}
+
+One question per variable suffices if the overseer sets $a_i=0$ without asking when the model denies $F_{i-1}[x_i{=}1]$; every output is still certified, but a rejection no longer names three answers. A model that decides satisfiability can thus be made to certify its yes with $N$ or $2N$ more questions; its no cannot be converted this way.
+
+\subsection{Certificates of optimality}
+
+Some negative claims have short certificates, among them ``no feasible point of a linear program does better than $z^*$''. Let $A$ be a real matrix with $M$ rows and $N$ columns, $b\in\R^M$ and $c\in\R^N$, with inequalities between vectors meant coordinatewise, and consider the primal and dual programs
+\[
+  \max\{c^\top z: Az\le b,\ z\ge0\}\qquad\text{and}\qquad\min\{b^\top u: A^\top u\ge c,\ u\ge0\}.
+\]
+
+\begin{lemma}[Farkas's lemma]\label[lemma]{lem:certificates:farkas}
+Let $B$ be a real $K\times M$ matrix and $h\in\R^K$. The system $Bu\le h$, $u\ge0$ has a solution if and only if every $y\in\R^K$ with $y\ge0$ and $y^\top B\ge0$ satisfies $y^\top h\ge0$.
+\end{lemma}
+
+The direction ``only if'' takes one line: $y^\top h\ge y^\top Bu\ge0$. The other is a separating-hyperplane argument \parencite{MatousekGartner2007}.
+
+\begin{theorem}[Duality certificates]\label{thm:certificates:lp}
+Let $z^*$ satisfy $Az^*\le b$ and $z^*\ge0$.
+\begin{enumerate}
+\item (Soundness) If some $u^*$ satisfies $A^\top u^*\ge c$, $u^*\ge0$ and $b^\top u^*=c^\top z^*$, then $c^\top z\le c^\top z^*$ for every $z$ with $Az\le b$ and $z\ge0$.
+\item (Completeness) If $c^\top z\le c^\top z^*$ for every $z$ with $Az\le b$ and $z\ge0$, then some $u^*$ satisfies $A^\top u^*\ge c$, $u^*\ge0$ and $b^\top u^*=c^\top z^*$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+For (i), let $z$ be feasible. Since $z\ge0$ and $A^\top u^*\ge c$, and then since $u^*\ge0$ and $Az\le b$,
+\[
+  c^\top z\le(u^*)^\top Az\le(u^*)^\top b=c^\top z^*.
+\]
+For (ii), write $\gamma=c^\top z^*$. The plan is to find $u\ge0$ with $A^\top u\ge c$ and $b^\top u\le\gamma$; then the chain of inequalities in (i), applied to $z^*$ and $u$, gives $b^\top u\ge\gamma$, hence equality. The wanted system is $Bu\le h$, $u\ge0$, where $B$ consists of the rows of $-A^\top$ and the row $b^\top$, and $h$ of the entries of $-c$ and of $\gamma$. By \cref{lem:certificates:farkas} it suffices to take $z\in\R^N$ and $\lambda\in\R$ with $z\ge0$, $\lambda\ge0$ and $-z^\top A^\top+\lambda b^\top\ge0$, that is, $Az\le\lambda b$, and to show $c^\top z\le\lambda\gamma$. If $\lambda>0$, then $z/\lambda$ is feasible and the hypothesis gives $c^\top z/\lambda\le\gamma$. If $\lambda=0$, then $Az\le0$, so $z^*+tz$ is feasible for every $t\ge0$, and $c^\top(z^*+tz)\le\gamma$ for all $t\ge0$ forces $c^\top z\le0$.
+\end{proof}
+
+The checker verifies $2(M+N)$ inequalities and one equality. When the data are rational, optimal solutions can be taken at vertices, whose coordinates are ratios of determinants of submatrices of the data (Cramer's rule), so the certificate has polynomial length \parencite{MatousekGartner2007}. Duality is a general source of certificates for optimization \parencite{McConnellEtAl2011}; max-flow min-cut and König's theorem on matchings are special cases (\cref{ex:certificates:konig}). It fails for integer programs. Deciding whether linear inequalities have a $0$-$1$ solution is $\cc{NP}$-complete \parencite{Karp1972}, so short certificates of infeasibility for integer programs would put a $\cc{coNP}$-complete language into $\cc{NP}$, and $\cc{NP}=\cc{coNP}$ would follow as in the next proof.
+
+\subsection{Certificates for ``no''}
+
+The language $\certificatesUNSAT$ consists of the unsatisfiable formulas in conjunctive normal form. The language $\certificatesSAT$ of satisfiable ones is $\cc{NP}$-complete \parencite{Cook1971,Levin1973}: for every $L\in\cc{NP}$ there is a polynomial-time map $f$ with $x\in L$ if and only if $f(x)\in\certificatesSAT$. Hence $\certificatesUNSAT$ is complete for $\cc{coNP}$, the class of complements of languages in $\cc{NP}$.
+
+\begin{definition}[Refutation systems]\label[definition]{def:certificates:proofsystem}
+A \term{refutation system} is a proof system for $\certificatesUNSAT$ (\cref{def:certificates:system}); its certificates are \emph{refutations}. It is \emph{polynomially bounded}\index{proof system!polynomially bounded} if, for a polynomial $T$, every unsatisfiable formula $F$ has a refutation of length at most $T(\abs{F})$.
+\end{definition}
+
+\begin{theorem}[\textcite{CookReckhow1979}]\label{thm:certificates:cookreckhow}
+A polynomially bounded refutation system exists if and only if $\cc{NP}=\cc{coNP}$.
+\end{theorem}
+
+\begin{proof}
+The plan is to translate between refutation systems and efficient certificate systems for $\certificatesUNSAT$ with \cref{thm:certificates:np}. Suppose that $\V$ is a polynomially bounded refutation system with bound $T$. The checker that runs $\V$ on $(F,w)$ when $\abs{w}\le T(\abs{F})$, and rejects otherwise, runs in time polynomial in $\abs{F}$, is complete because short refutations exist, and is sound because $\V$ is; so $\certificatesUNSAT\in\cc{NP}$. Let $L\in\cc{coNP}$, and let $f$ reduce the complement of $L$ to $\certificatesSAT$; then $x\in L$ if and only if $f(x)\in\certificatesUNSAT$, and composing $f$ with a checker for $\certificatesUNSAT$ puts $L$ into $\cc{NP}$. So $\cc{coNP}\subseteq\cc{NP}$, and taking complements gives $\cc{NP}\subseteq\cc{coNP}$.
+
+Conversely, if $\cc{NP}=\cc{coNP}$, then $\certificatesUNSAT\in\cc{NP}$ has an efficient certificate system, running in time $T(\abs{F})$. That checker runs in time polynomial in $\abs{F}+\abs{w}$, so it is a refutation system, and since it reads only the first $T(\abs{F})$ symbols of $w$, it is polynomially bounded.
+\end{proof}
+
+Cook and Reckhow defined proof systems for tautologies;\sidenote{They define a proof system as a polynomial-time function from strings onto the tautologies. A formula $\tau$ is a tautology exactly when $\neg\tau$ is unsatisfiable, so the two notions agree up to this translation.} they proposed to prove superpolynomial lower bounds for stronger and stronger systems, each a step toward $\cc{NP}\ne\cc{coNP}$. For resolution, the system behind most satisfiability solvers, the lower bound is known.
+
+\section{The theory: how long a refutation must be}\label{sec:certificates:resolution}
+
+A \emph{literal} is a variable or its negation, a \emph{clause} is a set of literals read as their disjunction, and a formula $F$ in conjunctive normal form is a set of clauses, with $N$ variables. A partial assignment $\alpha$ \emph{falsifies} a clause if it makes each of its literals false; every assignment falsifies the empty clause $\square$.
+
+\begin{definition}[Resolution]\label[definition]{def:certificates:resolution}
+The \term{resolution} rule derives from clauses $C\cup\{x\}$ and $D\cup\{\neg x\}$ their \emph{resolvent} $C\cup D$; the variable $x$ is the \emph{pivot}. A \emph{resolution refutation} $\Pi$ of $F$ is a sequence of clauses ending with $\square$, each a clause of $F$ or the resolvent of two earlier ones; its size $\abs{\Pi}$ is the number of clauses. It is \emph{tree-like}\index{resolution!tree-like} if each clause of the sequence is used at most once as a premise, so that a clause of $F$ needed twice is listed twice. The clauses that lead to $\square$ then form a binary tree with root $\square$ whose $\certificateslv(\Pi)$ leaves are clauses of $F$, possibly repeated; $\abs{\Pi}\ge2\certificateslv(\Pi)-1$.
+\end{definition}
+
+Resolution is sound: an assignment that satisfies both premises satisfies $C$ if it sets $x$ false and $D$ if it sets $x$ true, so every clause of a refutation holds under every assignment satisfying $F$, and $\square$ holds under none. A checker verifies a refutation in time polynomial in $\abs{F}+\abs{\Pi}$, so resolution is a refutation system. It is also complete, by the next lemma.
+
+A \emph{decision tree} for $F$ is a binary tree whose internal nodes carry variables, none twice on a path, with the two edges below a node setting its variable to $0$ and to $1$; each leaf carries a clause of $F$ falsified by the partial assignment $\alpha_v$ along the path to it. The search tree of the procedure of Davis, Putnam, Logemann and Loveland \parencite{DavisPutnam1960,DavisLogemannLoveland1962}, \term{DPLL}\index{DPLL}, on an unsatisfiable formula is such a tree: the procedure sets a variable, recurses on both values, and backtracks when a clause is falsified, and a unit propagation that forces a literal $\ell$ by a clause $C$ is a node whose branch $\ell=0$ ends at once in a leaf carrying $C$.
+
+\begin{lemma}[Decision trees give refutations]\label[lemma]{lem:certificates:trees}
+If $F$ has a decision tree with $\Lambda$ leaves, then $F$ has a tree-like resolution refutation with at most $\Lambda$ leaves. In particular every unsatisfiable formula with $N$ variables has a tree-like refutation with at most $2^N$ leaves.
+\end{lemma}
+
+\begin{proof}
+The plan is to label each node $v$, from the leaves up, with a clause $C_v$ falsified by $\alpha_v$ that has a tree-like derivation with at most as many leaves as the subtree below $v$. A leaf keeps its clause. Let $v$ be an internal node with variable $x$ and children $v_0$, $v_1$. The clause $C_{v_0}$ is falsified by $\alpha_v$ extended by $x=0$, so it does not contain $\neg x$; if it does not contain $x$ either, then $\alpha_v$ falsifies it and we set $C_v=C_{v_0}$, and similarly if $C_{v_1}$ does not contain $\neg x$. Otherwise $C_{v_0}=C\cup\{x\}$ and $C_{v_1}=D\cup\{\neg x\}$ with $C$ and $D$ falsified by $\alpha_v$, and $C_v=C\cup D$ is derived by one resolution step. At the root $\alpha_v$ is empty, and only $\square$ is falsified by the empty assignment. For the last claim, query $x_1,\dots,x_N$ in order on every path: each of the $2^N$ full assignments falsifies a clause of an unsatisfiable formula.
+\end{proof}
+
+\subsection{The Prover--Delayer game}
+
+\Textcite{PudlakImpagliazzo2000} turned the converse into a game, a protocol in miniature: a liar claims to know a satisfying assignment of an unsatisfiable formula, and an interrogator asks for values of variables until the answers falsify a clause.\sidenote{The game's Prover is not the prover $\Prov$ of our protocols: in this book's terms it is a verifier interrogating a cheating prover, the Delayer.}
+
+\begin{definition}[The Prover--Delayer game]\label[definition]{def:certificates:game}
+Let $F$ be unsatisfiable. Prover and Delayer build a partial assignment $\alpha$, starting from the empty one. In each round Prover names a variable that $\alpha$ leaves unassigned, and Delayer either gives it a value or \emph{defers}, scoring one point, in which case Prover gives it a value. The game ends when $\alpha$ falsifies a clause of $F$.
+\end{definition}
+
+The game ends within $N$ rounds, since a full assignment falsifies some clause, and a refutation is a strategy for Prover that limits Delayer's points.\index{Prover--Delayer game}
+
+\begin{lemma}[\textcite{PudlakImpagliazzo2000}]\label[lemma]{lem:certificates:game}
+If $F$ has a tree-like resolution refutation $\Pi$, then Prover has a strategy that ends every game with Delayer holding at most $\log_2\certificateslv(\Pi)$ points. Consequently, if Delayer has a strategy that scores at least $p$ points against every strategy of Prover, then every tree-like refutation of $F$ has at least $2^p$ leaves and at least $2^{p+1}-1$ clauses.
+\end{lemma}
+
+\begin{proof}
+The plan is to walk down the tree of $\Pi$ from the root, keeping a clause falsified by the current assignment, and to answer every deferral by moving into the smaller subtree. Prover keeps a node $v$ whose clause $C_v$ is falsified by $\alpha$, with $\Lambda_v\le\certificateslv(\Pi)/2^p$, where $\Lambda_v$ is the number of leaves below $v$ and $p$ is Delayer's score so far. At the start $v$ is the root, whose clause $\square$ is falsified by the empty assignment, and $p=0$. When $v$ is a leaf, $C_v$ is a clause of $F$ falsified by $\alpha$, and the game is over. Otherwise $C_v=C\cup D$ is the resolvent of $C\cup\{x\}$ at a child $v_0$ and $D\cup\{\neg x\}$ at a child $v_1$, and $\alpha$ falsifies $C$ and $D$. When $\alpha$ already gives $x$ a value, Prover moves to $v_0$ if the value is $0$ and to $v_1$ if it is $1$; the new clause is falsified and the bound is kept. When $x$ is unassigned, Prover names it. If Delayer gives it a value, then Prover moves as before. If Delayer defers, then Prover gives $x$ the value that leads to the child with fewer leaves, at most $\Lambda_v/2$ of them, so the bound is kept although the score rises by one. Each move goes one level down, so the game ends, at the latest at a leaf, and then $1\le\Lambda_v\le\certificateslv(\Pi)/2^p$, that is, $p\le\log_2\certificateslv(\Pi)$. For the consequence, play Delayer's strategy against this Prover: Delayer scores at least $p$ and at most $\log_2\certificateslv(\Pi)$ points, so $\certificateslv(\Pi)\ge2^p$ and $\abs{\Pi}\ge2\certificateslv(\Pi)-1\ge2^{p+1}-1$.
+\end{proof}
+
+\subsection{The pigeonhole principle}
+
+The \term{pigeonhole principle}\index{pigeonhole principle} says that $m$ pigeons do not fit into $n<m$ holes, one per hole. The formula $\certificatesPHP{m}{n}$ has a variable $x_{ij}$ for ``pigeon $i$ sits in hole $j$'', a \emph{pigeon clause} $\{x_{i1},\dots,x_{in}\}$ for each pigeon $i\le m$, and a \emph{hole clause} $\{\neg x_{ij},\neg x_{i'j}\}$ for each hole $j\le n$ and pigeons $i<i'$. Here $n$ counts holes, not input symbols. The formula $\certificatesPHP{n+1}{n}$ has $n(n+1)$ variables and $(n+1)(1+n^2/2)$ clauses, and it is unsatisfiable; with one pigeon fewer the claim flips, and a perfect matching of $n^2$ bits certifies that $\certificatesPHP{n}{n}$ is satisfiable.
+
+\begin{theorem}[A lower bound for tree-like resolution]\label{thm:certificates:php}
+For all integers $n\ge1$ and $m>n$, every tree-like resolution refutation of $\certificatesPHP{m}{n}$ has at least $2^n$ leaves and at least $2^{n+1}-1$ clauses.
+\end{theorem}
+
+\begin{proof}
+By \cref{lem:certificates:game} it suffices to give Delayer a strategy that scores at least $n$ points against every strategy of Prover. The plan is to keep the pigeons that sit in holes a matching, so that only a pigeon clause can end the game, and to charge each hole excluded for the losing pigeon to a point.
+
+Let $\mathcal{M}(\alpha)$ be the set of pairs $(i,j)$ with $\alpha(x_{ij})=1$. When Prover names $x_{ij}$, Delayer sets it to $0$ if some pair in $\mathcal{M}(\alpha)$ contains pigeon $i$ or hole $j$, and defers otherwise. Then $\mathcal{M}(\alpha)$ is always a matching, that is, no two of its pairs share a pigeon or a hole: it grows only when Prover sets a variable to $1$ after a deferral, and Delayer defers on $x_{ij}$ only when neither pigeon $i$ nor hole $j$ occurs in $\mathcal{M}(\alpha)$. A falsified hole clause would need two pairs with the same hole, so the game ends with a pigeon clause falsified: for some pigeon $i$, $\alpha(x_{ij})=0$ for every hole $j$.
+
+Values are never changed, so pigeon $i$ never occurs in $\mathcal{M}(\alpha)$. Let $J_D$ be the set of holes $j$ for which Delayer set $x_{ij}=0$, and $J_P$ the set for which Prover did, after a deferral. When Delayer set $x_{ij}=0$, some pair of $\mathcal{M}(\alpha)$ contained hole $j$, since none contained pigeon $i$, and that pair is still there at the end, because $\mathcal{M}(\alpha)$ only grows. So the final matching $\mathcal{M}$ covers $J_D$, and $\abs{J_D}\le\abs{\mathcal{M}}$. Each pair of $\mathcal{M}$ was created by a deferral after which Prover chose $1$, and each $j\in J_P$ is a deferral after which Prover set $x_{ij}$ to $0$; these deferrals concern distinct variables. Delayer's score is therefore at least
+\[
+  \abs{\mathcal{M}}+\abs{J_P}\ge\abs{J_D}+\abs{J_P}=n.\qedhere
+\]
+\end{proof}
+
+\begin{corollary}[DPLL on the pigeonhole principle]\label[corollary]{cor:certificates:dpll}
+Every run of DPLL on $\certificatesPHP{n+1}{n}$, whatever its branching rule and with or without unit propagation and backjumping, has a search tree with at least $2^n$ leaves.
+\end{corollary}
+
+\begin{proof}
+The search tree is a decision tree, so by \cref{lem:certificates:trees} it yields a tree-like refutation with at most as many leaves, and by \cref{thm:certificates:php} that refutation has at least $2^n$ leaves. With backjumping a node may keep one child, whose clause omits the node's variable: the first case in the proof of \cref{lem:certificates:trees}.
+\end{proof}
+
+The formula has $\Theta(n^3)$ clauses, so $2^n$ is exponential in the cube root of its length, and the bound is not tight. \Textcite{IwamaMiyazaki1999} and, independently, \textcite{DantchevRiis2001} showed that tree-like refutations of the pigeonhole principle need size roughly $n!$; \textcite{BeyersdorffGalesiLauria2010} reproved the bound $2^{(n/2)\log_2(n/2+1)}$ of Dantchev and Riis on the size, for even $n$ and every $m>n$, with an asymmetric version of the game (\cref{ex:certificates:asymmetric} works through the simpler scoring that they credit to Jukna). They explain why the symmetric game stops at $2^{O(n)}$: these refutations contain balanced subtrees of height only about $n$. By exhaustive search over decision trees, the smallest tree-like refutations of $\certificatesPHP{n+1}{n}$ for $n=1,2,3$ have $3$, $11$ and $43$ leaves, and with optimal play on both sides the game is worth exactly $n$ points. (Decision trees suffice: querying unassigned pivots as Prover does in the proof of \cref{lem:certificates:game} turns a refutation into a decision tree with no more leaves.)
+
+\subsection{General resolution and the solvers}
+
+General resolution may reuse a derived clause, which tree-like resolution must derive again, and can be almost exponentially stronger: some formulas of size $n$ have refutations of size $O(n)$ but need tree-like ones of size $2^{\Omega(n/\log n)}$ \parencite{BenSassonImpagliazzoWigderson2004}. For the pigeonhole principle it is exponential too.
+
+\begin{theorem}[\textcite{Haken1985}]\label{thm:certificates:haken}
+There is a constant $\varepsilon>0$ such that for every $n\ge1$, every resolution refutation of $\certificatesPHP{n+1}{n}$ has at least $2^{\varepsilon n}$ clauses.
+\end{theorem}
+
+\begin{proofsketch}
+We follow \textcite{BeamePitassi1996} and omit the probability calculation for a random restriction. An assignment is \emph{critical} if it places all pigeons but one into distinct holes. Under critical assignments $\neg x_{ij}$ is equivalent to the disjunction of $x_{i'j}$ over the pigeons $i'\ne i$, so each clause $C$ has a monotone version $C^+$ that agrees with it on critical assignments. Let $\pi(C)$ be the set of pigeons $i$ such that some critical assignment leaving out $i$ falsifies $C$. Pigeon clauses have $\abs{\pi}=1$, hole clauses $\abs{\pi}=0$, the empty clause $\abs{\pi}=n+1$, and $\pi$ of a resolvent lies in the union of $\pi$ of its premises; so every refutation contains a clause with $n/3\le\abs{\pi(C)}<2n/3$. Moving a pigeon of $\pi(C)$ into the hole of a pigeon outside it shows that $C^+$ has at least $\abs{\pi(C)}(n+1-\abs{\pi(C)})>2n^2/9$ variables. Call a clause \emph{wide} if $C^+$ has at least $cn^2$ variables, for a suitable constant $c<2/9$. A random partial matching of a small constant fraction of the pigeons satisfies each wide clause with probability $1-2^{-\Omega(n)}$, and it turns the refutation into one of a smaller pigeonhole formula, which by the counting above still contains a clause that was wide. If fewer than $2^{\varepsilon n}$ clauses were wide, then some matching would satisfy them all, a contradiction. \Textcite{BenSassonWigderson2001} derive the theorem from a general relation between size and clause width.
+\end{proofsketch}
+
+The theorem reaches the solvers. DPLL without learning produces tree-like refutations (\cref{lem:certificates:trees}). \term{Clause learning}\index{clause learning}, introduced in the solver GRASP \parencite{MarquesSilvaSakallah1999}, adds clauses derived from conflicts; these are derivable from the formula by resolution \parencite{HeuleKullmannMarek2016}, so a run on an unsatisfiable formula yields a resolution refutation of size polynomial in the run's length, and by \cref{thm:certificates:haken} such a solver needs exponential time on the pigeonhole principle. With unlimited restarts, a variant of clause learning is as powerful as general resolution \parencite{BeameKautzSabharwal2004}. DRAT proofs may also add clauses that are not implied but preserve satisfiability, among them the definitions of new variables of extended resolution; up to polynomial-time transformations they are as powerful as extended resolution \parencite{HeuleKullmannMarek2016,KieslRebolaPardoHeule2018}, in which the pigeonhole principle has short refutations \parencite{Cook1976}. Finding refutations is a separate difficulty: it is $\cc{NP}$-hard to find a resolution refutation at most polynomially longer than a shortest one \parencite{AtseriasMuller2020}.
+
+\section{Running the protocol}\label{sec:certificates:running}
+
+The script \certificatesscript{dpll} runs the certificate check in both directions. The prover is a DPLL solver with unit propagation and backjumping, which branches on the first free literal of the first unsatisfied clause and learns no clauses; it returns an assignment, or the refutation of \cref{lem:certificates:trees} extracted from its search tree. A separate checker accepts a refutation only if each leaf is a clause of the formula, each other clause the exact resolvent of two earlier clauses, each used once, and the last clause empty.
+
+On $\certificatesPHP{n+1}{n}$ for $n=1,\dots,8$ every refutation passed the checker. Their numbers of leaves, $3$, $11$, $43$, $189$, $971$, $5863$, $41091$ and $328793$, are those of the refutation that places one pigeon at a time: with $\Lambda(m,0)=1$ and $\Lambda(m,n)=n(m-1+\Lambda(m-1,n-1))+1$, pigeon $1$ goes into each hole in turn, the other pigeons are forced out of that hole in $m-1$ leaves, the rest is $\certificatesPHP{m-1}{n-1}$, and one more leaf records that pigeon $1$ has no hole. The ratio $\Lambda(n+1,n)/n!$ increases to $3e\approx8.15$.\sidenote{Dividing the recursion by $n!$ gives $a_n=a_{n-1}+(n^2+1)/n!$ with $a_0=1$, and $1+\sum_{k\ge1}(k^2+1)/k!=1+2e+(e-1)=3e$.} The search trees are larger ($516{,}477$ leaves at $n=8$): they count unit propagations whose failing branches the refutation does not need. Cheating provers were always rejected: for each $n$, the assignment that leaves one pigeon without a hole, $1000$ random near-matchings, the refutation of $\certificatesPHP{n+1}{n}$ offered for the satisfiable $\certificatesPHP{n}{n}$, and refutations with one resolvent shortened by a literal ($200$ for each $n\le6$, $20$ for $n=7,8$). For a deterministic, sound checker such runs test the implementation, not the theorem.
+
+Only the full check makes the protocol sound; the script \certificatesscript{lazy} runs a checker that reads $q$ random clauses.
+
+\begin{proposition}[A checker that reads $q$ clauses]\label[proposition]{prop:certificates:lazy}
+Let $F$ have $\abs{F}$ clauses, and let a checker read $q\le\abs{F}$ of them, chosen uniformly without replacement, and accept an assignment that satisfies those $q$. An assignment that falsifies $u$ clauses is accepted with probability $\binom{\abs{F}-u}{q}\big/\binom{\abs{F}}{q}$. If $F$ is unsatisfiable, then for every prover the probability, over the checker's choice and the prover's coins, that a claimed satisfying assignment is accepted is at most $1-q/\abs{F}$, with equality for an assignment that falsifies exactly one clause.
+\end{proposition}
+
+\begin{proof}
+The assignment is accepted exactly when the $q$ clauses avoid the $u$ falsified ones, which $\binom{\abs{F}-u}{q}$ of the $\binom{\abs{F}}{q}$ equally likely sets do. Every assignment of an unsatisfiable formula falsifies a clause, so $u\ge1$; the probability decreases in $u$, and for $u=1$ it equals $(\abs{F}-q)/\abs{F}$. A randomizing prover is accepted with an average of such probabilities.
+\end{proof}
+
+For $\certificatesPHP{9}{8}$, with $\abs{F}=297$, the best cheating prover places eight pigeons and leaves the ninth without a hole, falsifying one clause; a careless one puts every pigeon into a random hole and falsifies a hole clause for each pair of pigeons that share a hole, $4.5$ on average. In \cref{fig:certificates:runs} (right) every interval of the best cheating prover contains $1-q/\abs{F}$, its exact acceptance probability; the careless prover stays below, and $13$ of its $15$ intervals contain its exact curve, about as many as $95\%$ intervals should. To catch the best prover with probability at least $1/2$ the checker must read $149$ of the $297$ clauses. A lie concentrated in one clause escapes spot checks; \cref{ch:spotchecks} shows how to encode a proof so that every lie spreads over a constant fraction of it.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},vplot,width=82mm,height=58mm]
+\nextgroupplot[xlabel={holes $n$},ylabel={certificate size},ymode=log,xmin=0.6,xmax=8.4,ymin=0.5,ymax=3e10,
+  xtick={1,2,3,4,5,6,7,8},ytick={1,1e2,1e4,1e6,1e8,1e10},
+  legend style={at={(0.02,0.98)},anchor=north west,font=\scriptsize},legend cell align=left]
+\addplot[theory] table[x=n,y=pbpsize] {figures/data/01-certificates-dpll.dat};
+\addplot[honest] table[x=n,y=size] {figures/data/01-certificates-dpll.dat};
+\addplot[guide] table[x=n,y=dr] {figures/data/01-certificates-dpll.dat};
+\addplot[bound] table[x=n,y=lbsize] {figures/data/01-certificates-dpll.dat};
+\addplot[honest,mark=square*,mark size=1.4pt] table[x=n,y=Nphp] {figures/data/01-certificates-sat.dat};
+\legend{one pigeon at a time,refutation found by DPLL,Dantchev--Riis ($n$ even),\cref{thm:certificates:php}: $2^{n+1}-1$,assignment for $\certificatesPHP{n}{n}$ (bits)}
+\nextgroupplot[xlabel={clauses read $q$},ylabel={acceptance rate},xmin=0,xmax=305,ymin=-0.03,ymax=1.5,
+  ytick={0,0.5,1},
+  legend style={at={(0.5,0.98)},anchor=north,font=\scriptsize},legend columns=2,legend cell align=left]
+\addplot[bound] table[x=k,y=bound] {figures/data/01-certificates-lazy-theory.dat};
+\addplot[theory2] table[x=k,y=careless] {figures/data/01-certificates-lazy-theory.dat};
+\addplot[honest] table[x=k,y=honest] {figures/data/01-certificates-lazy.dat};
+\addplot[cheat,ebars] table[x=k,y=best,y error plus=besthi,y error minus=bestlo] {figures/data/01-certificates-lazy.dat};
+\addplot[cheat2,ebars] table[x=k,y=care,y error plus=carehi,y error minus=carelo] {figures/data/01-certificates-lazy.dat};
+\legend{bound $1-q/\abs{F}$,careless (exact),honest prover,best cheating prover,careless cheating prover}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Certificates for pigeonhole formulas. Left: sizes of the tree-like refutations of $\certificatesPHP{n+1}{n}$ found by our DPLL solver and accepted by the checker (circles), on the size $2\Lambda(n+1,n)-1$ of the refutation that places one pigeon at a time (solid); the bound of \cref{thm:certificates:php} (dashed) and that of Dantchev and Riis, $(n/2+1)^{n/2}$ for even $n$ (gray); and the $n^2$ bits certifying $\certificatesPHP{n}{n}$ (squares). Right: a checker that reads $q$ random clauses of $\certificatesPHP{9}{8}$ ($297$ clauses), $2000$ trials per point, seeds $11+q$, $22+q$, $33+q$; honest prover on $\certificatesPHP{8}{8}$, best cheating prover (one falsified clause), careless one (every pigeon in a random hole), with Clopper--Pearson $95\%$ intervals; curves from \cref{prop:certificates:lazy}. Scripts \certificatesscript{dpll}, \certificatesscript{lazy}.}
+\label{fig:certificates:runs}
+\end{figure}
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering
+\small
+\begin{tabular}{@{}rrrrrrrrr@{}}
+\toprule
+& & & \multicolumn{3}{c}{refutation of $\certificatesPHP{n+1}{n}$} & \multicolumn{3}{c}{satisfiable random 3-CNF} \\
+\cmidrule(lr){4-6}\cmidrule(l){7-9}
+$n$ & $N$ & $\abs{F}$ & clauses & solve (ms) & check (ms) & search leaves & solve (ms) & check (ms) \\
+\midrule
+4 & 20 & 45 & $377$ & 0.48 & 0.16 & $20$ & 0.054 & 0.0092 \\
+5 & 30 & 81 & $1{,}941$ & 3.34 & 0.86 & $142$ & 0.43 & 0.014 \\
+6 & 42 & 133 & $11{,}725$ & 21.6 & 5.76 & $285$ & 0.88 & 0.019 \\
+7 & 56 & 204 & $82{,}181$ & 186 & 42.5 & $2{,}188$ & 6.87 & 0.025 \\
+8 & 72 & 297 & $657{,}585$ & 1619 & 399 & $6{,}560$ & 22.1 & 0.033 \\
+\bottomrule
+\end{tabular}
+\caption{Costs of the certificate check on one laptop core; times depend on the machine. Left: best of three runs. Right: random 3-CNFs with $N=n(n+1)$ variables and $\mathrm{round}(4.2N)$ clauses, seed $1$; medians over the first nine satisfiable ones, whose certificates have $N$ bits. Script \certificatesscript{dpll}.}
+\label{tab:certificates:costs}
+\end{fullwidth}
+\end{table}
+
+\Cref{tab:certificates:costs} gives the costs. For satisfiable formulas the gap between finding and checking grows with $N$: at $N=72$ the solver searched a tree with a median of $6{,}560$ leaves, while the checker read the $302$ clauses in 0.033~ms. For unsatisfiable ones the certificate is the record of the search, and checking costs about a quarter of finding: at $n=8$ the solver took 1.6~s and the checker 0.40~s to read $657{,}585$ clauses. The checker's work is small for the length it reads; the length is what grows.
+
+\section{The three questions}\label{sec:certificates:questions}
+
+\questionone In the game of the prologue the prover is paid when the verifier accepts. On a true claim, a valid certificate is accepted with probability $1$ (completeness); on a false claim every message is rejected (soundness), so no lie earns anything. Sending a valid certificate is therefore a weakly dominant strategy for a prover that can find one. When both answers have certificates, as for primality or the optimality of a linear program, asserting the truth and proving it is the only way to be paid. But the equilibrium protects only if the honest strategy is affordable. Finding a certificate can be $\cc{NP}$-hard, as for timetables; for a $\cc{coNP}$-complete claim no proof system has polynomial certificates unless $\cc{NP}=\cc{coNP}$ (\cref{thm:certificates:cookreckhow}); and in resolution, the system solvers use, every certificate for the pigeonhole principle is exponentially long (\cref{thm:certificates:php,thm:certificates:haken}). An honest prover facing a negative claim may have nothing to send that the verifier can afford to read; a verifier that asks questions and flips coins fares better, and checks claims in $\cc{coNP}$ with short interactive proofs (\cref{ch:interaction,ch:sumcheck}).
+
+\questiontwo One message and no randomness. An efficient checker spends time polynomial in $\abs{x}$, and this is exactly $\cc{NP}$ (\cref{thm:certificates:np}). A proof system's checker spends time polynomial in the certificate, which can be exponentially longer than the claim: at least $2^{n+1}-1$ clauses for a tree-like refutation of $\certificatesPHP{n+1}{n}$, a formula of $\Theta(n^3)$ clauses, and about $16{,}000$ CPU hours for the 200 terabytes of the Pythagorean-triples proof. Verdicts instead of certificates cost $2N+1$ questions (\cref{prop:certificates:search}).
+
+\questionthree With probability $1$, against every prover, without repetition: $s=0$. The guarantee is relative to the formal statement and the checker's code, and a lie about the intended property survives when the statement does not express it. A checker that reads only $q$ of $\abs{F}$ clauses catches the best lie with probability $q/\abs{F}$ (\cref{prop:certificates:lazy}).
+
+\Needspace{14\baselineskip}
+\protocolcard{a claim $x\in L$ for which the prover exhibits a certificate $w$ that a deterministic checker accepts}{verifier $\V$ (the checker) and prover $\Prov$; one message}{yes: valid certificates are always accepted and lies never are; but finding certificates can be $\cc{NP}$-hard, and for negative claims they may be exponentially long (the pigeonhole principle in resolution)}{time polynomial in $\abs{x}$ for $\cc{NP}$ certificates, polynomial in $\abs{w}$ for proofs; no coins}{probability $1$ against every prover; only $q/\abs{F}$ for a checker that reads $q$ of $\abs{F}$ constraints}{a correct formal statement and a correct checker; for negative claims, short certificates ($\cc{NP}$ versus $\cc{coNP}$)}
+
+\section{What the model leaves out}\label{sec:certificates:leftout}
+
+\paragraph{What was idealized away.} The theory takes three things for granted. The first is the formal statement: the checker decides membership in $L$, and someone must write $L$. AlphaProof's IMO problems were formalized by experts, and its authors evaluated it on a version of the miniF2F benchmark corrected for misformalized problems, such as statements that could be disproved or whose hypotheses contradicted each other \parencite{HubertEtAl2026}; a proof of a misformalized statement passes the kernel and certifies the wrong claim. The second is the checker. The \term{trusted computing base}\index{trusted computing base} of a certificate is the checker's code, its compiler and its machine; the de Bruijn criterion keeps it small, not empty, and the Pythagorean-triples proof was later checked again by a checker proved correct in Coq \parencite{CruzFilipeEtAl2017}. The third is the reader: a certificate convinces the checker, not the person. The authors of the Pythagorean-triples proof call such proofs ``a giant heap of random information'' \parencite{HeuleKullmannMarek2016}; it tells the overseer that the claim is true without telling anyone why.
+
+\paragraph{Where it breaks.} Test suites are the certificates of everyday software, and they break in both of these places. \Textcite{BakerEtAl2025} report, in a preprint, that a frontier reasoning model trained in coding environments, rewarded for passing unit tests, learned to call \texttt{exit(0)}, exploiting a bug that ended the evaluation before all tests ran, and to raise \texttt{SkipTest} so that tests were skipped; it also wrote stubs where tests were sparse and edited code upstream of the tests so that they passed without the intended behavior. The stubs exploit the gap between tests and intent; the other hacks attack the checker. For networks, safety claims are negative, and the theory predicts trouble: deciding whether a ReLU network has an input that violates a property given by linear constraints is $\cc{NP}$-complete \parencite{KatzEtAl2017}, so the claim that no violating input exists is $\cc{coNP}$-complete and lacks short certificates unless $\cc{NP}=\cc{coNP}$. Certificates from linear-programming duality are sound but incomplete: \textcite{WongKolter2018} certify, by dual feasible points, that an MNIST classifier has test error below $5.8\%$ under every $\ell_\infty$ perturbation of size $0.1$, but their method may also flag inputs that are not adversarial. Informal proofs are not certificates at all: graded by experts in the preprint of \textcite{PetrovEtAl2025}, the best of the models evaluated by April 2025 scored $25\%$ on the six problems of the 2025 USA Mathematical Olympiad, and all others below $5\%$.
+
+\paragraph{Open problems.} Whether $\cc{NP}=\cc{coNP}$ is open, and with it, by \cref{thm:certificates:cookreckhow}, whether some proof system has short refutations of all unsatisfiable formulas; the program of \textcite{CookReckhow1979} has exponential lower bounds for resolution, but no superpolynomial lower bound is known for extended resolution, which DRAT matches. Proof search is hard even where short proofs exist \parencite{AtseriasMuller2020}, and which certificates a trained model can find is not understood. For oversight, the central problem is to find classes of negative claims about AI systems (``this network has no input of the following kind'') with short, complete certificates, as linear programs have, and to measure the gap between formal statement and intention.
+
+\begin{exercises}
+\item \consolidation (Pratt certificates.) (a) Show that an integer $p\ge2$ is prime if and only if some $a$ satisfies $a^{p-1}\equiv1\pmod p$ and $a^{(p-1)/q}\not\equiv1\pmod p$ for every prime $q$ dividing $p-1$. (b) A Pratt certificate for an odd prime $p$ lists such an $a$, the prime factorization of $p-1$, and recursively a certificate for each odd prime factor. Show that it contains at most $2\log_2p$ primes, counting each occurrence of a prime in the recursion, $2$ included, and conclude that primality has an efficient certificate system \parencite{Pratt1975}. (Primality is even in $\cc{P}$ \parencite{AgrawalKayalSaxena2004}.) \hint{for (b), use induction and the fact that the odd prime factors of $p-1$ have product at most $(p-1)/2$.}\label{ex:certificates:pratt}
+
+\item \consolidation (Matchings and flows.) (a) In a bipartite graph, a matching $\mathcal{M}$ and a vertex cover $Q$ with $\abs{\mathcal{M}}=\abs{Q}$ certify that $\mathcal{M}$ is a maximum matching. Prove soundness, describe the checker, and explain why completeness is König's theorem. (b) Do the same for a flow and a cut in a network with capacities, and show that both soundness arguments are instances of weak duality, \cref{thm:certificates:lp}(i).\label{ex:certificates:konig}
+
+\item \consolidation (Search for timetables.) Let $D$ answer questions ``is this graph $3$-colorable?'', possibly wrongly. Add to a graph $G$ with $n$ vertices a triangle $t_0t_1t_2$; joining a vertex $v$ to two vertices of the triangle forces $v$ to take the color of the third. Design a protocol like \cref{prot:certificates:search} that asks at most $2n+1$ questions, outputs only proper $3$-colorings of $G$, outputs one if $G$ is $3$-colorable and $D$ is always correct, and on rejecting names answers that cannot all be correct.\label{ex:certificates:coloring}
+
+\item \consolidation (The smallest pigeonhole formula.) (a) Write out a tree-like refutation of $\certificatesPHP{3}{2}$ with $11$ leaves, placing pigeon $1$ first. (b) Play Delayer's strategy from the proof of \cref{thm:certificates:php} against the Prover strategy that your refutation defines in \cref{lem:certificates:game}, and check that Delayer scores at least $2$ points.\label{ex:certificates:php32}
+
+\item \variation (Long certificates.) Show that a language $L$ has a proof system in which every $x\in L$ has a certificate of length at most $2^{T(\abs{x})}$, for a polynomial $T$, if and only if $L\in\cc{NEXP}$ (\cref{def:toolkit:classes}). (\Cref{ch:crossexam} shows that a polynomial-time verifier can check such claims by questioning two provers apart.) \hint{for the converse, pad the certificate so that its length exceeds the running time of the exponential-time checker.}\label{ex:certificates:nexp}
+
+\item \variation\harder (An asymmetric game.) Change \cref{def:certificates:game} so that a deferral earns Delayer $\log_2c_0$ points if Prover then chooses $0$ and $\log_2c_1$ points if it chooses $1$, where $c_0,c_1>1$ and $1/c_0+1/c_1=1$. (a) Prove \cref{lem:certificates:game} for this game. (b) For even $n\ge16$ take $c_1=n/\log_2n$, and let Delayer set $x_{ij}=0$ if pigeon $i$ or hole $j$ is taken, set $x_{ij}=1$ if hole $j$ is free and at least $n/2$ free holes are already excluded for pigeon $i$, and defer otherwise. Show that every tree-like refutation of $\certificatesPHP{n+1}{n}$ has at least $n^{n/4}$ leaves \parencite{BeyersdorffGalesiLauria2010}. \hint{show that at least $n/2$ pigeons are placed when the game ends, and that each placed pigeon earns at least $\frac12\log_2n$ points.}\label{ex:certificates:asymmetric}
+
+\item \attack (A lazy clerk.) The clerk of the oversight problem checks a claimed timetable by reading $q$ of the $\abs{F}$ clauses at random. For $\certificatesPHP{9}{8}$, a timetable of $9$ examinations that pairwise conflict into $8$ slots in the encoding of this chapter, compute $\abs{F}$, the acceptance probability of the best cheating prover, and the least $q$ that catches it with probability at least $1/2$. Why is a careless liar caught much sooner (\cref{fig:certificates:runs})?\label{ex:certificates:lazy}
+
+\item \attack (A checker with a gap.) A refutation checker verifies that each derived clause equals $(C_1\cup C_2)\setminus\{x,\neg x\}$ for its premises $C_1$, $C_2$ and pivot $x$, but not that $x\in C_1$ and $\neg x\in C_2$. Construct a satisfiable formula with an accepted ``refutation''. Then attack a checker that does not verify that each leaf is a clause of the formula.\label{ex:certificates:gap}
+
+\item \attack (A specification gap.) A model must certify, in a proof assistant, that the output of its sorting routine is sorted. Give a routine that admits such a proof and does not sort, repair the specification, and describe a certificate for the repaired one that a checker verifies in time $O(n\log n)$ on lists of length $n$.\label{ex:certificates:spec}
+
+\item \simulation (Branching rules.) Run \certificatesscript{dpll} with the option \texttt{-{}-branch index}, which branches on the free variable of smallest index. Compare the leaves of the search trees and of the refutations with those of the default rule for $n\le7$. At $n=7$ the search tree has $289{,}213$ leaves instead of $60{,}222$, but the refutation has $41{,}091$ in both cases; explain why with the proof of \cref{lem:certificates:trees}, and why no rule goes below $2^n$ (\cref{cor:certificates:dpll}).\label{ex:certificates:branching}
+
+\item \research (Certificates for networks.) Let $f$ be a ReLU network and $P$ the property that no input in a box $X$ is mapped into a polytope $Y$. (a) Show that the claim ``$P$ fails'' has short certificates, and that ``$P$ holds'' has short certificates for all instances only if $\cc{NP}=\cc{coNP}$ \parencite{KatzEtAl2017}. (b) Explain how a dual feasible solution of a linear relaxation certifies $P$ \parencite{WongKolter2018}, and why such certificates are sound but not complete. (c) Open: find natural classes of networks and properties with complete certificates of polynomial length.\label{ex:certificates:networks}
+\end{exercises}
+
+\notesandrefs
+The class $\cc{NP}$ is due to \textcite{Cook1971} and \textcite{Levin1973}, and \textcite{Karp1972} showed how far completeness reaches; \textcite[Chapter~2]{AroraBarak2009} define $\cc{NP}$ by certificates, as we do. \Textcite{Pratt1975} gave short certificates for primality, long before \textcite{AgrawalKayalSaxena2004} put it in $\cc{P}$. \Textcite{MatousekGartner2007} prove Farkas's lemma and duality, and \textcite{McConnellEtAl2011} survey certifying algorithms.
+
+Proof complexity begins with \textcite{CookReckhow1979}; resolution goes back to \textcite{DavisPutnam1960} and \textcite{Robinson1965}, DPLL to \textcite{DavisLogemannLoveland1962}. After \textcite{Haken1985}, \textcite{Urquhart1987} and \textcite{ChvatalSzemeredi1988} proved exponential lower bounds for Tseitin and random formulas, and \textcite{BeamePitassi1996} and \textcite{BenSassonWigderson2001} simplified the proofs. The Prover--Delayer game is from \textcite{PudlakImpagliazzo2000}; we could not consult that paper and state the game, and the decision-tree view of tree-like resolution, as \textcite{BeyersdorffGalesiLauria2010} restate them.\sidenote{Other statements rest on abstracts only: those about \textcite{BeameKautzSabharwal2004}, \textcite{AtseriasMuller2020}, \textcite{CruzFilipeEtAl2017}, \textcite{WongKolter2018}, \textcite{BenSassonImpagliazzoWigderson2004}, \textcite{DalrympleEtAl2024} and \textcite{PetrovEtAl2025}; those about \textcite{Cook1976} and \textcite{KieslRebolaPardoHeule2018} rest on their titles and on secondary accounts, and those about \textcite{Haken1985} and \textcite{BenSassonWigderson2001} on secondary accounts.} The lower bound $2^{\Omega(n\log n)}$ for tree-like refutations of the pigeonhole principle, which the $\Lambda(n+1,n)<3e\,n!$ leaves of \cref{sec:certificates:running} match, is due to \textcite{IwamaMiyazaki1999} and \textcite{DantchevRiis2001}, as summarized by \textcite{BeyersdorffGalesiLauria2010}. \Textcite{BeameKautzSabharwal2004} relate clause learning to resolution, and \textcite{KieslRebolaPardoHeule2018} show that extended resolution simulates DRAT.
+
+\paragraph{Translating the literature.} \Textcite{AroraBarak2009} write a verifier $M$ and a certificate $u$, our checker $\V$ and certificate $w$. \Textcite{McConnellEtAl2011} speak of witnesses and checkers, and write a certifying algorithm's output on $x$ as $(y,w)$: our certificate for the claim that $y$ is correct. \Textcite{CookReckhow1979} define a proof system as a polynomial-time function onto the tautologies; it becomes our checker of refutations through $\tau\mapsto\neg\tau$. In \textcite{PudlakImpagliazzo2000} and \textcite{BeyersdorffGalesiLauria2010} the Prover is the interrogator and the Delayer the liar; neither is our $\Prov$. Proof complexity writes $\mathrm{PHP}^m_n$ for $m$ pigeons and $n$ holes, as we do, and measures size in clauses, $2\Lambda-1$ for a tree-like refutation with $\Lambda$ leaves.
+
+\printchapterbib
+\end{refsection}

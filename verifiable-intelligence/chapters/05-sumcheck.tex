@@ -1,0 +1,392 @@
+% Chapter 5 of Verifiable Intelligence: arithmetization, the sumcheck protocol, and IP = PSPACE.
+\newcommand{\sumcheckL}{\mathrm{L}}
+\newcommand{\sumcheckcount}{\#\mathrm{SAT}_{\mathrm{D}}}
+\newcommand{\sumchecktqbf}{\mathrm{TQBF}}
+\newcommand{\sumcheckunsat}{\mathrm{UNSAT}}
+\newcommand{\sumchecksub}[2]{#1|_{#2}}
+
+\protocolchapter{Arithmetization}{Sumcheck and IP = PSPACE}{the sumcheck protocol}{P,V,P,V,P,V,P,V,P,V,D}{ch:sumcheck}
+\begin{refsection}[chapters/05-sumcheck.bib]
+
+\begin{chaptersummary}
+A model claims a fact about all $2^\ell$ cases of a system, such as how many configurations violate a safety invariant, and the overseer can evaluate the invariant at only a few points. Written as a polynomial over a finite field, the claim can be checked one variable at a time at random points that correspond to no configuration: the sumcheck protocol. We prove that it accepts every true claim and accepts a false one with probability at most $\sum_jd_j/\abs{\F}$, the exact optimum up to second-order terms, and derive interactive proofs for exact counts, for $\cc{coNP}$, and, with degree reduction, for all of $\cc{PSPACE}$. Honesty is a best response paid for with exponential work; the verifier spends $O(\ell+\sum_jd_j)$ field operations and one evaluation; a lie survives with probability at most $\sum_jd_j/\abs{\F}$. The model leaves out that the overseer must hold the property as a formula, not as a black box such as a human judgment.
+\end{chaptersummary}
+
+\section{The oversight problem: a claim about every configuration}\label{sec:sumcheck:problem}
+
+Some claims are about every case at once: ``exactly $1{,}024$ configurations of this controller violate the interlock invariant'', ``no input of at most $64$ bytes crashes this parser'', ``White wins from this position''. Whoever must judge such a claim can examine only a few of the cases.
+
+\begin{oversight}[a count over every configuration]
+A plant controller has $40$ binary configuration switches. A safety invariant, written as a formula with $300$ clauses over the switches, says which configurations are safe; the overseer can evaluate it on one configuration in a microsecond. A model that analyzed the controller with far more computing power than the overseer has claims that exactly $1{,}024$ of the $2^{40}$ configurations violate the invariant. The overseer must accept or reject the claim by tomorrow.
+\end{oversight}
+
+The scenario is invented, with numbers chosen so that the overseer cannot settle the claim alone while a well-equipped prover could have computed the answer.\sidenote{Enumerating $2^{40}\approx1.1\times10^{12}$ configurations at a microsecond each takes $12.7$ days on one core; ten thousand cores need about two minutes.} Enumeration takes almost two weeks. Sampling cannot help: the claimed fraction is $2^{-30}\approx9.3\times10^{-10}$, so a sample of a million configurations contains a violating one with probability below $10^{-3}$, and no feasible sample tells $1{,}024$ from $0$. A certificate settles half of the claim, because the model can list the violating configurations. The other half, that every remaining configuration is safe, is a claim in $\cc{coNP}$, the class of languages whose complements are in $\cc{NP}$ (\cref{def:toolkit:classes}), and unless $\cc{NP}=\cc{coNP}$ such claims do not all have certificates checkable in polynomial time (\cref{ch:certificates}). The overseer needs questions whose answers constrain one another, so that one computation of its own at the end exposes a lie told at the beginning; the secret tests of \cref{ch:interaction} relied on the structure of isomorphism, and a count has none.
+
+Complexity theory found such questions in December 1989. Babai recalls that the class $\cc{IP}$ of languages with interactive proofs, defined in 1985 (\cref{ch:interaction}), then looked substantially smaller than $\cc{PSPACE}$, and that it seemed plausible to him that it did not contain $\cc{coNP}$ \parencite{Babai1990}. On 27 November 1989 Noam Nisan announced by e-mail that the permanent, whose computation is $\cc{\#P}$-complete \parencite{Valiant1979}, has multi-prover interactive proofs. A single-prover protocol took shape in Chicago on 11 December, and on 13 December Carsten Lund, Lance Fortnow, Howard Karloff, and Nisan announced, under the subject ``IP contains PH'', that the polynomial-time hierarchy has interactive proofs. Adi Shamir's message ``IP=PSPACE'' followed on 26 December.\sidenote{The dates and subject lines are those reproduced by \textcite{Babai1990}, who calls his account ``a true fable'' about Arthur and Merlin.} The papers appeared at FOCS in 1990 and together in the \emph{Journal of the ACM} in 1992 \parencite{LundEtAl1992,Shamir1992}, with a three-page simplification by \textcite{Shen1992}.
+
+The result reached AI oversight by two routes. The class it characterizes became a benchmark: \textcite{IrvingEtAl2018} showed, without arithmetization, that debate with optimal play and a polynomial-time judge can answer every question in $\cc{PSPACE}$, the class of languages decidable in polynomial space (\cref{def:toolkit:classes}); their worked example is a count, the number of primes below $2^n$,\sidenote{One debater states the counts for a range and for its two halves, the other names a half whose count is wrong, and the recursion ends at a single number, whose primality the judge tests. The judge needs no formula for primality; \cref{sec:sumcheck:leaves} returns to this difference.} and they call such complexity arguments ``analogies only'' (\cref{ch:debate}). And its protocol became an engine: of the delegation protocols of \cref{ch:delegation} \parencite{GoldwasserKalaiRothblum2015}, and of proof systems that certify the inference of neural networks, such as zkCNN and zkLLM \parencite{LiuXieZhang2021,SunLiZhang2024}. The question is the overseer's: can a verifier that evaluates a property at one point of its choice check a claim about the property's sum over all $2^\ell$ points against a prover that may lie, and what must the prover compute for honesty to work?
+
+\section{The protocol: one variable at a time}\label{sec:sumcheck:protocol}
+
+The step that makes the problem tractable is to treat the invariant as a polynomial rather than as a table of $2^\ell$ bits. \Cref{sec:sumcheck:count} turns a formula $\varphi$ in conjunctive normal form into a polynomial $g_\varphi$ over a finite field that equals $1$ on satisfying assignments and $0$ on the others, so that the number of satisfying assignments is $\sum_{b\in\bits^\ell}g_\varphi(b)$; this translation is called \term{arithmetization}\index{arithmetization}. Until then the polynomial is given.
+
+\begin{definition}[Sumcheck claims]\label[definition]{def:sumcheck:claim}
+Let $\F$ be a finite field, $\ell\ge1$, and $d_1,\dots,d_\ell\ge0$ integers. A \term{sumcheck claim} is a pair $(g,C)$ of a polynomial $g\in\F[X_1,\dots,X_\ell]$ whose degree in $X_j$ is at most $d_j$ for each $j$, and a value $C\in\F$; it asserts that
+\begin{equation}\label{eq:sumcheck:claim}
+\sum_{b\in\bits^\ell}g(b)=C.
+\end{equation}
+The verifier knows $\F$, the bounds $d_j$, and $C$, and may evaluate $g$ at one point of $\F^\ell$ of its choice; the prover knows $g$ and has unbounded computing power. A protocol for sumcheck claims has \emph{perfect completeness} if on every true claim the honest prover is accepted with probability $1$, and \emph{soundness error} $s$ if on every false claim, for every prover strategy $\Prov^*$, the verifier accepts with probability at most $s$ over its coins.
+\end{definition}
+
+This is an interactive proof (\cref{def:toolkit:ip}) with an oracle for $g$, which \cref{sec:sumcheck:count} replaces by a formula. In round $j$ of an honest run the prover sends
+\begin{equation}\label{eq:sumcheck:honest}
+\tau_j(X)=\sum_{b\in\bits^{\ell-j}}g(r_1,\dots,r_{j-1},X,b),
+\end{equation}
+the sum over the last $\ell-j$ variables with the first $j-1$ fixed at the verifier's earlier challenges $r_i$. Each term has degree at most $d_j$ in $X$, so $\deg\tau_j\le d_j$, and splitting a sum according to its first free coordinate gives the identities on which the protocol rests:
+\begin{equation}\label{eq:sumcheck:identities}
+\begin{gathered}
+\tau_1(0)+\tau_1(1)=\sum_{b\in\bits^\ell}g(b),\qquad\tau_\ell(r_\ell)=g(r_1,\dots,r_\ell),\\
+\tau_j(0)+\tau_j(1)=\tau_{j-1}(r_{j-1})\quad\text{for }2\le j\le\ell.
+\end{gathered}
+\end{equation}
+
+\begin{protocol}{Sumcheck}\label{prot:sumcheck:main}
+\item[\msg{P}{V}] Send $g_1(X)$, a polynomial of degree at most $d_1$, as its $d_1+1$ coefficients. The honest prover sends $\tau_1$.
+\item[\act{V}] Check that $g_1(0)+g_1(1)=C$; otherwise \rej. Pick $r_1\in\F$ uniformly at random.
+\phase{Round $j=2,\dots,\ell$}
+\item[\msg{V}{P}] Send $r_{j-1}$.
+\item[\msg{P}{V}] Send $g_j(X)$ of degree at most $d_j$. The honest prover sends $\tau_j$ of \eqref{eq:sumcheck:honest}.
+\item[\act{V}] Check that $g_j(0)+g_j(1)=g_{j-1}(r_{j-1})$; otherwise \rej. Pick $r_j\in\F$ uniformly at random.
+\phase{Final check}
+\item[\act{V}] Evaluate $g(r_1,\dots,r_\ell)$. \acc{} if it equals $g_\ell(r_\ell)$; otherwise \rej.
+\end{protocol}
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}c l c l c c@{}}
+\toprule
+& \multicolumn{2}{c}{honest prover, claim $4$} & \multicolumn{2}{c}{root-planting liar, claim $5$} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+round $j$ & sends & new claim & sends & new claim & $r_j$\\
+\midrule
+$1$ & $-X^2+X+2$ & $\tau_1(3)=9$ & $-2X^2+3X+2$ & $g_1(3)=6$ & $3$\\
+$2$ & $2X-3$ & $\tau_2(5)=7$ & $-X-3$ & $g_2(5)=5$ & $5$\\
+$3$ & $5X+1$ & $\tau_3(4)=8$ & $3X+1$ & $g_3(4)=0$ & $4$\\
+\midrule
+final & & $8=g(3,5,4)$: \acc & & $0\ne8$: \rej & \\
+\bottomrule
+\end{tabular}
+\caption{A run of \cref{prot:sumcheck:main} over $\F_{13}$ on $g=(X_1+X_2-X_1X_2)(1-X_1+X_1X_3)$, with coins $r=(3,5,4)$. Every message passes its check against the previous claim (for the liar $2+3=5$, $-3-4\equiv6$, $1+4=5$); the liar's polynomials differ from the honest ones by $-X(X-2)$, $-3X$ and $-2X$.}\label{tab:sumcheck:run}
+\end{table}
+
+For a worked run, take $\varphi=(x_1\vee x_2)\wedge(\neg x_1\vee x_3)$, which has four satisfying assignments; its arithmetization, \eqref{eq:sumcheck:arith} below, is $g=(X_1+X_2-X_1X_2)(1-X_1+X_1X_3)$, with $d_1=2$ and $d_2=d_3=1$. In $\F_{13}$, summing out $X_2$ in the first factor gives $X_1+1$ and summing out $X_3$ in the second gives $2-X_1$, so $\tau_1=(X+1)(2-X)$, and $\tau_1(0)+\tau_1(1)=4$; \cref{tab:sumcheck:run} continues the run. A prover claiming $5$ must send some $g_1\ne\tau_1$, and the most it can do (\cref{prop:sumcheck:best}) is to make $g_1-\tau_1$ vanish at $d_1=2$ points, here $0$ and $2$. Unless $r_1\in\{0,2\}$ its next claim is false; it plants a root at $0$ in each later round and is caught by the final evaluation, escaping with probability $1-\frac{11}{13}(\frac{12}{13})^2=\frac{613}{2197}\approx0.28$, below the bound $\frac{4}{13}\approx0.31$ of \cref{thm:sumcheck:sumcheck}.
+
+\begin{dictionary}
+a point $b\in\bits^\ell$ & one configuration of the system\\
+the polynomial $g$ & the safety invariant, written as a formula the overseer can evaluate\\
+the claim $\sum_bg(b)=C$ & the model's count of configurations with the property\\
+a point $r\in\F^\ell$ off the cube & a ``configuration'' with switches set to field elements, meaningful only algebraically\\
+the honest polynomial $\tau_j$ & a partial count with switch $j$ left free\\
+the challenge $r_j$ & a question the model cannot predict when it answers\\
+the degree bound $d_j$ & the number of clauses that mention switch $j$: the liar's room\\
+soundness error $\sum_jd_j/\abs{\F}$ & the chance that a false count survives the check
+\end{dictionary}
+
+What one had to notice is that a question about configurations has an algebraic shadow: a prover who misstates a count must misstate a low-degree polynomial, and two different low-degree polynomials disagree almost everywhere, including at points that are not configurations. Nothing about the controller suggests asking what the invariant says when a switch is set to $3$ in $\F_{13}$; the formula does.
+
+\section{The theory: a lie must keep lying}\label{sec:sumcheck:theory}
+
+If $C$ is wrong, then the prover cannot send $\tau_1$, because the first check would fail. It must send another polynomial, and two different low-degree polynomials agree at few points; unless $r_1$ is one of them, the new claim is wrong too, and the argument repeats until the final check. The first lemma is the fact about polynomials, the second turns the argument into a bound that serves both protocols of this chapter.
+
+\begin{lemma}[Few roots]\label[lemma]{lem:sumcheck:roots}\index{polynomial!roots}
+Let $\F$ be a field and $h\in\F[X]$ a nonzero polynomial of degree at most $\Delta$. Then $h$ has at most $\Delta$ roots in $\F$. If $\F$ is finite and $r$ is uniform on $\F$, then $\Prob[h(r)=0]\le\Delta/\abs{\F}$.
+\end{lemma}
+
+\begin{proof}
+We argue by induction on $\Delta$. If $\Delta=0$, then $h$ is a nonzero constant and has no root. Let $\Delta\ge1$; if $h$ has no root, then there is nothing to prove, so let $a$ be a root. Since $X^k-a^k=(X-a)(X^{k-1}+aX^{k-2}+\dots+a^{k-1})$ for every $k\ge1$, summing these identities with the coefficients of $h$ gives $h(X)=h(X)-h(a)=(X-a)q(X)$ with $\deg q\le\Delta-1$, and $q\ne0$ because $h\ne0$. Every root $b\ne a$ of $h$ satisfies $(b-a)q(b)=0$, hence $q(b)=0$, because in a field a product of nonzero elements is nonzero. By the induction hypothesis $q$ has at most $\Delta-1$ roots, so $h$ has at most $\Delta$. The probability bound follows on dividing by $\abs{\F}$.
+\end{proof}
+
+The appendix proves the multivariate version, the \term{Schwartz--Zippel lemma}\index{Schwartz--Zippel lemma} (\cref{lem:toolkit:schwartzzippel}): a nonzero polynomial of total degree at most $D$ vanishes at a uniform point of $S^\ell$, $S\subseteq\F$, with probability at most $D/\abs{S}$ \parencite{DeMilloLipton1978,Zippel1979,Schwartz1980}. Sumcheck needs only the univariate case, once per variable, which is why its bound involves the separate degrees $d_j$. That $\F$ is a field matters: modulo $15$, $X^2-1$ has the four roots $1,4,11,14$ (\cref{ex:sumcheck:composite}).
+
+\begin{lemma}[A lie must keep lying]\label[lemma]{lem:sumcheck:chain}\index{a lie must keep lying}
+Let $\F$ be a finite field and $K\ge1$. A verifier and a prover interact in $K$ steps; before step $k$ the verifier holds a claim $\cC_{k-1}$, true or false. In step $k$ the prover sends a polynomial $h_k\in\F[X]$ of degree at most $\Delta_k\le\abs{\F}$; the verifier either rejects, or draws $r_k\in\F$ uniformly at random, independently of everything before, and forms the next claim $\cC_k$. At the end the verifier accepts only if $\cC_K$ is true. Suppose that for each $k$ some polynomial $\tau_k$ of degree at most $\Delta_k$, determined by the input and $r_1,\dots,r_{k-1}$, satisfies in every run:
+\begin{enumerate}[label=(\alph*)]
+\item if $\cC_{k-1}$ is false and the verifier does not reject $h_k$, then $h_k\ne\tau_k$;
+\item if the verifier does not reject $h_k$ and $h_k(r_k)\ne\tau_k(r_k)$, then $\cC_k$ is false.
+\end{enumerate}
+If $\cC_0$ is false, then for every prover strategy the verifier accepts with probability at most
+\begin{equation}\label{eq:sumcheck:chain}
+1-\prod_{k=1}^K\Bigl(1-\frac{\Delta_k}{\abs{\F}}\Bigr)\le\sum_{k=1}^K\frac{\Delta_k}{\abs{\F}},
+\end{equation}
+the probability being over the verifier's coins and the prover's.
+\end{lemma}
+
+\begin{proof}
+The plan is to show that in each step a false claim stays false, or the verifier rejects, with probability at least $1-\Delta_k/\abs{\F}$. A prover that flips coins is a mixture of deterministic provers, and its coins are independent of the verifier's, so it suffices to treat a deterministic prover, whose $h_k$ is a function of $r_1,\dots,r_{k-1}$. Let $Z_k$ be the event that after step $k$ the verifier has rejected or $\cC_k$ is false; $Z_0$ holds because $\cC_0$ is false. Fix $r_1,\dots,r_{k-1}$ such that $Z_{k-1}$ holds. If the verifier has rejected already, or rejects $h_k$, then $Z_k$ holds. Otherwise $\cC_{k-1}$ is false and $h_k$ is not rejected, so $h_k\ne\tau_k$ by (a); both polynomials are fixed by $r_1,\dots,r_{k-1}$ and have degree at most $\Delta_k$, so by \cref{lem:sumcheck:roots} the fresh $r_k$ gives $h_k(r_k)\ne\tau_k(r_k)$ with probability at least $1-\Delta_k/\abs{\F}$, and then $\cC_k$ is false by (b). Averaging over $r_1,\dots,r_{k-1}$,
+\[\Prob[Z_k]\ge\Prob[Z_k\cap Z_{k-1}]\ge\Bigl(1-\frac{\Delta_k}{\abs{\F}}\Bigr)\Prob[Z_{k-1}],\]
+and by induction, the factors being nonnegative, $\Prob[Z_K]\ge\prod_k(1-\Delta_k/\abs{\F})$. On $Z_K$ the verifier rejects: either it has already, or $\cC_K$ is false and the final check rejects. This is the first bound in \eqref{eq:sumcheck:chain}. The second is $\prod_k(1-x_k)\ge1-\sum_kx_k$ for $x_k\in[0,1]$, which follows by induction on $K$ from $(1-y)(1-x)\ge1-y-x$, applied with $y=\sum_{k<K}x_k$ when $y\le1$; when $y>1$, the right side is negative.
+\end{proof}
+
+\begin{theorem}[The sumcheck protocol; \textcite{LundEtAl1992}]\label{thm:sumcheck:sumcheck}\index{sumcheck protocol}
+Let $(g,C)$ be a sumcheck claim over a finite field $\F$ with degree bounds $d_1,\dots,d_\ell$ (\cref{def:sumcheck:claim}), and let $d=\max_jd_j$.
+\begin{enumerate}
+\item \emph{Completeness.} If the claim is true, then the honest prover of \cref{prot:sumcheck:main} is accepted with probability $1$.
+\item \emph{Soundness.} If the claim is false, then for every prover $\Prov^*$ the verifier accepts with probability at most $\sum_jd_j/\abs{\F}\le\ell d/\abs{\F}$ over its coins, and at most $1-\prod_j(1-d_j/\abs{\F})$ if every $d_j\le\abs{\F}$.
+\item \emph{Costs.} The protocol has $\ell$ rounds. The prover sends $\sum_j(d_j+1)$ field elements and the verifier $\ell-1$. The verifier draws $\ell$ uniform field elements, performs $O(\sum_j(d_j+1))$ field operations, and evaluates $g$ once. If every $d_j<\abs{\F}$, the honest prover's messages are determined by $\sum_j(d_j+1)2^{\ell-j}\le(d+1)2^\ell$ evaluations of $g$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to check the hypotheses of \cref{lem:sumcheck:chain} for the claims that the verifier holds between rounds. For (i), the honest messages $\tau_j$ have degree at most $d_j$. If the claim is true, then $\tau_1(0)+\tau_1(1)=C$ by the first identity in \eqref{eq:sumcheck:identities}; the check of round $j\ge2$ compares $\tau_j(0)+\tau_j(1)$ with $\tau_{j-1}(r_{j-1})$, equal by the third; and the final check compares $\tau_\ell(r_\ell)$ with $g(r_1,\dots,r_\ell)$, equal by the second. So every check passes, whatever the coins.
+
+For (ii), let $v_0=C$ and $v_j=g_j(r_j)$, and for $0\le j\le\ell$ let $\cC_j$ be the claim $\sum_{b\in\bits^{\ell-j}}g(r_1,\dots,r_j,b)=v_j$; for $j=\ell$ the sum is the single term $g(r_1,\dots,r_\ell)$, and $\cC_0$ is \eqref{eq:sumcheck:claim}, false by assumption. Take $\Delta_j=d_j$ and $\tau_j$ from \eqref{eq:sumcheck:honest}, which is determined by $r_1,\dots,r_{j-1}$. By \eqref{eq:sumcheck:honest} and \eqref{eq:sumcheck:identities} the true value of the sum in $\cC_{j-1}$ is $\tau_j(0)+\tau_j(1)$. If $\cC_{j-1}$ is false and $g_j$ passes the check of round $j$, then $g_j(0)+g_j(1)=v_{j-1}\ne\tau_j(0)+\tau_j(1)$, so $g_j\ne\tau_j$: this is hypothesis (a). The true value of the sum in $\cC_j$ is $\tau_j(r_j)$, so $\cC_j$ is false whenever $g_j(r_j)\ne\tau_j(r_j)$: this is hypothesis (b). The verifier accepts only if $g(r_1,\dots,r_\ell)=g_\ell(r_\ell)$, that is, only if $\cC_\ell$ is true. The lemma gives both bounds when every $d_j\le\abs{\F}$; when some $d_j>\abs{\F}$, the sum exceeds $1$ and there is nothing to prove. Also $\sum_jd_j\le\ell d$.
+
+For (iii), the rounds and messages are read off \cref{prot:sumcheck:main}. From the coefficients of $g_j$ the verifier computes $g_j(0)+g_j(1)$ with $d_j+1$ additions, and $g_j(r_j)$ by Horner's rule with $d_j$ multiplications and $d_j$ additions. The honest $\tau_j$ is determined by its values at $d_j+1$ distinct points of $\F$ (\cref{lem:toolkit:lagrange}), each a sum of $2^{\ell-j}$ values of $g$, and $\sum_j(d_j+1)2^{\ell-j}<(d+1)2^\ell$.
+\end{proof}
+
+\begin{proposition}[The best liar]\label[proposition]{prop:sumcheck:best}\index{root-planting prover}
+Let $(g,C)$ be a false sumcheck claim with $1\le d_j<\abs{\F}$ for every $j$. For each $j$ fix $e_j(X)=X\prod_{i=2}^{d_j}(X-a_{j,i})$ with distinct $a_{j,2},\dots,a_{j,d_j}\in\F\setminus\{0,1\}$. Let $v_0=C$, and let $v_{j-1}=g_{j-1}(r_{j-1})$ be the prover's claimed value before round $j\ge2$. The \term{root-planting prover} sends in round $j$
+\[g_j=\tau_j+\frac{v_{j-1}-\tau_j(0)-\tau_j(1)}{e_j(1)}\,e_j.\]
+It is accepted with probability exactly $1-\prod_{j=1}^\ell(1-d_j/\abs{\F})$, and no prover is accepted with higher probability.
+\end{proposition}
+
+\begin{proof}
+The plan is to show that this prover escapes in round $j$ with probability exactly $d_j/\abs{\F}$ and plays honestly once it has escaped. The polynomial $e_j$ has degree $d_j$ and the $d_j$ distinct roots $0,a_{j,2},\dots,a_{j,d_j}$, which exist because $d_j-1\le\abs{\F}-2$. None of them is $1$, so $e_j(1)\ne0$ and $g_j$ is well defined; it has degree at most $d_j$, and $g_j(0)+g_j(1)=v_{j-1}$ because $e_j(0)=0$, so every message passes the check. While the current claim is false, $v_{j-1}\ne\tau_j(0)+\tau_j(1)$ and $g_j-\tau_j$ is a nonzero multiple of $e_j$, so the new claim, $g_j(r_j)=\tau_j(r_j)$, is true exactly when $r_j$ is a root of $e_j$, which has probability $d_j/\abs{\F}$ given the past. Once a claim is true, the correction vanishes, the prover sends the honest polynomials, and by \eqref{eq:sumcheck:identities} every later check passes, the final one included. So the prover is rejected exactly when $r_j$ avoids the roots of $e_j$ in every round, which has probability $\prod_j(1-d_j/\abs{\F})$. No prover does better, by \cref{thm:sumcheck:sumcheck}(ii).
+\end{proof}
+
+Since $1-\prod_j(1-x_j)\ge\sum_jx_j-\frac12(\sum_jx_j)^2$ for $x_j\in[0,1]$, the union bound of \cref{thm:sumcheck:sumcheck} exceeds the exact soundness error by at most $\frac12(\sum_jd_j/\abs{\F})^2$. The degree is the liar's room: each degree of freedom is one more point at which a false polynomial can agree with the true one. So the verifier should check the tightest degree bounds it knows (\cref{ex:sumcheck:uniform,ex:sumcheck:degree}), compute in a field (\cref{ex:sumcheck:composite}), and draw each challenge after the prover has committed to the polynomial it tests (\cref{ex:sumcheck:reuse}). A larger field, not repetition, makes the error small: $\abs{\F}\ge\sum_jd_j/s$ guarantees soundness error at most $s$, at $\lceil\log_2\abs{\F}\rceil$ bits per field element.\sidenote{\Textcite{Thaler2022} reports that in practical applications of the sumcheck protocol, as of 2022, the field often has between $2^{128}$ and $2^{256}$ elements, $16$ to $32$ bytes per field element.} The coins are public: the verifier's only randomness is the $r_j$, none of which needs to be kept secret.
+
+\section{The theory: from counts to \texorpdfstring{$\cc{IP}=\cc{PSPACE}$}{IP = PSPACE}}\label{sec:sumcheck:count}
+
+Let $\varphi$ be a formula in conjunctive normal form over $x_1,\dots,x_\ell$, with clauses $\kappa_1,\dots,\kappa_m$, each containing each variable at most once. For a literal $u$ write $\hat u(X)=X_j$ if $u=x_j$ and $\hat u(X)=1-X_j$ if $u=\neg x_j$, and let
+\begin{equation}\label{eq:sumcheck:arith}
+g_\varphi(X)=\prod_{i=1}^m\Bigl(1-\prod_{u\in\kappa_i}\bigl(1-\hat u(X)\bigr)\Bigr).
+\end{equation}
+
+\begin{lemma}[Arithmetization]\label[lemma]{lem:sumcheck:arith}
+Over every field the polynomial $g_\varphi$ has the following properties.
+\begin{enumerate}
+\item For $b\in\bits^\ell$, $g_\varphi(b)=1$ if $b$ satisfies $\varphi$, and $g_\varphi(b)=0$ otherwise.
+\item Its degree in $X_j$ is at most $d_j$, the number of clauses that contain $x_j$ or $\neg x_j$, and $\sum_jd_j=\sum_i\abs{\kappa_i}$, which is at most $3m$ for a 3-CNF formula (at most three literals per clause).
+\item It can be evaluated at every point of $\F^\ell$ with $O(\sum_i\abs{\kappa_i})$ field operations.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+For (i), at $b\in\bits^\ell$ the value $\hat u(b)$ is $1$ if the literal $u$ is true and $0$ if it is false. So the inner product in \eqref{eq:sumcheck:arith} is $1$ exactly when every literal of $\kappa_i$ is false, the $i$-th factor is $1$ exactly when $\kappa_i$ is satisfied and $0$ otherwise, and the outer product is $1$ exactly when every clause is satisfied. For (ii), the variables of $\kappa_i$ are distinct, so its factor has degree at most $1$ in each of them and $0$ in the others; degrees in $X_j$ add under multiplication, and counting pairs of a clause and a variable in it gives $\sum_jd_j=\sum_i\abs{\kappa_i}$. For (iii), evaluate \eqref{eq:sumcheck:arith} as written.
+\end{proof}
+
+The verifier never expands $g_\varphi$ into its possibly exponentially many monomials; it only evaluates the product.\sidenote{The polynomial $g_\varphi$ is not the multilinear extension of the truth table of $\varphi$ (\cref{lem:toolkit:mle}). Both agree on $\bits^\ell$, but the extension takes the value $\#\varphi/2^\ell$ at $(\frac12,\dots,\frac12)$, so evaluating it is as hard as counting.} Counting the satisfying assignments $\#\varphi$ of a formula is complete for $\cc{\#P}$, the class of functions that count the certificates accepted by a polynomial-time checker (\cref{def:toolkit:classes}). Let $\sumcheckcount$ be the language of pairs $(\varphi,C)$ such that the 3-CNF formula $\varphi$ has exactly $C$ satisfying assignments.
+
+\begin{theorem}[Counts have interactive proofs; \textcite{LundEtAl1992}]\label{thm:sumcheck:count}\index{SAT@$\#$SAT}
+$\sumcheckcount\in\cc{IP}$. Precisely, let $(\varphi,C)$ have $\ell$ variables and $m\ge1$ clauses, and $N=3m\,2^{\ell+1}$. In the following public-coin protocol the prover sends a prime $p$ with $N<p\le2N$. The verifier rejects unless $p$ is such a prime, which it tests in polynomial time \parencite{AgrawalKayalSaxena2004}, and $0\le C\le2^\ell$. Then they run \cref{prot:sumcheck:main} over $\F_p$ on the claim $(g_\varphi,C\bmod p)$ with the bounds $d_j$ of \cref{lem:sumcheck:arith}, the verifier evaluating $g_\varphi$ itself. The honest prover is accepted with probability $1$ when $\#\varphi=C$, and every prover is accepted with probability less than $2^{-\ell-1}\le\frac14$ when $\#\varphi\ne C$. The verifier runs in time polynomial in $\ell+m$.
+\end{theorem}
+
+\begin{proof}
+The plan is to reduce the claim about integers to a sumcheck claim over $\F_p$ and apply \cref{thm:sumcheck:sumcheck}. A prime in $(N,2N]$ exists by Bertrand's postulate, so the honest prover can send one. By \cref{lem:sumcheck:arith}(i), $\#\varphi=\sum_{b\in\bits^\ell}g_\varphi(b)$ as integers, and $0\le\#\varphi\le2^\ell$. If $\#\varphi=C$, then the sumcheck claim over $\F_p$ is true and \cref{thm:sumcheck:sumcheck}(i) applies. If $\#\varphi\ne C$ and $0\le C\le2^\ell$, then $0<\abs{\#\varphi-C}\le2^\ell<p$, so $\#\varphi\not\equiv C\pmod p$ and the sumcheck claim is false for every admissible prime. The prover chooses $p$ before the verifier draws its coins, so \cref{thm:sumcheck:sumcheck}(ii) applies to each choice and bounds the acceptance probability by $\sum_jd_j/p\le3m/p<3m/N=2^{-\ell-1}$, using $\sum_jd_j\le3m$. Finally, $p$ has $O(\ell+\log m)$ bits, and the verifier performs $O(\ell+m)$ field operations.
+\end{proof}
+
+\begin{corollary}\label[corollary]{cor:sumcheck:conp}\index{coNP@$\cc{coNP}$}
+$\cc{coNP}\subseteq\cc{IP}$.
+\end{corollary}
+
+\begin{proof}
+The language $\sumcheckunsat$ of unsatisfiable 3-CNF formulas is $\cc{coNP}$-complete (\cref{def:toolkit:classes}), and $\varphi\in\sumcheckunsat$ if and only if $(\varphi,0)\in\sumcheckcount$; the verifier reduces $L\in\cc{coNP}$ to $\sumcheckunsat$ and runs the protocol of \cref{thm:sumcheck:count}.
+\end{proof}
+
+The announcement of 13 December claimed an interactive proof for every language in $\cc{BPP}^{\cc{\#P}}$ \parencite{Babai1990}, which by Toda's theorem \parencite{Toda1991} contains the polynomial-time hierarchy $\cc{PH}$, the languages defined by a fixed number of alternating quantifiers over polynomial-time predicates (\cref{def:toolkit:classes}). That protocol checked permanents; that formulas could be checked directly was, in Babai's words, immediately clear \parencite[\S8]{Babai1990}, and the version for formulas is the one textbooks give \parencite{AroraBarak2009,Thaler2022}.\sidenote{\Textcite[\S7]{Babai1990} notes that it was the first protocol in the literature that seemed to need an unbounded number of rounds; \cref{sec:sumcheck:leaves} explains why a constant number would collapse $\cc{PH}$.}
+
+\paragraph{Quantifiers.} A quantified Boolean formula $\Psi=Q_1x_1\,Q_2x_2\cdots Q_\ell x_\ell\,\varphi$, with each $Q_i\in\{\forall,\exists\}$ and $\varphi$ a 3-CNF formula over $x_1,\dots,x_\ell$, is true or false. The language $\sumchecktqbf$ of true formulas is $\cc{PSPACE}$-complete \parencite{StockmeyerMeyer1973}, also with the inner formula in 3-CNF \parencite[Chapter~4]{AroraBarak2009}; the claim that White wins a game of polynomial length has this form. On Boolean values $\forall x\,\psi$ is the product of the values of $\psi$ at $x=0$ and $x=1$, and $\exists x\,\psi$ one minus the product of their complements; but each product doubles the degree in the variables not yet quantified, so the prover's first polynomial may have degree $d_12^{\ell-1}$. Shamir avoided the growth by renaming variables so that none is under more than two universal quantifiers \parencite[\S9]{Babai1990}. The route we follow, which textbooks present \parencite{AroraBarak2009} and which is usually credited to the simplification of \textcite{Shen1992}, inserts operators that lower the degree without changing a single Boolean value.\sidenote{We could not consult Shen's paper, so we do not attribute the details below to it.}
+
+\begin{definition}[Degree reduction]\label[definition]{def:sumcheck:operators}\index{degree reduction}\index{linearization operator}
+For $p\in\F[X_1,\dots,X_\ell]$, an index $i$ and $c\in\F$, write $\sumchecksub{p}{X_i=c}$ for $p$ with $c$ substituted for $X_i$, and for $a\in\F^\ell$ write $a|_{i\gets c}$ for $a$ with its $i$-th coordinate replaced by $c$ (or by an indeterminate $X$). Let
+\[\forall_ip=\sumchecksub{p}{X_i=0}\cdot\sumchecksub{p}{X_i=1},\qquad\exists_ip=1-\bigl(1-\sumchecksub{p}{X_i=0}\bigr)\bigl(1-\sumchecksub{p}{X_i=1}\bigr),\]
+\[\sumcheckL_ip=(1-X_i)\,\sumchecksub{p}{X_i=0}+X_i\,\sumchecksub{p}{X_i=1}.\]
+For $\Psi=Q_1x_1\cdots Q_\ell x_\ell\,\varphi$, let $O_1O_2\cdots O_K$ be the string
+\begin{equation}\label{eq:sumcheck:string}
+Q_1\,\sumcheckL_1\;Q_2\,\sumcheckL_1\sumcheckL_2\;Q_3\,\sumcheckL_1\sumcheckL_2\sumcheckL_3\;\cdots\;Q_\ell\,\sumcheckL_1\sumcheckL_2\cdots\sumcheckL_\ell,
+\end{equation}
+in which $Q_i$ stands for $\forall_i$ or $\exists_i$ as in $\Psi$, and each quantifier is followed by the operators $\sumcheckL_1,\dots,\sumcheckL_i$; $K=\ell(\ell+3)/2$. Let $G_K=g_\varphi$ and $G_{k-1}=O_kG_k$ for $k=K,\dots,1$, so the operators apply from right to left. For $O_k$ acting on $X_i$, let $\Delta_k=1$ if $O_k$ is a quantifier, $\Delta_k=d_i$ if $O_k$ is one of the last $\ell$ operators, and $\Delta_k=2$ otherwise; and let $\omega_k(y_0,y_1)$ be $y_0y_1$, $1-(1-y_0)(1-y_1)$, or $(1-a_i)y_0+a_iy_1$ for $O_k=\forall_i$, $\exists_i$, or $\sumcheckL_i$, where $a_i$ is the value of $X_i$ at the point of evaluation.
+\end{definition}
+
+The operator $\sumcheckL_i$ replaces the dependence of a polynomial on $X_i$ by the line through its values at $X_i=0$ and $X_i=1$: it changes no value on Boolean points and makes the degree in $X_i$ at most one.
+
+\begin{lemma}[Degree reduction preserves truth]\label[lemma]{lem:sumcheck:shen}
+In the notation of \cref{def:sumcheck:operators}:
+\begin{enumerate}
+\item $G_0$ is the constant $1$ if $\Psi$ is true and $0$ if $\Psi$ is false.
+\item If $O_k$ acts on $X_i$, then $G_k$ has degree at most $\Delta_k$ in $X_i$; and $\sum_k\Delta_k=\ell^2+\sum_jd_j$.
+\item If $O_k$ acts on $X_i$, then for every $a\in\F^\ell$, with $\tau(X)=G_k(a|_{i\gets X})$,
+\begin{equation}\label{eq:sumcheck:step}
+G_{k-1}(a)=\omega_k\bigl(\tau(0),\tau(1)\bigr).
+\end{equation}
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to read (iii) off the definitions and to prove (i) and (ii) by following the string from right to left. Part (iii) is the definition of the operators, evaluated at $a$. For (i), let $\psi_k$ be the formula obtained from $\varphi$ by applying, in order, the quantifiers among $O_{k+1},\dots,O_K$, so that $\psi_K=\varphi$ and $\psi_0=\Psi$. We show by induction on $K-k$ that for every $b\in\bits^\ell$, $G_k(b)$ is $1$ if $\psi_k$ is true when its free variables take the values $b$, and $0$ otherwise. For $k=K$ this is \cref{lem:sumcheck:arith}(i). If $O_k=\sumcheckL_j$, then $G_{k-1}(b)=(1-b_j)G_k(b|_{j\gets0})+b_jG_k(b|_{j\gets1})=G_k(b)$ because $b_j\in\bits$, and $\psi_{k-1}=\psi_k$. If $O_k$ is the quantifier on $x_i$, then by \eqref{eq:sumcheck:step} $G_{k-1}(b)$ is the product of $G_k(b|_{i\gets0})$ and $G_k(b|_{i\gets1})$, or one minus the product of their complements; by induction these are the truth values of $\psi_k$ with $x_i=0$ and $x_i=1$, so $G_{k-1}(b)$ is their conjunction or disjunction, the truth value of $\psi_{k-1}=Q_ix_i\,\psi_k$. At $k=0$ the formula $\Psi$ has no free variables; and $G_0$ is a constant, since the quantifier on $x_i$ removes $X_i$ and the operators applied after it, which act on $X_j$ with $j<i$, do not reintroduce it.
+
+For (ii), the definitions show that $\sumcheckL_ip$ has degree at most $1$ in $X_i$ and, for $j\ne i$, degree in $X_j$ at most that of $p$; and that $\forall_ip$ and $\exists_ip$ do not depend on $X_i$ and, for $j\ne i$, have degree at most $2$ in $X_j$ when $p$ has degree at most $1$ in $X_j$. If $O_k$ is the quantifier $Q_i$, then $G_k=\sumcheckL_1\cdots\sumcheckL_iG'$ for some $G'$; the operator $\sumcheckL_i$, applied first, makes the degree in $X_i$ at most $1$, and the others keep it there. If $O_k=\sumcheckL_j$ is among the last $\ell$ operators, then $G_k=\sumcheckL_{j+1}\cdots\sumcheckL_\ell\,g_\varphi$ has degree in $X_j$ at most that of $g_\varphi$, which is $d_j$. Otherwise $O_k=\sumcheckL_j$ lies in the group following $Q_i$ for some $i<\ell$, with $j\le i$, and $G_k=\sumcheckL_{j+1}\cdots\sumcheckL_i\,Q_{i+1}G''$, where $G''=\sumcheckL_1\cdots\sumcheckL_{i+1}G'''$ has degree at most $1$ in each of $X_1,\dots,X_{i+1}$; so $Q_{i+1}G''$, and with it $G_k$, has degree at most $2$ in $X_j$. In the sum, the $\ell$ quantifiers contribute $\ell$, the $\ell(\ell-1)/2$ operators of the earlier groups contribute $\ell(\ell-1)$, and the last group contributes $\sum_jd_j$, for a total of $\ell^2+\sum_jd_j$.
+\end{proof}
+
+\begin{protocol}{Degree-reduced sumcheck for TQBF}\label{prot:sumcheck:shen}
+\item[\act{V}] Form the string \eqref{eq:sumcheck:string}, the bounds $\Delta_k$ and the tests $\omega_k$. Set $a=(0,\dots,0)\in\F^\ell$, and let $v_0$ be the claimed truth value of $\Psi$ ($1$ for true, $0$ for false).
+\phase{Step $k=1,\dots,K$, for the operator $O_k$ on the variable $X_i$}
+\item[\msg{P}{V}] Send $h_k(X)$ of degree at most $\Delta_k$. The honest prover sends $\tau_k(X)=G_k(a|_{i\gets X})$.
+\item[\act{V}] Check that $\omega_k(h_k(0),h_k(1))=v_{k-1}$; otherwise \rej. Pick $r_k\in\F$ uniformly at random, and set $a_i=r_k$ and $v_k=h_k(r_k)$.
+\item[\msg{V}{P}] Send $r_k$.
+\phase{Final check}
+\item[\act{V}] \acc{} if $g_\varphi(a)=v_K$; otherwise \rej.
+\end{protocol}
+
+\begin{theorem}[The degree-reduced protocol]\label{thm:sumcheck:shen}
+Let $\Psi=Q_1x_1\cdots Q_\ell x_\ell\,\varphi$ with $\varphi$ a 3-CNF formula with $m$ clauses, and let $\F$ be a finite field with $\abs{\F}\ge\max(2,m)$. Run \cref{prot:sumcheck:shen} with the claimed value $v_0\in\bits$.
+\begin{enumerate}
+\item If $v_0$ is the truth value of $\Psi$, then the honest prover is accepted with probability $1$.
+\item If not, then for every prover the verifier accepts with probability at most $(\ell^2+\sum_jd_j)/\abs{\F}\le(\ell^2+3m)/\abs{\F}$ over its coins.
+\item The protocol has $K=\ell(\ell+3)/2$ rounds, and the verifier performs $O(\ell^2+m)$ field operations, one evaluation of $g_\varphi$ included.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is again to verify the hypotheses of \cref{lem:sumcheck:chain}, now for the claims $\cC_k$ that $G_k(a_k)=v_k$, with $a_k$ the verifier's point after step $k$; the claim $\cC_0$ is $G_0=v_0$. The polynomial $\tau_k$ is determined by $a_{k-1}$, hence by $r_1,\dots,r_{k-1}$, and has degree at most $\Delta_k$ by \cref{lem:sumcheck:shen}(ii); the hypothesis on $\abs{\F}$ gives $\Delta_k\le\abs{\F}$, since $d_j\le m$. For (i), if $\cC_{k-1}$ is true, then the honest message passes the test by \eqref{eq:sumcheck:step}, and $\cC_k$ is true because $G_k(a_k)=\tau_k(r_k)=v_k$; since $\cC_0$ is true by \cref{lem:sumcheck:shen}(i) and $G_K=g_\varphi$, every test and the final check pass. For (ii), $\cC_0$ is false by \cref{lem:sumcheck:shen}(i). If $\cC_{k-1}$ is false and $h_k$ passes the test, then $\omega_k(h_k(0),h_k(1))=v_{k-1}\ne G_{k-1}(a_{k-1})=\omega_k(\tau_k(0),\tau_k(1))$, so $h_k$ and $\tau_k$ differ at $0$ or at $1$, and $h_k\ne\tau_k$: this is hypothesis (a). Since $G_k(a_k)=\tau_k(r_k)$, the claim $\cC_k$ is false whenever $h_k(r_k)\ne\tau_k(r_k)$: this is hypothesis (b). The final check decides $\cC_K$ exactly, and the lemma gives the bound $\sum_k\Delta_k/\abs{\F}$. For (iii), step $k$ costs $O(\Delta_k+1)$ field operations, and $\sum_k(\Delta_k+1)=O(\ell^2+m)$.
+\end{proof}
+
+\begin{theorem}[$\cc{IP}=\cc{PSPACE}$; \textcite{LundEtAl1992}, \textcite{Shamir1992}]\label{thm:sumcheck:ippspace}\index{IP = PSPACE@$\cc{IP}=\cc{PSPACE}$}
+A language has an interactive proof if and only if it can be decided in polynomial space: $\cc{IP}=\cc{PSPACE}$. Moreover, every language in $\cc{PSPACE}$ has a public-coin interactive proof with perfect completeness.
+\end{theorem}
+
+\begin{proof}
+The plan is to combine the upper bound of \cref{ch:interaction} with \cref{thm:sumcheck:shen} and the $\cc{PSPACE}$-completeness of $\sumchecktqbf$. The inclusion $\cc{IP}\subseteq\cc{PSPACE}$ is \cref{thm:interaction:ipinpspace}: the largest acceptance probability that a prover can achieve is computable in polynomial space. Conversely, let $L\in\cc{PSPACE}$; since $\sumchecktqbf$ with 3-CNF inner formulas is $\cc{PSPACE}$-complete, some polynomial-time map $x\mapsto\Psi_x$ satisfies $x\in L$ if and only if $\Psi_x$ is true. On input $x$ the verifier computes $\Psi_x$, with $\ell$ variables and $m$ clauses, finds the smallest prime $p\ge3(\ell^2+3m)$ by trial division, and runs \cref{prot:sumcheck:shen} over $\F_p$ with $v_0=1$. By Bertrand's postulate $p\le6(\ell^2+3m)$, so the search takes polynomial time, and so does the rest by \cref{thm:sumcheck:shen}(iii). If $x\in L$, then the honest prover is accepted with probability $1$. If $x\notin L$, then $v_0=1$ is not the truth value of $\Psi_x$, and since $p\ge\max(2,m)$, every prover is accepted with probability at most $(\ell^2+3m)/p\le1/3$ by \cref{thm:sumcheck:shen}(ii). The verifier's only messages are its coins.
+\end{proof}
+
+\begin{remark}[The best liar against degree reduction]\label[remark]{rem:sumcheck:tqbfliar}
+If $\abs{\F}\ge\max(4,m+1)$, the product bound of \cref{lem:sumcheck:chain} is attained here too: while its claim is false, a liar can pass the test with a message that agrees with $\tau_k$ at exactly $\Delta_k$ points. For $\sumcheckL_i$ the test is linear, and \cref{prop:sumcheck:best} applies with the root $1$ in place of $0$ when $a_i=0$. For a quantifier, at least $\abs{\F}-1$ pairs $(y_0,y_1)$ satisfy $\omega_k(y_0,y_1)=v_{k-1}$, and at most two give a line parallel to $\tau_k$ (a quadratic condition on $y_0$); every other pair gives a line meeting $\tau_k$ once.
+\end{remark}
+
+With $p\ge2^\lambda(\ell^2+3m)$ the soundness error is at most $2^{-\lambda}$, and since the protocol proves either truth value, it serves $\sumchecktqbf$ and its complement alike. The honest prover's first message determines the truth value of $\Psi$ through \eqref{eq:sumcheck:step}, as that of the counting protocol determines $\#\varphi$, so its power must match the problem's.
+
+\begin{proposition}[The price of honesty]\label[proposition]{prop:sumcheck:price}\index{honest prover!cost}
+\begin{enumerate}
+\item The honest prover of \cref{prot:sumcheck:shen} can be computed in space polynomial in $\ell$, $m$ and $\log\abs{\F}$.
+\item If a language $L$ has an interactive proof with completeness $2/3$ and soundness error $1/3$ whose honest prover can be computed in probabilistic polynomial time, then $L\in\cc{BPP}$. Consequently, unless $\cc{PSPACE}=\cc{BPP}$, no interactive proof for $\sumchecktqbf$ has such an honest prover, and unless $\cc{NP}\subseteq\cc{BPP}$, none for $\sumcheckunsat$ has.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to evaluate the operator string recursively for (i), and to let the verifier simulate the prover for (ii). For (i), \eqref{eq:sumcheck:step} computes $G_{k-1}(a)$ from two values of $G_k$; evaluating recursively, depth first, with $G_K=g_\varphi$ at the bottom, each of the $K$ levels stores a point and two field elements, so the space is $O(K\ell\log\abs{\F}+m\log\abs{\F})$. For (ii), the verifier and the honest prover together form a probabilistic polynomial-time algorithm that accepts $x\in L$ with probability at least $2/3$ by completeness and $x\notin L$ with probability at most $1/3$ by soundness, the simulated prover being one particular prover. Hence $L\in\cc{BPP}$, the class of languages decided in probabilistic polynomial time with error at most $1/3$ (\cref{def:toolkit:classes}). Since $\cc{BPP}$ is closed under polynomial-time reductions and under complement, $\sumchecktqbf\in\cc{BPP}$ would give $\cc{PSPACE}=\cc{BPP}$, and $\sumcheckunsat\in\cc{BPP}$ would give $\cc{NP}\subseteq\cc{BPP}$.
+\end{proof}
+
+The recursion takes time $2^{O(\ell^2)}m$. The polynomial in front of $Q_i$, multilinear in $X_1,\dots,X_i$, is the multilinear extension of the truth table of $\psi_k$ (\cref{lem:toolkit:mle}); storing these tables, as our script does, gives time $2^{O(\ell)}\poly(m)$ in space $O(2^\ell\log\abs{\F})$.
+
+\section{Running the protocol}\label{sec:sumcheck:running}
+
+The script \texttt{05-sumcheck-rates.py} runs \cref{prot:sumcheck:main} on a random 3-CNF formula with $\ell=10$ variables and $m=20$ clauses, each variable in at least two of them ($86$ satisfying assignments; $d_j$ from $2$ to $9$, $\sum_jd_j=60$), over $\F_p$ for ten primes $p$ from $67$ to $4091$, $20{,}000$ times per prime. Four provers face the same coins: the honest prover, claiming $86$, and three liars claiming $87$. The \emph{root-planting} liar is that of \cref{prop:sumcheck:best}, with its roots other than $0$ drawn at random; the \emph{careless} liar knows the true polynomials but adds a uniformly random error that passes the check, returning to the truth if its claim becomes true by luck, and is accepted with probability exactly $1-(1-1/p)^{10}$ (\cref{ex:sumcheck:careless}); the \emph{constant-shift} liar adds half of its current error to every value. The script \texttt{05-sumcheck-tqbf.py} runs \cref{prot:sumcheck:shen} on a false formula $\exists x_1\forall x_2\exists x_3\forall x_4\exists x_5\,\varphi$ with $m=8$ clauses ($K=20$, $\sum_k\Delta_k=49$) against the honest prover and the liar of \cref{rem:sumcheck:tqbfliar}. Messages are sent as their values at $0,1,\dots,\Delta_k$. Drawing the verifier's coins before a run, as both scripts do, changes nothing: each prover computes its $k$-th message from $r_1,\dots,r_{k-1}$ only.\sidenote{On one laptop core the two scripts take about $45$ and $30$ seconds; \texttt{05-sumcheck-costs.py} takes two.}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=13mm},vplot,
+    width=0.5\linewidth,height=0.32\linewidth,xmode=log,ymode=log,
+    xmin=55,xmax=5200,ymin=1e-3,ymax=1.6,xlabel={field size $p$},
+    legend style={font=\scriptsize,at={(0.02,0.02)},anchor=south west}]
+\nextgroupplot[ylabel={acceptance rate},title={(a) counting, $\ell=10$, $m=20$}]
+\addplot[bound] table[x=p,y=bound]{figures/data/05-sumcheck-rates-theory.dat};
+\addplot[theory,forget plot] table[x=p,y=exactplant]{figures/data/05-sumcheck-rates-theory.dat};
+\addplot[theory2,forget plot] table[x=p,y=exactcare]{figures/data/05-sumcheck-rates-theory.dat};
+\addplot[cheat,ebars] table[x=p,y=plant,y error plus=plantep,y error minus=plantem]{figures/data/05-sumcheck-rates.dat};
+\addplot[cheat2,ebars] table[x=p,y=care,y error plus=careep,y error minus=careem]{figures/data/05-sumcheck-rates.dat};
+\addplot[honest] table[x=p,y=honest]{figures/data/05-sumcheck-rates.dat};
+\legend{bound $\sum_jd_j/p$,root-planting liar,careless liar,honest prover}
+\nextgroupplot[title={(b) TQBF, $\ell=5$, $m=8$}]
+\addplot[bound] table[x=p,y=bound]{figures/data/05-sumcheck-tqbf-theory.dat};
+\addplot[theory,forget plot] table[x=p,y=exact]{figures/data/05-sumcheck-tqbf-theory.dat};
+\addplot[cheat,ebars] table[x=p,y=plant,y error plus=plantep,y error minus=plantem]{figures/data/05-sumcheck-tqbf.dat};
+\addplot[honest] table[x=p,y=honest]{figures/data/05-sumcheck-tqbf.dat};
+\legend{bound $\sum_k\Delta_k/p$,root-planting liar,honest prover}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Measured acceptance rates against the theory over $\F_p$ (logarithmic axes). (a) \Cref{prot:sumcheck:main} on a random 3-CNF formula with $86$ satisfying assignments ($\ell=10$, $m=20$, $\sum_jd_j=60$); the liars claim $87$. (b) \Cref{prot:sumcheck:shen} on a false formula $\exists\forall\exists\forall\exists\,\varphi$ ($\ell=5$, $m=8$, $\sum_k\Delta_k=49$); the liar claims it is true. Each point is $20{,}000$ runs, with Clopper--Pearson $95\%$ intervals. Dashed indigo: the bounds of \cref{thm:sumcheck:sumcheck,thm:sumcheck:shen}; solid: the exact $1-\prod_k(1-\Delta_k/p)$ of the root-planting liar; dashed teal: $1-(1-1/p)^{10}$, the careless liar. Scripts \texttt{05-sumcheck-rates.py} (seeds $5$, $505$, $5005$) and \texttt{05-sumcheck-tqbf.py} (seeds $7$, $707$, $7007$).}\label{fig:sumcheck:rates}
+\end{figure}
+
+The honest prover was accepted in all $400{,}000$ of its runs, and the constant-shift liar in none of its $200{,}000$: its error is a nonzero constant, which has no root to hit. The root-planting liar follows its exact curve (\cref{fig:sumcheck:rates}). Of the $30$ intervals of the liars, $29$ contain the exact value, about what $95\%$ intervals should do; the exception, at $p=251$ in panel (b), lies $2.9$ standard errors below it. No interval lies above a proved bound; at $p=4091$ in panel (b) the measured rate $0.0129$ exceeds the bound $0.0120$, but there the bound and the exact value $0.0119$ nearly coincide, and the interval $[0.0114,0.0146]$ contains both. The bound is loose only where it is large: at $p=103$ in panel (a) it is $0.58$, against the exact value $0.45$ and the measured $0.451$; at $p=1031$ it is $0.0582$, against $0.0567$ and $0.0575$. The careless liar, which escapes a round with probability $1/p$ instead of $d_j/p$, is accepted about six times less often ($0.0097$ against $0.0567$ at $p=1031$), since the $d_j$ average $6$.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}r r r r r r r@{}}
+\toprule
+& & \multicolumn{2}{c}{honest prover} & \multicolumn{2}{c}{verifier} & prover sends\\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+$\ell$ & $m$ & evaluations & time (s) & field operations & time (ms) & field elements\\
+\midrule
+$9$ & $18$ & \num{3577} & $0.001$ & $552$ & $0.033$ & $63$\\
+$12$ & $24$ & \num{28665} & $0.003$ & $733$ & $0.043$ & $84$\\
+$15$ & $30$ & \num{229369} & $0.016$ & $914$ & $0.056$ & $105$\\
+$18$ & $36$ & \num{1835001} & $0.152$ & \num{1095} & $0.074$ & $126$\\
+$21$ & $42$ & \num{14680057} & $1.619$ & \num{1271} & $0.077$ & $147$\\
+\bottomrule
+\end{tabular}
+\caption{Costs of \cref{prot:sumcheck:main} for $\#$SAT on random 3-CNF formulas in which every variable occurs in six clauses ($d_j=6$, $m=2\ell$), over $\F_p$, $p=2^{31}-1$; one run per size, each accepted. Verifier operations are counted by an instrumented verifier, its time is the mean of $200$ repetitions on a laptop. Script \texttt{05-sumcheck-costs.py}.}\label{tab:sumcheck:costs}
+\end{table}
+
+\Cref{tab:sumcheck:costs} shows the asymmetry that the protocol buys: from $\ell=9$ to $\ell=21$ the honest prover's evaluations grow by a factor of $(2^{21}-1)/(2^9-1)\approx4100$ and its time from about a millisecond to $1.6$ seconds, while the verifier's operations grow from $552$ to $1271$, about $60$ per variable. The prover's $7(2^\ell-1)$ evaluations are seven times what counting by enumeration takes: honesty costs a constant factor over solving the problem, not over checking it.
+
+\section{The three questions}\label{sec:sumcheck:questions}
+
+\questionone Read \cref{prot:sumcheck:main} as a game in which the prover states a count $C$ and is paid $1$ if the verifier accepts. Stating the true count and sending the polynomials $\tau_j$ earns $1$ (\cref{thm:sumcheck:sumcheck}(i)), the most a strategy can earn, so honesty is a best response; every false count earns at most $\sum_jd_j/\abs{\F}$, and when $1\le d_j<\abs{\F}$ the root-planting prover earns exactly $1-\prod_j(1-d_j/\abs{\F})$, the most possible (\cref{prop:sumcheck:best}). For quantified formulas the protocol proves either truth value, so asserting the truth and proving it is a best response there too, and every lie earns at most $(\ell^2+3m)/\abs{\F}$ (\cref{thm:sumcheck:shen}). The catch is the price of the honest strategy: its first message determines a $\cc{\#P}$-hard count or a $\cc{PSPACE}$-hard truth value, and by \cref{prop:sumcheck:price} no interactive proof for $\cc{PSPACE}$ has an honest prover running in probabilistic polynomial time unless $\cc{PSPACE}=\cc{BPP}$. The best lie is no cheaper: once its claim turns true by luck, an optimal liar must send the honest $\tau_j$. Honesty is an equilibrium only a prover able to solve the problem can play; \cref{ch:delegation} narrows this gap for shallow or small-space computations, and \cref{ch:efficientdebate}, with a second prover, for every time-bounded one.
+
+\questiontwo The verifier of \cref{prot:sumcheck:main} spends $\ell$ rounds, receives $\sum_j(d_j+1)$ field elements, draws $\ell$ uniform field elements (about $\ell\log_2\abs{\F}$ random bits), performs $O(\ell+\sum_jd_j)$ field operations, and evaluates $g$ once. For counting (\cref{thm:sumcheck:count}) this is $\ell$ rounds and $O(\ell+m)$ operations on numbers of $O(\ell+\log m)$ bits, plus a primality test; for $\sumchecktqbf$ (\cref{thm:sumcheck:shen}), $\ell(\ell+3)/2$ rounds and $O(\ell^2+m)$ operations. In \cref{tab:sumcheck:costs} the verifier needed $1271$ field operations and $0.08$ milliseconds to check a count over $2^{21}$ configurations that took the prover $14.7$ million evaluations.
+
+\questionthree Against every prover, however powerful, a false claim is rejected with probability at least $1-\sum_jd_j/\abs{\F}$ per run, and when $1\le d_j<\abs{\F}$ the root-planting prover is rejected with probability exactly $\prod_j(1-d_j/\abs{\F})$, the least possible; the guarantee is information-theoretic. A field of $2^{128}$ elements makes the error negligible; $t$ repetitions give $(\sum_jd_j/\abs{\F})^t$. In \cref{fig:sumcheck:rates}(a) the optimal liar was caught in $98.7\%$ of its runs at $p=4091$, against the exact $98.5\%$.
+
+\noindent\begin{minipage}{\linewidth}
+\protocolcard{that a polynomial $g$ sums to $C$ over $\bits^\ell$; through arithmetization, exact counts ($\cc{\#P}$, hence $\cc{coNP}$) and, with degree reduction, quantified formulas ($\cc{PSPACE}$)}{a verifier $\V$ that evaluates $g$ at one point of $\F^\ell$; one unbounded prover $\Prov$}{a best response: the truth earns $1$, a lie at most $\sum_jd_j/\abs{\F}$; but the honest messages are sums over $2^{\ell-j}$ points, $\cc{\#P}$-hard for counts and $\cc{PSPACE}$-hard for quantified formulas}{$\ell$ rounds, $\sum_j(d_j+1)$ field elements, $O(\ell+\sum_jd_j)$ field operations, and one evaluation of $g$; about $\ell\log_2\abs{\F}$ random bits}{at least $1-\sum_jd_j/\abs{\F}$ per run against every prover; exactly $\prod_j(1-d_j/\abs{\F})$ against the best when $1\le d_j<\abs{\F}$; enlarge the field to amplify}{a property given as a low-degree polynomial that the verifier can evaluate off the Boolean cube; fresh, unpredictable challenges; exact arithmetic in a field}
+\end{minipage}
+
+\section{What the model leaves out}\label{sec:sumcheck:leaves}
+
+\paragraph{What was idealized away.} The protocol needs the overseer to hold the property as a formula and to evaluate it at points of $\F^\ell$ that are not configurations. In the oversight box the invariant arrived as a formula; in practice someone must write it, and the protocol certifies a count for the formula, not for the controller or for the intention behind it, the specification gap of \cref{ch:certificates}. The value $g(r)$ at a non-Boolean point cannot be measured by running the controller or by asking a person. The verifier must do exact arithmetic in a large field, so in practice it is a small program whose correctness must itself be trusted. The prover must compute sums of exponentially many terms at points that correspond to nothing in the system; a model whose competence is to recognize unsafe configurations need not be able to, and the protocol tests the algebra, not the model's understanding. And each challenge must be unknown to the prover when it commits to the polynomial it tests: a model that can predict the verifier's randomness, for instance from a weak seed, defeats the protocol (\cref{ex:sumcheck:reuse}).
+
+\paragraph{Where it breaks.} The sharpest limit is the black box. When the property is available only as an oracle on configurations, such as the controller itself, a simulator, or a human judgment, there is no point off the cube to evaluate, and no better analysis can fix this. \Textcite{FortnowSipser1988} constructed an oracle relative to which $\cc{coNP}$ is not contained in $\cc{IP}$, and \textcite{ChangEtAl1994} showed that relative to a random oracle $\cc{IP}\ne\cc{PSPACE}$ and $\cc{coNP}\not\subseteq\cc{IP}$ with probability $1$ (we rely on their abstract). What arithmetization needs is a low-degree extension: \textcite{AaronsonWigderson2009} show that $\cc{PSPACE}^A\subseteq\cc{IP}^{\tilde A}$ for every oracle $A$ and every low-degree extension $\tilde A$ of it given to the verifier, so the theorem survives when the overseer can query a low-degree extension of the black box.\index{relativization} AI-safety theory has drawn the consequence: \textcite{BrownCohenEtAl2024} note that with black-box human judgments $\cc{IP}=\cc{PSPACE}$ and the PCP theorem are false and turn to competing provers, and \textcite{IrvingMarshall2025} propose, in a blog post and as a heuristic, that only results that relativize are relevant to oversight by humans (\cref{ch:debate}). Nor can rounds be saved: a constant number gives the class $\cc{AM}$ (\cref{ch:interaction}), and $\cc{coNP}\subseteq\cc{AM}$ would collapse the polynomial-time hierarchy \parencite{BoppanaHastadZachos1987}. Practice adds a cryptographic gap: as of 2025, deployed systems derive each $r_j$ from a hash of the transcript, the Fiat--Shamir transform \parencite{FiatShamir1986},\index{Fiat--Shamir transform} sound for sumcheck when the hash is modeled as a random oracle \parencite{Thaler2022} but not guaranteed for a concrete hash function. \Textcite{KhovratovichRothblumSoukhanov2025} attack a standard and popular succinct argument built on the GKR protocol, whose core is sumcheck: for every choice of the hash function they construct circuits for which accepting proofs of false statements can be computed, so that a security guarantee, if there is one, must depend on how a computation is written, not only on what it computes (we rely on their abstract).
+
+\paragraph{Open problems.} The honest prover of the counting protocol solves a $\cc{\#P}$-hard problem to prove a $\cc{coNP}$ claim. \Textcite{Babai1990} asked whether membership in a $\cc{coNP}$-complete language can be proved by an honest prover whose power lies in the polynomial-time hierarchy; as far as we know the question is open. For oversight, the question is which properties an overseer can evaluate off the cube: \textcite{ChenKalaiXi2026} give single-prover doubly-efficient interactive proofs and arguments for computations with oracle access, such as access to human judgment, when the oracle is a low-degree polynomial or the computation tolerates a small fraction of wrong oracle answers (we rely on their abstract), and whether human or learned judgments can be given such structure is open. Finally, which computations, written in which way, keep their soundness when sumcheck-based protocols are compiled with the Fiat--Shamir transform and a concrete hash function is open; the attack of \textcite{KhovratovichRothblumSoukhanov2025} shows that the answer must depend on how a computation is written, not only on what it computes.
+
+\begin{exercises}
+\item \consolidation (The worked run.) Check \cref{tab:sumcheck:run}. Show that its root-planting liar is accepted with probability exactly $613/2197$, that no prover claiming $5$ does better, and that planting the roots of round $1$ at $5$ and $9$ instead of $0$ and $2$ gives the same probability.\label{ex:sumcheck:run}
+
+\item \consolidation (The careless liar.) Let $d\ge2$, $\delta\ne0$, and let $h$ be uniform among the polynomials of degree at most $d$ over $\F$ with $h(0)+h(1)=\delta$. Show that $\Prob[h(r)=0]=1/\abs{\F}$ for $r$ uniform on $\F$ and independent of $h$, and that for $d=1$ it is $(\abs{\F}-1)/\abs{\F}^2$ if the characteristic of $\F$ is odd. Conclude that the careless liar of \cref{sec:sumcheck:running} is accepted with probability exactly $1-(1-1/\abs{\F})^\ell$ when every $d_j\ge2$. \hint{for fixed $r$, the map $h\mapsto(h(r),h(0)+h(1))$ is onto $\F^2$ when $d\ge2$.}\label{ex:sumcheck:careless}
+
+\item \consolidation (A blind prover.) A prover that knows nothing about $g$ sends in each round a uniformly random polynomial of degree at most $d_j$ that passes the verifier's check. Show that if $d_\ell\ge2$, it is accepted with probability exactly $1/\abs{\F}$, whether the claim is true or false. What does this say about completeness?\label{ex:sumcheck:blind}
+
+\item \consolidation (Why the degree check.) Suppose the verifier of \cref{prot:sumcheck:main} accepts messages of every degree. Using the polynomial $1-(X-1)^{\abs{\F}-1}$, which is $1$ at $X=1$ and $0$ elsewhere in $\F$, give a prover that makes every false claim accepted with probability $1-\abs{\F}^{-\ell}$. How long are its messages?\label{ex:sumcheck:degree}
+
+\item \variation (Fewer rounds, longer messages.) Let $k$ divide $\ell$, and let the prover send in each round a $k$-variate polynomial of degree at most $d$ in each variable, summing out the next $k$ variables at once; the verifier checks its sum over $\bits^k$ and evaluates it at a uniform point of $\F^k$. Using \cref{lem:toolkit:schwartzzippel}, prove the soundness error $\ell d/\abs{\F}$ with $\ell/k$ rounds and $(\ell/k)(d+1)^k$ field elements. What are the cases $k=1$ and $k=\ell$?\label{ex:sumcheck:blocks}
+
+\item \variation (An unreliable final evaluation.) The verifier obtains $g(r)$ from an oracle that is correct with probability at least $1-\eta$, independently of everything else, and otherwise adversarial. Show completeness at least $1-\eta$ and soundness error at most $\sum_jd_j/\abs{\F}+\eta$, and that a majority vote of $t$ independent runs errs with probability at most $e^{-2t\gamma^2}$ if $\gamma=\frac12-\eta-\sum_jd_j/\abs{\F}>0$ (\cref{thm:toolkit:chernoff}).\label{ex:sumcheck:noisy}
+
+\item \attack\hard (A composite modulus.) The verifier of \cref{thm:sumcheck:count} forgets to check that $p$ is prime and computes modulo a composite $N'=qN''$ with $q$ prime. Let every $d_j\ge1$, and suppose that $\#\varphi+N''\le2^\ell$, which needs $q>6m$. Show that a prover claiming $\#\varphi+N''$ can be accepted with probability exactly $1-(1-1/q)^\ell$. \hint{send $g_j=\tau_j+e_jX$ with $e_j$ the current error, a multiple of $N''$ that vanishes modulo $N'$ once some $r_j$ is divisible by $q$.}\label{ex:sumcheck:composite}
+
+\item \attack (Challenges from a small set.) To save randomness, a verifier draws each $r_j$ from $\{0,1,\dots,2d\}$ rather than from $\F$, and every $d_j=d$. (a) Show that the liar who changes only the value at $1$ of the true polynomial, given by its values at $0,\dots,d$, plants $d$ roots in that set and is accepted with probability $1-(\frac{d+1}{2d+1})^\ell$ ($0.9963$ for $d=3$, $\ell=10$). (b) Show that challenges uniform on $S\subseteq\F$ give soundness error at most $\sum_jd_j/\abs{S}$.\label{ex:sumcheck:smallset}
+
+\item \attack (A reused challenge.) A verifier draws one $r\in\F$ and uses $r_1=\dots=r_\ell=r$. Show that if $\ell\ge2$ and $d_2\ge2$, a prover can make every false claim accepted with probability $1$. \hint{after round $1$ the prover knows $r_2$; if $r\ne\frac12$, a correction $c(X-r)$ works, and if $r=\frac12$, one of degree $2$.}\label{ex:sumcheck:reuse}
+
+\item \simulation (A uniform degree bound.) In \texttt{05-sumcheck-rates.py}, let the verifier check only $\deg g_j\le9$ and the root-planting liar plant $9$ roots in every round. Compare its measured acceptance with $1-(1-9/p)^{10}$ and with \cref{fig:sumcheck:rates}(a), and explain the gap ($0.0839$ against $0.0567$ at $p=1031$).\label{ex:sumcheck:uniform}
+
+\item \simulation (Why linearize.) In \texttt{05-sumcheck-tqbf.py}, drop every operator $\sumcheckL_j$ of \eqref{eq:sumcheck:string} except those of the last group, and measure the degrees of the honest messages with \texttt{brute\_P}. Compare the degree at the step of $Q_i$ with the bound $2^{\ell-i}$, and explain why the messages grow exponentially long.\label{ex:sumcheck:linearize}
+
+\item \research (A weaker honest prover.) (a) Show that the first honest message of \cref{thm:sumcheck:count} determines $\#\varphi$, a $\cc{\#P}$-hard quantity, although the claim may be in $\cc{coNP}$. (b) \Textcite{Babai1990} asked whether some interactive proof for a $\cc{coNP}$-complete language has an honest prover in the polynomial-time hierarchy. Formulate what such a prover must avoid computing, and test the formulation on this chapter's protocols; the question is open as far as we know.\label{ex:sumcheck:weaker}
+\end{exercises}
+
+\notesandrefs
+Until the end of 1989 the evidence, including the oracle of \textcite{FortnowSipser1988}, suggested that interactive proofs could not prove $\cc{coNP}$ claims. The race that followed, from Nisan's e-mail of 27 November 1989 to Shamir's of 26 December and on to the proof that $\cc{MIP}=\cc{NEXP}$, e-mailed on 17 January 1990 (\cref{ch:crossexam}), is told by \textcite{Babai1990}, from whom our dates come.
+
+The protocol of \textcite{LundEtAl1992} was stated for the permanent; \cref{prot:sumcheck:main} is the form of \textcite[Chapter~8]{AroraBarak2009} and \textcite[Chapter~4]{Thaler2022}, who calls it the single most important tool for efficient interactive proofs and also proves $\cc{PSPACE}\subseteq\cc{IP}$ through proofs for small-space computations. \Cref{lem:sumcheck:chain} isolates the argument that \textcite{Babai1990} gives in words. Arora and Barak's inductive proof gives the product form of the bound; that it is attained (\cref{prop:sumcheck:best}) we have not seen stated.
+
+Polynomial identity testing by random evaluation is due to \textcite{DeMilloLipton1978}, \textcite{Zippel1979}, and \textcite{Schwartz1980}. \Textcite{AaronsonWigderson2009} identified what arithmetization uses, a low-degree extension of the oracle, and showed that such algebrizing techniques cannot settle the central open separations.
+
+\paragraph{Translating the literature.} \Textcite{Thaler2022} writes $v$ for our $\ell$, $H$ for the true sum and $C_1$ for the claimed one (our $C$), $\deg_i(g)$ for our $d_i$, $s_i$ for the honest polynomial (our $\tau_i$), and $g_i$ for the prover's message, as we do; his soundness bound is $vd/\abs{\F}$. \Textcite{Babai1990} writes $f_i$ for the partial sums and $k$ for the number of variables; Arthur, the verifier, draws from $N$ values, Merlin is the prover, and the bound $nk/N$ takes the length $n$ of the formula as the degree. \Textcite{IrvingEtAl2018} call the verifier the judge, a polynomial-time function $H$, and write our $\Psi$ as $\exists x_0\forall x_1\cdots H(q,x_0,\dots)$.
+
+\printchapterbib
+\end{refsection}

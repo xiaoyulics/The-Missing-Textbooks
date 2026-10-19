@@ -1,0 +1,338 @@
+% Chapter 7 of Verifiable Intelligence: debate, alternation, and the bisection debate.
+\newcommand{\debateclass}{\cc{DEBATE}}
+\newcommand{\debateL}{\textsf{left}}
+\newcommand{\debateR}{\textsf{right}}
+
+\protocolchapter{Debate}{Two provers and a judge}{debate}{P,A,P,A,P,A,P,A,D}{ch:debate}
+\begin{refsection}[chapters/07-debate.bib]
+
+\begin{chaptersummary}
+When an overseer cannot check a model's claim, it can pay a second model to refute it: this is debate, proposed for AI alignment by Irving, Christiano and Amodei in 2018. We model debate as a zero-sum game of perfect information between two debaters and a polynomial-time judge, prove that with optimal play it decides exactly the languages in $\cc{PSPACE}$, and prove that a bisection debate over a deterministic computation of $T$ steps lets the judge decide by checking one step after at most $\lceil\log_2T\rceil$ rounds. The truthful answer is the only equilibrium answer, but honest play can require solving a $\cc{PSPACE}$-complete game; the judge spends polynomial time, in the bisection debate one step, three configurations and $\lceil\log_2T\rceil$ further bits; under optimal play every lie loses, and against a liar who out-computes the honest debater nothing is guaranteed. The model leaves out judges who err or can be persuaded, debaters of bounded power, and arguments whose flaw no efficient debater can find.
+\end{chaptersummary}
+
+\section{The oversight problem: two models that disagree}\label{sec:debate:problem}
+
+An overseer who cannot check a model's answer has one resource left: another model. If two capable models give different answers, one of them is wrong, and if the second is rewarded for exposing the first one's mistakes, the overseer may need to understand only the point at which they disagree.
+
+\begin{oversight}[two models disagree about a long run]
+A model reports that a deterministic simulation of a power grid's protection logic, run for $2^{40}$ steps from a recorded initial state, never trips the safety interlock. A second model, trained in the same way but rewarded for exposing the first model's mistakes, says that the interlock trips. The overseer can execute one step of the simulation, with code it trusts, in a millisecond; the whole run would take it about thirty-five years. It may ask both models questions and read their answers, but it trusts neither.
+\end{oversight}
+
+The scenario is invented.\sidenote{At a millisecond a step, $2^{40}\approx1.1\times10^{12}$ steps take $1.1\times10^{9}$ seconds, or $34.8$ years.} The overseer cannot replay the run. A record of all $2^{40}$ states that is wrong at a single step survives $k$ random checks with probability $1-k/2^{40}$ (\cref{ex:debate:spot}), as with the spot checks of \cref{ch:spotchecks,ch:training}. A single prover could prove the claim interactively, since a simulation in polynomial space is a claim in $\cc{PSPACE}$, the class of languages decidable in polynomial space (\cref{def:toolkit:classes}), and every such claim has an interactive proof (\cref{thm:sumcheck:ippspace}); but only with the simulation written as a low-degree polynomial and evaluated at points that are no state of the grid; code available only as a black box, or a step checked by a person's judgment, offers no such polynomial (\cref{ch:sumcheck}). The overseer can still ask the two models where they disagree.
+
+\Textcite{IrvingEtAl2018} proposed to make this the training signal of AI systems. In their \term{debate}\index{debate} game two agents see a question, state answers and take turns making short statements, and a human judge decides which agent gave the most true, useful information; the game is zero-sum, the agents would be trained by self-play,\index{self-play} and at test time only their answers would be needed.\sidenote{Their guiding example is Go: a novice cannot judge a strong player's move, but can judge a game between two strong players by checking the rules and counting the score \parencite{IrvingEtAl2018}.} The proposal rests on what the authors call its central claim, that it is ``harder to lie than to refute a lie''. Their analogy with complexity theory replaces the human by a polynomial-time algorithm and gives the agents unlimited computation: a judge answering alone corresponds to $\cc{P}$, polynomial time, and to supervised learning; a judge checking one statement to $\cc{NP}$, the claims with certificates checkable in polynomial time, and to reinforcement learning from human judgments; $i$ statements to the level $\Sigma_i^p$ of the polynomial hierarchy (\cref{def:toolkit:classes}); and polynomially many to $\cc{PSPACE}$ (their Table~1 and Theorem~1). They call these arguments ``analogies only'', and note that the model takes judges to be free of error and agents to be unbounded (their \S8).
+
+\begin{observation}[\textcite{IrvingEtAl2018}, \S3.1 and Table~2]\label[observation]{obs:debate:mnist}
+A judge, a convolutional network trained to classify MNIST digits from $6$ random nonzero pixels, is $59.4\%$ accurate on such masks. Both agents see the image; one argues for the true label and the other for a false label stated in advance (an image counts for the liar if one of the nine false labels wins). They reveal three pixels each, chosen by Monte Carlo tree search with $10{,}000$ rollouts per move, and the judge picks the label with the higher logit on the six revealed pixels. The honest agent won on $88.9\%$ of the test images, averaged over who moves first ($85.2\%$ with $4$ pixels, against the judge's $48.2\%$ on random masks); without precommitment, when every wrong guess of the judge counted for the liar, on $74.4\%$.
+\end{observation}
+
+The paper's abstract reports the result as raising the classifier's accuracy from $59.4\%$ to $88.9\%$; the first number is a ten-way accuracy on random pixels, the second a win rate in a two-way choice on pixels chosen by the debaters.
+
+The structure is older than the proposal. A debate judged by a polynomial-time algorithm is an \term{alternating} computation\index{alternation}, whose existential steps are one player's moves and whose universal steps are the other's, and \textcite{ChandraKozenStockmeyer1981} proved that alternating polynomial time is polynomial space; splitting a computation at a guessed midpoint goes back to \textcite{Savitch1970}. Interactive proofs with two competing provers were introduced by \textcite{FeigeShamirTennenholtz1988}, as \textcite{KolRaz2014} credit them, and \textcite{CondonEtAl1995} studied \emph{debate systems}, asking how few bits of a debate a verifier must read.\sidenote{\Textcite{CondonEtAl1995} open with two political candidates who agree to a debate and a voter who can follow only a few bits of it; their answer is \cref{thm:debate:pcd}.} \Textcite{IrvingEtAl2018} cite none of this work. What they added is a new reading of the game, with experiments to test it: the judge is a person, the debaters are trained models, and the zero-sum game is a training objective. Can a judge who checks one step of an argument decide claims whose proofs are exponentially long, if it listens to two provers of which one is honest? And what must the honest one compute?
+
+\section{The protocol: a game the truth can win}\label{sec:debate:protocol}
+
+We use the model of \textcite[\S2.2]{IrvingEtAl2018}: the judge is a deterministic polynomial-time algorithm, the debaters have unlimited computation, and every statement, a bit string whose meaning the judge's rule fixes, is seen by both debaters and by the judge.
+
+\begin{definition}[Debate system]\label[definition]{def:debate:system}\index{debate system}
+A \term{debate system} consists of polynomials $k(n)$ and $w(n)$ and a deterministic polynomial-time algorithm $\V$, the \term{judge}\index{judge}, which on an input $x$ of length $n$ and a \emph{transcript} $\tau=(\alpha_1,\beta_1,\dots,\alpha_k,\beta_k)$ of $2k$ statements in $\bits^w$, with $k=k(n)$ and $w=w(n)$, outputs a winner $\V(x,\tau)\in\{\party{A},\party{B}\}$. The \emph{debate} on $x$ is the game in which the debaters $\party{A}$ and $\party{B}$ write $\alpha_1,\beta_1,\dots,\alpha_k,\beta_k$ in this order, each seeing all earlier statements, and the winner is $\V(x,\tau)$. A \emph{strategy} of $\party{A}$ maps each prefix $(\alpha_1,\beta_1,\dots,\alpha_{i-1},\beta_{i-1})$ to a statement $\alpha_i$, and a strategy of $\party{B}$ maps each prefix ending in $\alpha_i$ to a statement $\beta_i$; a strategy is \emph{winning} if its player wins whatever the other player does. The system \emph{decides} a language $L$ if for every input $x$, debater $\party{A}$ has a winning strategy when $x\in L$ and debater $\party{B}$ has one when $x\notin L$. We write $\debateclass$ for the class of languages decided by debate systems.
+\end{definition}
+
+\begin{protocol}{Debate}\label{prot:debate:main}
+\item[\act{V}] On an input $x$ of length $n$, fix $k=k(n)$ and $w=w(n)$. Debater $\party{A}$ argues that $x\in L$, debater $\party{B}$ that $x\notin L$.
+\phase{Round $i=1,\dots,k$}
+\item[\msg{A}{V}] Send a statement $\alpha_i\in\bits^w$, which $\party{B}$ also sees.
+\item[\msg{B}{V}] Send a statement $\beta_i\in\bits^w$, which $\party{A}$ also sees.
+\phase{Verdict}
+\item[\act{V}] Compute $\V(x,\alpha_1,\beta_1,\dots,\alpha_k,\beta_k)\in\{\party{A},\party{B}\}$; \acc{} if it is $\party{A}$, otherwise \rej.
+\end{protocol}
+
+The debate on $x$ is a finite two-player zero-sum game of perfect information, so by backward induction (\cref{thm:toolkit:backward}) exactly one debater has a winning strategy. We call that debater the \emph{true side}; in a system that decides $L$ it is $\party{A}$ exactly when $x\in L$. A debater is \emph{honest} if it plays a winning strategy of the true side.\index{winning strategy} What \textcite{IrvingEtAl2018} call optimal play is minimax play, and the minimax strategies of a side that can win are its winning strategies.\sidenote{\Textcite[note~1]{IrvingEtAl2018} speak of Nash equilibria rather than optimal play, because they also consider variants with simultaneous turns, and because a debater of limited capacity can make a game of perfect information behave like one of imperfect information.} In their game the agents first choose their answers; \cref{prop:debate:honesty} shows that choosing the true side is the only optimal choice.
+
+\paragraph{Debating a computation.} Let $\delta\colon\bits^w\to\bits^w$ be a \emph{step function}; we write $\delta$ for it as automata theory does, and in this chapter it is never a confidence level. A computation of $T\ge1$ steps starts from a configuration $\gamma_0$ that the judge computes from the input and passes through the configurations $\gamma_t=\delta^t(\gamma_0)$; the claim is that $\gamma_T$ lies in a set $G\subseteq\bits^w$ whose membership the judge can test. In the oversight box, $\gamma_t$ is the state of the simulation after $t$ steps, with a bit recording whether the interlock has tripped, and $G$ is the set of states in which it has not. Debater $\party{A}$ supports the claim with configurations $\gamma'_t$ that it says are the $\gamma_t$, and the debate narrows down an interval $[i,j]$ of steps until a single step remains.\index{bisection debate}
+
+\begin{protocol}{Bisection debate}\label{prot:debate:bisection}
+\item[\msg{A}{V}] Send $\gamma'_T\in\bits^w$, the claimed configuration after $T$ steps.
+\item[\act{V}] If $\gamma'_T\notin G$, declare $\party{B}$ the winner. Otherwise compute $\gamma'_0=\gamma_0$ from $x$ and set $(i,j)=(0,T)$.
+\phase{Round, while $j-i\ge2$}
+\item[\msg{A}{V}] Send $\gamma'_m\in\bits^w$, the claimed configuration at the midpoint $m=\lfloor(i+j)/2\rfloor$.
+\item[\msg{B}{V}] Send one bit, \debateL{} or \debateR.
+\item[\act{V}] After \debateL, set $j=m$; after \debateR, set $i=m$.
+\phase{Verdict}
+\item[\act{V}] Read $\gamma'_i$ and $\gamma'_j$. Declare $\party{A}$ the winner if $\delta(\gamma'_i)=\gamma'_j$, and $\party{B}$ otherwise.
+\end{protocol}
+
+The honest $\party{A}$ sends the true configurations, $\gamma'_T=\gamma_T$ and $\gamma'_m=\gamma_m$. The honest $\party{B}$ computes $\delta^{m-i}(\gamma'_i)$ and answers \debateL{} if the result differs from $\gamma'_m$, \debateR{} otherwise.\sidenote{\Textcite{IrvingEtAl2018} sketch this protocol for simulations, and a variant for counting primes (\cref{ex:debate:count}); \textcite{BrownCohenEtAl2024} remark that the idea ``has been used in many classical PSPACE-completeness results''.} Padding $\party{B}$'s bit and adding rounds that the judge ignores make \cref{prot:debate:bisection} a debate system; padding fits every protocol with statements of different lengths, or a varying number of rounds, to \cref{def:debate:system}.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}c c c r r c@{}}
+\toprule
+round & $[i,j]$ & $m$ & $\party{A}$: $\gamma'_m$ & $\party{B}$: $\delta^{m-i}(\gamma'_i)$ & $\party{B}$\\
+\midrule
+$1$ & $[0,16]$ & $8$ & $142$ & $\delta^8(27)=142$ & \debateR\\
+$2$ & $[8,16]$ & $12$ & $53$ & $\delta^4(142)=322$ & \debateL\\
+$3$ & $[8,12]$ & $10$ & $214$ & $\delta^2(142)=214$ & \debateR\\
+$4$ & $[10,12]$ & $11$ & $106$ & $\delta(214)=107$ & \debateL\\
+\midrule
+verdict & $[10,11]$ & & & $\delta(214)=107\ne106$ & $\party{B}$ wins\\
+\bottomrule
+\end{tabular}
+\caption{A run of \cref{prot:debate:bisection} on $16$ steps of the Collatz map from $27$, against a liar who claims $\gamma'_{16}=20<100$ and errs only at step $11$. The judge reads the claimed $20$, the four bits of $\party{B}$ and the two configurations $214$ and $106$, and computes one step of the map; the honest $\party{B}$ simulates $8+4+2+1=15$ steps.}\label{tab:debate:run}
+\end{table}
+
+\paragraph{A worked run.} Let the configurations be positive integers and $\delta$ the Collatz map, $\delta(\gamma)=\gamma/2$ for even $\gamma$ and $3\gamma+1$ for odd $\gamma$; let $\gamma_0=27$, $T=16$, and let $G$ be the set of integers below $100$. The true run is
+\[27,\ 82,\ 41,\ 124,\ 62,\ 31,\ 94,\ 47,\ 142,\ 71,\ 214,\ 107,\ 322,\ 161,\ 484,\ 242,\ 121,\]
+so the claim $\gamma_{16}\in G$ is false. A liar who wants to defend it makes one slip at step $11$, writing $106$ for $\delta(214)=107$, and continues correctly with $53,160,80,40,20$. Its final configuration $20$ lies in $G$, and the run it reports is consistent at every step but one. \Cref{tab:debate:run} shows how the honest $\party{B}$ finds that step.
+
+Against the true claim, $\gamma_{16}\ge100$, the honest $\party{A}$ would send the true midpoints, $142$ and then $62$ or $322$, and every half that $\party{B}$ chose would end at a correct step.
+
+\begin{dictionary}
+debaters $\party{A}$ and $\party{B}$ & two models, or two copies of one model, assigned opposite answers and rewarded for winning\\
+the judge $\V$, a polynomial-time algorithm & the overseer: a person, a weaker model, or a fixed procedure\\
+a statement $\alpha_i$ or $\beta_i$ & a claim, objection or quotation short enough to read\\
+a winning strategy of the true side & an argument every challenged step of which survives\\
+optimal play & debaters strong enough to find the best argument and the best objection\\
+$\party{B}$'s choice of a half & the objection ``your error is in this part''\\
+the final check $\delta(\gamma'_i)=\gamma'_j$ & the one step the overseer verifies itself\\
+$\cc{PSPACE}$ & the questions that an adversarial argument of polynomial depth can settle
+\end{dictionary}
+
+What one had to notice is that the adversary does the searching. An argument of exponentially many steps cannot be read, but if it is arranged as a tree of polynomial depth and the opponent chooses the branch, the judge examines one path, and the opponent's interest makes it informative: if there is a flaw, the opponent leads the judge to it.
+
+\section{The theory: debate decides polynomial space}\label{sec:debate:pspace}
+
+Which claims can a polynomial-time judge decide by listening to two unbounded debaters? The answer is the claims decidable in polynomial space. A \term{quantified Boolean formula}\index{quantified Boolean formula} $Q_1y_1\cdots Q_\ell y_\ell\,\varphi$, with each $Q_t\in\{\forall,\exists\}$ and $\varphi$ a Boolean formula in $y_1,\dots,y_\ell$, is true or false, and TQBF is the language of true ones (\cref{def:toolkit:classes}).
+
+The name $\debateclass$ for the class is that of \textcite{IrvingEtAl2018}.\sidenote{\Textcite{CondonEtAl1995} write $\cc{PCD}(r(n),q(n))$ for the languages with probabilistically checkable debates in which the judge flips $O(r(n))$ coins and reads $O(q(n))$ bits; \cref{thm:debate:pcd} is $\cc{PCD}(\log n,1)=\cc{PSPACE}$.}
+
+\begin{theorem}[Debate decides exactly $\cc{PSPACE}$]\label{thm:debate:pspace}
+A language is decided by a debate system if and only if it is in $\cc{PSPACE}$: $\debateclass=\cc{PSPACE}$. More precisely:
+\begin{enumerate}
+\item \textup{\parencite{IrvingEtAl2018}} Every $L\in\cc{PSPACE}$ is decided by a debate system with statements of one bit.
+\item \textup{\parencite{ChandraKozenStockmeyer1981}} If a debate system with $k(n)$ rounds and statements of $w(n)$ bits decides $L$, then $L$ is decided in space $O(k(n)(w(n)+1))$ plus the space the judge uses on one transcript.
+\item For every constant $i\ge1$, a language is decided by a debate system whose judge reads only the first $i$ statements if and only if it is in $\Sigma_i^p$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to read a quantified formula as a debate for (i), to evaluate the tree of the debate depth first for (ii), and to compare that evaluation with the definition of $\Sigma_i^p$ for (iii). All three use the labels of backward induction (\cref{thm:toolkit:backward}): a complete transcript $\tau$ is a win for $\party{A}$ if $\V(x,\tau)=\party{A}$, a prefix whose next statement is $\party{A}$'s is a win for $\party{A}$ if some continuation by one statement is, and a prefix whose next statement is $\party{B}$'s is one if every continuation is; the player named by the label of the empty prefix has a winning strategy.
+
+For (i), let $L\in\cc{PSPACE}$. Since TQBF is $\cc{PSPACE}$-complete \parencite{StockmeyerMeyer1973}, a polynomial-time map sends each $x$ to a quantified Boolean formula that is true if and only if $x\in L$. Replace each existentially quantified $y$ by $\exists y\,\forall z$ and each universally quantified $y$ by $\exists z\,\forall y$, with a new variable $z$ each time, which the inner formula does not mention; this does not change the truth value, and gives a formula $\exists y_1\,\forall y_2\cdots\exists y_{2k-1}\,\forall y_{2k}\,\varphi_x$ with alternating quantifiers, padded with dummy pairs to $k=k(n)$ pairs. Let the debate have $k$ rounds of one-bit statements, $\alpha_r$ the value of $y_{2r-1}$ and $\beta_r$ that of $y_{2r}$, and let $\V(x,\tau)=\party{A}$ if and only if $\varphi_x$ holds at the assignment $\tau$, which the judge checks in polynomial time. By induction on the number of statements still to come, a prefix is a win for $\party{A}$ if and only if the formula with the variables already set fixed is true. For a complete transcript this is the definition of $\V$. At an existential variable the prefix is a win for $\party{A}$ if and only if some value gives a win, that is, by induction, a true formula, which is the meaning of $\exists$; at a universal one, if and only if both values do, which is the meaning of $\forall$. At the empty prefix, $\party{A}$ has a winning strategy if and only if $x\in L$, and otherwise $\party{B}$ has one.
+
+For (ii), the tree of the debate has depth $2k(n)$, each internal node has $2^{w(n)}$ children, and the label $\V(x,\tau)$ of a leaf is computed in polynomial time, hence in polynomial space. \Cref{thm:toolkit:backward} computes the label of the root in space $O(k(n)(w(n)+1))$ plus that of one run of $\V$; its stack holds, at each level, the statement being examined, and these statements form the transcript that $\V$ reads at a leaf.
+
+For (iii), if the judge reads only the first $i$ statements $s_1,\dots,s_i$, then the later statements do not affect the labels, and the induction of (i) shows that $\party{A}$ has a winning strategy if and only if $\exists s_1\,\forall s_2\cdots Q_is_i\colon\V(x,s_1,\dots,s_i)=\party{A}$, with alternating quantifiers over $\bits^{w(n)}$. This defines a language in $\Sigma_i^p$ (\cref{def:toolkit:classes}). Conversely, a language $\{x:\exists s_1\,\forall s_2\cdots Q_is_i\;R(x,s_1,\dots,s_i)\}$ in $\Sigma_i^p$, with the strings padded to a common length, is decided by the judge that declares $\party{A}$ the winner if and only if $R$ accepts the first $i$ statements.
+\end{proof}
+
+Part (i) is the theorem of \textcite{IrvingEtAl2018}, with their proof. Part (ii) is the inclusion of alternating time in deterministic space of \textcite[Theorem~3.2]{ChandraKozenStockmeyer1981}, proved by the same evaluation in postorder; with (i) it gives their characterization of $\cc{PSPACE}$ as alternating polynomial time \parencite[Corollary~3.6]{ChandraKozenStockmeyer1981}. Irving et al.\ title their section ``DEBATE = PSPACE'' but argue only (i). Part (iii) makes their Table~1 precise.
+
+\begin{proposition}[The truthful answer is the only equilibrium answer]\label[proposition]{prop:debate:honesty}
+Let a debate system decide $L$. In the \emph{answer game} on $x$, an \emph{opener} first states an answer, ``$x\in L$'' or ``$x\notin L$''; then the debate on $x$ is played with the opener in the role that argues for its answer ($\party{A}$ for ``$x\in L$'') and a \emph{respondent} in the other role; the winner receives $1$ and the loser $-1$.
+\begin{enumerate}
+\item The opener has a winning strategy, which states the true answer; the value of the answer game is $1$.
+\item Let $\eta\ge0$. If a mixed strategy of the opener wins with probability at least $1-\eta$ against every strategy of the respondent, then it states the false answer with probability at most $\eta$. The same holds when $x$ is drawn from a distribution $\cD$, with probabilities over $x$ and the opener's coins, against every respondent whose strategy may depend on $x$.
+\item In every Nash equilibrium of the answer game in mixed strategies, the opener states the true answer and wins with probability $1$, and every strategy of the respondent is a best response to the opener's equilibrium strategy.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to let the respondent punish a false answer with the true side's winning strategy. For (i), if $x\in L$, then $\party{A}$ has a winning strategy because the system decides $L$, and an opener that says ``$x\in L$'' and plays it wins against every respondent; the case $x\notin L$ is symmetric. So the opener can guarantee the largest payoff, and the value is $1$.
+
+For (ii), fix the opener's mixed strategy and let $\pi$ be the probability that it states the false answer. Let the respondent, after a false answer, play a winning strategy of the true side, which is then its own role, and after a true answer play arbitrarily. Against this respondent the opener loses whenever it states the false answer, so it wins with probability at most $1-\pi$; by hypothesis this is at least $1-\eta$, so $\pi\le\eta$. For $x$ drawn from $\cD$, this respondent, defined input by input, gives the bound for $\pi$ averaged over $x$.
+
+For (iii), the answer game is a finite two-player zero-sum game, so by \cref{thm:toolkit:minimax} every Nash equilibrium attains its value: the opener's equilibrium strategy guarantees the payoff $1$ against every strategy of the respondent, so it wins with probability $1$ against each. By (ii) with $\eta=0$, it states the true answer with probability $1$. Against it the respondent receives $-1$ whatever it does, so every strategy is a best response.
+\end{proof}
+
+The proposition makes precise the hope of \textcite{IrvingEtAl2018} that optimal play is honest, and its limit: it pins down the opener's answer but not the respondent's play, whereas the authors hoped that in all Nash equilibria both agents would try to tell the truth. Part (ii) is the form a guarantee from training must take, as in the debate safety case of \textcite{BuhlEtAl2025}; near-optimality only against respondents that training produced gives no such bound. And someone must compute the winning strategy.
+
+\begin{proposition}[The price of honesty]\label[proposition]{prop:debate:price}\index{honest prover!cost}
+Let a debate system with $k(n)$ rounds decide $L$, and let $H$ be an algorithm that, given $x$, a role ($\party{A}$ or $\party{B}$) and the statements so far, outputs the next statement of that role in time $t(n)$.
+\begin{enumerate}
+\item If $H$ wins every debate in which it plays the true side, against every opponent, then $L$ is decided in time $O(k(n)\,t(n))$ plus the time of one run of the judge.
+\item If $H$ is probabilistic, runs in polynomial time, and, playing the true side, wins with probability at least $2/3$ over its coins against every opponent, then $L\in\cc{BPP}$.
+\end{enumerate}
+Consequently, if $L$ is $\cc{PSPACE}$-complete and $\cc{P}\ne\cc{PSPACE}$, then for every debate system deciding $L$ and every polynomial-time $H$ there are an input and an opponent that beat $H$ while it plays the true side; if $H$ is probabilistic, then unless $\cc{PSPACE}=\cc{BPP}$ the opponent wins with probability more than $1/3$.
+\end{proposition}
+
+\begin{proof}
+The plan is to let $H$ debate itself. For (i), on input $x$ run $H$ in the role of $\party{A}$ against $H$ in the role of $\party{B}$ and output the judge's verdict. When $x\in L$, the copy playing $\party{A}$ plays the true side, so it wins against every opponent, in particular against the other copy, and the judge declares $\party{A}$; when $x\notin L$, the copy playing $\party{B}$ wins in the same way. The algorithm makes $2k(n)$ calls to $H$ and one run of the judge. For (ii), the copy that plays the true side wins with probability at least $2/3$ against every deterministic opponent, hence also against the other copy, whose coins are independent of its own and which is therefore a mixture of deterministic opponents; the algorithm errs with probability at most $1/3$, which puts $L$ in $\cc{BPP}$, the class of languages decided in probabilistic polynomial time with error at most $1/3$ (\cref{def:toolkit:classes}). For the consequence, a polynomial-time $H$ as in (i) or (ii) would put the $\cc{PSPACE}$-complete $L$ in $\cc{P}$ or $\cc{BPP}$, both closed under polynomial-time reductions.
+\end{proof}
+
+As in \cref{prop:sumcheck:price}, debate amplifies the judge, not the debaters.
+
+\section{The theory: bisection, and judges that read less}\label{sec:debate:bisection}
+
+The bisection debate's judge reads a constant number of configurations and checks one step, and each of its honest debaters does at most twice the work of running the computation. For $0\le i<j$ and configurations $\gamma,\gamma'\in\bits^w$, write $[i,j:\gamma\to\gamma']$ for the claim that $\delta^{j-i}(\gamma)=\gamma'$, whose truth depends on $i$ and $j$ only through $j-i$.
+
+\begin{lemma}[Splitting a claim]\label[lemma]{lem:debate:split}
+Let $0\le i<m<j$ and $\gamma,\mu,\gamma'\in\bits^w$.
+\begin{enumerate}
+\item If $[i,m:\gamma\to\mu]$ and $[m,j:\mu\to\gamma']$ are true, then $[i,j:\gamma\to\gamma']$ is true.
+\item If $[i,j:\gamma\to\gamma']$ is true and $\mu=\delta^{m-i}(\gamma)$, then $[i,m:\gamma\to\mu]$ and $[m,j:\mu\to\gamma']$ are true.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+Both parts follow from $\delta^{j-i}=\delta^{j-m}\circ\delta^{m-i}$. In (i), $\delta^{j-i}(\gamma)=\delta^{j-m}(\delta^{m-i}(\gamma))=\delta^{j-m}(\mu)=\gamma'$. In (ii), the first claim is the definition of $\mu$, and the second is $\delta^{j-m}(\mu)=\delta^{j-i}(\gamma)=\gamma'$.
+\end{proof}
+
+\begin{theorem}[The bisection debate]\label{thm:debate:bisection}
+Let $\delta\colon\bits^w\to\bits^w$, $G\subseteq\bits^w$ and $T\ge1$, and run \cref{prot:debate:bisection} on the claim $\gamma_T=\delta^T(\gamma_0)\in G$.
+\begin{enumerate}
+\item \emph{Completeness.} If $\gamma_T\in G$, then the honest $\party{A}$, which sends $\gamma'_T=\gamma_T$ and the true midpoints $\gamma'_m=\gamma_m$, wins against every strategy of $\party{B}$.
+\item \emph{Soundness.} If $\gamma_T\notin G$, then the honest $\party{B}$, which answers \debateL{} exactly when $\delta^{m-i}(\gamma'_i)\ne\gamma'_m$, wins against every strategy of $\party{A}$.
+\item \emph{Costs.} The debate has at most $\lceil\log_2T\rceil$ rounds. The judge reads $\party{B}$'s bits and at most three configurations, at most $3w+\lceil\log_2T\rceil$ bits in all; it computes $\gamma_0$, tests membership in $G$ once, evaluates $\delta$ once, and updates $i$ or $j$ once per round. The honest $\party{A}$ evaluates $\delta$ at most $2T-1$ times and the honest $\party{B}$ at most $T-1$ times, each storing two configurations and the indices $i$, $j$, $m$; both bounds are attained when $T$ is a power of $2$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to follow the \emph{current claim} $[i,j:\gamma'_i\to\gamma'_j]$, with $\gamma'_0=\gamma_0$, and to show that the honest $\party{A}$ keeps it true and the honest $\party{B}$ keeps it false until a single step remains, which the judge checks. A round starts with $j-i\ge2$, so the midpoint satisfies $i<m<j$, and both halves are nonempty and shorter than $[i,j]$. The length $j-i$ therefore decreases in every round, and the debate ends, at once if $T=1$, with $j=i+1$, when the current claim is $\delta(\gamma'_i)=\gamma'_j$, exactly the judge's final test.
+
+For (i), the honest $\party{A}$'s first configuration $\gamma_T$ lies in $G$, so the debate proceeds, and the first claim $[0,T:\gamma_0\to\gamma_T]$ is true. All configurations that the honest $\party{A}$ sends are true, so its left endpoint is always $\gamma'_i=\gamma_i$ and its midpoint is $\gamma_m=\delta^{m-i}(\gamma'_i)$. If the current claim is true, then both halves are true by \cref{lem:debate:split}(ii), and whichever half $\party{B}$ chooses, the next claim is true. At the end the true claim passes the judge's test.
+
+For (ii), if $\gamma'_T\notin G$, then $\party{B}$ wins at once. Otherwise $\gamma'_T\ne\gamma_T$, because $\gamma_T\notin G$, and the first claim is false. If the current claim is false, then for every midpoint $\gamma'_m$ that $\party{A}$ sends at least one half is false, by \cref{lem:debate:split}(i). The honest $\party{B}$ answers \debateL{} when the left half is false; otherwise the left half is true, so the right half is false, and it answers \debateR. So the next claim is false, and at the end the false claim fails the judge's test.
+
+For (iii), let $L_r$ be the length $j-i$ before round $r+1$, so $L_0=T$. The two halves have lengths $\lfloor L_r/2\rfloor$ and $\lceil L_r/2\rceil$, so $L_{r+1}\le\lceil L_r/2\rceil$, and induction with $\lceil\lceil a/2^r\rceil/2\rceil=\lceil a/2^{r+1}\rceil$ gives $L_r\le\lceil T/2^r\rceil$; for $r=\lceil\log_2T\rceil$ the right side is $1$, so there are at most $\lceil\log_2T\rceil$ rounds. The judge reads $\gamma'_T$, one bit of $\party{B}$ per round, and at the end the endpoints $\gamma'_i$ and $\gamma'_j$, of which $\gamma'_0$ is its own and $\gamma'_T$ already read; this is at most $3w+\lceil\log_2T\rceil$ bits. The honest $\party{A}$ computes $\gamma_T$ with $T$ evaluations of $\delta$, and in each round it computes $\gamma_m$ from its current left endpoint, which is $\gamma_0$ or a midpoint it sent, with $m-i=\lfloor L_r/2\rfloor$ evaluations; the honest $\party{B}$ makes the same $\lfloor L_r/2\rfloor$ evaluations in each round. Since $L_{r+1}$ is either $\lfloor L_r/2\rfloor$ or $\lceil L_r/2\rceil=L_r-\lfloor L_r/2\rfloor$, in both cases $\lfloor L_r/2\rfloor\le L_r-L_{r+1}$, and summing over the rounds,
+\[\sum_r\Bigl\lfloor\frac{L_r}2\Bigr\rfloor\le L_0-L_{\mathrm{end}}=T-1.\]
+So $\party{A}$ makes at most $T+(T-1)=2T-1$ evaluations and $\party{B}$ at most $T-1$. If $T$ is a power of $2$, then every $L_r$ is a power of $2$, so $\lfloor L_r/2\rfloor=L_r-L_{r+1}$ and both bounds hold with equality.
+\end{proof}
+
+Determinism enters only through the honest debaters' simulations: \cref{lem:debate:split}(i) holds for a step relation too, with $\delta^{j-i}(\gamma)=\gamma'$ read as reachability in $j-i$ steps. If the step is a relation, as for a nondeterministic machine, then the same debate decides whether some run of $T$ steps ends in $G$, which yields Savitch's theorem (\cref{ex:debate:savitch}), but the honest $\party{A}$ must then find an accepting run and the honest $\party{B}$ must decide reachability. For a randomized simulation the debate answers the wrong question, since a liar who chooses the noise can make every step plausible \parencite[\S5.9]{IrvingEtAl2018}, unless the seed is fixed in advance (\cref{ex:debate:stochastic}). The bisection is the proof of \textcite[Theorem~3.1]{ChandraKozenStockmeyer1981}, whose alternating machine guesses a middle configuration and checks both halves universally. The honest debaters run the computation, exponential in $n$ for a polynomial-space machine, as \cref{prop:debate:price} requires; the judge uses $\delta$ only as a black box.\index{relativization}
+
+\begin{corollary}[Debate decides polynomial space relative to every oracle]\label[corollary]{cor:debate:oracle}
+Let $\cO$ be an oracle, and let $L$ be decided by a deterministic oracle machine $M^{\cO}$ that uses space $s(n)\ge\log n$, its query tape included (\cref{sec:toolkit:machines}). Then $L$ is decided by a bisection debate with $O(s(n))$ rounds and statements of $O(s(n))$ bits, whose judge runs in time polynomial in $n$ and $s(n)$ and asks $\cO$ at most one question. Consequently $\debateclass^{\cO}=\cc{PSPACE}^{\cO}$ for every oracle $\cO$, where $\debateclass^{\cO}$ allows the judge to query $\cO$.
+\end{corollary}
+
+\begin{proof}
+The plan is to apply \cref{thm:debate:bisection} to the configurations of $M^{\cO}$. A configuration on inputs of length $n$ (the state, the head positions, and the contents of the work and query tapes, but not the input, which the judge knows) is encoded in $w=c\,s(n)$ bits for a constant $c$ that depends on $M$; the input head's position needs $\lceil\log_2n\rceil\le s(n)$ bits. Let $\delta$ map a configuration to its successor, asking $\cO$ one question in the query state, and map every halting configuration, and every string that encodes no configuration, to itself; let $\gamma_0$ be the initial configuration on $x$ and $G$ the set of accepting halting configurations. A deterministic machine that halts never repeats a configuration, since otherwise it would cycle forever, so $M^{\cO}$ halts within $2^w$ steps, and with $T=2^w$, $\delta^T(\gamma_0)\in G$ if and only if $M^{\cO}$ accepts $x$. \Cref{thm:debate:bisection} gives a debate with at most $w=O(s(n))$ rounds, whose judge computes $\gamma_0$, tests membership in $G$ once, evaluates $\delta$ once with at most one oracle query, and handles indices of $w$ bits, in time polynomial in $n$ and $s(n)$. With $s$ a polynomial this shows $\cc{PSPACE}^{\cO}\subseteq\debateclass^{\cO}$. Conversely, the recursion in the proof of \cref{thm:debate:pspace}(ii) runs unchanged on an oracle machine that answers the judge's queries with its own, which have polynomial length because the judge runs in polynomial time; so $\debateclass^{\cO}\subseteq\cc{PSPACE}^{\cO}$.
+\end{proof}
+
+A human judgment enters a protocol as an oracle: the judge can ask a person a short question, but cannot see the person as a formula. \Textcite{IrvingMarshall2025} propose, as a heuristic, that an interactive-proof result is relevant to oversight by humans only if it relativizes, and observe that debate does. Interactive proofs with one prover do not: relative to some oracle \parencite{FortnowSipser1988}, $\cc{coNP}$, the class of complements of languages in $\cc{NP}$, is not contained in $\cc{IP}$, the class of languages with interactive proofs (\cref{def:toolkit:ip}), because arithmetization needs a low-degree polynomial (\cref{ch:sumcheck}). With a judge that can only query, a second prover does the work that arithmetization did for one. Doubly-efficient debate \parencite{BrownCohenEtAl2024}, the subject of \cref{ch:efficientdebate}, makes the judge's check a query to a human oracle and asks that the honest debater be efficient too (\cref{thm:efficientdebate:main}).
+
+\paragraph{Reading a constant number of bits.} The bisection judge reads $O(w+\log T)$ bits of the debate. A judge that flips coins can read fewer.
+
+\begin{theorem}[Probabilistically checkable debates; \textcite{CondonEtAl1995}]\label{thm:debate:pcd}\index{probabilistically checkable debate}
+A language $L$ is in $\cc{PSPACE}$ if and only if it has a \emph{probabilistically checkable debate system}: two deterministic debaters write a debate of polynomial length, after which a polynomial-time judge that knows $x$ flips $O(\log n)$ coins and reads $O(1)$ bits of the debate, at positions determined by $x$ and its coins, such that for a constant $s<1$, if $x\in L$, then $\party{A}$ has a strategy under which, against every strategy of $\party{B}$, the judge accepts for every outcome of its coins, and if $x\notin L$, then $\party{B}$ has a strategy under which, against every strategy of $\party{A}$, the judge accepts with probability at most $s$ over its coins.
+\end{theorem}
+
+\begin{proofsketch}
+The easy direction is the recursion of \cref{thm:debate:pspace}(ii) with each leaf labeled by the fraction of the judge's polynomially many coin outcomes that accept; the root's value is $1$ if $x\in L$ and at most $s$ otherwise. The hard direction, which we do not prove, has two steps \parencite[\S3, Theorems~3 and~2]{CondonEtAl1995}. First, the debate about a quantified formula is restructured so that in every round a player restates the part of its strategy that answers all challenges so far; the last two rounds and a random consecutive pair then expose a liar with constant probability. Second, the rounds are written in an error-correcting code, and the player claiming $x\in L$ appends, for each outcome of the judge's coins, a probabilistically checkable proof (\cref{thm:spotchecks:pcp}) that the judge would accept the rounds it reads or that the opponent encoded one of them badly; reading a round becomes reading $O(1)$ of its bits.
+\end{proofsketch}
+
+This judge still reads the whole input. \Textcite{BrownCohenEtAl2026Query}, in a preprint, count every bit a deterministic judge reads, of the input and of a debate of unbounded length: the \term{debate query complexity}\index{debate query complexity} of a Boolean function on $n$ bits. It is at least $\log_2n$ for a function that depends on all its inputs (their Corollary~4), at most $\lceil\log_2S\rceil+3$ for a circuit of size $S$ with gates of fan-in two, where one debater writes the value of every gate and the other points to a wrong one (their Theorem~6, for $S$ a power of $2$), and $O(\log n)$ exactly for $\cc{PSPACE}/\mathrm{poly}$, polynomial space with polynomial-length advice (their Theorem~9).
+
+\paragraph{Imperfect information.} If the referee exchanges private messages with the debaters, the class changes.\index{refereed game} With players who remember what they have seen, polynomially many rounds capture exactly $\cc{EXP}$, exponential time \parencite{KollerMegiddo1992,FeigenbaumKollerShor1995,FeigeKilian1997}, and one round exactly $\cc{PSPACE}$ \parencite{FeigeKilian1997}; if the player who claims $x\in L$ forgets earlier rounds and its opponent does not, the class is $\cc{NEXP}$, nondeterministic exponential time \parencite{FeigenbaumKollerShor1995}. We rely on the abstracts, the survey of \textcite{Feigenbaum1998} and the account of \textcite{KolRaz2014}. A forgetful player resembles a debater questioned by copies that cannot see its earlier answers, which is how cross-examination reaches $\cc{NEXP}$ (\cref{ch:crossexam}).\sidenote{Cross-examination, with the claim that it raises debate from $\cc{PSPACE}$ to $\cc{NEXP}$, was introduced by \textcite{BarnesChristiano2020}, whose proof is in a linked document that is not public; it is not in \textcite{IrvingEtAl2018}.}
+
+\paragraph{Training toward equilibrium.} \Cref{prop:debate:honesty} turns approximate optimality into rare lies, and in a zero-sum game players whose average regret stays below $\eta$ play a $2\eta$-approximate equilibrium on average (\cref{ex:debate:regret}). \Textcite{ChenEtAl2023}, in a preprint, minimize regret in games with very many actions accessed through best-response oracles, which model calls to an AI agent, with regret logarithmic in the number of actions, and report small experiments with debate. Whether self-play training of language models reaches an approximate equilibrium of a debate game is not known; \textcite[\S5.6]{IrvingEtAl2018} know of no theory saying that it should.\sidenote{They sketch a bad cycle: both agents learn to be honest, forget how to point out lies, and one of them returns to lying and wins for a while \parencite[\S5.6]{IrvingEtAl2018}.}
+
+\section{Running the protocol}\label{sec:debate:running}
+
+The script \texttt{07-debate-trees.py} plays the debate of \cref{thm:debate:pspace} on random game trees of depth $D=12$: $\party{A}$ and $\party{B}$ alternate one-bit statements, $\party{A}$ first, and the judge reads the leaf they reach, $1$ if $\party{A}$ wins. Leaves are independent and equal to $1$ with probability $p=0.6090$, so that $\party{A}$ has a winning strategy on half of the trees; that side is honest and the other lies. A debater with lookahead $h$ plays a winning move, when there is one, once at most $h$ moves remain, and uniformly at random before that: depth-limited minimax with an evaluation that knows only the prior. For each $h=0,\dots,12$ three pairings are run on $4{,}000$ fresh trees each: the honest debater sees all moves and the liar $h$; both see $h$; the honest debater sees $h$ and the liar all. The exact accuracies follow from a recursion over independent subtrees (\cref{ex:debate:exact}).
+
+The script \texttt{07-debate-bisection.py} runs \cref{prot:debate:bisection} for $T=2^2,\dots,2^{12}$ steps of a nonlinear bijection $\delta$ of $64$-bit words (shifts combined by exclusive or, then a multiplication by an odd constant), on the claim that the top bit of $\gamma_T$ is a given bit. The honest $\party{A}$ debates a $\party{B}$ that chooses halves at random, $200$ times per $T$. The one-step liar claims the false bit: it draws a step $u$ uniformly, adds a random nonzero word to $\delta(\gamma_{u-1})$ bitwise modulo $2$, runs $\delta$ from there, and redraws the word until its final bit is the false one; it debates the honest $\party{B}$, $2{,}000$ times per $T$. As a baseline without debate, a judge checks $k=1$ or $k=4$ uniform steps of the liar's whole run, $200{,}000$ times per $T$, catching it with probability exactly $\min(1,k/T)$ (\cref{ex:debate:spot}).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},vplot,
+    width=0.5\linewidth,height=0.29\linewidth,legend style={font=\scriptsize}]
+\nextgroupplot[xlabel={lookahead $h$ (moves)},ylabel={judge's accuracy},
+    xmin=-0.6,xmax=12.6,ymin=0,ymax=1.1,xtick={0,2,4,6,8,10,12},
+    title={(a) random game trees, $D=12$},legend style={at={(0.03,0.9)},anchor=north west}]
+\addplot[bound,forget plot] table[x=h,y=strong]{figures/data/07-debate-trees-theory.dat};
+\addplot[theory2,forget plot] table[x=h,y=both]{figures/data/07-debate-trees-theory.dat};
+\addplot[theory,forget plot] table[x=h,y=weak]{figures/data/07-debate-trees-theory.dat};
+\addplot[honest,ebars] table[x=h,y=strong,y error plus=strongep,y error minus=strongem]{figures/data/07-debate-trees.dat};
+\addplot[cheat2,ebars] table[x=h,y=both,y error plus=bothep,y error minus=bothem]{figures/data/07-debate-trees.dat};
+\addplot[cheat,ebars] table[x=h,y=weak,y error plus=weakep,y error minus=weakem]{figures/data/07-debate-trees.dat};
+\legend{honest sees all; liar $h$,both see $h$,honest sees $h$; liar all}
+\nextgroupplot[xmode=log,ymode=log,log basis x=2,xlabel={length $T$ of the computation},
+    ylabel={probability the lie is caught},xmin=3,xmax=5500,ymin=1e-4,ymax=3,ytick={1e-4,1e-3,1e-2,1e-1,1},
+    title={(b) bisection debate and spot checks},legend style={at={(0.02,0.03)},anchor=south west}]
+\addplot[bound,forget plot] table[x=T,y=debate]{figures/data/07-debate-bisection-theory.dat};
+\addplot[theory,forget plot] table[x=T,y=spot4]{figures/data/07-debate-bisection-theory.dat};
+\addplot[theory2,forget plot] table[x=T,y=spot1]{figures/data/07-debate-bisection-theory.dat};
+\addplot[honest,ebars] table[x=T,y=debate,y error plus=debateep,y error minus=debateem]{figures/data/07-debate-bisection.dat};
+\addplot[cheat,ebars] table[x=T,y=spot4,y error plus=spot4ep,y error minus=spot4em]{figures/data/07-debate-bisection.dat};
+\addplot[cheat2,ebars] table[x=T,y=spot1,y error plus=spot1ep,y error minus=spot1em]{figures/data/07-debate-bisection.dat};
+\legend{bisection debate,$4$ spot checks,$1$ spot check}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Debates run against the theory. (a) The fraction of debates won by the true side on random game trees of depth $12$, for debaters of lookahead $h$; each point is $4{,}000$ fresh trees (script \texttt{07-debate-trees.py}, seeds $7$ and $707$). Dashed: \cref{thm:debate:pspace}, the honest debater who sees the whole game always wins; solid indigo and dashed teal: exact accuracies when the liar sees all moves and when both see $h$ (\cref{ex:debate:exact}). (b) The probability that a lie at one uniformly random step of a run of length $T$ is caught: by the honest $\party{B}$ in \cref{prot:debate:bisection} ($2{,}000$ debates per $T$; dashed: \cref{thm:debate:bisection}), and by a judge that checks $4$ or $1$ uniformly random steps of the whole claimed run ($200{,}000$ trials per $T$; lines: $\min(1,k/T)$). Script \texttt{07-debate-bisection.py}, seed $77$. All intervals are Clopper--Pearson $95\%$ intervals.}\label{fig:debate:runs}
+\end{figure}
+
+The honest debater who sees the whole game won all $52{,}000$ of its debates in \cref{fig:debate:runs}(a), whatever the liar's lookahead, as \cref{thm:debate:pspace} requires. When the liar sees further, the judge, who reads only the leaf, sides with whoever out-computes the other: against a liar who sees all $12$ moves, an honest debater with lookahead $8$ won $38.8\%$ of the debates (exact $38.2\%$), and a blind one $5.6\%$ (exact $5.57\%$), far worse than a coin flip, because the liar converts every random mistake of the honest debater into a win. When both see $h$ moves, the accuracy rises from $50.0\%$ at $h=0$ to $68.3\%$ at $h=10$ (exact $50.2\%$ and $69.0\%$); the curves depend only on the number $12-h$ of moves played blind (\cref{ex:debate:exact}). Of the $24$ intervals whose exact value lies strictly between $0$ and $1$, $23$ contain it; the exception, both debaters with lookahead $11$, lies $2.0$ standard errors above its exact value $\frac32-\frac1{\sqrt2}\approx0.7929$.
+
+In \cref{fig:debate:runs}(b) the honest $\party{A}$ won all $2{,}200$ of its debates, and the honest $\party{B}$ caught the one-step liar in all $22{,}000$, reading at most $3\cdot64+\log_2T$ bits, from $194$ to $204$, and making exactly $T-1$ evaluations of $\delta$ in each debate, while the honest $\party{A}$ made exactly $2T-1$: the bounds of \cref{thm:debate:bisection}. The spot-check judges caught the liar at the rate $k/T$: at $T=4096$ one check caught it in $59$ of $200{,}000$ trials (exact $1/4096\approx2.44\times10^{-4}$) and four checks in $191$ (exact $9.77\times10^{-4}$); all $21$ intervals with exact value below $1$ contain it.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}r r r r r r r@{}}
+\toprule
+& & \multicolumn{2}{c}{judge} & \multicolumn{2}{c}{honest $\party{A}$} & honest $\party{B}$\\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(l){7-7}
+$T$ & rounds & bits & $\mu$s & steps & ms & steps\\
+\midrule
+$2^{10}$ & $10$ & $202$ & $0.45$ & \num{2047} & $0.30$ & \num{1023}\\
+$2^{14}$ & $14$ & $206$ & $0.55$ & \num{32767} & $4.5$ & \num{16383}\\
+$2^{18}$ & $18$ & $210$ & $0.64$ & \num{524287} & $71$ & \num{262143}\\
+$2^{22}$ & $22$ & $214$ & $0.77$ & \num{8388607} & \num{1142} & \num{4194303}\\
+\bottomrule
+\end{tabular}
+\caption{Costs of single runs of \cref{prot:debate:bisection} on the computation of \cref{fig:debate:runs}(b), honest $\party{A}$ against a random $\party{B}$ and the one-step liar against honest $\party{B}$ (the honest debaters won). The judge reads at most three configurations and $\party{B}$'s bits of a transcript of $714$ to \num{1494} bits and evaluates $\delta$ once. Steps are evaluations of $\delta$; times, in Python on a laptop, vary between runs. Script \texttt{07-debate-bisection.py}.}\label{tab:debate:costs}
+\end{table}
+
+\Cref{tab:debate:costs} shows what bisection buys: from $T=2^{10}$ to $2^{22}$ the honest debaters' work grows about $4{,}100$-fold, while the judge reads $202$ to $214$ bits in under a microsecond. A replay of all $2^{22}$ steps takes the judge about $0.6$ seconds, so here the debate saves little; with a step that costs an overseer a millisecond, as in the oversight box, it replaces $2^{40}$ checks by one.
+
+\section{The three questions}\label{sec:debate:questions}
+
+\questionone The debate is a finite two-player zero-sum game of perfect information, and the equilibrium notion is minimax play. The true side has a winning strategy, so honest play is a minimax strategy and wins against every opponent; in the answer game the truthful answer is the only one played in a Nash equilibrium, and an opener that wins with probability $1-\eta$ against every respondent lies with probability at most $\eta$ (\cref{prop:debate:honesty}); equilibrium leaves the losing side's statements free. The catch is the honest strategy: for a $\cc{PSPACE}$-complete question no polynomial-time debater wins every debate as the true side unless $\cc{P}=\cc{PSPACE}$ (\cref{prop:debate:price}), and in bisection the honest debaters run the computation, at most $2T-1$ and $T-1$ steps (\cref{thm:debate:bisection}). Against a liar who out-computes it the honest debater has no guarantee (\cref{fig:debate:runs}(a)).
+
+\questiontwo The judge is deterministic and runs in polynomial time. In bisection it takes at most $\lceil\log_2T\rceil$ rounds, reads at most $3w+\lceil\log_2T\rceil$ bits and checks one step (\cref{thm:debate:bisection}): $214$ bits and under a microsecond for $T=2^{22}$ in \cref{tab:debate:costs}, against $8.4$ million steps of the honest $\party{A}$; with a step that asks a human, one call to the human (\cref{cor:debate:oracle}). A judge with $O(\log n)$ coins can read $O(1)$ bits of the debate besides the input (\cref{thm:debate:pcd}), and for functions in $\cc{PSPACE}/\mathrm{poly}$ a deterministic one $O(\log n)$ bits of input and debate together, but no fewer than $\log_2n$ when the answer depends on every input bit \parencite{BrownCohenEtAl2026Query}.
+
+\questionthree Against every liar an honest debater who plays a winning strategy wins with probability $1$ in a single debate, without repetition: the soundness error is zero (\cref{thm:debate:pspace,thm:debate:bisection}). In \cref{fig:debate:runs}(b) the honest $\party{B}$ caught the one-step liar in all $22{,}000$ debates, where $k$ random checks of the whole run catch it with probability $k/T$. The guarantee is the honest debater's: against a liar who out-computes it, a lie is caught only as often as the honest debater's strength allows, $5.6\%$ of the time for a blind honest debater in \cref{fig:debate:runs}(a).
+
+\protocolcard{that $x\in L$ for $L\in\cc{PSPACE}$, by a game whose outcome the judge reads off one path; in bisection form, that a deterministic run of $T$ steps ends in an accepting configuration}{a polynomial-time judge $\V$; two unbounded debaters, $\party{A}$ for the claim and $\party{B}$ against it, who see every statement}{a zero-sum game of perfect information: the true side has a winning strategy and the truthful answer is the only equilibrium answer; honest play can require solving a $\cc{PSPACE}$-complete game ($2T-1$ steps in bisection), and the loser's play is unconstrained}{polynomial time and no coins; bisection: $\lceil\log_2T\rceil$ rounds, at most $3w+\lceil\log_2T\rceil$ bits read, one step checked; with $O(\log n)$ coins, $O(1)$ bits of the debate}{every lie loses when the honest side plays optimally, with probability $1$ and no repetition; against a liar who out-computes the honest debater, no guarantee}{optimal debaters, an error-free judge, a deterministic claim stated before the debate, and a strictly zero-sum game}
+
+\section{What the model leaves out}\label{sec:debate:leaves}
+
+\paragraph{What was idealized away.} The judge is a fixed, error-free algorithm. A human judge errs, tires and can be swayed, and \textcite[\S5.1]{IrvingEtAl2018} discuss belief bias; a debater optimized to win is optimized to exploit whatever sways the judge, and since a single final check decides the debate, a judge whose errors are systematic gives the liar a target, a kind of step on which to place its slip. The claim must be stated in a form the judge can check: bisection needs configurations that everyone reads the same way, natural-language arguments have none, and in human debates \textcite{BarnesChristiano2020} found dishonest debaters exploiting the ambiguity. The debaters are assumed optimal; trained networks are not. The game must be exactly zero-sum, as \textcite[\S5.10]{IrvingEtAl2018} stress when they note that rewarding both agents for honesty would let them collude; whether two copies of one network trained by self-play act as adversaries, the model cannot express. And the answer is committed before the debate,\index{precommitment} which in \cref{obs:debate:mnist} raised the honest agent's share from $74.4\%$ to $88.9\%$.
+
+\paragraph{Where it breaks.} The guarantee needs an honest debater as strong as the question (\cref{prop:debate:price}, \cref{fig:debate:runs}(a)), and \textcite{Barnes2020} found the practical form of the problem in human debates: a dishonest debater can build a long argument with a flaw that neither debater can locate, which the judge cannot tell apart from a long correct argument disputed in the same words. Her example, which she calls a simplistic illustration, argues that RSA-2048 has no prime factor below some $X$ and none above it; the honest side knows that one half is false but cannot say which without factoring. She does not expect this example itself to defeat debate, since the honest side might persuade the judge that its primality proof is far easier than factoring; her realistic cases are argument trees from physics debates. \Cref{ch:efficientdebate} formalizes this \term{obfuscated-arguments problem}\index{obfuscated arguments}, unsolved in her post, and presents prover--estimator debate \parencite{BrownCohenEtAl2026}, a response under a stability assumption. Most experiments test something weaker than the theorems: in reading comprehension the debaters see a passage the judge does not, an asymmetry of information, not of computation. Single-turn and two-turn arguments did not help human judges on hard reading-comprehension questions \parencite{ParrishEtAl2022a,ParrishEtAl2022b}. In interactive debates, human judges reached $84\%$ accuracy against $74\%$ for a single consultant arguing for an answer right half the time; with GPT-4 debaters, debate and consultancy were similar ($78\%$, $80\%$); and $46\%$ of the errors in human debates came from honest debaters who missed an argument \parencite{MichaelEtAl2023}. \Textcite{KhanEtAl2024} found $76\%$ and $88\%$ accuracy for language-model and human judges, against naive baselines of $48\%$ and $60\%$, with more persuasive debaters making debate more accurate; debate beat consultancy on all tasks of \textcite{KentonEtAl2024}, but beat the judge's direct answers reliably only when the debaters knew more than the judge; \textcite{ArnesenEtAl2024}, in a preprint, raised judge accuracy by $4$ percentage points with self-play training; and \textcite{EngelsEtAl2025} estimate, in a model of nested oversight, that debate succeeds $51.7\%$ of the time at an Elo gap of $400$. All are small-scale observations, often with language models as judges.
+
+\paragraph{Open problems.} The central open problem is a theory of debate between bounded debaters: for which claims does an honest debater with reasonable resources beat every liar it is likely to meet? \Cref{ch:efficientdebate} answers it for deterministic computations with a human oracle; \textcite{HiltonEtAl2025} list as open stability threshold theorems and a formalization of honesty as distinct from correctness. A second is training: \cref{prop:debate:honesty} needs near-optimality against every respondent, and \textcite{HiltonEtAl2025} ask why converged training should reach an equilibrium when a model can steer its training by avoiding exploration. A third is the judge: protocols that tolerate systematic errors on a small fraction of questions \parencite{Irving2025}, and lower bounds on how much of a debate it must read (\cref{ex:debate:query}).
+
+\begin{exercises}
+\item \consolidation (The worked run.) Replay \cref{tab:debate:run} for a liar who slips at step $5$ instead, writing $30$ for $\delta(62)=31$ and continuing correctly. Show that its final configuration is again $20$, that the honest $\party{B}$ answers \debateL, \debateR, \debateL, \debateL, and that the judge checks $\delta(62)$. How many steps does $\party{B}$ simulate?\label{ex:debate:run}
+
+\item \consolidation\hard (The exact curves.) In the model of \cref{fig:debate:runs}(a), let $q_d(v,o)$ be the probability that a random subtree rooted at depth $d$ has minimax value $v$ and the debate played on it ends at a leaf of value $o$. (a) Give $q_D$, and express $q_d$ through $q_{d+1}$ for a mover who sees the leaves and for one who does not. With $p$ chosen so that the root is a win for $\party{A}$ with probability $\frac12$, show (b) that for $h=D-1$ the accuracy is $\frac32-\frac1{\sqrt2}$ in both pairings ``both see $h$'' and ``liar sees all'', for every $D\ge2$, and (c) that each curve depends on $D$ and $h$ only through $D-h$. \hint{for (c), collapse the bottom $h$ levels into leaves.}\label{ex:debate:exact}
+
+\item \consolidation (Spot checks.) A judge receives a whole claimed run $\gamma'_0=\gamma_0,\gamma'_1,\dots,\gamma'_T$ with $\gamma'_T\in G$, and checks $\delta(\gamma'_{t-1})=\gamma'_t$ at $k\le T$ distinct steps $t$ chosen uniformly. Show that if $\gamma_T\notin G$, then every claimed run has a wrong step, that a run with exactly $e$ wrong steps survives with probability $\binom{T-e}{k}/\binom Tk$, and that the best liar survives with probability $1-k/T$.\label{ex:debate:spot}
+
+\item \consolidation (From regret to rare lies.) In a finite two-player zero-sum game with payoff $u$ to player $1$, the players choose mixed strategies $x_1,\dots,x_N$ and $y_1,\dots,y_N$, and each has average regret at most $\eta$: $\max_x\frac1N\sum_tu(x,y_t)-\frac1N\sum_tu(x_t,y_t)\le\eta$, and symmetrically for player $2$. Show that the averages $\bar x$ and $\bar y$ form a $2\eta$-equilibrium and that $\min_yu(\bar x,y)\ge\mathrm{val}-2\eta$. Conclude with \cref{prop:debate:honesty} that in the answer game an opener who plays $\bar x$ states the false answer with probability at most $\eta$.\label{ex:debate:regret}
+
+\item \variation (Savitch's theorem by debate.) Let the step be a relation $R\subseteq\bits^w\times\bits^w$, for a nondeterministic machine whose accepting configurations step to themselves, and let the judge's final test in \cref{prot:debate:bisection} be $(\gamma'_i,\gamma'_j)\in R$. (a) Show that with unbounded debaters the debate decides whether some run of exactly $T$ steps from $\gamma_0$ ends in $G$. (b) Conclude, with \cref{thm:debate:pspace}(ii), that nondeterministic polynomial space equals $\cc{PSPACE}$. (c) What must the honest $\party{B}$ now compute to choose a half, and why is that no longer a simulation?\label{ex:debate:savitch}
+
+\item \variation (Counting by bisection.) \Textcite[\S2.2]{IrvingEtAl2018} debate the number of primes below $2^n$. Formalize their protocol: $\party{A}$ claims that $[a,b)$ contains $C$ primes and states the count $C_1$ for $[a,m)$, implicitly claiming $C-C_1$ for $[m,b)$; $\party{B}$ picks a half; on a single integer the judge checks the count with a primality test, which takes polynomial time \parencite{AgrawalKayalSaxena2004}. Prove completeness and soundness, and bound the rounds and the judge's work for $[0,2^n)$. Which property of counts replaces \cref{lem:debate:split}?\label{ex:debate:count}
+
+\item \attack (Three careless judges.) Each judge below runs \cref{prot:debate:bisection} with one change. For each, find a liar that beats the honest $\party{B}$ on false claims, and compute the probability that it wins. (a) The judge does not test whether $\gamma'_T\in G$. (b) Debater $\party{A}$, not $\party{B}$, chooses the half. (c) Instead of following $\party{B}$'s choices, the judge draws one step $t$ uniformly at random, then asks $\party{A}$ for $\gamma'_{t-1}$ and $\gamma'_t$ and checks that step.\label{ex:debate:flaws}
+
+\item \attack (A stochastic simulation.) A randomized simulation has steps $\gamma_t=\delta(\gamma_{t-1},\rho_t)$ with independent uniform coins $\rho_t\in\bits$, and the claim is that the run ends in $G$ with probability at least $\frac12$. A judge runs \cref{prot:debate:bisection} on $\party{A}$'s claimed run, which lists the coins, and at the end checks $\gamma'_j=\delta(\gamma'_i,\rho'_j)$. Take $\delta(\gamma,\rho)=\gamma+\rho$ on the integers, $\gamma_0=0$ and $G=\{T\}$. Show that the claim is false for $T\ge2$, and that the liar who lists $\rho'_t=1$ for every $t$ wins every debate. What does fixing the coins in advance, as part of the input, change?\label{ex:debate:stochastic}
+
+\item \simulation (An honest debater with a budget.) Let the honest $\party{B}$ check the left half only when $m-i\le b$, and choose a half uniformly at random otherwise. Show that if $T$ and $b$ are powers of $2$ with $b\le T/2$, then it catches the one-step liar with probability exactly $2b/T$, and confirm this for $T=1024$ by modifying the script \texttt{07-debate-bisection.py}. Compare with \cref{ex:debate:spot}: what has the bounded honest debater gained over a spot-checking judge?\label{ex:debate:budget}
+
+\item \research (Query lower bounds.) (a) Prove the circuit bound of \textcite{BrownCohenEtAl2026Query}: a function computed by a circuit of size $S$ with fan-in two has a debate in which a deterministic judge reads at most $\lceil\log_2S\rceil+3$ bits. \hint{one debater writes all gate values; the other names a gate.} (b) Deduce that a query lower bound of $\log_2n+7$ for an explicit function in $\cc{NP}$ would force circuits of fan-in two with more than $8n$ gates, beyond the explicit bound of about $5n$ that the authors cite (their Corollary~7 has $\log_2n+6$, for circuit sizes that are powers of $2$). Is there a natural function for which you can prove a bound of $\log_2n+c$ for some $c>3$?\label{ex:debate:query}
+\end{exercises}
+
+\notesandrefs
+Competing provers entered interactive proofs with the noisy oracle problem of \textcite{FeigeShamirTennenholtz1988}; \textcite{CondonEtAl1995} proved the debate analogue of the PCP theorem and used it to show that some $\cc{PSPACE}$-hard functions are as hard to approximate as to compute; and \textcite{Feigenbaum1998} surveys these results and the games of imperfect information. For delegation, \textcite{CanettiRivaRothblum2011} let a client delegate a computation to several servers, one of them honest, in logarithmically many rounds using collision-resistant hashing, and \textcite{KolRaz2014} give competing-prover protocols for circuits.
+
+On the side of AI safety, \textcite{IrvingAskell2019} proposed testing debate between people, with experts assigned to lie and lay judges; \textcite{BarnesChristiano2020} reported such experiments and introduced cross-examination (\cref{ch:crossexam}); \textcite{BrownCohenEtAl2024} asked for honest strategies that are efficient too (\cref{ch:efficientdebate}); and \textcite{BuhlEtAl2025} sketch a safety case for a system trained by debate, resting on four claims: training reaches an approximate equilibrium, the system then errs rarely, online training keeps it so in deployment, and rare errors are tolerable in a low-stakes deployment.
+
+\paragraph{Translating the literature.} \Textcite{IrvingEtAl2018} call the debaters agents, Alice and Bob, write $H$ for the judge, $q$ for the question, $a_0,a_1$ for the answers and $s_0,\dots,s_{n-1}$ for the statements; their $n$ is our number of statements $2k$, and their DEBATE our $\debateclass$. \Textcite{CondonEtAl1995} call the debaters players $1$ and $0$, player $1$ claiming $x\in L$, and write $\pi$ for the debate tape. \Textcite{BrownCohenEtAl2024} write $A$, $B$ and $V$ for the debaters and the verifier, $\mathcal O$ for the human oracle (our $\party{H}$) and $S$ for the space, our $w$ up to a constant. In \textcite{BrownCohenEtAl2026Query}, Prover~1 claims $f(x)=1$, like our $\party{A}$, but Prover~0, our $\party{B}$, writes first.
+
+\printchapterbib
+\end{refsection}

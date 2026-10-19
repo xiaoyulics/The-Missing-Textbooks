@@ -1,0 +1,381 @@
+% Chapter 11 of Verifiable Intelligence: prover--verifier games.
+\newcommand{\pvgrej}{v_{\mathrm{rej}}}
+\newcommand{\pvgacc}{v_{\mathrm{acc}}}
+\newcommand{\pvgBR}{\mathrm{BR}}
+
+\protocolchapter{Prover--Verifier Games}{Learning to give checkable answers}{the verifier-leading game}{P,V,P,V,P,V,D}{ch:pvg}
+\begin{refsection}[chapters/11-pvg.bib]
+
+\begin{chaptersummary}
+When nobody can write down how to check a model's answers, one can train the checker: a small verifier learns to predict whether a claim is true while a large prover learns to make it accept whatever the prover says. We model this prover--verifier game of Anil, Zhang, Wu and Grosse, prove that when the verifier commits before the instance is drawn its equilibria are exactly the complete and sound proof systems in the given classes, when the classes contain one, and prove that the other orders of play have equilibria that prove nothing. Honesty is then a best response, at the price of finding a proof the verifier accepts; the verifier spends one evaluation of a small model; a lie is caught with certainty at an exact equilibrium, and at an approximate one with a probability that shrinks with the probability of the lie's instance in training. The model leaves out whether training reaches the equilibrium (proved, with smoothed losses, for a toy game), verifier classes with no complete and sound pair, the labels training needs, and provers outside the class.
+\end{chaptersummary}
+
+\section{The oversight problem: a checker trained with the solver}\label{sec:pvg:problem}
+
+The verifiers of the earlier chapters were designed: someone studied the structure of a claim, a polynomial, a circuit or a computation that can be cut in half, and wrote down a procedure that no prover can fool. Most of what models produce has no such structure, such as a solution in words, a plan, or a patch with an explanation. For these the overseer has examples, problems with known answers and solutions marked right or wrong, but no checking procedure. It can try to learn one.
+
+\begin{oversight}[a checker trained alongside the solver]
+A company uses a large model to write step-by-step solutions to arithmetic word problems for students and wants every solution checked before a student sees it. No program checks a solution written in words, and the company's reviewers can spend less than a minute on each. So it trains a small model, about a thousandth of the size of the solver, to accept or reject solutions, on problems whose final answers it knows; at the same time it trains the solver to write solutions that the small model accepts, and on some problems instructs the solver to write a wrong solution that the small model accepts. When training ends, will the small model reject every wrong solution that a solver of this kind could write, and accept the right ones?
+\end{oversight}
+
+The scenario is invented and modeled on the experiments of \textcite{KirchnerEtAl2024} (\cref{obs:pvg:kirchner}). Training both parties is the proposal of \textcite{AnilEtAl2021}, the \term{prover--verifier game}\index{prover--verifier game}: a trusted verifier tries to choose the correct answer to a decision problem, and a more powerful, untrusted prover tries to persuade it of one fixed answer, whether or not that answer is correct. The verifier should find the prover's messages useful only as far as it can check them, and the hope is that training produces a protocol that, in the authors' words, is ``if not mathematically sound'' at least more reliable than the verifier alone. They analyzed eight versions of the game, identified those whose equilibria are proof systems, and tested the idea on two small algorithmic tasks.\sidenote{The paper is an arXiv preprint (2021); we know of no refereed version.} \Textcite{KirchnerEtAl2024} trained GPT-4-family models in a variant of the game on grade-school mathematics;\sidenote{Their verifier is trained with a comparison loss on pairs of solutions rather than the logarithmic loss used below; they report that the two were interchangeable for the dynamics of training.} \textcite{HammondAdamDay2025} extended it to protocols with several rounds and provers, defined with worst-case losses; and \textcite{AmitEtAl2025} fixed the verifier and trained only the prover, which then proves its own answers.\sidenote{Their arXiv version (2405.15722) is titled \emph{Models That Prove Their Own Correctness} and numbers its results differently; we cite the NeurIPS version.}
+
+The game with one message is, as \textcite{AnilEtAl2021} note, closest to the proofs that define $\cc{NP}$, the claims with certificates checkable in polynomial time (\cref{thm:certificates:np}); with more rounds it becomes an interactive proof \parencite{GoldwasserMicaliRackoff1989,Babai1985}, as in \cref{ch:interaction}. The equilibrium in which one player commits and the other responds is the leader--follower model of \textcite{vonStackelberg2011}, first published in German in 1934 (\cref{def:toolkit:stackelberg}). The AI-safety work adds a reading: the verifier is not designed but selected by training from a class of small models, the prover from a class of large ones, and the question is no longer whether a protocol exists but whether training finds one.
+
+Three things make this hard. The overseer cannot write the verifier, which is why it trains one. Training does not search for proof systems: it moves both models toward something like an equilibrium of a game that the procedure defines implicitly, by which model is updated against which, whether the verifier sees the problem before it is fixed, and what each model is paid, and some of these games have equilibria in which the verifier ignores the prover (\cref{sec:pvg:theory}). And a learned verifier is a network: networks misclassify inputs changed by small perturbations chosen to fool them \parencite{SzegedyEtAl2014}, while soundness is a promise about every message a prover could send. Which equilibria of the training game are sound and complete proof systems, and does training find them?
+
+\section{The protocol: a game in which the verifier commits first}\label{sec:pvg:protocol}
+
+We use the abstract model of \textcite[\S3.3]{AnilEtAl2021}, with finite sets throughout and the prover's options described instance by instance.
+
+\begin{definition}[Prover--verifier game]\label[definition]{def:pvg:game}
+A \emph{prover--verifier game} consists of the following.
+\begin{enumerate}
+\item A finite set $X$ of instances, a distribution $\cD$ on $X$ with $\cD(x)>0$ for every $x$, and a label $f\colon X\to\bits$. The claim on $x$ is ``$f(x)=1$''; $X_1$ and $X_0$ are the sets of true and false instances.
+\item A finite set $M$ of messages and, for each $x$, a nonempty set $M(x)\subseteq M$ of messages the prover can send on $x$. A \emph{prover strategy} is a map $\Prov\colon X\to M$ with $\Prov(x)\in M(x)$ for every $x$; $\cP$ is the set of all of them.
+\item A finite set $\cV$ of \emph{base verifiers} $v\colon X\times M\to\bits$ containing the constant maps $\pvgrej\equiv0$ and $\pvgacc\equiv1$. A \emph{verifier strategy} is a probability distribution $\sigma$ on $\cV$; the verifier $\V_\sigma$ accepts message $z$ on instance $x$ with probability $\V_\sigma(x,z)=\sum_{v\in\cV}\sigma(v)\,v(x,z)$.
+\item Losses, in bits. Let $\pi_\sigma(x,z)$ be the probability that $\V_\sigma$ decides correctly, $\V_\sigma(x,z)$ if $f(x)=1$ and $1-\V_\sigma(x,z)$ if $f(x)=0$. Then $L_\V(\sigma,\Prov)=\E_{x\sim\cD}\bigl[-\log\pi_\sigma(x,\Prov(x))\bigr]$ and $L_\Prov(\sigma,\Prov)=\E_{x\sim\cD}\bigl[-\log\V_\sigma(x,\Prov(x))\bigr]$, with $-\log0=+\infty$.
+\end{enumerate}
+\end{definition}
+
+The verifier is paid by the logarithmic score of its forecast of the label, a strictly proper scoring rule (\cref{thm:rational:brier}); the prover is paid by the same score as if every claim were true, since it argues ``$f(x)=1$'' whatever $x$ is. The verifier's weakness lives entirely in $\cV$.\sidenote{With natural logarithms the losses are in nats; the base rescales both losses and changes no equilibrium.} We write calligraphic $\cP$ and $\cV$ for the classes and the book's $\Prov$ and $\V_\sigma$ for their members, with $\Prov^*$ an arbitrary prover strategy. \Textcite{AnilEtAl2021} allow an arbitrary class of prover strategies; ours, a product of the sets $M(x)$, includes the unrestricted prover ($M(x)=M$) and the restrictions of their binary erasure channel.
+
+\begin{definition}[Completeness and soundness]\label[definition]{def:pvg:cs}
+A verifier strategy $\sigma$ is \emph{sound} if $\V_\sigma(x,z)=0$ for every false instance $x$ and every $z\in M(x)$; a pair $(\sigma,\Prov)$ is \emph{complete} if $\V_\sigma(x,\Prov(x))=1$ for every true instance $x$. In general, $c(\sigma,\Prov)=\min_{x\in X_1}\V_\sigma(x,\Prov(x))$ is the pair's completeness, $a_\sigma(x)=\max_{z\in M(x)}\V_\sigma(x,z)$ is the largest acceptance probability a prover can reach on $x$, and $s(\sigma)=\max_{x\in X_0}a_\sigma(x)$ is the soundness error of $\sigma$ against all of $\cP$ (with $\min\emptyset=1$ and $\max\emptyset=0$).
+\end{definition}
+
+A complete and sound pair is a proof system for $f$ with completeness $1$ and soundness error $0$ against the provers in $\cP$.\sidenote{For a deterministic verifier these are the two conditions, Equations~(5) and~(6), of \textcite{AnilEtAl2021}.}
+
+\paragraph{Orders of play.} The verifier and the prover choose strategies simultaneously or one after the other, and the instance $x\sim\cD$ is revealed before, between or after their moves; a player who moves after the instance is revealed may choose its move as a function of $x$. \Textcite[Table~1]{AnilEtAl2021} list the eight resulting games; \cref{tab:pvg:orders} gives our results on them.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.31\linewidth}>{\raggedright\arraybackslash}p{0.41\linewidth}l@{}}
+\toprule
+order of moves & equilibria & here\\
+\midrule
+$\V$ first; then $\Prov$ and $x$, in either order & verifier-leading: exactly the complete and sound pairs & \cref{thm:pvg:stackelberg}\\
+$\Prov$ and $\V$ together; then $x$ & Nash: these pairs, and a coordination problem & \cref{prop:pvg:nash}\\
+$\Prov$, then $\V$, then $x$ & prover-leading: uninformative (flooding the zone) & \cref{prop:pvg:flood}\\
+$x$ before $\V$ (four orders) & the complete and sound pairs, and a trivial verifier that ignores the prover & \cref{prop:pvg:trivial}\\
+\bottomrule
+\end{tabular}
+\caption{The eight orders of play of \textcite[Table~1]{AnilEtAl2021} and what this chapter proves about their equilibria. In the order $\V,\Prov,x$ the prover's ties are broken instance by instance (\cref{def:pvg:leading}, \cref{ex:pvg:ties}). The names of the failures are Anil et al.'s.}\label{tab:pvg:orders}
+\end{table}
+
+\begin{definition}[Verifier-leading equilibrium]\label[definition]{def:pvg:leading}\index{Stackelberg equilibrium!verifier-leading}
+For a verifier strategy $\sigma$, let $\pvgBR(\sigma)$ be the set of prover strategies $\Prov$ with $\V_\sigma(x,\Prov(x))=a_\sigma(x)$ for every $x\in X$. A pair $(\sigma,\Prov)$ is a \term{verifier-leading equilibrium}\index{equilibrium!verifier-leading} if $\Prov\in\pvgBR(\sigma)$ and $L_\V(\sigma,\Prov)\le L_\V(\sigma',\Prov')$ for every verifier strategy $\sigma'$ and every $\Prov'\in\pvgBR(\sigma')$.
+\end{definition}
+
+The set $\pvgBR(\sigma)$ consists of the strategies that minimize the prover's loss on every instance separately, as a prover who sees the instance does; this is the subgame-perfect form of \cref{def:toolkit:stackelberg}, with the verifier as leader. A prover that commits before the instance is drawn minimizes the expectation $L_\Prov(\sigma,\cdot)$; since $\cP$ is a product, the strategies in $\pvgBR(\sigma)$ minimize it too, and they are the only minimizers when the minimum is finite. Against a sound verifier the minimum is infinite as soon as $\cD(X_0)>0$, every strategy ties, and the definition breaks the tie instance by instance. The theorem below needs this rule in the order $\V,\Prov,x$: ties broken against the verifier can leave a game with no equilibrium, and ties broken in its favor can make an unsound verifier optimal (\cref{ex:pvg:ties}).\sidenote{The second rule is the usual convention (\cref{def:toolkit:stackelberg}). \Textcite{AnilEtAl2021} assume equilibria unique and do not discuss ties; their proof of Theorem~2 lets the prover send, on every instance, the message most likely to be accepted, as our rule does.}
+
+\begin{protocol}{The verifier-leading prover--verifier game}\label{prot:pvg:game}
+\phase{Commitment, before the instance is drawn (training)}
+\item[\act{V}] Choose a verifier strategy $\sigma$ on $\cV$ of least loss $L_\V$ against the prover's best responses.
+\item[\msg{V}{P}] Reveal $\sigma$: the prover is trained against the frozen verifier.
+\item[\act{P}] Choose $\Prov\in\pvgBR(\sigma)$: on every instance $x$, a message $z\in M(x)$ that maximizes $\V_\sigma(x,z)$.
+\phase{A run, on an instance $x\sim\cD$ revealed to both (deployment)}
+\item[\msg{P}{V}] Send $z=\Prov(x)$, arguing that $f(x)=1$ whatever $x$ is.
+\item[\act{V}] Draw a base verifier $v$ from $\sigma$; \acc{} if $v(x,z)=1$, otherwise \rej.
+\end{protocol}
+
+\paragraph{A worked run.} Take the smallest interesting game, a simplification by \textcite[Appendix~B]{AnilEtAl2021} of their binary erasure channel. The instance is a uniform bit $x$, the claim is ``$x=1$'', and the prover may send $0$ or $2$ on $x=0$ and $1$ or $2$ on $x=1$: message $1$ proves the claim, $0$ concedes, and $2$, the erasure, says nothing. The base verifiers are $\pvgrej$, $\pvgacc$ and $v_1$, which accepts exactly message $1$. Suppose the verifier commits to $v_1$. On $x=1$ the prover's best response sends $1$, which is accepted; on $x=0$ both messages are rejected, and the prover's loss is $-\log0=\infty$ whatever it sends; the verifier's loss is $0$. If it commits to $\frac12\pvgrej+\frac12\pvgacc$, then every message is accepted with probability $\frac12$ and its loss is $1$ bit; if it commits to $\frac12v_1+\frac12\pvgacc$, then the proof is accepted with certainty and the messages on false instances with probability $\frac12$, for a loss of $\frac12$ bit. The leader prefers $v_1$, and \cref{prot:pvg:game} then runs as an $\cc{NP}$ proof: on a true instance the prover shows the proof, on a false one it has none to show.
+
+\begin{dictionary}
+base verifiers $\cV$ and their mixtures & the architecture and size of the small checker\\
+instance distribution $\cD$ & the training distribution of problems\\
+the best response on a false instance & the ``sneaky'' prover, or a red team optimizing against the frozen checker\\
+the order of play & the training schedule: which model is optimized against which, and what it sees\\
+verifier-leading equilibrium & a checker robust to the best attack in the class, and a solver that writes what it can verify\\
+soundness error $s(\sigma)$ & the chance that the best wrong solution in the class passes\\
+a message correlated with the label & a ``tell'': a feature of honest solutions that a sneaky solver can copy\\
+\end{dictionary}
+
+To see oversight this way one had to notice two things: training computes, at best, an equilibrium of some game, so the soundness of the trained checker depends on which equilibrium; and soundness is a property of a commitment against the best response to it, a response that training plays only through the prover's adversarial role.
+
+\section{The theory: which order of play makes equilibria proofs}\label{sec:pvg:theory}
+
+Everything rests on one quantity, the verifier's loss when the prover answers its commitment optimally.
+
+\begin{lemma}[The leader's loss]\label[lemma]{lem:pvg:lambda}
+For every verifier strategy $\sigma$, every $\Prov\in\pvgBR(\sigma)$ gives the verifier the same loss,
+\begin{equation}\label{eq:pvg:lambda}
+\Lambda(\sigma)=\sum_{x\in X_1}\cD(x)\bigl(-\log a_\sigma(x)\bigr)+\sum_{x\in X_0}\cD(x)\bigl(-\log(1-a_\sigma(x))\bigr),
+\end{equation}
+and $\Lambda(\sigma)=0$ if and only if $a_\sigma(x)=f(x)$ for every $x\in X$.
+\end{lemma}
+
+\begin{proof}
+For $\Prov\in\pvgBR(\sigma)$ we have $\V_\sigma(x,\Prov(x))=a_\sigma(x)$ on every instance, and substituting this into $L_\V$ gives \eqref{eq:pvg:lambda}. Each term is nonnegative and $\cD(x)>0$, so the sum vanishes exactly when every term does, that is, when $a_\sigma(x)=1$ on $X_1$ and $a_\sigma(x)=0$ on $X_0$.
+\end{proof}
+
+So a verifier-leading equilibrium is a pair $(\sigma,\Prov)$ with $\Prov\in\pvgBR(\sigma)$ and $\sigma$ a minimizer of $\Lambda$, and which strategy in $\pvgBR(\sigma)$ the prover plays does not matter to the verifier. The main theorem is Theorem~2 of \textcite{AnilEtAl2021}, whose proof sketches each direction in a paragraph; here is a complete proof in the model above.
+
+\begin{theorem}[Verifier-leading equilibria are proof systems; \textcite{AnilEtAl2021}]\label{thm:pvg:stackelberg}
+Suppose that $\cV$ contains a base verifier $v^*$ and $\cP$ a strategy $\Prov^\circ$ such that the pair $(v^*,\Prov^\circ)$ is complete and sound. Then, in the game in which the verifier commits before the instance is revealed, a pair $(\sigma,\Prov)$ is a verifier-leading equilibrium if and only if it is complete and sound.
+\end{theorem}
+
+\begin{proof}
+The plan is to show that the least value of $\Lambda$ is $0$ and then to read both directions off \cref{lem:pvg:lambda}. Let $\sigma^*$ put all its weight on $v^*$. For $x\in X_1$, $a_{\sigma^*}(x)\ge v^*(x,\Prov^\circ(x))=1$ by completeness; for $x\in X_0$, $v^*(x,z)=0$ for every $z\in M(x)$ by soundness, so $a_{\sigma^*}(x)=0$. By \cref{lem:pvg:lambda}, $\Lambda(\sigma^*)=0$, and since $\Lambda\ge0$ the least value is $0$. Hence $(\sigma,\Prov)$ is a verifier-leading equilibrium if and only if $\Prov\in\pvgBR(\sigma)$ and $a_\sigma=f$.
+
+Suppose first that $(\sigma,\Prov)$ is an equilibrium. On each $x\in X_0$, $a_\sigma(x)=0$, so every message in $M(x)$ is rejected with certainty, and $\sigma$ is sound. On each $x\in X_1$, $\Prov\in\pvgBR(\sigma)$ gives $\V_\sigma(x,\Prov(x))=a_\sigma(x)=1$, so the pair is complete.
+
+Conversely, suppose that $(\sigma,\Prov)$ is complete and sound. On $x\in X_1$, $1=\V_\sigma(x,\Prov(x))\le a_\sigma(x)\le1$, and on $x\in X_0$ soundness gives $a_\sigma(x)=0$; so $a_\sigma=f$. The strategy $\Prov$ attains $a_\sigma(x)$ on every true instance, and on a false one every message attains $a_\sigma(x)=0$; so $\Prov\in\pvgBR(\sigma)$, and the pair is an equilibrium.
+\end{proof}
+
+The hypothesis is used once, to show that the least loss is $0$; without it the verifier still has optimal commitments, but they are not proof systems (\cref{ex:pvg:nosound}). An equilibrium verifier gains nothing from its randomness: each base verifier it uses forms a complete and sound pair with $\Prov$. Its soundness error is zero, which ties the theorem to proofs of the $\cc{NP}$ kind (\cref{ex:pvg:perfect}), the limitation that \textcite[Appendices~B and~C.1]{HammondAdamDay2025} stress. \Textcite[Theorem~1]{KirchnerEtAl2024} prove a version for unrestricted provers with helpful and sneaky roles and more general losses.
+
+Training never reaches an exact equilibrium, so the useful question is what a small loss guarantees.
+
+\begin{proposition}[The leader's loss controls every instance]\label[proposition]{prop:pvg:approx}\index{equilibrium!approximate}
+Let $\sigma$ be a verifier strategy.
+\begin{enumerate}
+\item For every false instance $x$ and every prover strategy $\Prov^*$, $\V_\sigma(x,\Prov^*(x))\le1-2^{-\Lambda(\sigma)/\cD(x)}\le(\ln2)\,\Lambda(\sigma)/\cD(x)$.
+\item For every true instance $x$ and every $\Prov\in\pvgBR(\sigma)$, $\V_\sigma(x,\Prov(x))\ge2^{-\Lambda(\sigma)/\cD(x)}$.
+\end{enumerate}
+In particular, under the hypothesis of \cref{thm:pvg:stackelberg}, if $\Prov\in\pvgBR(\sigma)$ and $\Lambda(\sigma)\le\eps$, so that $(\sigma,\Prov)$ is an $\eps$-approximate verifier-leading equilibrium, then on each false instance $x$ every prover is rejected with probability at least $2^{-\eps/\cD(x)}$, and on each true instance $\Prov$ is accepted with at least that probability. The factor $1/\cD(x)$ cannot be removed: if $\cV$ also contains the verifier $v'$ that agrees with $v^*$ except that it accepts every message on one false instance $x_0$, then for each $\eta\in(0,1)$ the strategy $\sigma_\eta=(1-\eta)v^*+\eta v'$ has $s(\sigma_\eta)=1-2^{-\Lambda(\sigma_\eta)/\cD(x_0)}$.
+\end{proposition}
+
+\begin{proof}
+All terms of \eqref{eq:pvg:lambda} are nonnegative, so each is at most $\Lambda(\sigma)$. For $x\in X_0$ this gives $\cD(x)\bigl(-\log(1-a_\sigma(x))\bigr)\le\Lambda(\sigma)$, that is, $a_\sigma(x)\le1-2^{-\Lambda(\sigma)/\cD(x)}$, and $\V_\sigma(x,\Prov^*(x))\le a_\sigma(x)$ by the definition of $a_\sigma$. The second inequality of (i) is $2^{-t}=e^{-t\ln2}\ge1-t\ln2$. For (ii), $\cD(x)(-\log a_\sigma(x))\le\Lambda(\sigma)$ and $\V_\sigma(x,\Prov(x))=a_\sigma(x)$. The statement about approximate equilibria is (i) and (ii) with $\Lambda(\sigma)\le\eps$, the least value being $0$ by \cref{thm:pvg:stackelberg}. In the example, $a_{\sigma_\eta}(x)=f(x)$ for $x\ne x_0$ and $a_{\sigma_\eta}(x_0)=\eta$, so $\Lambda(\sigma_\eta)=\cD(x_0)(-\log(1-\eta))$ and $s(\sigma_\eta)=\eta=1-2^{-\Lambda(\sigma_\eta)/\cD(x_0)}$.
+\end{proof}
+
+This is where averages enter: a small loss constrains the verifier only on instances that the training distribution weighs heavily.\sidenote{The proposition is elementary, and we know of no source that states it.} A verifier within $\eps=10^{-3}$ bits of the optimum is guaranteed to reject a lie on an instance of probability $10^{-4}$ only with probability $2^{-10}\approx0.001$, and an adversary who chooses the instance chooses a rare one.
+
+The other orders of play fail in three different ways. A verifier that sees the instance before it commits does not need the prover.
+
+\begin{proposition}[The instance first: a trivial verifier]\label[proposition]{prop:pvg:trivial}\index{trivial verifier}
+Suppose the verifier observes the instance before it commits, in one of the four orders of \cref{tab:pvg:orders} in which this happens, so that its strategy is a map $x\mapsto\sigma_x$. Let $\tau$ play, on each $x$, the constant base verifier with value $f(x)$. Then for every prover strategy $\Prov\in\cP$ the pair $(\tau,\Prov)$ is an equilibrium, and so is every complete and sound pair, with the verifier's ties broken toward the pair's verifier when the prover leads. In the first kind the verifier decides $f(x)$ whatever the prover sends, and it exists whether or not the classes contain a complete and sound pair.
+\end{proposition}
+
+\begin{proof}
+Against every prover strategy, $\tau$ accepts each true instance and rejects each false one with probability $1$, so its loss is $0$, the least possible; so is the loss of the verifier of a complete and sound pair $(\sigma,\Prov)$, against $\Prov$ and, when the verifier leads, against every best response to $\sigma$, which is accepted with certainty on true instances. Hence $\tau$, against every prover strategy, and $\sigma$, against $\Prov$, are best responses of the verifier when it moves with the prover or after it, and both are optimal commitments when it leads. If the prover moves with or after the verifier, then every prover strategy is a best response to $\tau$, whose decision does not depend on the message, and $\Prov$ is one to $\sigma$, since it is accepted with certainty on true instances and nothing is accepted on false ones. If the prover leads, then every best response of the verifier has loss $0$ and so accepts the prover's message exactly on true instances; the prover's loss is $0$ on true instances and infinite on false ones whatever it commits to, so every prover strategy is an optimal commitment, $\tau$ is among the verifier's responses to each, and $\sigma$ among its responses to $\Prov$.
+\end{proof}
+
+In these orders, then, equilibrium is necessary for a complete and sound pair but not sufficient.\sidenote{\Textcite[Table~1 and Proposition~1]{AnilEtAl2021} say that it is neither; the argument they give concerns sufficiency, and as we read their definitions every complete and sound pair is an equilibrium.} Choosing a constant verifier after seeing $x$ is computing $f$: the verifier's weakness was placed in $\cV$, and a choice made instance by instance escapes $\cV$, as a separate circuit for each input escapes every bound on circuit size. A prover that moves first fails differently.
+
+\begin{proposition}[The prover first: flooding the zone; after \textcite{AnilEtAl2021}]\label[proposition]{prop:pvg:flood}\index{flooding the zone}
+In the game of the worked run, the pairs $(v_1,\Prov)$ with $\Prov(1)=1$ are complete and sound. Let the prover commit first, the verifier then commit to a best response, and the instance be drawn last. Whatever rule the verifier uses to break ties, the prover's optimal commitments are exactly the strategies with $\Prov(1)=2$, the verifier's best responses to them are exactly the strategies with $\sigma(\pvgacc)=\frac12$, and every equilibrium has completeness $\frac12$ and soundness error $\frac12$. The prover's loss is $1$ bit, against $\infty$ for every prover that sends the proof.
+\end{proposition}
+
+\begin{proof}
+The plan is to compute the verifier's best responses to each of the four prover strategies and the prover's loss against them. Suppose $\Prov(1)=1$. The pair $(v_1,\Prov)$ has verifier's loss $0$, and $v_1$ is the only verifier strategy with loss $0$: rejecting $\Prov(0)\in\{0,2\}$ with certainty forces $\sigma(\pvgacc)=0$, and then accepting message $1$ with certainty forces $\sigma(v_1)=1$. Against $v_1$ the prover's message on $x=0$ is rejected, so its loss is $\frac12\cdot\infty=\infty$. Suppose $\Prov(1)=2$. Every $\sigma$ accepts the messages $\Prov(0)\in\{0,2\}$ and $2$ with the same probability $p=\sigma(\pvgacc)$, since $v_1$ and $\pvgrej$ reject both; the verifier's loss is $\frac12(-\log(1-p))+\frac12(-\log p)\ge1$, with equality exactly at $p=\frac12$, and against every such $\sigma$ the prover's loss is $\frac12\cdot1+\frac12\cdot1=1$. At these equilibria the prover's message on $x=1$, and both messages available on $x=0$, are accepted with probability $\frac12$.
+\end{proof}
+
+\Textcite[Theorem~1]{AnilEtAl2021} prove this with two prover strategies.\sidenote{They name the failure after a phrase for drowning true information in noise, which they take from a 2020 news article on political disinformation.} A prover that anticipates the verifier's response pays for every bit of information it reveals, which gets it rejected with certainty on false instances, and so it reveals none.
+
+\begin{proposition}[Simultaneous play; after \textcite{AnilEtAl2021}]\label[proposition]{prop:pvg:nash}
+Let both players commit simultaneously and the instance be drawn afterwards, with Nash equilibrium (\cref{def:toolkit:nash}) as the solution concept.
+\begin{enumerate}
+\item Under the hypothesis of \cref{thm:pvg:stackelberg}, every complete and sound pair is a Nash equilibrium.
+\item In the game of the worked run, the pair $(\Prov_2,\frac12\pvgrej+\frac12\pvgacc)$, with $\Prov_2(0)=\Prov_2(1)=2$, is a Nash equilibrium with completeness $\frac12$ and soundness error $\frac12$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) A complete and sound pair gives the verifier loss $0$, the least possible. Against the sound verifier every prover strategy has infinite loss when $\cD(X_0)>0$, and the complete one has loss $0$ when $X_0$ is empty; either way the pair's prover strategy is a best response. (ii) Against $\frac12\pvgrej+\frac12\pvgacc$ every message is accepted with probability $\frac12$, so every prover strategy has loss $1$ bit and $\Prov_2$ is a best response. Against $\Prov_2$ the verifier sees message $2$ on both instances, and as in the proof of \cref{prop:pvg:flood} its loss is least when message $2$ is accepted with probability $\frac12$, as it is here.
+\end{proof}
+
+\begin{corollary}[\textcite{AnilEtAl2021}, Corollary~1]\label[corollary]{cor:pvg:nash}
+Under the hypothesis of \cref{thm:pvg:stackelberg}, every verifier-leading equilibrium is a Nash equilibrium of the simultaneous game.
+\end{corollary}
+
+\begin{proof}
+By \cref{thm:pvg:stackelberg} it is complete and sound, and by \cref{prop:pvg:nash}(i) such a pair is a Nash equilibrium.
+\end{proof}
+
+The equilibrium of \cref{prop:pvg:nash}(ii) is what \textcite{AnilEtAl2021} call a coordination problem: the verifier ignores messages that carry no information, and the prover has no reason to inform a verifier that ignores it. They trained for Nash equilibria, which are easier to compute, and tested whether the result was verifier-leading by freezing the verifier and optimizing provers against it, as \cref{sec:pvg:running} does.
+
+\section{The theory: soundness errors, fixed verifiers, and training}\label{sec:pvg:beyond}
+
+\paragraph{Randomized verifiers and worst-case losses.} Interactive proofs beyond $\cc{NP}$ need a positive soundness error (\cref{ex:pvg:perfect}), a verifier with a positive soundness error must randomize, and the expected losses of \cref{def:pvg:game} handle randomized verifiers badly. \Textcite{HammondAdamDay2025} call a system $(\eps_c,\eps_s)$-\emph{valid} if true instances are accepted with probability at least $1-\eps_c$, false ones with probability at most $\eps_s$ against every prover, and $\eps_c+\eps_s<1$, and they replace expected losses by worst-case ones.
+
+\begin{proposition}[Worst-case losses; after \textcite{HammondAdamDay2025}]\label[proposition]{prop:pvg:worst}\index{loss!worst-case}\index{neural interactive proof}
+In a game of \cref{def:pvg:game}, replace the losses by $L^{\mathrm{wc}}_\V=\eps_c+\eps_s$ and $L^{\mathrm{wc}}_\Prov=\eps_c-\eps_s$, with $\eps_c(\sigma,\Prov)=\max_{x\in X_1}\bigl(1-\V_\sigma(x,\Prov(x))\bigr)$ and $\eps_s(\sigma,\Prov)=\max_{x\in X_0}\V_\sigma(x,\Prov(x))$, and let the prover answer $\sigma$ with a strategy that minimizes $L^{\mathrm{wc}}_\Prov(\sigma,\cdot)$. Then every such answer has $\eps_s=s(\sigma)$, the soundness error against all of $\cP$, and $\eps_c=1-\min_{x\in X_1}a_\sigma(x)$. So the verifier's loss against its best responses is $\kappa(\sigma)=1-\min_{X_1}a_\sigma+s(\sigma)$, and $\sigma$ with its best responses is valid if and only if $\kappa(\sigma)<1$. If some $\sigma$ is valid, then every verifier-leading equilibrium is valid, and a verifier strategy is valid exactly when its loss exceeds the least loss $\kappa^*=\min_\sigma\kappa(\sigma)$ by less than $1-\kappa^*$.
+\end{proposition}
+
+\begin{proof}
+The plan is to split the prover's loss between true and false instances. The error $\eps_c$ depends only on the values of $\Prov$ on $X_1$, $\eps_s$ only on its values on $X_0$, and $\cP$ is a product, so the least value of $\eps_c-\eps_s$ is the least $\eps_c$, which is $1-\min_{X_1}a_\sigma$, minus the largest $\eps_s$, which is $s(\sigma)$. A strategy attaining it has $\eps_c\ge1-\min_{X_1}a_\sigma$ and $\eps_s\le s(\sigma)$, with the difference of the two equal to the difference of the bounds, so both are equalities. The function $\kappa$ is continuous on the compact set of distributions on $\cV$, so $\kappa^*$ is attained; if some $\sigma$ is valid, then $\kappa^*<1$, and an optimal $\sigma$ is valid, and $\kappa(\sigma)<\kappa^*+(1-\kappa^*)$ says that $\kappa(\sigma)<1$.
+\end{proof}
+
+The worst-case loss puts soundness against all of $\cP$ into the verifier's objective, because the prover's best answer on false instances is the best cheater, and the verifier may now randomize, as it must in a matching-pennies game (\cref{ex:pvg:pennies}). \Textcite[Theorem~8]{HammondAdamDay2025} prove the corresponding statement for their multi-round protocol \emph{nip}, with approximate best responses and with tolerances chosen, as here, so that approximate optimality means validity; minimizing a worst-case loss needs conditions on the data or an adversary that proposes instances (their Propositions~9 and~10). Their Proposition~7 states that with randomized verifiers the expected-loss game loses this property: even when a valid verifier of completeness $1$ exists, being a verifier-leading equilibrium is neither necessary nor sufficient for validity. \Cref{ex:pvg:giveup} gives an example in our model, whose equilibria are not valid whichever way the prover's ties are broken.\sidenote{As we read their proof (Appendix~C.1), the pair it computes is not an equilibrium: against that verifier the prover does better with either of its other two strategies. Recomputed with the strategies as their formulas define them (their table misprints one), their example shows that a valid pair need not be an equilibrium, but an equilibrium fails to be valid only if the prover breaks ties in the verifier's favor; their Definition~5 breaks them against the leader, and then every equilibrium of the example is valid.}
+
+\paragraph{Self-proving models.} In \cref{thm:pvg:stackelberg} the leader's commitment is learned. \Textcite{AmitEtAl2025} let people make it: the verifier is written by hand and proved sound, and only the prover is trained.
+
+\begin{definition}[Self-proving model; \textcite{AmitEtAl2025}]\label[definition]{def:pvg:selfproving}
+Let $F$ map input strings to output strings, let $\cD$ be a distribution on inputs, and let $\V$ be an interactive verifier for $F$ with soundness error $s$: some prover makes $\V$ accept $(x,F(x))$ with probability $1$ for every $x$, and for every prover, every $x$ and every $y\ne F(x)$, $\V$ accepts $(x,y)$ with probability at most $s$. A model $\Prov_\theta$ outputs $y\sim\Prov_\theta(x)$ and then answers $\V$'s questions. Its \emph{verifiability}\index{verifiability} $\mathrm{ver}(\theta)$ is the probability, over $x\sim\cD$, $y$, and the coins of $\V$ and $\Prov_\theta$, that $\V$ accepts; the model is $\beta$-\term{self-proving}\index{self-proving model} if $\mathrm{ver}(\theta)\ge\beta$.
+\end{definition}
+
+\begin{proposition}[Verifiability implies correctness; \textcite{AmitEtAl2025}, Remark~2.5]\label[proposition]{prop:pvg:correct}
+A $\beta$-self-proving model is correct with probability at least $\beta-s$: $\Prob_{x\sim\cD,\,y\sim\Prov_\theta(x)}[y=F(x)]\ge\beta-s$.
+\end{proposition}
+
+\begin{proof}
+Condition on $x$ and on an output $y\ne F(x)$. The model's remaining behavior is a randomized prover for the false claim $(x,y)$, so by soundness $\V$ accepts with probability at most $s$. Hence the probability that $\V$ accepts and $y\ne F(x)$ is at most $s$, and $\beta\le\mathrm{ver}(\theta)\le\Prob[y=F(x)]+s$.
+\end{proof}
+
+Verifiability is an average over inputs, but each check is worst-case: a user who runs $\V$ on her own input and output is protected there by soundness. How is a model trained to be self-proving?
+
+\begin{theorem}[Transcript learning; after \textcite{AmitEtAl2025}, Theorem~4.1 and Appendix~D.4]\label{thm:pvg:tl}\index{transcript learning}
+Fix $\V$ and $\cD$ as in \cref{def:pvg:selfproving}, autoregressive models $\Prov_\theta$ with $\theta\in\R^d$, and an honest transcript generator: a random map from inputs to transcripts that $\V$ accepts, whose questions are distributed as $\V$'s. Let $A(\theta)$ be the probability, over $x\sim\cD$ and the two transcripts, that the transcript of $\Prov_\theta$ agrees with the generator's when both answer the same questions, and let $\cB$ be the Euclidean ball of radius $B_{\mathrm{norm}}$ about $0$. Suppose that $A$ is concave on $\cB$; that some $\theta^*\in\cB$ has $A(\theta^*)\ge1-\eps/2$; that $\norm{\nabla_\theta\log p_\theta(z)}\le B_{\mathrm{Lip}}$ for every probability $p_\theta(z)$ that the model assigns to a token; and that the model writes at most $C$ tokens per interaction, output and answers together. Then stochastic gradient ascent on $A$ with one honest transcript per step, projected onto $\cB$, from $\theta_0=0$, with step size $B_{\mathrm{norm}}/(CB_{\mathrm{Lip}}\sqrt N)$ and $N\ge4C^2B_{\mathrm{norm}}^2B_{\mathrm{Lip}}^2/\eps^2$ steps, returns the average $\bar\theta$ of its iterates with $\E[\mathrm{ver}(\bar\theta)]\ge1-\eps$.
+\end{theorem}
+
+\begin{proofsketch}
+Three facts combine. First, $\mathrm{ver}\ge A$, since a transcript that agrees with an accepted one is accepted. Second, $A(\theta)$ is the expectation of the product $\prod_s\alpha_s(\theta)$ of the probabilities that the model assigns to the tokens it writes in an honest transcript, each given its prefix, and the gradient of the product is $\prod_s\alpha_s\sum_s\nabla\log\alpha_s$; so the update is an unbiased estimate of $\nabla A$ (their Lemma~3.2), of norm at most $CB_{\mathrm{Lip}}$ because the product is at most $1$. Third, for an objective concave on $\cB$ with such estimates, projected stochastic gradient ascent gives $\E[A(\bar\theta)]\ge A(\theta^*)-B_{\mathrm{norm}}CB_{\mathrm{Lip}}/\sqrt N$ \parencite[Chapter~14]{ShalevShwartzBenDavid2014}, which is at least $1-\eps$ for the stated $N$. We omit the proofs of the gradient identity and of the bound for gradient ascent, which are in the cited sources.
+\end{proofsketch}
+
+The authors call concavity and the Lipschitz bound simplifying assumptions.\sidenote{As stated, their theorem assumes $A$ concave on all of $\R^d$, and their algorithm does not project; but a concave function on $\R^d$ with values in $[0,1]$ is constant. Their appendix takes the ball $\cB$ as the hypothesis class; we state that version, with projection, which their argument gives.} Their second method, reinforcement learning from verifier feedback, a policy gradient on acceptance, needs a model that is already accepted sometimes and has no convergence theorem (their Remark~4.2).
+
+\paragraph{Does training find the equilibrium?} \Textcite{AnilEtAl2021} answer for one game, the \term{binary erasure channel}\index{binary erasure channel}: the worked run with smoothed losses and with probabilities in place of choices.\sidenote{In information theory a binary erasure channel delivers each bit either intact or as an erasure symbol; here the prover decides when to erase.} The prover sends $1$ on $x=1$ with probability $a$ and $2$ otherwise, and $0$ on $x=0$ with probability $b$ and $2$ otherwise; the verifier accepts message $z$ with probability $q_z$, and its loss carries label smoothing with coefficient $\gamma>0$, an added $\gamma\,\E_z[-\ln q_z-\ln(1-q_z)]$. Its best response is $q_z=(\rho_z+\gamma)/(1+2\gamma)$, with $\rho_z$ the probability that $x=1$ given message $z$ (\cref{ex:pvg:smooth}): $q_1=(1+\gamma)/(1+2\gamma)$, $q_0=\gamma/(1+2\gamma)$, and $q_2=(\rho+\gamma)/(1+2\gamma)$ with $\rho=(1-a)/(2-a-b)$. The prover's loss, in nats and doubled, is $J=-a\ln q_1-b\ln q_0-(2-a-b)\ln q_2$. In \emph{simultaneous} two-timescale training the verifier stays at its best response and the prover follows $-\partial J/\partial(a,b)$ with $q$ held fixed; when the \emph{prover leads}, it follows the gradient of $J$ with $q$ replaced by the best response. Both flows run on $[0,1]^2$, a coordinate that reaches the boundary staying there while the flow points outward.
+
+\begin{proposition}[The binary erasure channel; after \textcite{AnilEtAl2021}, Theorems~4 and~5]\label[proposition]{prop:pvg:bec}
+Let $\gamma>0$, start from $(a_0,b_0)\in(0,1)^2$, and write $R=q_1/q_2$ and $r=q_0/q_2$.
+\begin{enumerate}
+\item In simultaneous training, $\dot a=\ln R$ and $\dot b=\ln r$; $a$ reaches $1$ in finite time while $b$ decreases, and the flow then rests: the verifier accepts the proof $1$ with probability $(1+\gamma)/(1+2\gamma)$ and the other messages with probability $\gamma/(1+2\gamma)$.
+\item When the prover leads, $\dot a=-(R-1-\ln R)$ and $\dot b=-(r-1-\ln r)$; both reach $0$ in finite time, and the prover then sends only $2$, which the verifier accepts with probability $\frac12$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to compute the two gradients and to bound them away from zero. With $N=1-a+\gamma(2-a-b)$ we have $(2-a-b)(\rho+\gamma)=N$, hence $R-1=(1-b)/N$ and $1-r=(1-a)/N$. The partial derivatives are $\partial J/\partial a=\ln(q_2/q_1)=-\ln R$ and $\partial J/\partial b=-\ln r$, giving (i). In the total derivative the term $-(2-a-b)\ln q_2$ also varies through $\rho$, and $\partial\rho/\partial a=-(1-b)/(2-a-b)^2$ and $\partial\rho/\partial b=(1-a)/(2-a-b)^2$ add $(1-b)/N=R-1$ to $dJ/da$ and $-(1-a)/N=r-1$ to $dJ/db$, giving (ii).
+
+(i) Since $\rho\in[0,1]$, $q_0\le q_2\le q_1$, so $\dot a=\ln R\ge0$ and $\dot b=\ln r\le0$; in particular $b\le b_0$. While $a<1$, $\rho=(1-a)/\bigl((1-a)+(1-b)\bigr)\le1/(2-b_0)$, because $u/(u+c)$ increases in $u$ and $1-a\le1$, $1-b\ge1-b_0$. Hence $R\ge R_0=(1+\gamma)/\bigl(1/(2-b_0)+\gamma\bigr)>1$, and $a$ reaches $1$ by time $(1-a_0)/\ln R_0$. At $a=1$, $\rho=0$, so $q_2=q_0$, $r=1$ and $\dot b=0$, while the boundary stops $a$.
+
+(ii) The function $t-1-\ln t$ is positive except at $t=1$, decreasing on $(0,1]$ and increasing on $[1,\infty)$. Here $R\ge1\ge r$, so $a$ and $b$ decrease. Since $N\le1+2\gamma$, $R-1\ge u_0=(1-b_0)/(1+2\gamma)$ and $1-r\ge v_0=(1-a_0)/(1+2\gamma)$, so $\dot a\le-\bigl(u_0-\ln(1+u_0)\bigr)<0$ and $\dot b\le-\bigl(-v_0-\ln(1-v_0)\bigr)<0$ while the coordinates are positive. Both reach $0$ in finite time and stay there, and at $a=b=0$, $\rho=\frac12$ and $q_2=\frac12$.
+\end{proof}
+
+The proof shows why order matters. Moving probability to the proof raises acceptance on true instances, the term $\ln R$, but also teaches the verifier that the erasure comes from false instances, the term $R-1$; a prover that anticipates the second effect finds it larger, since $R-1>\ln R$, and says nothing.
+
+\begin{observation}[\textcite{AnilEtAl2021}, \S5.3 and Appendix~E]\label[observation]{obs:pvg:anil}
+On the binary erasure channel with sixteen tokens, and on FindThePlus (the color of a $3\times3$ plus in a $10\times10$ binary image; the verifier sees only the patches the prover's message points to), verifiers were trained in the simultaneous game and frozen. Against a prover retrained on the frozen verifier they had precision and recall $1.0$; against messages optimized directly with L-BFGS, precision $1.0$ on the channel and $0.99$ on FindThePlus. Collaboratively trained verifiers (the prover paid for the verifier's correctness) had precision $0.0$ in all four tests. On FindThePlus these are the best of four seeds, at the checkpoint of best frozen accuracy.
+\end{observation}
+
+\begin{observation}[\textcite{KirchnerEtAl2024}]\label[observation]{obs:pvg:kirchner}
+Grade-school math problems, with $100{,}000$ synthetic ones added; GPT-4-family provers and verifiers, the verifiers with $10^{-4}$ to $1$ times the prover's pretraining compute; a prover told to be ``helpful'' or ``sneaky'' with probability $\frac12$ each, trained by reinforcement learning, alternating with a verifier trained on pairwise comparisons. Training on correctness alone raised the prover's accuracy but lowered the accuracy of human judges limited to $45$ seconds per solution. Checkability training kept solutions legible: over rounds, judges grew more accurate and faster on helpful solutions, while the prover stayed less accurate than one trained on correctness alone, the \emph{legibility tax}\index{legibility tax}. Separately trained sneaky provers needed more steps to exploit later verifiers; verifiers of relative size $10^{-3}$ stayed exploitable until round~4, and those of size $10^{-4}$ made training unstable. The main human study had $75$ judges (four excluded) and $15{,}983$ judgments.
+\end{observation}
+
+\begin{observation}[\textcite{HammondAdamDay2025}, \S6; \textcite{AmitEtAl2025}, Appendix~F]\label[observation]{obs:pvg:nip}
+On graph isomorphism ($10{,}000$ random graphs of about ten vertices, agents trained by reinforcement learning), verifiers trained in the nip game classified near-perfectly with the prover's help. On checking Python programs against specifications, with GPT-4o provers and GPT-4o-mini verifiers trained by eight rounds of expert iteration, every protocol improved modestly on a verifier trained alone, nip and its two-prover version the most, by about $11\%$ in accuracy. A $6.3$-million-parameter transformer that computes greatest common divisors and proves them with B\'ezout coefficients to a verifier with soundness error $0$ was $98.6$--$99.8\%$ correct under every method, and had verifiability $60.3\%$ after transcript learning, $78.3\%$ after adding reinforcement learning from verifier feedback, and $96.0\%$ when trained on annotated transcripts (their Table~2).
+\end{observation}
+
+\section{Running the protocol}\label{sec:pvg:running}
+
+The script \texttt{11-pvg-bec.py} plays the binary erasure channel in three ways. First it enumerates the equilibria of the game of the worked run in three orders of play, over the four prover strategies and $7{,}381$ verifier strategies, and runs the protocol at each kind of equilibrium (\cref{tab:pvg:equilibria}); it finds the equilibria of \cref{thm:pvg:stackelberg} and \cref{prop:pvg:flood,prop:pvg:nash}, and no others.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}l c l c c@{}}
+\toprule
+order of play & $\Prov(1)$ & verifier & completeness & soundness error\\
+\midrule
+verifier first & $1$ & $v_1$ & $1$ \enspace($1.000$) & $0$ \enspace($0.000$)\\
+simultaneous & $1$ & $v_1$ & $1$ \enspace($1.000$) & $0$ \enspace($0.000$)\\
+simultaneous & $2$ & $\frac12\pvgrej+\frac12\pvgacc$ & $\frac12$ \enspace($0.495$) & $\frac12$ \enspace($0.490$)\\
+prover first & $2$ & $\sigma(\pvgacc)=\frac12$ & $\frac12$ \enspace($0.512$) & $\frac12$ \enspace($0.503$)\\
+\bottomrule
+\end{tabular}
+\caption{All equilibria of the game of the worked run among the verifier strategies with weights in multiples of $\frac1{120}$ ($61$ of them in the last row); on the false instance the equilibrium prover may send $0$ or $2$. Exact completeness and soundness error, with rates measured in $4{,}000$ runs of \cref{prot:pvg:game} (the equilibrium prover on $x=1$, the best cheater on $x=0$) in parentheses; each Clopper--Pearson $95\%$ interval contains the exact value. Script \texttt{11-pvg-bec.py}, seed $1111$.}\label{tab:pvg:equilibria}
+\end{table}
+
+Second, it trains the game with the sixteen tokens of the experiment of \textcite{AnilEtAl2021}, token $0$ only on false instances, token $1$ only on true ones, and fourteen erasures, with $\gamma=0.05$. The prover has standard normal initial softmax logits for each instance and takes $10{,}000$ gradient steps of size $1$; after each step the verifier plays its exact best response, the limit of two-timescale training. In simultaneous play the prover's gradient holds the verifier fixed; when the prover leads, it differentiates through the verifier's response. Third, it freezes the verifier trained by simultaneous play and one trained collaboratively, and trains a cheating prover against each, from uniform probabilities, by $1{,}000$ gradient steps on its loss on false instances.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=8mm,y descriptions at=edge left},vplot,
+    width=0.36\linewidth,height=0.28\linewidth,xmode=log,ymin=-0.03,ymax=1.03,
+    ytick={0,0.25,0.5,0.75,1},legend style={font=\scriptsize}]
+\nextgroupplot[xlabel={prover steps},ylabel={acceptance probability},xmin=0.8,xmax=13000,
+    title={(a) simultaneous play},legend to name=pvglegtrain,legend columns=5,
+    legend style={/tikz/every even column/.append style={column sep=3mm}}]
+\addplot[guide,forget plot] coordinates {(0.8,0.954545) (13000,0.954545)};
+\addplot[guide,forget plot] coordinates {(0.8,0.045455) (13000,0.045455)};
+\addplot[theory] table[x=t,y=simC]{figures/data/11-pvg-train.dat};
+\addplot[verifier,line width=1.0pt,no marks] table[x=t,y=simS]{figures/data/11-pvg-train.dat};
+\addplot[bound] table[x=t,y=simB]{figures/data/11-pvg-train.dat};
+\addplot[honest,ebars] table[x=t,y=simC,y error plus=simCp,y error minus=simCm]{figures/data/11-pvg-train-meas.dat};
+\addplot[cheat,ebars] table[x=t,y=simS,y error plus=simSp,y error minus=simSm]{figures/data/11-pvg-train-meas.dat};
+\legend{completeness (exact),soundness error (exact),bound of \cref{prop:pvg:approx},trained prover on $x=1$,best cheater on $x=0$}
+\nextgroupplot[xlabel={prover steps},xmin=0.8,xmax=13000,title={(b) prover first}]
+\addplot[guide,forget plot] coordinates {(0.8,0.5) (13000,0.5)};
+\addplot[theory] table[x=t,y=folC]{figures/data/11-pvg-train.dat};
+\addplot[verifier,line width=1.0pt,no marks] table[x=t,y=folS]{figures/data/11-pvg-train.dat};
+\addplot[bound] table[x=t,y=folB]{figures/data/11-pvg-train.dat};
+\addplot[honest,ebars] table[x=t,y=folC,y error plus=folCp,y error minus=folCm]{figures/data/11-pvg-train-meas.dat};
+\addplot[cheat,ebars] table[x=t,y=folS,y error plus=folSp,y error minus=folSm]{figures/data/11-pvg-train-meas.dat};
+\nextgroupplot[xlabel={cheater's steps $+1$},xmin=0.8,xmax=1300,title={(c) frozen verifiers},
+    legend style={at={(0.97,0.5)},anchor=east}]
+\addplot[theory2] table[x=t1,y=col]{figures/data/11-pvg-stress.dat};
+\addplot[verifier,line width=1.0pt,no marks] table[x=t1,y=pvg]{figures/data/11-pvg-stress.dat};
+\addplot[bound] table[x=t1,y=colbound]{figures/data/11-pvg-stress.dat};
+\addplot[bound,forget plot] table[x=t1,y=pvgbound]{figures/data/11-pvg-stress.dat};
+\addplot[cheat2,ebars] table[x=t1,y=col,y error plus=colp,y error minus=colm]{figures/data/11-pvg-stress-meas.dat};
+\addplot[cheat,ebars] table[x=t1,y=pvg,y error plus=pvgp,y error minus=pvgm]{figures/data/11-pvg-stress-meas.dat};
+\legend{collaborative,game-trained,$s(\sigma)$}
+\end{groupplot}
+\end{tikzpicture}\par\vspace{1mm}
+\ref{pvglegtrain}
+\end{fullwidth}
+\caption{The binary erasure channel with sixteen tokens and smoothing $\gamma=0.05$ (script \texttt{11-pvg-bec.py}; training seed $11$, protocol seeds $1112$ and $1113$). (a, b) Exact acceptance probabilities during training (lines) and rates measured over $4{,}000$ runs per point (marks): the trained prover on true instances (the completeness) and the best cheating prover on false instances (the soundness error $s(\sigma)$); dashed indigo, the bound $1-2^{-\Lambda(\sigma)/\cD(0)}$ of \cref{prop:pvg:approx}; dashed gray, the limits $(1+\gamma)/(1+2\gamma)$, $\gamma/(1+2\gamma)$ and $\frac12$ of \cref{prop:pvg:bec}. (c) A cheating prover trained on false instances against two frozen verifiers: its exact (lines) and measured (marks, $4{,}000$ runs) acceptance, and each verifier's soundness error (dashed). All intervals are Clopper--Pearson $95\%$ intervals.}\label{fig:pvg:runs}
+\end{figure}
+
+In simultaneous play (\cref{fig:pvg:runs}(a)) the trained pair reaches the limits of \cref{prop:pvg:bec}: after $10{,}000$ steps the prover sends the proof token with probability $0.99996$, completeness is $0.9545$ and the soundness error $0.0455$, equal to $(1+\gamma)/(1+2\gamma)$ and $\gamma/(1+2\gamma)$ to four digits. On the way, at step $100$, the best cheater was accepted with probability $0.68$: the prover on true instances had moved to an erasure token that the verifier accepted, and the cheater had followed it there. The bound of \cref{prop:pvg:approx} lies above every measured rate of the best cheater and ends at $0.089$, about twice the soundness error, because the smoothed verifier also loses on true instances. When the prover leads (\cref{fig:pvg:runs}(b)) it stops sending the proof: at step $10{,}000$ it sends token $1$ on true instances with probability $0.00047$, completeness is $0.5001$ and the soundness error $0.4999$, while the verifier would still accept the proof token with probability $0.9545$.
+
+Over $100$ seeds, simultaneous play came within $0.01$ of both limits by step $10{,}000$ in $90$ runs (median $1{,}050$) and in all $100$ by step $36{,}500$; the slow runs sat on an erasure token shared by both instances, accepted with probability $\frac12$, while the nearly abandoned proof token regained probability slowly. When the prover led, completeness was within $0.01$ of $\frac12$ in every seed by step $160$, but the soundness error at step $10{,}000$ ranged from $0.4999$ to $0.7617$, through nearly unused erasure tokens that kept early label information. A verifier taking five gradient steps per prover step did as well.
+
+The stress test of \cref{fig:pvg:runs}(c) repeats the test of \cref{obs:pvg:anil}. The cheater against the game-trained verifier is accepted with probability $0.0455$ from start to end, its soundness error. The collaboratively trained prover sends erasure token $14$ on true instances with probability $0.999$, and the verifier learned to accept it; the cheater finds the token and is accepted with probability $0.9541$ after $1{,}000$ steps, against the soundness error $0.9545$. Over $100$ seeds of $2{,}000$ steps, collaborative training left a soundness error of at least $0.9$ in $94$. Of the $74$ intervals in \cref{fig:pvg:runs}, $73$ contain the exact value, and none lies above a bound it must respect.
+
+\section{The three questions}\label{sec:pvg:questions}
+
+\questionone It depends on the order of play. When the verifier commits before the instance is drawn and the prover responds, the equilibrium notion is the verifier-leading Stackelberg equilibrium, and if the classes contain a complete and sound pair, the equilibria are exactly such pairs (\cref{thm:pvg:stackelberg}). The prover argues ``yes'' on every instance; honesty means sending, on each true instance, a message the verifier accepts, which is a best response, and on false instances nothing is accepted, so no lie pays. The other orders have bad equilibria: a trivial verifier when the verifier sees the instance first, an uninformative prover when the prover leads, and a coordination problem among the Nash equilibria of simultaneous play (\cref{prop:pvg:trivial,prop:pvg:flood,prop:pvg:nash}). The honest strategy costs a search for an accepted message, and in practice accuracy too, the legibility tax of \cref{obs:pvg:kirchner}. That gradient training reaches a complete and sound protocol, or its smoothed counterpart, from every interior start is proved here only for the binary erasure channel (\cref{prop:pvg:bec}), where our runs took up to $36{,}500$ steps; general results are local \parencite{FiezChasnovRatliff2020}.
+
+\questiontwo At deployment the verifier draws one base verifier and evaluates it once: in the binary erasure channel a table lookup; in \textcite{KirchnerEtAl2024} one pass of a model with about $10^{-3}$ of the prover's pretraining compute; in the B\'ezout check of \textcite{AmitEtAl2025}, two multiplications, an addition and two divisions with remainder. The real cost is training: the verifier must be optimized against the best responses of a prover that is itself trained, over many rounds, on labeled instances.
+
+\questionthree At an exact equilibrium, when the classes contain a complete and sound pair, always, against every prover in $\cP$: the soundness error is $0$ (\cref{thm:pvg:stackelberg}). At an $\eps$-approximate equilibrium a lie on a false instance $x$ is caught with probability at least $2^{-\eps/\cD(x)}$, which fades on instances rare in training (\cref{prop:pvg:approx}); worst-case losses replace this by the soundness error itself (\cref{prop:pvg:worst}). Repetition with fresh draws from $\sigma$, accepting only if all $t$ runs accept, gives $s(\sigma)^t$ and $c^t$, and cannot remove errors that all base verifiers in $\sigma$ share. Against provers outside $\cP$ the theory says nothing, and soundness is measured only against the attacks tried: in our runs the best cheater was caught with probability $0.9545$ by the game-trained verifier and $0.0455$ by the collaborative one. With a hand-written verifier, as in self-proving models, the catch probability is at least $1-s$ on every input (\cref{def:pvg:selfproving}).
+
+\protocolcard{that $f(x)=1$, by one message checked by a verifier learned, not designed, from a class $\cV$ of small models}{a mixture $\V_\sigma$ of base verifiers in $\cV$; a prover $\Prov$ from a class $\cP$, arguing ``$f(x)=1$'' on every instance}{verifier first, instance after: the equilibria are exactly the complete and sound pairs (\cref{thm:pvg:stackelberg}); other orders have equilibria that prove nothing; honesty needs an accepted proof and in practice costs accuracy}{one evaluation of a base verifier per instance; training against best responses, with labeled instances}{always, against $\cP$, at an exact equilibrium; with probability at least $2^{-\eps/\cD(x)}$ on a false $x$ at an $\eps$-approximate one; against other provers, only as measured}{a complete and sound pair in the classes, an approximate equilibrium of the right order of play, and training instances that cover the instances that matter}
+
+\section{What the model leaves out}\label{sec:pvg:leaves}
+
+\paragraph{What was idealized away.} The theorems are about equilibria, and training may not reach one, may cycle, or may stop at a Nash equilibrium that is not verifier-leading, and dynamics that follow the leader's gradient are analyzed only near an equilibrium \parencite{FiezChasnovRatliff2020}. The verifier's weakness is modeled by a class $\cV$ assumed to contain a verifier that is complete and sound with some prover, and whether a network of a given size can soundly check free-form solutions is, as of 2026, not known; a verifier with $10^{-4}$ of the prover's compute made training unstable (\cref{obs:pvg:kirchner}). Training needs labels, while oversight is most needed where truth is unknown, a limitation that \textcite{KirchnerEtAl2024} list. Soundness holds against $\cP$, and the deployed prover may lie outside it; the losses are averages, which protect rare instances weakly (\cref{prop:pvg:approx}). And legibility to a small verifier is not legibility to a person: Kirchner et al.\ measured the transfer on one dataset, and their decline in human accuracy on sneaky solutions comes from a pilot study they call potentially flawed.
+
+\paragraph{Where it breaks.} The bad equilibria are real outcomes of training, in our runs (\cref{sec:pvg:running}) as in \cref{obs:pvg:anil}, and even the good dynamics pass through stretches in which the best cheater is accepted with probability above $\frac12$. With randomized verifiers and expected losses, a verifier-leading equilibrium need not be valid even when a valid system exists, because the expected loss lets the verifier give up rare instances (\cref{ex:pvg:giveup}). Frozen verifiers are not robust to every optimization: optimizing messages directly found accepted false messages on FindThePlus (\cref{obs:pvg:anil}), and in \textcite{KirchnerEtAl2024} separately trained sneaky provers exploited verifiers of relative size $10^{-3}$ until round~4, with attacks that the authors call far from complete. A learned verifier is a proxy for correctness, and optimizing hard against a learned proxy eventually lowers the true objective, as \textcite{GaoSchulmanHilton2023} measured for reward models; a small perturbation that flips a network's decision \parencite{SzegedyEtAl2014} is, for a verifier, an accepted false proof. And the honest prover pays: checkability training gave lower accuracy than training for correctness alone (\cref{obs:pvg:kirchner}).\sidenote{Kirchner et al.\ take the name legibility tax from Jan Leike, whom they cite.}
+
+\paragraph{Open problems.} When does gradient-based training reach a verifier-leading equilibrium beyond the binary erasure channel, and what do approximate equilibria guarantee? \Textcite{AnilEtAl2021} name the behavior of agents at approximate equilibria as work to be done and warn against deploying such systems before an equilibrium is reached. How can one certify that a learned verifier is sound against every prover in a class, rather than against the attacks tried? Can checkability be had without a legibility tax? \Textcite{KirchnerEtAl2024} suggest separating the model's reasoning from the proof it shows, and \textcite{KimLee2026}, in a workshop paper that we know from its abstract, propose a decoupled game whose equilibria are faithful and checkable translations of a solver's answers. Can the game be played without labels, as \textcite{KirchnerEtAl2024} ask? And does reinforcement learning from verifier feedback converge \parencite[Remark~4.2]{AmitEtAl2025}?
+
+\begin{exercises}
+\item \consolidation (The worked run.) In the game of the worked run, write $\sigma=(p_{\mathrm{rej}},p_{\mathrm{acc}},p_1)$. Show that $\Lambda(\sigma)=\frac12\bigl(-\log(p_{\mathrm{acc}}+p_1)\bigr)+\frac12\bigl(-\log(1-p_{\mathrm{acc}})\bigr)$, find its minimizers, and check \cref{thm:pvg:stackelberg}.\label{ex:pvg:run}
+
+\item \consolidation (Ties when the prover commits before the instance.) In the order $\V,\Prov,x$ the prover minimizes its expected loss $L_\Prov(\sigma,\cdot)$. In the game of the worked run, show: (a) against $v_1$ every prover strategy has infinite expected loss; (b) if the prover breaks ties in the verifier's favor, then $v_1$ is an optimal commitment; (c) if it breaks them against the verifier, then the verifier's loss can be made smaller than every $\delta>0$ (try $(1-\eta)v_1+\eta\pvgacc$) but not $0$, so the game has no equilibrium. (d) Add a false instance on which the prover can send only $0$, and a base verifier that accepts $1$ and $2$; show that with ties broken as in (b) this unsound verifier is an optimal commitment.\label{ex:pvg:ties}
+
+\item \consolidation\hard (Perfect soundness.) (a) Show that at every equilibrium of \cref{thm:pvg:stackelberg} each base verifier in the support of $\sigma$ forms a complete and sound pair with $\Prov$. (b) Show that if a language $L$ has an interactive proof (\cref{def:toolkit:ip}) with soundness error $0$, then $L\in\cc{NP}$. \hint{a certificate is a run of the protocol together with the verifier's coins.}\label{ex:pvg:perfect}
+
+\item \consolidation (Smoothed best responses.) (a) Show that $m[-(\rho+\gamma)\ln q-(1-\rho+\gamma)\ln(1-q)]$, with $m>0$, is minimized at $q=(\rho+\gamma)/(1+2\gamma)$, and derive the best responses used in \cref{prop:pvg:bec}. (b) For $\gamma=0.05$, compute the limits of \cref{prop:pvg:bec}(i) and the bound of \cref{prop:pvg:approx} at the limit; compare with \cref{fig:pvg:runs}(a).\label{ex:pvg:smooth}
+
+\item \consolidation (A sharper bound.) (a) Strengthen \cref{prop:pvg:correct}: a $\beta$-self-proving model is correct with probability at least $(\beta-s)/(1-s)$, for $s<1$. (b) Show that this is tight: for given $0<s<\beta\le1$, construct a verifier with soundness error exactly $s$ and a $\beta$-self-proving model that is correct with probability exactly $(\beta-s)/(1-s)$.\label{ex:pvg:tight}
+
+\item \variation (No sound verifier in the class.) Change the game of the worked run so that the prover may also send the proof $1$ on $x=0$. Show that no pair is complete and sound (the only sound verifier strategy is $\pvgrej$), that $\Lambda(\sigma)\ge1$ for every $\sigma$, and find all verifier-leading equilibria with their completeness and soundness error.\label{ex:pvg:nosound}
+
+\item \variation (Matching pennies.) A game has one true instance, on which the prover sends $c$, and one false instance, on which it sends $a$ or $b$; besides $\pvgrej$ and $\pvgacc$, the base verifiers accept $\{a,c\}$ and $\{b,c\}$. (a) Show that every base verifier has $\kappa=1$ in \cref{prop:pvg:worst}, and find the valid strategy of least $\kappa$. (b) With $\cD$ giving probability $\frac14$ to the true instance, find the verifier-leading equilibria under the expected losses of \cref{def:pvg:game}, and compare their errors with (a).\label{ex:pvg:pennies}
+
+\item \variation\hard (Giving up rare instances.) A true instance $T$ and a false one $F$ have probability $0.49$ each, a true $t$ and a false $f$ $0.01$ each; the prover sends $m_T$ on $T$, $a$ or $b$ on $F$, $m_t$ on $t$ and $m_f$ on $f$. Besides $\pvgrej$ and $\pvgacc$, the base verifiers accept $\{m_T,m_t,a\}$, $\{m_T,m_t,b\}$ and $\{m_T,m_f\}$. (a) Show that no base verifier is valid in the sense of \cref{prop:pvg:worst}, but the even mixture of the first two is, with completeness $1$. (b) Show that $\Lambda$ is convex here and least at the weights $2/51$, $2/51$ and $47/51$ on these three verifiers: the verifier-leading equilibrium accepts $f$ with probability $47/51$ and $t$ with $4/51$, so it is not valid. What does the expected loss let it do? (c) Show that the equilibrium is the same with ties broken against the verifier, and that with ties broken in its favor (\cref{ex:pvg:ties}) the first base verifier alone is optimal. Is it valid?\label{ex:pvg:giveup}
+
+\item \attack (A tell.) In the sixteen-token channel, a collaborative prover sends token $7$ on $x=1$ and token $0$ on $x=0$, and the verifier accepts exactly tokens $1$ and $7$. Show that this pair minimizes the collaborative loss (the prover paid for the verifier's correctness, with the unsmoothed losses of \cref{def:pvg:game}), and compute the acceptance probability of the best cheating prover. Then show that this verifier is not an optimal commitment in the verifier-leading game, and find one that is.\label{ex:pvg:tell}
+
+\item \attack (A checker that read the answer key.) A team fine-tunes its checker separately for each problem, with the problem's reference answer, before the solver writes its solution, and reports that the checker's loss on held-out problems is zero. Explain with \cref{prop:pvg:trivial} why this says nothing about the checker's soundness on problems without reference answers, and design a test that would.\label{ex:pvg:key}
+
+\item \simulation (Rare false instances.) Modify \texttt{11-pvg-bec.py} so that $x=0$ has probability $0.05$ (the best response now uses the posterior of $x=1$), and rerun simultaneous play, with $\gamma=0.05$ and $0.01$, from many seeds. Compare the final soundness errors with the bound of \cref{prop:pvg:approx}: why is it looser in runs that end sending the proof, and where, and why, do the others stall (compare the slow runs of \cref{sec:pvg:running})?\label{ex:pvg:rare}
+
+\item \research (Approximate equilibria on every instance.) \Cref{prop:pvg:approx} protects an instance in proportion to its probability under $\cD$. Design a training game, using samples from $\cD$ and a bounded number of calls to an adversary that proposes instances, whose approximate equilibria have small soundness error on every instance, and state what you can prove; \textcite[Propositions~9 and~10]{HammondAdamDay2025} give a starting point. What is open is a version for learned verifier classes whose sound members are not known in advance.\label{ex:pvg:robust}
+\end{exercises}
+
+\notesandrefs
+\Textcite{AnilEtAl2021} relate their game to selective rationalization, in which one network selects evidence and another decides, and to debate \parencite{IrvingEtAl2018}, the subject of \cref{ch:debate}, from which they differ by having one prover and by aiming to discover proof protocols. Stackelberg learning, with the leader's gradient corrected for the follower's response, is analyzed by \textcite{FiezChasnovRatliff2020}, whose two-timescale result \textcite{HammondAdamDay2025} use.
+
+Weak-to-strong generalization \parencite{BurnsEtAl2024} asks the complementary question, how far a strong model trained on a weak supervisor's labels exceeds the supervisor. Self-proving models connect the game to delegation (\cref{ch:delegation}): the honest transcripts that transcript learning needs come cheaply when the honest prover is efficient, as in doubly-efficient interactive proofs. \Cref{ch:pacverify} studies a verifier that checks a learned model with few samples.
+
+\paragraph{Translating the literature.} \Textcite{AnilEtAl2021} write $p$ and $v$ for policies, $\mathcal{P}$ and $\mathcal{V}$ (also $C_p$) for classes, $y'$ for the prover's label (here $1$) and $\lambda$ for our $\gamma$; their $p_{11}$ and $p_{00}$ are our $a$ and $b$. \Textcite{KirchnerEtAl2024} write $h$ and $s$ for the helpful and sneaky roles of one prover $\pi$, $R_V$ and $R_P$ for utilities. \Textcite{HammondAdamDay2025} write $\sigma^p,\sigma^v$ for strategies, $\mathrm{SE}_v$ for verifier-leading Stackelberg equilibria and $(X,S,\mathbb{P})$ for a decision problem, with $S$ our $X_1$; their \emph{adp} game is \cref{def:pvg:game} with an arbitrary prover class. \Textcite{AmitEtAl2025} write $P_\theta$, $F^*$, $\mu$ and $\lambda$ for our $\Prov_\theta$, $F$, $\cD$ and step size.
+
+\printchapterbib
+\end{refsection}

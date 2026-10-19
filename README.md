@@ -12,6 +12,7 @@ A series of textbooks that should exist but don't.
 | 2 | *The Hydrogen Atoms of Deep Learning: Solvable Models and What They Get Wrong* (394 pp.) | [`hydrogen-atoms/`](hydrogen-atoms/) | [`Hydrogen-Atoms-of-Deep-Learning.pdf`](hydrogen-atoms/Hydrogen-Atoms-of-Deep-Learning.pdf) |
 | 3 | *Optimizers in the Wild: Steepest Descent and the Dynamics of Training* (369 pp.) | [`optimizers-in-the-wild/`](optimizers-in-the-wild/) | [`Optimizers-in-the-Wild.pdf`](optimizers-in-the-wild/Optimizers-in-the-Wild.pdf) |
 | 4 | *Deep Learning as an Experimental Science: A Laboratory Manual* (365 pp.) | [`experimental-science/`](experimental-science/) | [`Deep-Learning-as-an-Experimental-Science.pdf`](experimental-science/Deep-Learning-as-an-Experimental-Science.pdf) |
+| 5 | *Verifiable Intelligence: Interactive Proofs as a Theory of AI Oversight* (357 pp.) | [`verifiable-intelligence/`](verifiable-intelligence/) | [`Verifiable-Intelligence.pdf`](verifiable-intelligence/Verifiable-Intelligence.pdf) |
 
 ## Layout
 
@@ -21,6 +22,7 @@ dissolving-problems/     volume 1: main.tex, chapters/, frontmatter/, tools/, ST
 hydrogen-atoms/          volume 2: main.tex, hydrogen.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
 optimizers-in-the-wild/  volume 3: main.tex, wild.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
 experimental-science/    volume 4: main.tex, laboratory.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
+verifiable-intelligence/ volume 5: main.tex, verifiable.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
 ```
 
 A new volume is a sibling folder with its own `main.tex` (`\documentclass{missingbook}`), per-chapter `.tex` and `.bib` files, and a copy of `dissolving-problems/tools/`.

@@ -1,0 +1,424 @@
+\protocolchapter{Spot Checks}{Reading three bits of a long proof}{the linearity test and the Hadamard PCP}{S,Q,Q,Q,D}{ch:spotchecks}
+\begin{refsection}[chapters/02-spotchecks.bib]
+\newcommand{\spotchecksquadeq}{\textsc{QuadEq}}
+
+\begin{chaptersummary}
+A model hands its overseer a long derivation, and she can read a few pieces of it. Random checks of an ordinary proof find a single wrong step with probability no better than the fraction read; the remedy is to write the proof in an error-correcting code. We prove that the linearity test of Blum, Luby and Rubinfeld rejects a function with probability at least its distance from linear, and that the Hadamard PCP for quadratic equations over $\F_2$ reads twelve bits, accepts every correct proof, and accepts every proof of a false claim with probability at most $3/4$, a constant that some proof attains; the PCP theorem, stated with a sketch of Dinur's proof, makes such proofs short. Honesty is a best response because the proof is a fixed string; the verifier spends twelve queries and polynomially many coins per run; a lie is caught with probability at least $1/4$ per run. Left out: a chain of thought is not a code, encoded proofs are unreadable to people, and a model that answers questions is not a fixed string.
+\end{chaptersummary}
+
+\section{The oversight problem: a derivation too long to read}\label{sec:spotchecks:problem}
+
+\begin{oversight}[a derivation too long to read]
+A model is asked whether a proposed controller keeps a chemical reactor within its safe temperature range under every admissible disturbance. It answers yes and submits a derivation of ten thousand steps (algebraic rewritings, interval bounds, case splits), each of which follows from earlier ones by a rule the overseer knows. The overseer, a control engineer, can check one step in a few minutes and has time for three. If the derivation is wrong, it may be wrong in a single step. Which steps should she check, and what does she know if all of them are correct? (The scenario is invented.)
+\end{oversight}
+
+Her difficulty is not that a step is hard to check but that a wrong derivation can be right almost everywhere. A model that wants a false conclusion accepted needs one bad step, placed where it likes. Whatever rule she uses to pick three steps, some position is picked with probability at most $3/10{,}000$, and an error placed there survives with probability at least $0.9997$ (\cref{prop:spotchecks:naive}); to catch it with probability one half she must read half of the derivation.
+
+Checking every step is what \term{process supervision}\index{process supervision} does. \Textcite{UesatoEtAl2022}, in a preprint, compared feedback on final answers with feedback on each step of grade-school mathematics solutions. \Textcite{LightmanEtAl2024} had people label each step of model-written solutions to problems of the MATH benchmark as positive, negative or neutral, $800{,}000$ labels of $75{,}000$ solutions to $12{,}000$ problems; a reward model trained on these labels, choosing among sampled solutions, solved $78\%$ of a representative subset of the MATH test problems, more than one trained on final answers only.\sidenote{Both reward models choose the best of $1{,}860$ solutions sampled from a GPT-4 base model fine-tuned on mathematics; the outcome-supervised one solved $72.4\%$ and majority voting $69.6\%$ of the $500$ test problems. The reward models rerank solutions; they were not used for reinforcement learning \parencite{LightmanEtAl2024}.} The labels are the expensive part: the overseer's work grows with the length of every argument. Where that is too expensive, oversight samples: in the AI control experiments of \textcite{GreenblattEtAl2024}, trusted labor audits about $2\%$ of a model's outputs, against a model that tries to subvert the protocol.
+
+Complexity theory answered the overseer's question for formal proofs between 1990 and 1992 by changing the proof rather than the reader. \Textcite{BlumLubyRubinfeld1993} showed in 1990 that a program claimed to compute a linear function can be tested at three related random points and corrected at two; \textcite{BabaiEtAl1991} rewrote \cc{NP} witnesses so that, with the input also given in an error-correcting code, they can be checked in polylogarithmic time; and \textcite{AroraSafra1998} and \textcite{AroraEtAl1998} proved the PCP theorem: every \cc{NP} statement has a proof, polynomially longer than an ordinary one, that a verifier checks by reading a constant number of its bits. The proofs are written in an error-correcting code, in which a single false claim forces errors at a constant fraction of all positions.\sidenote{The title page of this book shows the Hadamard codeword of the number $1985$, the year in which interactive proofs were introduced \parencite{GoldwasserMicaliRackoff1989,Babai1985}, with three ringed bits at positions $x$, $y$ and $x+y$: one run of the linearity test of this chapter, which reads $1$, $1$ and $0$ and accepts.}
+
+This chapter builds the simplest such proof, the Hadamard PCP, proves exactly how often it catches a lie, and states what the PCP theorem adds. Its answer may not please the overseer: a proof can be written so that three bits suffice, but she cannot read it herself.
+
+\section{The protocol: a proof written in the Hadamard code}\label{sec:spotchecks:protocol}
+
+Throughout, $\F_2=\{0,1\}$ with arithmetic modulo $2$, and $u\cdot x=\sum_iu_ix_i$ for $u,x\in\F_2^\ell$. The linear functions from $\F_2^\ell$ to $\F_2$ are the $2^\ell$ functions $h_u(x)=u\cdot x$; the table of values of $h_u$ is the \term{Hadamard codeword}\index{Hadamard code} of $u$, an encoding of $\ell$ bits into $2^\ell$. We write $\dist(f,f')=\Prob_x[f(x)\ne f'(x)]$ for $x$ uniform on $\F_2^\ell$, and $\delta(f)=\min_u\dist(f,h_u)$ for the distance from $f$ to the nearest linear function; in this chapter $\delta$ is a distance, not a confidence level, and $f$ is \emph{$\delta$-close to linear} if $\delta(f)\le\delta$. The $\ell\times\ell$ matrices over $\F_2$ form a vector space with the inner product $\ip{A,W}=\sum_{i,i'}A_{ii'}W_{ii'}$, and everything said about $\F_2^\ell$ applies to it.
+
+\begin{definition}[Probabilistically checkable proofs]\label[definition]{def:spotchecks:pcp}\index{probabilistically checkable proof}
+Let $r,q\colon\N\to\N$. A \term{PCP verifier} for a language $L$ with randomness $r$ and query complexity $q$ is a probabilistic polynomial-time algorithm $\V$ with read access to a proof string $\pi$. On an input $x$ of length $n$ it draws $\rho\in\bits^{r(n)}$ uniformly, computes from $x$ and $\rho$ alone $q(n)$ positions of $\pi$, reads the bits there, and accepts or rejects as a function of $x$, $\rho$ and the bits read; $\V^\pi(x)$ denotes its verdict. It has \emph{completeness} $1$ and \emph{soundness error} $s$ if
+\begin{itemize}
+\item for every $x\in L$ there is a proof $\pi$ with $\Prob_\rho[\V^\pi(x)=\acc]=1$, and
+\item for every $x\notin L$ and every proof $\pi$, $\Prob_\rho[\V^\pi(x)=\acc]\le s$.
+\end{itemize}
+The class $\cc{PCP}(r(n),q(n))$ consists of the languages that have such a verifier with $s=1/2$.
+\end{definition}
+
+The proof is fixed before the coins are drawn, so soundness is a statement about strings, not strategies. Positions have polynomially many bits, so a proof may be exponentially long, though at most $q\,2^r$ positions can ever be read. A soundness error $s<1$ is cheap to lower: $t$ runs with independent coins accept a fixed proof with probability exactly the $t$-th power of the acceptance probability of one run, since their verdicts are then independent.\sidenote{For interactive proofs repetition needs an argument (\cref{prop:toolkit:amplification}). Our verifiers choose all positions before reading; a verifier whose $q$ positions depend on bits already read can be replaced by one that reads all positions of its decision tree, at most $2^q-1$ of them.} With no randomness, $\cc{NP}=\cc{PCP}(0,\poly(n))$ (\cref{thm:certificates:np}); the question is what a few random bits buy. The claims we make checkable are systems of quadratic equations.
+
+\begin{problem}[\spotchecksquadeq]\label[problem]{def:spotchecks:quadeq}\index{QuadEq@\textsc{QuadEq}}
+Given matrices $A_1,\dots,A_M\in\F_2^{\ell\times\ell}$ and $b\in\F_2^M$, is there a $u\in\F_2^\ell$ with $u^\top A_ju=b_j$ for every $j$?
+\end{problem}
+
+Every polynomial equation of degree at most $2$ over $\F_2$ can be written as $u^\top Au=\sum_{i,i'}A_{ii'}u_iu_{i'}=b$, since $u_i=u_iu_i$ for $u_i\in\F_2$, and \spotchecksquadeq{} is \cc{NP}-complete (\cref{lem:spotchecks:quadeq}). A solution $u$ is encoded twice: by $h_u$, a table of $2^\ell$ bits, and by the Hadamard codeword $h_{uu^\top}$ of the matrix $uu^\top$, a table of $2^{\ell^2}$ bits with entry $\ip{uu^\top,Z}$ at $Z$, which restates $u$ in quadratic form so that quadratic equations can be tested with linear operations. Expanding the sums gives, for all $u,r,r'\in\F_2^\ell$ and $A\in\F_2^{\ell\times\ell}$,
+\begin{equation}\label{eq:spotchecks:identities}
+  \ip{uu^\top,rr'^\top}=(u\cdot r)(u\cdot r'),\qquad \ip{uu^\top,A}=u^\top Au.
+\end{equation}
+
+\begin{protocol}{The Hadamard PCP}\label{prot:spotchecks:hadamard}
+\item[\msg{P}{V}] Before the first query, write the proof $\pi=(f,g)$: a table $f\colon\F_2^\ell\to\F_2$ of $2^\ell$ bits and a table $g\colon\F_2^{\ell\times\ell}\to\F_2$ of $2^{\ell^2}$ bits. An honest prover who knows a solution $u$ writes $f=h_u$ and $g=h_{uu^\top}$.
+\phase{One run: four tests with independent uniform coins}
+\item[\act{V}] \emph{Linearity of $f$.} Draw $x,y\in\F_2^\ell$; read $f(x)$, $f(y)$, $f(x+y)$; require $f(x)+f(y)=f(x+y)$.
+\item[\act{V}] \emph{Linearity of $g$.} Draw $X,Y\in\F_2^{\ell\times\ell}$; read $g(X)$, $g(Y)$, $g(X+Y)$; require $g(X)+g(Y)=g(X+Y)$.
+\item[\act{V}] \emph{Tensor test.} Draw $r,r'\in\F_2^\ell$ and $Z\in\F_2^{\ell\times\ell}$; read $f(r)$, $f(r')$, $g(rr'^\top+Z)$, $g(Z)$; require $f(r)f(r')=g(rr'^\top+Z)+g(Z)$.
+\item[\act{V}] \emph{Satisfiability test.} Draw $\zeta\in\F_2^M$ and $Z'\in\F_2^{\ell\times\ell}$; let $C=\sum_j\zeta_jA_j$ and $\beta=\sum_j\zeta_jb_j$; read $g(C+Z')$ and $g(Z')$; require $g(C+Z')+g(Z')=\beta$.
+\item[\act{V}] \acc{} if all four requirements hold; otherwise \rej.
+\end{protocol}
+
+The linearity tests ask whether $f$ and $g$ are close to codewords, the tensor test whether $g$ encodes the tensor square of the vector encoded by $f$, and the satisfiability test checks a random combination of the equations. The verifier reads $g$ at the points that matter, $rr'^\top$ and $C$, only through two uniform points with the right sum, because those points lie in small sets where a cheater could plant answers (\cref{lem:spotchecks:decode}, \cref{ex:spotchecks:noselfcorrect}). One run reads $12$ bits and draws $2\ell+2\ell^2+(2\ell+\ell^2)+(M+\ell^2)=4\ell^2+4\ell+M$ random bits.
+
+\paragraph{A worked run.} Take $\ell=3$ and the system
+\[
+  u_1u_2+u_3=1,\qquad u_1u_3+u_2=1,\qquad u_2u_3+u_1+u_2=1,
+\]
+whose only solution is $u=(1,0,1)$, as a check of the eight candidates shows. Writing a vector as a string of bits and a $3\times3$ matrix row by row, $A_1=\texttt{010/000/001}$, $A_2=\texttt{001/010/000}$, $A_3=\texttt{100/011/000}$ and $b=\texttt{111}$. Since $uu^\top=\texttt{101/000/101}$, the honest proof has $f(x)=x_1+x_3$ and $g(Z)=Z_{11}+Z_{13}+Z_{31}+Z_{33}$, the sum of the corners of $Z$; in the run of \cref{tab:spotchecks:run} the verifier reads twelve of its $8+512$ bits and accepts.
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+test & coins & bits read & requirement\\
+\midrule
+linearity of $f$ & $x=\texttt{110}$, $y=\texttt{011}$ & $f(\texttt{110})=1$, $f(\texttt{011})=1$, $f(\texttt{101})=0$ & $1+1=0$\\
+linearity of $g$ & $X=\texttt{110/010/001}$, & $g(X)=0$, $g(Y)=1$, & $0+1=1$\\
+ & $Y=\texttt{101/100/011}$ & $g(\texttt{011/110/010})=1$ & \\
+tensor & $r=\texttt{100}$, $r'=\texttt{001}$, & $f(r)=1$, $f(r')=1$, & $1\cdot1=0+1$\\
+ & $Z=\texttt{010/100/001}$ & $g(\texttt{011/100/001})=0$, $g(Z)=1$ & \\
+satisfiability & $\zeta=\texttt{101}$, so $C=\texttt{110/011/001}$, & $g(\texttt{111/001/101})=0$, & $0+0=\beta=0$\\
+ & $\beta=0$; $Z'=\texttt{001/010/100}$ & $g(Z')=0$ & \\
+\bottomrule
+\end{tabular}
+\end{fullwidth}
+\caption{One run of \cref{prot:spotchecks:hadamard} on the honest proof for the system of the worked run: $u=\texttt{101}$, $f(x)=x_1+x_3$, and $g$ the sum of the four corners of a matrix. In the tensor test $rr'^\top+Z=\texttt{011/100/001}$; in the satisfiability test $C+Z'=\texttt{111/001/101}$.}
+\label{tab:spotchecks:run}
+\end{table}
+
+A prover who claims the non-solution $u'=\texttt{110}$ and writes its codewords correctly passes the first three tests with certainty. Since $u'$ violates only the third equation, the satisfiability test computes $g(C+Z')+g(Z')+\beta=\sum_j\zeta_j(u'^\top A_ju'+b_j)=\zeta_3$ and rejects exactly when $\zeta_3=1$: with probability $1/2$, and with the coins of \cref{tab:spotchecks:run}.
+
+\paragraph{What one had to notice.} An ordinary proof concentrates an error in one place, where a reader who samples places misses it. The remedy is to write the proof in a code in which every false proof is far, in Hamming distance, from every valid one; the verifier then need not find the error, only estimate a distance, which a few random positions do. And testing goes with decoding: once a table passes a test that only near-codewords pass, the verifier can read it as the codeword it is close to.
+
+\begin{dictionary}
+proof string $\pi=(f,g)$, fixed before the queries & an argument the model commits to before the overseer looks: a derivation, a log, a certificate\\
+one query & one item the overseer reads, the unit of her attention\\
+the Hadamard tables $h_u$, $h_{uu^\top}$ & a redundant format that restates every fact many times, so that a false fact cannot hide in one place\\
+the linearity test & a cross-check of three related statements\\
+reading $g(y+Z)+g(Z)$ instead of $g(y)$ & asking a question in a randomly disguised form, so that a planted answer cannot be aimed at it\\
+the tensor and satisfiability tests & checking that the bookkeeping matches the answer, and checking a random combination of the requirements\\
+soundness error $3/4$ per run & the chance that a wrong argument survives one spot check\\
+the reduction to \spotchecksquadeq & the claim must be stated formally, and the overseer must know the encoding
+\end{dictionary}
+
+\section{The theory: testing and decoding the Hadamard code}\label{sec:spotchecks:blr}
+
+We use Fourier analysis on $\F_2^\ell$ (\cref{thm:toolkit:parseval}), with characters indexed by vectors: $\chi_u(x)=(-1)^{u\cdot x}$ is the character $\chi_S$ of the appendix with $S=\{i:u_i=1\}$.\sidenote{Indexing characters by vectors makes the group structure visible: $\chi_u\chi_v=\chi_{u+v}$ and $\chi_u(x+y)=\chi_u(x)\chi_u(y)$.} A function $F\colon\F_2^\ell\to\{-1,1\}$ is $F=\sum_u\hat F(u)\chi_u$ with $\hat F(u)=\E_x[F(x)\chi_u(x)]$; the characters are orthonormal, $\E_x[\chi_u(x)\chi_v(x)]=\ind[u=v]$, and Parseval's identity says $\sum_u\hat F(u)^2=1$. For $f\colon\F_2^\ell\to\F_2$ let $F=(-1)^f$. The product $F(x)\chi_u(x)$ is $1$ where $f$ agrees with $h_u$ and $-1$ where it does not, so the largest Fourier coefficient measures closeness to the code:
+\begin{equation}\label{eq:spotchecks:distance}
+  \hat F(u)=1-2\dist(f,h_u),\qquad \max_u\hat F(u)=1-2\delta(f).
+\end{equation}
+
+\begin{theorem}[The linearity test; \textcite{BlumLubyRubinfeld1993}, \textcite{BellareEtAl1993}, \textcite{BellareEtAl1996}]\label{thm:spotchecks:blr}\index{linearity test}
+Let $f\colon\F_2^\ell\to\F_2$ and $\delta=\delta(f)$. For $x$ and $y$ drawn independently and uniformly from $\F_2^\ell$,
+\[
+  \Prob_{x,y}\bigl[f(x)+f(y)\ne f(x+y)\bigr]\ \ge\ \max\{\delta,\ 3\delta-6\delta^2\}.
+\]
+In particular every linear function passes the test with probability $1$, and a function that passes with probability at least $1-\eta$ is $\eta$-close to linear.
+\end{theorem}
+
+Here $x$ and $y$ are points of $\F_2^\ell$, not inputs. The first bound, with its Fourier proof, is due to \textcite{BellareEtAl1996}, the second to \textcite{BellareEtAl1993}. The first is the better one for $\delta>1/3$, the second for $\delta<1/3$, where it is nearly three times larger.
+
+\begin{proof}
+The plan is to prove the two bounds separately: the first by Fourier analysis, the second by counting how many of the three points $x$, $y$, $x+y$ fall where $f$ is wrong.
+
+\emph{The bound $\delta$.} Let $F=(-1)^f$. The test accepts exactly when $F(x)F(y)F(x+y)=1$, so its acceptance probability is $\frac12+\frac12\E_{x,y}[F(x)F(y)F(x+y)]$. Expand each of the three factors in the Fourier basis. Since $\chi_w(x+y)=\chi_w(x)\chi_w(y)$ and $\chi_u\chi_w=\chi_{u+w}$, orthonormality gives
+\[
+  \E_{x,y}[\chi_u(x)\chi_v(y)\chi_w(x+y)]=\E_x[\chi_{u+w}(x)]\,\E_y[\chi_{v+w}(y)]=\ind[u=v=w],
+\]
+so only the terms with $u=v=w$ survive, and
+\begin{equation}\label{eq:spotchecks:blrfourier}
+  \Prob_{x,y}[\acc]=\frac12+\frac12\sum_u\hat F(u)^3.
+\end{equation}
+Each term satisfies $\hat F(u)^3\le\bigl(\max_v\hat F(v)\bigr)\hat F(u)^2$, whatever the sign of $\hat F(u)$. Summing, and using Parseval's identity and \eqref{eq:spotchecks:distance}, we get $\sum_u\hat F(u)^3\le1-2\delta$, and the acceptance probability is at most $1-\delta$.
+
+\emph{The bound $3\delta-6\delta^2$.} Let $h$ be a linear function at distance $\delta$ from $f$, and $B=\{x:f(x)\ne h(x)\}$, a set of density $\delta$. Since $h(x)+h(y)+h(x+y)=0$, the sum $f(x)+f(y)+f(x+y)$ is, modulo $2$, the number $K$ of the points $x$, $y$, $x+y$ that lie in $B$; the test rejects exactly when $K$ is odd. Each of the three points is uniform on $\F_2^\ell$, and each pair of them is uniform on $\F_2^\ell\times\F_2^\ell$ (the pair $(x,x+y)$, say, is a bijective image of $(x,y)$). Let $p_k=\Prob[K=k]$. Counting points gives $p_1+2p_2+3p_3=\E K=3\delta$, and counting pairs gives $p_2+3p_3=\E\binom K2=3\delta^2$. Subtracting twice the second identity from the first gives $p_1=3\delta-6\delta^2+3p_3$, so the rejection probability is
+\[
+  p_1+p_3=3\delta-6\delta^2+4p_3\ \ge\ 3\delta-6\delta^2.
+\]
+For the last sentence of the theorem: a linear $f$ has $f(x)+f(y)=f(x+y)$ everywhere, and if the rejection probability is at most $\eta$, then $\delta\le\eta$ by the first bound.
+\end{proof}
+
+\begin{remark}[How tight the two bounds are]\label[remark]{rem:spotchecks:tight}
+If the set $B$ of the proof lies inside the hyperplane $\{x:x_1=1\}$ and has density $\delta\le1/4$, then two points of $B$ never sum to a point of $B$, so $p_3=0$ and the rejection probability is exactly $3\delta-6\delta^2$; \textcite{BellareEtAl1996} attain this value up to $\delta=5/16$. The function $x_1x_2+\dots+x_{2k-1}x_{2k}$ has distance $\frac12-2^{-k-1}$ and rejection probability $\frac12-2^{-2k-1}$, whose ratio tends to $1$ as $k$ grows (\cref{ex:spotchecks:families}; \cref{fig:spotchecks:blr}). In between, neither bound is the truth: \textcite{BellareEtAl1996} also proved that the rejection probability is at least $45/128$ whenever $\delta\ge1/4$, more than both bounds give for $5/16<\delta<45/128$.\index{bent function}
+\end{remark}
+
+A table that passes the linearity test is close to a codeword, and the verifier can then read the codeword instead of the table.
+
+\begin{lemma}[Local decoding]\label[lemma]{lem:spotchecks:decode}\index{local decoding}\index{self-correction}
+Let $g\colon\F_2^\ell\to\F_2$ be at distance at most $\delta$ from a linear function $h$. For every point $y\in\F_2^\ell$, if $Z$ is uniform on $\F_2^\ell$, then $\Prob_Z\bigl[g(y+Z)+g(Z)\ne h(y)\bigr]\le2\delta$. The same holds on $\F_2^{\ell\times\ell}$.
+\end{lemma}
+
+\begin{proof}
+The points $y+Z$ and $Z$ are each uniform, so $g$ differs from $h$ at each of them with probability at most $\delta$, and at one of them with probability at most $2\delta$. Where $g$ agrees with $h$ at both, linearity gives $g(y+Z)+g(Z)=h(y+Z)+h(Z)=h(y)$.
+\end{proof}
+
+The rule $y\mapsto g(y+Z)+g(Z)$ is the \term{self-correction} of \textcite{BlumLubyRubinfeld1993}. It reads $g$ only at uniformly distributed points, so errors that a cheater places with $y$ in mind are hit no more often than other errors; \cref{ch:consistency} uses it to correct programs (\cref{prop:consistency:selfcorrect}). The other tool is a fact about random sums.
+
+\begin{lemma}[Random subsums]\label[lemma]{lem:spotchecks:subset}\index{random subsum principle}
+\leavevmode
+\begin{enumerate}
+\item If $v\in\F_2^\ell$ is nonzero, then $\Prob_x[v\cdot x=1]=1/2$ for $x$ uniform on $\F_2^\ell$. In particular two distinct linear functions differ at exactly half of the points.
+\item If $\Delta\in\F_2^{\ell\times\ell}$ is nonzero and $r,r'$ are independent and uniform on $\F_2^\ell$, then $\Prob_{r,r'}[r^\top\Delta r'=1]=\frac12\bigl(1-2^{-\rank\Delta}\bigr)\ge\frac14$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+(i) Choose $i$ with $v_i=1$ and pair each $x$ with $x+e_i$, where $e_i$ is the $i$-th unit vector. The pairs partition $\F_2^\ell$, and $v\cdot x$ takes both values on each pair. Two distinct functions $h_u$ and $h_{u'}$ differ where $(u+u')\cdot x=1$.
+
+(ii) Condition on $r'$. The vector $\Delta r'$ is zero exactly when $r'$ lies in the kernel of $\Delta$, which has $2^{\ell-\rank\Delta}$ elements, so $\Delta r'\ne0$ with probability $1-2^{-\rank\Delta}$. Given $\Delta r'\ne0$, part (i) applied to $v=\Delta r'$ gives $r^\top\Delta r'=1$ with probability $1/2$; given $\Delta r'=0$, it is $0$. Since $\rank\Delta\ge1$, the probability is at least $\frac12\cdot\frac12$.
+\end{proof}
+
+\section{The theory: the Hadamard PCP}\label{sec:spotchecks:hadamard}
+
+We first make sure that systems of quadratic equations express every \cc{NP} claim.
+
+\begin{lemma}[\spotchecksquadeq{} is \cc{NP}-complete]\label[lemma]{lem:spotchecks:quadeq}
+\spotchecksquadeq{} is in \cc{NP}. A CNF formula with $\nu$ variables and $\kappa$ occurrences of literals in its $\mu$ clauses can be transformed in polynomial time into a system with $\nu+\kappa$ unknowns and $\kappa+\mu$ equations that has a solution exactly when the formula is satisfiable.
+\end{lemma}
+
+\begin{proof}
+The plan is to reduce the satisfiability of CNF formulas to such systems clause by clause. A solution is a certificate that can be checked with $O(M\ell^2)$ operations, so \spotchecksquadeq{} is in \cc{NP} (\cref{thm:certificates:np}), and satisfiability of CNF formulas is \cc{NP}-complete (\cref{def:toolkit:classes}). Over $\F_2$ a literal is a polynomial in the variables $z_1,\dots,z_\nu$ of the formula, $z_i$ or $1+z_i$, and a clause $a_1\vee\dots\vee a_w$ is satisfied exactly when $(1+a_1)\cdots(1+a_w)=0$. For each clause introduce new unknowns $y_1,\dots,y_w$ and the $w+1$ equations
+\[
+  y_1=1+a_1,\qquad y_j=y_{j-1}(1+a_j)\quad(2\le j\le w),\qquad y_w=0,
+\]
+each of degree at most $2$. A satisfying assignment extends to a solution by defining the $y_j$ through the first equations, since then $y_w=\prod_j(1+a_j)=0$. Conversely, in every solution, induction on $j$ gives $y_j=\prod_{i\le j}(1+a_i)$, so $y_w=0$ says that some literal of the clause is true. Finally each equation takes the form $u^\top Au=b$: a product $u_iu_{i'}$ of unknowns becomes the entry $(i,i')$ of $A$, a linear term $u_i=u_iu_i$ a diagonal entry, and constants move to $b$.
+\end{proof}
+
+The soundness proof needs three inequalities about the polynomial $\varphi(\delta)=1-3\delta+6\delta^2$, which bounds the pass probability of a linearity test by \cref{thm:spotchecks:blr}. We isolate them so that the proof can concentrate on probabilities.
+
+\begin{lemma}[Arithmetic]\label[lemma]{lem:spotchecks:arith}
+Let $a,b\in[0,1/4]$ and $\sigma=a+b$.
+\begin{enumerate}
+\item $\varphi(a)\varphi(b)\le\varphi(\sigma)$.
+\item If $\sigma\le1/8$, then $\varphi(\sigma)\bigl(\frac34+2\sigma\bigr)\le\frac34-\frac\sigma4$.
+\item If $\sigma\ge1/8$, then $\varphi(a)\varphi(b)\le\varphi(1/8)=23/32$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+(i) Expanding, $\varphi(\sigma)-\varphi(a)\varphi(b)=3ab(1+6\sigma-12ab)$, which is nonnegative because $12ab\le12/16<1$. (ii) Expanding, $\varphi(\sigma)(\frac34+2\sigma)=\frac34-\frac\sigma4-\frac32\sigma^2+12\sigma^3$, and $12\sigma^3\le\frac32\sigma^2$ when $\sigma\le1/8$. (iii) On $[0,1/4]$ the function $\varphi$ decreases from $1$ to $5/8$, since $\varphi'(\delta)=-3+12\delta\le0$ there. If $\sigma\le1/4$, then part (i) gives $\varphi(a)\varphi(b)\le\varphi(\sigma)\le\varphi(1/8)$. If $\sigma>1/4$, then the larger of $a$ and $b$ exceeds $1/8$, and the product is at most that factor, hence at most $\varphi(1/8)$.
+\end{proof}
+
+\begin{theorem}[The Hadamard PCP]\label{thm:spotchecks:hadamardpcp}\index{soundness error!of the Hadamard PCP}
+Run \cref{prot:spotchecks:hadamard} on a system of $M$ quadratic equations in $\ell$ unknowns over $\F_2$. One run reads $q=12$ bits of the proof and uses $\rho=4\ell^2+4\ell+M$ random bits, and:
+\begin{enumerate}
+\item \emph{(completeness)} if $u$ is a solution, then the proof $(h_u,h_{uu^\top})$ is accepted with probability $1$;
+\item \emph{(soundness)} if the system has no solution, then for every proof $(f,g)$ the verifier accepts with probability at most $3/4$ over its coins;
+\item \emph{(the constant is attained)} for the system $u_1=1$, $u_2=1$, $u_1u_2=0$, which has no solution, some proof is accepted with probability exactly $3/4$.
+\end{enumerate}
+Consequently $\cc{NP}\subseteq\cc{PCP}(\poly(n),36)$.
+\end{theorem}
+
+\begin{proof}
+The plan is to prove completeness from the identities \eqref{eq:spotchecks:identities}; to prove soundness by writing the acceptance probability as a product of the four tests' pass probabilities, bounding these through the distances of $f$ and $g$ from the code, and splitting into cases by what the nearest codewords encode; and to check the example by direct computation.
+
+\emph{Completeness.} The tables $h_u$ and $h_{uu^\top}$ are linear, so both linearity tests pass. In the tensor test, linearity and \eqref{eq:spotchecks:identities} give $g(rr'^\top+Z)+g(Z)=\ip{uu^\top,rr'^\top}=(u\cdot r)(u\cdot r')=f(r)f(r')$. In the satisfiability test, $g(C+Z')+g(Z')=\ip{uu^\top,C}=\sum_j\zeta_ju^\top A_ju=\sum_j\zeta_jb_j=\beta$. The counts of queries and random bits were made after \cref{prot:spotchecks:hadamard}.
+
+\emph{Soundness: a product of four probabilities.} Fix a proof $(f,g)$ for a system with no solution, and let $p_1,p_2,p_3,p_4$ be the probabilities that the linearity test of $f$, the linearity test of $g$, the tensor test and the satisfiability test pass. Each test's outcome is a function of its own coins, because the proof is fixed, and the four tests draw independent coins; hence the outcomes are independent and the acceptance probability is $p_1p_2p_3p_4$. Let $a=\delta(f)$ and $b=\delta(g)$. By \cref{thm:spotchecks:blr}, $p_1\le1-\max\{a,3a-6a^2\}$ and $p_2\le1-\max\{b,3b-6b^2\}$; in particular $p_1\le\varphi(a)$ and $p_2\le\varphi(b)$.
+
+\emph{Case 1: $a\ge1/4$ or $b\ge1/4$.} Then $p_1\le1-a\le3/4$ or $p_2\le1-b\le3/4$, and the product is at most $3/4$.
+
+\emph{Case 2: $a<1/4$ and $b<1/4$.} Let $h_u$ be a linear function at distance $a$ from $f$ and $h_W$, with $W\in\F_2^{\ell\times\ell}$, one at distance $b$ from $g$. Since the system has no solution, either $W\ne uu^\top$, or $W=uu^\top$ and $u$ violates some equation.
+
+\emph{Case 2a: $W\ne uu^\top$.} Consider the tensor test, and let $G$ be the event that the four bits it reads agree with the codewords: $f(r)=h_u(r)$, $f(r')=h_u(r')$, $g(rr'^\top+Z)=h_W(rr'^\top+Z)$ and $g(Z)=h_W(Z)$. Each of the four points is uniform, the last two because $Z$ is uniform and independent of $r$ and $r'$, so $\Prob[G\text{ fails}]\le2a+2b$. On $G$ the test compares $(u\cdot r)(u\cdot r')=r^\top uu^\top r'$ with $h_W(rr'^\top)=r^\top Wr'$, so it rejects exactly when $r^\top\Delta r'=1$ for the nonzero matrix $\Delta=W+uu^\top$; by \cref{lem:spotchecks:subset}(ii) this happens with probability at least $1/4$. Hence $1-p_3\ge\frac14-2\sigma$ with $\sigma=a+b$, that is, $p_3\le\frac34+2\sigma$. If $\sigma\le1/8$, then by \cref{lem:spotchecks:arith}(i) and (ii),
+\[
+  p_1p_2p_3\le\varphi(a)\varphi(b)\bigl(\tfrac34+2\sigma\bigr)\le\varphi(\sigma)\bigl(\tfrac34+2\sigma\bigr)\le\tfrac34-\tfrac\sigma4\le\tfrac34.
+\]
+If $\sigma>1/8$, then $p_1p_2\le\varphi(a)\varphi(b)\le23/32<3/4$ by \cref{lem:spotchecks:arith}(iii).
+
+\emph{Case 2b: $W=uu^\top$ and $u$ violates some equation.} Consider the satisfiability test. For each value of $\zeta$, \cref{lem:spotchecks:decode} applied to $g$, $h_W$ and the point $C$ shows that $g(C+Z')+g(Z')=h_W(C)$ except with probability at most $2b$ over $Z'$. By \eqref{eq:spotchecks:identities}, $h_W(C)+\beta=\sum_j\zeta_j(u^\top A_ju+b_j)=\zeta\cdot v$ for the vector $v\in\F_2^M$ with $v_j=u^\top A_ju+b_j$, which is nonzero because $u$ violates an equation; by \cref{lem:spotchecks:subset}(i), $\zeta\cdot v=1$ with probability $1/2$. Hence $1-p_4\ge\frac12-2b$, and with $p_2\le1-b$,
+\[
+  p_2p_4\le(1-b)\bigl(\tfrac12+2b\bigr)=\tfrac34-\bigl(\tfrac14-b\bigr)(1-2b)<\tfrac34.
+\]
+In every case the acceptance probability is at most $3/4$.
+
+\emph{The constant is attained.} In matrix form the system is $\ip{E_{11},uu^\top}=1$, $\ip{E_{22},uu^\top}=1$, $\ip{E_{12},uu^\top}=0$, where $E_{ii'}$ has a single $1$ at $(i,i')$; a solution would need $u_1=u_2=1$ and $u_1u_2=0$. Take $u=(1,0)$, the identity matrix $W=I$, and the proof $f=h_u$, $g=h_I$. Both tables are linear, so both linearity tests pass. The matrix $I$ satisfies the three equations read linearly, $I_{11}=1$, $I_{22}=1$, $I_{12}=0$, so $g(C+Z')+g(Z')=\ip{I,C}=\beta$ and the satisfiability test passes. The tensor test rejects exactly when $r^\top(I+uu^\top)r'=r_2r'_2=1$, with probability $1/4$. The acceptance probability is $3/4$.
+
+\emph{The consequence.} For $L\in\cc{NP}$, \cref{lem:spotchecks:quadeq} maps an input $x$ of length $n$ in polynomial time to a system with $\ell,M\le\poly(n)$ that has a solution exactly when $x\in L$. The verifier computes the system and makes three runs of \cref{prot:spotchecks:hadamard} with independent coins on the same proof. A correct proof passes every run. If $x\notin L$, then for every proof the three runs are independent and each accepts with probability at most $3/4$, so all three accept with probability at most $27/64<1/2$; the verifier reads $36$ bits and uses $3(4\ell^2+4\ell+M)=\poly(n)$ random bits.
+\end{proof}
+
+The bound is tight for the cleverest cheat, an \emph{inconsistent pair}: the codewords $h_u$ and $h_W$ of a vector $u$ and of a matrix $W\ne uu^\top$ that satisfies the equations read linearly. Only the tensor test notices it, with probability $\frac12(1-2^{-\rank(W+uu^\top)})$ by \cref{lem:spotchecks:subset}(ii), which is $1/4$ for rank one. Corrupting the tables costs the linearity tests about three times the corrupted fraction and gains the tensor test at most twice it, as the bound $\frac34-\frac\sigma4$ records. A correct encoding of a non-solution does worse, with acceptance probability exactly $1/2$ (\cref{ex:spotchecks:satfourier}).\sidenote{For $\ell=2$ the script of \cref{sec:spotchecks:running} computes the acceptance probability of all $2^{20}$ proofs for every system without a solution, and finds the maximum to be exactly $3/4$.}
+
+\section{The theory: ordinary proofs and the PCP theorem}\label{sec:spotchecks:pcptheorem}
+
+Without an encoding, spot checks are weak in a precise sense. Model an ordinary proof as a sequence of $N$ steps, each of which the overseer can check by itself, and a check as revealing only whether the step checked is correct.
+
+\begin{proposition}[Spot checks of an ordinary proof]\label[proposition]{prop:spotchecks:naive}\index{spot check}
+Let a verifier check $q$ of the $N$ steps of a proof, chosen by some random rule.
+\begin{enumerate}
+\item If the prover may choose which single step is wrong, then for every rule some choice is detected with probability at most $q/N$; checking $q$ distinct steps chosen uniformly at random detects every choice with probability exactly $q/N$.
+\item If $e$ steps are wrong, $q$ distinct uniformly random checks detect an error with probability $1-\binom{N-e}{q}\big/\binom Nq$, which lies between $1-(1-e/N)^q$ and $qe/N$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) Until it meets the wrong step the verifier learns only that the steps it has checked are correct, which a correct proof would also show; so its rule amounts to a random set $Q$ of at most $q$ steps, fixed in advance. Let $\theta_i=\Prob[i\in Q]$. Then $\sum_i\theta_i=\E\abs Q\le q$, so the smallest $\theta_i$ is at most $q/N$, and a wrong step at that position is detected with probability at most $q/N$. For the uniform rule every $\theta_i$ equals $q/N$, by symmetry and $\sum_i\theta_i=q$.
+
+(ii) No wrong step is checked with probability $\binom{N-e}q\big/\binom Nq=\prod_{k=0}^{q-1}\frac{N-e-k}{N-k}$, and each factor is at most $1-e/N$. The union bound over the $e$ wrong steps, each checked with probability $q/N$, gives the upper bound.
+\end{proof}
+
+For the opening box, $N=10{,}000$, $e=1$ and $q=3$ give $0.0003$, and even $100$ wrong steps need $69$ checks for detection probability $1/2$ (\cref{ex:spotchecks:naive}). The Hadamard PCP catches every lie with probability at least $1/4$ per twelve bits, however long the ordinary proof; its price, a proof of $2^\ell+2^{\ell^2}$ bits, is what the PCP theorem removes.
+
+\begin{theorem}[The PCP theorem; \textcite{AroraSafra1998}, \textcite{AroraEtAl1998}]\label{thm:spotchecks:pcp}\index{PCP theorem}
+$\cc{NP}=\cc{PCP}(O(\log n),O(1))$.
+\end{theorem}
+
+With $O(\log n)$ random bits a verifier selects only polynomially many positions, so these proofs are polynomially long. The inclusion from right to left is the easy one.
+
+\begin{proof}[Proof that $\cc{PCP}(O(\log n),O(1))\subseteq\cc{NP}$]
+Let $\V$ be a verifier for $L$ that uses $r(n)\le c\log n$ random bits and reads $q$ bits, with completeness $1$ and soundness error $1/2$. For each of the at most $n^c$ random strings it reads at most $q$ positions, so at most $qn^c$ positions are ever read. A certificate lists the bits of a proof at these positions, and the checker runs $\V$ for every random string, accepting when all runs accept; this takes polynomial time. If $x\in L$, then the certificate taken from a proof accepted with probability $1$ passes. If $x\notin L$, then every certificate is the restriction of some proof, which at least half of the random strings reject, so the checker rejects.
+\end{proof}
+
+The hard inclusion has two proofs: the first, by \textcite{AroraSafra1998} and \textcite{AroraEtAl1998}, combines algebraic codes, low-degree tests and the composition of verifiers; the second, by \textcite{Dinur2007}, is combinatorial.
+
+\begin{proofsketch}[Sketch of the hard inclusion]\index{gap amplification}
+A \emph{constraint graph} has vertices to be labeled from a fixed finite alphabet and, on each edge, a constraint listing the allowed pairs of labels; its \emph{gap} is the smallest fraction of constraints that every labeling violates. Satisfiability of constraint graphs is \cc{NP}-hard (three-coloring is a special case), and an unsatisfiable graph with $E$ edges has gap at least $1/E$. A verifier that reads the labels at the ends of a random edge reads $O(1)$ bits, so it suffices to raise the gap of unsatisfiable graphs to a constant $\alpha$ while keeping satisfiable ones satisfiable. Dinur's step doubles the gap, up to $\alpha$, keeps the alphabet, and multiplies the size by a constant, so about $\log E$ steps suffice. It has three parts: making the graph a regular expander, at a constant-factor loss in the gap; \emph{powering}, in which each vertex holds opinions about all vertices within distance $t$ and constraints check walks of about $t$ steps, which multiplies the gap by a factor growing with $t$ but enlarges the alphabet; and \emph{alphabet reduction}, which replaces each constraint, now of constant size, by a small PCP for it, where even an exponentially long proof costs only a constant. Dinur builds this component from the long code, \textcite{RadhakrishnanSudan2007} and \textcite[Chapter~22]{AroraBarak2009} from the two Hadamard encodings of this chapter. Omitted: the analysis of powering and the construction and composition of the small PCPs, for which see these three sources.
+\end{proofsketch}
+
+How few bits can a verifier read? Håstad showed that three suffice, with nearly the best possible soundness error.
+
+\begin{theorem}[Three bits; \textcite{Hastad2001}]\label{thm:spotchecks:hastad}
+For every constant $\eta>0$, every language in \cc{NP} has a PCP verifier that uses $O(\log n)$ random bits, reads three bits of the proof and accepts exactly when their sum modulo $2$ equals a bit determined by its coins, with completeness at least $1-\eta$ and soundness error at most $1/2+\eta$.
+\end{theorem}
+
+Completeness falls short of $1$, and for tests of this kind it cannot reach $1$ unless $\cc{P}=\cc{NP}$, since Gaussian elimination decides whether a system of linear equations over $\F_2$ has a solution, as Håstad notes. A random proof passes each test with probability $1/2$, so the soundness error is nearly the best possible.
+
+\paragraph{Hardness of approximation.}\index{hardness of approximation} Write, for each random string of a verifier with $O(\log n)$ random bits, $q$ queries, completeness $1$ and soundness error $1/2$, the constraint ``the verifier accepts'' on the $q$ bits it reads. If $x\in L$, then some assignment satisfies every constraint; if $x\notin L$, then none satisfies more than half. So approximating the largest satisfiable fraction of constraints within a factor smaller than $2$ is \cc{NP}-hard. \Textcite{FeigeEtAl1996} drew the first consequence of this kind, for cliques; \cref{thm:spotchecks:hastad} gives the factors $2-\eta$ for linear equations in three unknowns each and $8/7-\eta$ for clauses of three literals, while a random assignment achieves $2$ and $8/7$ \parencite{Hastad2001}.
+
+\paragraph{Short proofs.} The known constructions compute the proofs of \cref{thm:spotchecks:pcp} from an ordinary certificate in polynomial time, as \textcite{BabaiEtAl1991} already required. Combined with the short PCPs of \textcite{BenSassonSudan2008}, gap amplification gives proofs of length $n\cdot\polylog(n)$ with a constant number of queries \parencite{Dinur2007}. For the overseer this is the real content: a model with a correct derivation can rewrite it, at polynomial cost, into a form she checks by reading a constant number of bits.
+
+\section{Running the protocol}\label{sec:spotchecks:running}
+
+Two scripts, each running in about two seconds, put the theorems to work: \texttt{02-\allowbreak spotchecks-\allowbreak blr.py} runs the linearity test and computes exact distances and rejection probabilities from \eqref{eq:spotchecks:distance} and \eqref{eq:spotchecks:blrfourier} with a fast Walsh--Hadamard transform; \texttt{02-\allowbreak spotchecks-\allowbreak pcp.py} runs \cref{prot:spotchecks:hadamard} against honest and cheating proofs, and spot checks of an ordinary proof.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[vplot,height=0.52\linewidth,xlabel={distance $\delta(f)$ to the nearest linear function},ylabel={rejection probability},
+  xmin=0,xmax=0.5,ymin=0,ymax=0.56,legend style={at={(0.98,0.03)},anchor=south east,font=\scriptsize},legend cell align=left]
+\addplot[theory] table[x=delta,y=random] {figures/data/02-spotchecks-blr-curves.dat};
+\addplot[bound] table[x=delta,y=fourier] {figures/data/02-spotchecks-blr-curves.dat};
+\addplot[bound,dash pattern=on 1pt off 1.5pt,restrict x to domain=0:0.3334] table[x=delta,y=counting] {figures/data/02-spotchecks-blr-curves.dat};
+\addplot[cheat,ebars] table[x=delta,y=measured,y error plus=ehi,y error minus=elo] {figures/data/02-spotchecks-blr-random.dat};
+\addplot[cheat2,ebars] table[x=delta,y=measured,y error plus=ehi,y error minus=elo] {figures/data/02-spotchecks-blr-hyperplane.dat};
+\addplot[only marks,mark=triangle,mark size=2pt,color=oracle,mark options={line width=0.6pt,fill=white},ebars] table[x=delta,y=measured,y error plus=ehi,y error minus=elo] {figures/data/02-spotchecks-blr-bent.dat};
+\legend{random corruption (theory),bound $\delta$,bound $3\delta-6\delta^2$,random corruptions,corruptions in a hyperplane,bent functions}
+\end{axis}
+\end{tikzpicture}
+\caption{The linearity test on functions $f\colon\F_2^{14}\to\F_2$: measured rejection rates ($20{,}000$ runs each, Clopper--Pearson $95\%$ intervals) against the exact distance $\delta(f)$. Ochre circles: a linear function with a uniformly random set of positions flipped, a fraction $0.01$ to $0.5$ of them; teal squares: a fraction up to $1/4$ flipped inside the hyperplane $x_1=1$; sage triangles: $x_1x_2+\dots+x_{2k-1}x_{2k}$ plus a linear function, $k=1,\dots,7$. Dashed: the two bounds of \cref{thm:spotchecks:blr}, the second drawn where it is the larger; solid: $(1-(1-2\delta)^3)/2$, the rejection probability when each of three points is flipped independently with probability $\delta$. Seeds $2$ and $100$--$307$; script \texttt{02-\allowbreak spotchecks-\allowbreak blr.py}.}
+\label{fig:spotchecks:blr}
+\end{figure}
+
+\paragraph{The linearity test.} In \cref{fig:spotchecks:blr} every measured rate is consistent with both bounds of \cref{thm:spotchecks:blr}, and the hyperplane family lies exactly on $3\delta-6\delta^2$. Random corruptions lie on the curve $3\delta-6\delta^2+4\delta^3$, about three times the Fourier bound for small $\delta$: for $\delta\le5/16$ an adversary who places its corruptions as cleverly as possible gains only the term $4\delta^3$ (\cref{rem:spotchecks:tight}). The Fourier bound is approached only as $\delta\to1/2$, by the bent functions; at $k=7$ their distance is $0.4961$ and their rejection probability $0.49997$.
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+proof & exact & \cref{prot:spotchecks:hadamard} & no self-correction & no tensor test\\
+\midrule
+honest, satisfiable system & $1$ & $1.0000$ & $1.0000$ & $1.0000$\\
+correct encoding of a non-solution & $1/2$ & $0.5004$ & $0.4991$ & $0.4996$\\
+inconsistent pair, rank $1$ & $3/4$ & $0.7480$ & $0.7507$ & $1.0000$\\
+inconsistent pair, rank $2$ & $5/8$ & $0.6244$ & $0.6253$ & $1.0000$\\
+rank-one pair, $5\%$ of $g$ corrupted & & $0.5501$ & $0.5933$ & $0.7821$\\
+non-solution, $g$ patched on $\mathrm{span}\{A_j\}$ & & $0.4981$ & $1.0000$ & $0.4996$\\
+\bottomrule
+\end{tabular}
+\end{fullwidth}
+\caption{Measured acceptance rates of one run for $\ell=8$ unknowns and $M=12$ equations ($g$ has $2^{64}$ entries, computed on demand), $200{,}000$ runs per entry; the $95\%$ Clopper--Pearson intervals have half-widths at most $0.0022$. Column ``exact'': the acceptance probability under \cref{prot:spotchecks:hadamard}. The weakened verifiers read $g(rr'^\top)$ and $g(C)$ directly, or skip the tensor test. Script \texttt{02-\allowbreak spotchecks-\allowbreak pcp.py}, seeds $5$ (instance) and $1000$--$1052$ (runs).}
+\label{tab:spotchecks:runs}
+\end{table}
+
+\paragraph{The Hadamard PCP.} For $\ell=2$ the script computes the acceptance probability of all $2^{20}$ proofs for every system without a solution (only the solution set of the system read linearly matters, and there are $117$ such sets besides the empty one): the maximum is exactly $3/4$, attained for the system of \cref{thm:spotchecks:hadamardpcp}(iii) by five inconsistent pairs of rank one. For $\ell=8$ and $M=12$ it draws random matrices $A_j$, plants a solution, and flips $b_1$, leaving a system without a solution that the planted vector violates in one equation; proofs are oracles that compute each requested bit. In \cref{tab:spotchecks:runs} the honest proof is always accepted, a correct encoding of the planted vector half of the time, and inconsistent pairs with probabilities $3/4$ and $5/8=\frac12+2^{-3}$, as \cref{lem:spotchecks:subset}(ii) predicts for ranks one and two; of the twelve intervals in the first four rows, whose values are known exactly, one, $[0.7461,0.7499]$, misses by a hair, as about one in twenty should. Corrupting $5\%$ of $g$ costs the rank-one pair more than a quarter of its acceptance, far more than the bound $\frac34-\frac\sigma4=0.7375$ requires.
+
+The weakened verifiers fail as they must. Without the tensor test, every pair $(h_u,h_W)$ whose matrix $W$ satisfies the equations read linearly is accepted with certainty (\cref{ex:spotchecks:notensor}). A verifier that reads $g(C)$ directly is fooled by the codeword of $uu^\top$ for a non-solution $u$, patched on the $2^{12}$ points of $\mathrm{span}\{A_j\}$ to answer what the equations require; tests that read uniform points almost never see the patch (\cref{ex:spotchecks:noselfcorrect}).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},vplot,width=80mm,height=41mm,
+  legend columns=2,legend style={at={(0.5,-0.36)},anchor=north,font=\scriptsize,/tikz/every even column/.append style={column sep=3mm}},legend cell align=left]
+\nextgroupplot[xlabel={runs $t$},ylabel={acceptance probability},ymode=log,xmin=0.5,xmax=10.5,ymin=4e-4,ymax=1.6,xtick={1,2,...,10}]
+\addplot[bound] table[x=t,y=bound] {figures/data/02-spotchecks-pcp-repeat.dat};
+\addplot[theory2] table[x=t,y=half] {figures/data/02-spotchecks-pcp-repeat.dat};
+\addplot[honest] table[x=t,y=honest] {figures/data/02-spotchecks-pcp-repeat.dat};
+\addplot[cheat2,ebars] table[x=t,y=rank1,y error plus=rank1hi,y error minus=rank1lo] {figures/data/02-spotchecks-pcp-repeat.dat};
+\addplot[cheat,ebars] table[x=t,y=nonsol,y error plus=nonsolhi,y error minus=nonsollo] {figures/data/02-spotchecks-pcp-repeat.dat};
+\addplot[only marks,mark=triangle,mark size=2pt,color=oracle,mark options={line width=0.6pt,fill=white},ebars] table[x=t,y=corrupt,y error plus=corrupthi,y error minus=corruptlo] {figures/data/02-spotchecks-pcp-repeat.dat};
+\legend{bound $(3/4)^t$,$(1/2)^t$,honest proof,rank-one pair,non-solution,$5\%$ corrupted}
+\nextgroupplot[xlabel={items read $q$},ylabel={catch probability},xmode=log,ymode=log,xmin=9,xmax=1300,ymin=6e-4,ymax=1.6]
+\addplot[bound] table[x=q,y=pcp] {figures/data/02-spotchecks-pcp-bound.dat};
+\addplot[theory2] table[x=q,y=naiveA] {figures/data/02-spotchecks-pcp-bound.dat};
+\addplot[guide] table[x=q,y=naiveB] {figures/data/02-spotchecks-pcp-bound.dat};
+\addplot[cheat2,ebars] table[x expr=12*\thisrow{t},y expr=1-\thisrow{rank1},y error plus=rank1lo,y error minus=rank1hi] {figures/data/02-spotchecks-pcp-repeat.dat};
+\addplot[cheat,ebars] table[x=q,y=measured,y error plus=ehi,y error minus=elo] {figures/data/02-spotchecks-pcp-naive.dat};
+\legend{PCP{,} worst case,$q/N${,} $N=10^3$,$q/N${,} $N=10^4$,rank-one pair,ordinary proofs}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Left: acceptance probability after $t$ independent runs of \cref{prot:spotchecks:hadamard} on one proof ($\ell=8$, $M=12$, system without a solution), measured on $\lfloor200{,}000/t\rfloor$ disjoint blocks of the runs of \cref{tab:spotchecks:runs}, with $95\%$ intervals. Dashed: the bound $(3/4)^t$ of \cref{thm:spotchecks:hadamardpcp}, attained by the inconsistent pair of rank one; teal: $(1/2)^t$, exact for the correct encoding of a non-solution; triangles: the rank-one pair with $5\%$ of $g$ corrupted. Right: the probability of catching a lie against the number of items read: bits of the Hadamard PCP ($q=12t$; the worst case $1-(3/4)^{q/12}$ dashed, the rank-one pair measured), or steps of an ordinary proof of $N$ steps with one wrong step, checked at $q$ uniformly random steps (lines $q/N$; points from $20{,}000$ trials each, seed $6$). Script \texttt{02-\allowbreak spotchecks-\allowbreak pcp.py}.}
+\label{fig:spotchecks:pcp}
+\end{figure}
+
+\paragraph{Repetition, and what an overseer buys.} In \cref{fig:spotchecks:pcp} (left) the rank-one pair follows the bound $(3/4)^t$, from $0.748$ at $t=1$ to $0.055$ at $t=10$ ($0.056$ predicted), the encoding of a non-solution follows $(1/2)^t$, and no interval lies above the bound. On the right, $q$ random steps of an ordinary proof with one wrong step catch it with probability $q/N$, while $q$ bits of the Hadamard PCP catch every lie with probability at least $1-(3/4)^{q/12}$ whatever the length: more than $0.99$ for $204$ bits, where $204$ steps of a $10{,}000$-step proof give $0.020$. A step is more than a bit and the encoded proof is exponentially longer; the comparison shows what the encoding buys. For $\ell=8$ and $M=12$ the proof has $2^8+2^{64}$ bits, which no one could write down,\sidenote{$2^{64}$ bits are about $2.3$ exabytes.} while one run uses $300$ random bits, reads $12$, and forms $C$ with at most $M\ell^2=768$ additions of bits; the honest oracle answers each query with the parity of $\ell^2=64$ products of bits.
+
+\section{The three questions}\label{sec:spotchecks:questions}
+
+\questionone Read \cref{prot:spotchecks:hadamard} as a game in which the prover chooses a proof string, fixed before the coins are drawn, and is paid when the verifier accepts; a randomized prover is a mixture of strings and does no better than its best string. On a true claim the honest proof is accepted with probability $1$ (\cref{thm:spotchecks:hadamardpcp}), so writing it is a best response; on a false claim every string earns at most $3/4$ per run, and an inconsistent pair of rank one, the most profitable lie where one exists, earns exactly that. Honesty is an equilibrium, whatever the prover's computing power, with two qualifications. The protocol proves only satisfiability: short proofs, ordinary or checkable with $O(\log n)$ random bits, of every claim that a system has no solution would make $\cc{NP}=\cc{coNP}$ (\cref{ch:certificates}; interaction helps, \cref{ch:sumcheck}).\sidenote{With exponentially long proofs the obstacle disappears: by the scaled-up PCP theorem, $\cc{PCP}(\poly(n),O(1))=\cc{NEXP}$, which contains \cc{coNP} \parencite{AroraBarak2009}; but the honest prover must then write an exponentially long table.} And the honest strategy is expensive: the Hadamard proof has $2^\ell+2^{\ell^2}$ bits, so an honest prover can only compute bits on demand, and a prover that answers on demand is no longer a fixed string (\cref{ex:spotchecks:adaptive}). With the PCP theorem the honest proof is polynomially long and computed from a solution in polynomial time, but the prover must still find a solution, which is \cc{NP}-hard in general.
+
+\questiontwo Per run, $12$ queries, $4\ell^2+4\ell+M$ random bits and $O(M\ell^2)$ bit operations to compute the positions; $t=\lceil\log(1/s)/\log(4/3)\rceil$ runs bring the soundness error down to $s$, for example $17$ runs and $204$ bits for $s=0.01$. Reading a solution would cost $\ell$ bits; the PCP's advantage is that its number of bits does not grow with the claim. With the PCP theorem the verifier uses $O(\log n)$ random bits and $O(1)$ queries; with Håstad's verifier it reads three bits, at completeness $1-\eta$ and soundness error $1/2+\eta$.
+
+\questionthree At least $1/4$ per run against every proof of a false claim, and $1-(3/4)^t$ after $t$ runs, against every fixed string however it was computed. The bound is attained by an inconsistent pair of rank one where one exists; a correct encoding of a non-solution is caught with probability exactly $1/2$ per run. Against a prover that sees the queries before answering, the guarantee disappears (\cref{ex:spotchecks:adaptive}). For an ordinary proof of $N$ steps with one wrong step that the prover may place, the catch probability of $q$ checks is at most $q/N$ (\cref{prop:spotchecks:naive}).
+
+\protocolcard{that a system of quadratic equations over $\F_2$ has a solution; through \cref{lem:spotchecks:quadeq}, every \cc{NP} claim}
+{a verifier $\V$ that reads bits of a proof string $\pi=(f,g)$, written by a prover $\Prov$ before the first query}
+{yes, for fixed strings: the honest proof is always accepted, every proof of a false claim at most $3/4$ per run; the honest proof has $2^\ell+2^{\ell^2}$ bits (polynomially many with the PCP theorem)}
+{$12$ queries, $4\ell^2+4\ell+M$ random bits and $O(M\ell^2)$ operations per run; with the PCP theorem $O(\log n)$ random bits and $O(1)$ queries}
+{at least $1/4$ per run and $1-(3/4)^t$ after $t$ runs, against every fixed proof; nothing against a prover that sees the queries}
+{the proof being fixed before the queries; the claim being stated as equations; the verifier knowing the encoding}
+
+\section{What the model leaves out}\label{sec:spotchecks:leavesout}
+
+\paragraph{What was idealized away.} The theorem is about a formal claim, a fixed string and a verifier that is a program. The overseer of the opening box must turn her question into an \cc{NP} statement, ``a valid derivation of this conclusion exists'', and reduce it to equations; the reduction and the program that computes the twelve positions become part of what she trusts. The proof is unreadable, a random bit of $h_{uu^\top}$ being the parity of a random set of products of unknowns, so she learns that a proof exists, not why the claim is true. Above all, a model is not a table: it answers questions after they are asked. Every PCP's soundness rests on the prover being unable to choose answers after seeing the queries, which \cref{ch:crossexam} enforces by questioning provers that cannot confer and \cref{ch:training} by cryptographic commitments, as in the arguments of \textcite{Kilian1992} and \textcite{Micali2000}.
+
+\paragraph{Where it breaks.} (1) \emph{Chains of thought are ordinary proofs.} A chain of thought has no redundancy that spreads its errors, so spot checks of it obey \cref{prop:spotchecks:naive}, not \cref{thm:spotchecks:hadamardpcp}. Process supervision therefore labels every step, and its guarantee is empirical: the process reward model is a learned verifier, observed to work on the problems on which it was evaluated \parencite{LightmanEtAl2024}. (2) \emph{The text checked may not be the computation.} \Textcite{TurpinEtAl2023} biased models toward particular answers, for instance by reordering the options of few-shot examples so that the correct one was always ``(A)'', and found that chain-of-thought explanations systematically failed to mention the bias and rationalized the biased answers, while accuracy on thirteen BIG-Bench Hard tasks fell by as much as $36\%$. \Textcite{LanhamEtAl2023}, in a preprint, truncated chains of thought, inserted mistakes and paraphrased them, and found that reliance on the stated reasoning varies widely across tasks and that larger models reasoned less faithfully on most tasks they studied. Checking such a text checks an account of the computation. (3) \emph{Errors that cannot be located.} \Textcite{Barnes2020}, in a forum post, described the obfuscated-arguments problem of debate: a dishonest debater can build a long argument with a fatal flaw that neither debater can locate. Spot checks fare no better; a PCP exposes the flaw only once the argument is formalized and encoded (\cref{ch:debate,ch:efficientdebate}). (4) \emph{Claims that rest on human judgment.} When a step can be checked only by asking a person, the person acts as an oracle, and \textcite{BrownCohenEtAl2024} note that the PCP theorem fails relative to such oracles; they turn to competing provers instead (\cref{ch:efficientdebate}). (5) \emph{Adaptive provers.} A prover that sees the twelve queries before answering passes every test with probability close to $1$ (\cref{ex:spotchecks:adaptive}), and a model is queried, not read.
+
+\paragraph{Open problems.} Whether an argument can be written so that people, not programs, can spot-check it is open and not yet a precise question: every false conclusion would have to force many locally visible inconsistencies, each recognizable by a person (\cref{ex:spotchecks:informal}). The closest experiments, in a preprint, train models against small learned verifiers to write solutions that stay legible to people checking each in $45$ seconds \parencite{KirchnerEtAl2024}, without local checkability (\cref{ch:pvg}). In complexity theory, whether the satisfiability of Boolean circuits has a PCP of length linear in the size of the circuit, read with a constant number of queries, is a central open question \parencite{RonZewiRothblum2024}; such PCPs are known with $n^c$ queries for every constant $c>0$ \parencite{BenSassonEtAl2016}. A theory of spot checks against provers that answer adaptively but are limited otherwise, for instance by being learned from data, remains to be written.
+
+\begin{exercises}
+\item \consolidation (A random table.) (a) Show that for a uniformly random $f\colon\F_2^\ell\to\F_2$ the linearity test accepts with probability exactly $1/2$, averaged over $f$, for every $\ell\ge1$. \hint{the triple $x,y,x+y$ may contain $0$ or repeated points; check each case.} (b) Use Hoeffding's inequality (\cref{thm:toolkit:chernoff}) and a union bound to show that $\delta(f)\ge\frac12-\sqrt{\ell2^{-\ell}}$ with probability at least $1-2^{-\ell}$.\label{ex:spotchecks:random}
+
+\item \consolidation (The extreme families.) (a) Let $B\subseteq\{x:x_1=1\}$ have density $\delta\le1/4$ in $\F_2^\ell$ and $f=h_u+\ind_B$. Show that $\delta(f)=\delta$ and that the linearity test rejects $f$ with probability exactly $3\delta-6\delta^2$. (b) For $f(x)=x_1x_2+\dots+x_{2k-1}x_{2k}$ on $\F_2^{2k}$, show that $\abs{\hat F(u)}=2^{-k}$ for every $u$ and $\sum_u\hat F(u)^3=2^{-2k}$, and hence that $\delta(f)=\frac12-2^{-k-1}$ and the rejection probability is $\frac12-2^{-2k-1}$.\label{ex:spotchecks:families}
+
+\item \consolidation (The satisfiability test in Fourier form.) Let $\mathcal S$ be the set of matrices $W$ with $\ip{A_j,W}=b_j$ for every $j$, and $G=(-1)^g$. Show that the satisfiability test passes with probability exactly $\frac12+\frac12\sum_{W\in\mathcal S}\hat G(W)^2$, and deduce that \cref{prot:spotchecks:hadamard} accepts a correct encoding of a non-solution with probability exactly $1/2$.\label{ex:spotchecks:satfourier}
+
+\item \consolidation (How many steps to check.) For an ordinary proof of $N=10^4$ steps, find the least number $q$ of uniformly random checks that detects an error with probability at least $1/2$ when $e=1$, $10$ and $100$ steps are wrong ($5000$, $670$, $69$), compare with $N\ln2/e$, and with the bits of the Hadamard PCP that give the same guarantee.\label{ex:spotchecks:naive}
+
+\item \variation\hard (One test at a time.) A verifier makes one of the four tests of \cref{prot:spotchecks:hadamard}, chosen uniformly at random, and so reads at most four bits per run. Show that its soundness error is exactly $15/16$, attained by the proof of \cref{thm:spotchecks:hadamardpcp}(iii), and compare the two verifiers at equal numbers of bits read. \hint{in case 2a, $\varphi(a)+2a\le1$ when $a\le1/6$, and $\varphi(a)\le2/3$ when $1/6\le a\le1/4$.}\label{ex:spotchecks:onetest}
+
+\item \variation (A careless reader.) Each bit the verifier reads is flipped independently with probability $\eta<1/2$. Show that the linearity test accepts with probability $\frac12+\frac12(1-2\eta)^3\sum_u\hat F(u)^3$, and that $t$ runs with the rule ``accept if at least a fraction $\frac12+\frac12(1-2\eta)^3(1-\delta_0)$ of runs accept'' err on linear functions, and on functions at distance at least $\delta_0$, with probability at most $\exp(-t(1-2\eta)^6\delta_0^2/2)$.\label{ex:spotchecks:noisy}
+
+\item \attack (Skip the tensor test.) A verifier makes only the linearity tests and the satisfiability test. Show that for the system $u_1=1$, $u_2=1$, $u_1u_2=0$ some proof is accepted with probability $1$, and describe all such proofs for a general system.\label{ex:spotchecks:notensor}
+
+\item \attack (Skip self-correction.) A verifier reads $g(C)$ in the satisfiability test instead of $g(C+Z')+g(Z')$, and is otherwise \cref{prot:spotchecks:hadamard}. For a system without a solution whose matrices $A_1,\dots,A_M$ are linearly independent, construct a proof that this verifier accepts with probability at least $1-5\cdot2^{M-\ell^2}$, and show that \cref{prot:spotchecks:hadamard} accepts it with probability at most $\frac12+2\cdot2^{M-\ell^2}$.\label{ex:spotchecks:noselfcorrect}
+
+\item \attack (A prover that sees the questions.) The prover answers the twelve queries of a run after seeing all of them. Show that if the five positions in $f$ are distinct and so are the seven in $g$, then it can make all four tests pass, and that for $\ell=8$ and linearly independent $A_1,\dots,A_{12}$ this happens with probability above $0.95$, whatever the vector $b$.\label{ex:spotchecks:adaptive}
+
+\item \simulation (Inconsistent pairs of every rank.) In the script of \cref{tab:spotchecks:runs}, construct inconsistent pairs $(h_u,h_W)$ with $\rank(W+uu^\top)=1,\dots,4$ and check the acceptance probabilities $\frac12+2^{-\rank(W+uu^\top)-1}$ predicted by \cref{lem:spotchecks:subset}. Then corrupt the rank-one pair at rates $0.01$ to $0.2$ and compare its acceptance with the bounds of the proof of \cref{thm:spotchecks:hadamardpcp}, $\frac34-\frac\sigma4$ for $\sigma\le1/8$ and $23/32$ beyond: which test does most of the work?\label{ex:spotchecks:ranks}
+
+\item \research (Spot-checkable arguments.) Formulate a model of informal arguments, for instance sequences of claims each citing a bounded number of earlier ones, read one claim at a time. What redundancy would let a constant number of checks catch every false conclusion, and can it be added without making the argument unreadable? As far as we know this is open.\label{ex:spotchecks:informal}
+\end{exercises}
+
+\notesandrefs
+\Textcite{BlumLubyRubinfeld1993} introduced the linearity test and self-correction in 1990 to test and correct programs (\cref{ch:consistency}); their analysis, improved with Don Coppersmith's help, bounds the rejection probability below by $2/9$ of the distance, as \textcite{BellareEtAl1996} report. \Textcite{BellareEtAl1993} proved the bound $3\delta-6\delta^2$; \textcite{BellareEtAl1996} proved the bound $\delta$ by the Fourier proof and the results on tightness cited in \cref{rem:spotchecks:tight}; their bound $45/128$ is attained at $\delta=5/16$. \Textcite[Chapter~1]{ODonnell2014} gives the Fourier proof and points to later refinements.
+
+The PCP theorem grew out of the multi-prover proofs of \cref{ch:crossexam}, whose power is $\cc{NEXP}$ and which are equivalent to fixed proofs read at random positions. Scaling their techniques down to \cc{NP} gave the results of \textcite{BabaiEtAl1991} and of \textcite{FeigeEtAl1996}, who tied such proof systems to the hardness of approximating cliques; \textcite{AroraSafra1998} introduced the composition of verifiers, and \textcite{AroraEtAl1998} reached a constant number of queries. Arora, Feige, Goldwasser, Lund, Lovász, Motwani, Safra, Sudan and Szegedy shared the 2001 Gödel Prize for these papers, and Håstad and Dinur received it in 2011 and 2019. \Textcite{RadhakrishnanSudan2007} explain Dinur's proof, and \textcite[Chapters~11 and~22]{AroraBarak2009} give a textbook account.
+
+Our Hadamard PCP follows \textcite[Chapter~11]{AroraBarak2009}, whose verifier for \spotchecksquadeq{} repeats each test a few times and reads both tables through local decoding. The form of \cref{prot:spotchecks:hadamard}, the product formula for its acceptance probability, and the exact soundness error $3/4$ with its tight example are worked out here; we know of no source that states the exact constant for this verifier.
+
+\Textcite{Kilian1992} made PCPs usable with a prover that answers queries, by committing to the proof with a hash tree, and \textcite{Micali2000} removed the interaction (\cref{ch:training}); \cref{ch:backdoors} uses self-correction against planted backdoors.
+
+\paragraph{Translating the literature.} \Textcite{AroraBarak2009} write $\mathrm{WH}(u)$ for the Walsh--Hadamard encoding of $u$, our table of $h_u$, and $u\otimes u$ for our matrix $uu^\top$; their instance $AU=b$ of \textsc{Quadeq} has $m$ equations in $n$ unknowns, our $M$ and $\ell$, the rows of their $m\times n^2$ matrix $A$ being our matrices $A_j$; their proof $\pi=(f,g)$ is ours, and their random subsum principle is \cref{lem:spotchecks:subset}(i). \Textcite{ODonnell2014} analyzes the BLR test for $f\colon\F_2^n\to\F_2$ through the characters $\chi_S$ of $(-1)^f$ and proves that acceptance with probability $1-\varepsilon$ makes $f$ $\varepsilon$-close to linear, our \cref{thm:spotchecks:blr} with $\eta$ for $\varepsilon$. \Textcite{BellareEtAl1996} write $\mathrm{Err}(f)$ and $\mathrm{Dist}(f)$ for our rejection probability and $\delta(f)$. \Textcite{LightmanEtAl2024} call a learned step-level verifier a process-supervised reward model.
+
+\printchapterbib
+\end{refsection}

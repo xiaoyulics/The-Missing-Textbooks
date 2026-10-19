@@ -1,0 +1,388 @@
+% Chapter 10 of Verifiable Intelligence: rational proofs, proper scoring rules, and the price of a lie.
+\newcommand{\rationalKL}{\mathrm{KL}}
+\newcommand{\rationalgap}{\operatorname{gap}}
+\newcommand{\rationalS}{\bar S}
+
+\protocolchapter{Rational Proofs}{Paying for the truth}{the Brier-scored rational proof}{P,X,R}{ch:rational}
+\begin{refsection}[chapters/10-rational.bib]
+
+\begin{chaptersummary}
+Training pays a model rather than checking it, and the overseer can usually afford one sample. In the rational proof of Azar and Micali the prover states the number of satisfying assignments of a formula and the verifier pays the Brier score of the implied probability on one random assignment, which makes the true count the unique best report; every $\cc{\#P}$ function has such a proof. We prove this and show why the margin is tiny: a lie by one costs $2\cdot4^{-\ell}$, no payment computed from one sampled bit does better, no one-round protocol does essentially better unless the polynomial hierarchy collapses, and a prover that samples instead of counting is paid almost in full. Honesty is strictly dominant but worth exponentially little; the verifier spends one evaluation; a lie is never caught, only charged. The model leaves out that real rewards score judgments, not outcomes, which makes the predicted judgment the best report.
+\end{chaptersummary}
+
+\section{The oversight problem: a reward for an answer nobody can check}\label{sec:rational:problem}
+
+Most of the signal that shapes a model is a payment, not a verdict: a forecast is scored when the event resolves, an answer is graded against a key, a response is rated by a person or a reward model.
+
+\begin{oversight}[paying for a fraction nobody can check]
+A model answers questions of the form ``what fraction of the $2^{40}$ configurations of this controller violate the interlock invariant?'' (the controller of \cref{ch:sumcheck}) thousands of times a day, and it is trained on the rewards its answers earn. The overseer cannot afford an interactive proof per answer. For each answer it may draw one configuration at random and evaluate the invariant on it, which takes a microsecond, and it must then pay a reward between $0$ and $2$. Which rule for the reward makes reporting the true fraction the model's best policy, and how much does a wrong answer cost the model under that rule?
+\end{oversight}
+
+The scenario is invented; forecasts are the real instance, since a forecast of $0.03$ is neither right nor wrong when the event fails to occur. Weather forecasting met the problem first: \textcite{Brier1950} proposed to verify probability forecasts by their squared distance from what happened, and \textcite{Good1952} gave the logarithmic rule. Paying by such a rule makes the forecaster's own probability its best report exactly when the rule is \term{strictly proper}\index{scoring rule!strictly proper} \parencite{GneitingRaftery2007}.\sidenote{We follow \textcite{AzarMicali2012} in calling the two rules Brier's and Good's; we could not consult the papers of 1950 and 1952 and attribute to them only the rules.} \Textcite{AzarMicali2012} turned the device into a proof system. In a \term{rational proof}\index{rational proof} the prover maximizes its expected payment, which the verifier computes within a fixed budget from the transcript and its own coins, so that the prover maximizes it only by giving the right answer. One random sample can then pay for an exponential computation.\sidenote{Azar and Micali tell it as a fable: Merlin, now rational, refuses to prove theorems for free, and Arthur, having agreed to pay him, sees that payments can buy faster proofs.}
+
+Machine learning pays models in both ways: next-token training minimizes cross-entropy, the logarithmic rule applied to forecasts of the next token, while reinforcement learning from human feedback (RLHF) pays a policy with a reward model trained on people's comparisons of outputs \parencite{ChristianoEtAl2017,OuyangEtAl2022}, which scores a judgment, not an outcome. Getting a model to report what it knows rather than what the overseer would believe is the problem of \term{eliciting latent knowledge}\index{eliciting latent knowledge} \parencite{ChristianoCotraXu2021}, to which \cref{sec:rational:proxy} returns. The complexity-theoretic ancestor is the Arthur--Merlin game \parencite{Babai1985}, in which Merlin sends one message and Arthur flips coins and decides (the class $\cc{MA}$, \cref{def:toolkit:ip}); a rational proof replaces the decision by a payment. Its first example is \#SAT, counting satisfying assignments, complete for $\cc{\#P}$, the class of functions that count the certificates accepted by a polynomial-time checker \parencite{Valiant1979} (\cref{def:toolkit:classes}).
+
+Why can the overseer not simply check? One evaluation at a random configuration is a coin that comes up ``violates'' with probability $q$, the true fraction, and telling the true count from the count one higher means estimating $q$ to within $2^{-\ell}$, for $\ell=40$ switches, which takes on the order of $4^{\ell}$ evaluations (\cref{prop:rational:detect}). Counts have no certificates checkable in polynomial time unless $\cc{NP}=\cc{coNP}$, since a certified count of $0$ certifies unsatisfiability (\cref{ch:certificates}). The interactive proof of \cref{ch:sumcheck} checks counts, but needs $\ell$ rounds and an evaluation of the arithmetized invariant at a point that is not a configuration, which neither the controller nor a person can supply. The question of this chapter is: \emph{can a payment computed from one random sample make the true count the prover's unique best report, and what does such a payment fail to do?}
+
+\section{The protocol: one sample, one payment}\label{sec:rational:protocol}
+
+The parties are a verifier $\V$, a probabilistic polynomial-time machine, and a prover $\Prov^*$ with unbounded computing power that maximizes the expected value of the payment it receives; unlike the provers of earlier chapters, it has no stake in being believed. Let $f\colon\bits^*\to\bits^*$ be a function whose values have length polynomial in the length of the input.
+
+\begin{definition}[One-round rational proofs; \textcite{AzarMicali2012}]\label[definition]{def:rational:rational}
+Let $B>0$. A \term{one-round rational proof}\index{rational proof!one round} for $f$ with budget $B$ is a probabilistic polynomial-time verifier $\V$ that, on input $x$ and a message $y$ from the prover, uses its coins $\rho$ to compute a payment $R(x,y;\rho)\in[0,B]$ and outputs $y$, such that the expected payment $\mu_x(y)=\E_\rho R(x,y;\rho)$ satisfies $\mu_x(f(x))>\mu_x(y)$ for every input $x$ and every message $y\ne f(x)$. The functions with such proofs form the class $\cc{FRMA}[1]$. A language $L$ is in $\cc{DRMA}[1]$ if, for some such $\V$ and some polynomial-time predicate $\pi$, each input $x$ has a unique message $y^*(x)$ of largest expected payment, and $\pi(x,y^*(x))=1$ exactly when $x\in L$. The \term{reward gap}\index{reward gap} at $x$ is
+\[
+\rationalgap(x)=\mu_x(f(x))-\sup_{y\ne f(x)}\mu_x(y),
+\]
+and for a language the supremum is over the messages on which $\pi$ gives the wrong answer.
+\end{definition}
+
+The definition does the work of completeness and soundness at once, and the reward gap, the cost of a lie, plays the part of their distance. Nothing in it lets the verifier reject.
+
+\begin{protocol}{The Brier-scored rational proof for \#SAT}\label{prot:rational:brier}
+\item[\msg{P}{V}] Send $y$, a claimed number of satisfying assignments of the formula $\varphi$ in conjunctive normal form over $x_1,\dots,x_\ell$. The honest prover sends $\#\varphi$.
+\item[\act{V}] Pay $0$ and stop unless $y$ is an integer in $[0,2^\ell]$. Otherwise set $p=y/2^\ell$, draw $r\in\bits^\ell$ uniformly at random, and compute $b=\varphi(r)\in\bits$.
+\item[\msg{V}{P}] Pay $R=2-2(b-p)^2$, that is, $2-2(1-p)^2$ if $b=1$ and $2-2p^2$ if $b=0$. Output $y$.
+\end{protocol}
+
+The report is a probability in disguise, and $R$ is the Brier score of the forecast ``$b=1$ with probability $p$'', shifted to be nonnegative; \textcite{AzarMicali2012} write it as $2p-\alpha+1$ if $b=1$ and $2(1-p)-\alpha+1$ if $b=0$, with $\alpha=p^2+(1-p)^2$.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}l*{9}{r}@{}}
+\toprule
+report $y$ & $0$ & $1$ & $2$ & $\mathbf{3}$ & $4$ & $5$ & $6$ & $7$ & $8$\\
+\midrule
+payment if $b=1$ & $0$ & $15$ & $28$ & $39$ & $48$ & $55$ & $60$ & $63$ & $64$\\
+payment if $b=0$ & $64$ & $63$ & $60$ & $55$ & $48$ & $39$ & $28$ & $15$ & $0$\\
+expected payment & $40$ & $45$ & $48$ & $\mathbf{49}$ & $48$ & $45$ & $40$ & $33$ & $24$\\
+\bottomrule
+\end{tabular}
+\caption{The payments of \cref{prot:rational:brier} on $\varphi=x_1\wedge(x_2\vee x_3)$, in units of $1/32$. Three of the eight assignments satisfy $\varphi$, so $b=1$ with probability $3/8$, and the report $y$ earns $(49-(y-3)^2)/32$ in expectation.}\label{tab:rational:run}
+\end{table}
+
+For a worked run let $\varphi=x_1\wedge(x_2\vee x_3)$, with $\ell=3$ and $\#\varphi=3$ (\cref{tab:rational:run}). Suppose the verifier draws $r=(1,0,1)$, so that $b=1$. The honest prover, reporting $3$, is paid $39/32\approx1.22$; a prover that reports $4$ is paid $1.5$, and one that reports $8$, claiming that every assignment satisfies $\varphi$, is paid $2$, the most possible. This run rewards the liars. In expectation the honest report earns $49/32$, the report $4$ earns $48/32$, and the report $8$ earns $24/32$: the true count is the unique best report, and its neighbors trail it by $1/32=2\cdot4^{-3}$.
+
+\begin{dictionary}
+the report $y$, or the fraction $p=y/2^\ell$ & the model's answer: a count, a fraction, a probability\\
+the assignment $r$ and the bit $b=\varphi(r)$ & one test case drawn by the overseer, or one observed outcome\\
+the payment $R=2-2(b-p)^2$ & the reward of one episode of training\\
+the expected payment over $\V$'s coins & what training maximizes, if it succeeds\\
+strict properness & the true answer is the unique reward-maximizing answer\\
+the cost $2(\Delta/2^\ell)^2$ of a lie by $\Delta$ & the reward that an answer off by $\Delta$ forfeits\\
+the honest prover's count & the work it takes to know the answer\\
+risk neutrality & a learner that maximizes expected reward
+\end{dictionary}
+
+What one had to notice is that a payment carries what no single check carries: one evaluation cannot tell $1{,}158$ satisfying assignments from $1{,}159$, but the expected payment depends on the true count, and a prover that maximizes it responds to the expectation. The verifier trades the power to catch a lie for the power to make every lie unprofitable on average.
+
+\section{The theory: scoring rules and one-round rational proofs}\label{sec:rational:scoring}
+
+\begin{definition}[Scoring rules]\label[definition]{def:rational:scoring}
+Let $\Omega$ be a finite set of outcomes and $\Delta(\Omega)$ the set of probability distributions on it. A \term{scoring rule}\index{scoring rule} is a function $S\colon\Delta(\Omega)\times\Omega\to\R\cup\{-\infty\}$: a forecaster who reports $D$ is paid $S(D,\omega)$ when $\omega$ occurs. For $D,Q\in\Delta(\Omega)$ let $\rationalS(D;Q)=\sum_{\omega}Q(\omega)S(D,\omega)$, with $0\cdot(-\infty)=0$, be the expected payment of the report $D$ when the outcome is drawn from $Q$. The rule is \emph{proper}\index{scoring rule!proper} if $\rationalS(Q;Q)\ge\rationalS(D;Q)$ for all $D$ and $Q$, and \emph{strictly proper} if moreover equality holds only for $D=Q$. For $\Omega=\bits$ we identify $D$ with $p=D(1)$ and write $S(p,b)$ and $\rationalS(p;q)$.
+\end{definition}
+
+\begin{theorem}[The Brier and logarithmic scores are strictly proper]\label{thm:rational:brier}\index{Brier score}\index{logarithmic score}
+Let $D,Q\in\Delta(\Omega)$, and write $\norm{v}^2=\sum_\omega v(\omega)^2$ for a vector $v$ indexed by $\Omega$.
+\begin{enumerate}
+\item The \emph{Brier score} $S_{\mathrm B}(D,\omega)=2D(\omega)-\norm{D}^2-1$ takes values in $[-2,0]$, and
+\begin{equation}\label{eq:rational:briergap}
+\rationalS_{\mathrm B}(Q;Q)-\rationalS_{\mathrm B}(D;Q)=\norm{D-Q}^2 .
+\end{equation}
+\item For $\Omega=\bits$ the payment $R(p,b)=S_{\mathrm B}(p,b)+2=2-2(b-p)^2$ takes values in $[0,2]$, and for all $p,q\in[0,1]$,
+\begin{equation}\label{eq:rational:binary}
+\E_{b\sim\Bern(q)}R(p,b)=2-2q(1-q)-2(p-q)^2 .
+\end{equation}
+\item The \emph{logarithmic score} $S_{\mathrm L}(D,\omega)=\ln D(\omega)$, with $\ln0=-\infty$, satisfies $\rationalS_{\mathrm L}(Q;Q)-\rationalS_{\mathrm L}(D;Q)=\rationalKL(Q\,\|\,D)$, where the Kullback--Leibler divergence $\rationalKL(Q\,\|\,D)=\sum_{Q(\omega)>0}Q(\omega)\ln\bigl(Q(\omega)/D(\omega)\bigr)$ lies in $[0,\infty]$ and is $0$ only if $D=Q$.
+\end{enumerate}
+Both scores are therefore strictly proper. In the binary case the Brier payment charges a report $p$ exactly $2(p-q)^2$ when the truth is $q$.
+\end{theorem}
+
+\begin{proof}
+The plan is to write the Brier score as a squared distance and the logarithmic score's loss as a divergence. For (i), let $e_\omega$ be the indicator vector of $\omega$. Then $S_{\mathrm B}(D,\omega)=-\norm{D-e_\omega}^2$, and
+\[
+\norm{D-e_\omega}^2=\bigl(1-D(\omega)\bigr)^2+\sum_{\omega'\ne\omega}D(\omega')^2\le2\bigl(1-D(\omega)\bigr)^2\le2,
+\]
+because the numbers $D(\omega')$ with $\omega'\ne\omega$ are nonnegative and sum to $1-D(\omega)$. Averaging over $\omega\sim Q$ and completing the square gives
+\[
+\rationalS_{\mathrm B}(D;Q)=2\ip{D,Q}-\norm{D}^2-1=\norm{Q}^2-\norm{D-Q}^2-1,
+\]
+and the case $D=Q$ is $\rationalS_{\mathrm B}(Q;Q)=\norm{Q}^2-1$; subtracting proves \eqref{eq:rational:briergap}. For (ii), take $D=(1-p,p)$ and $Q=(1-q,q)$. Then $\norm{D-e_b}^2=2(b-p)^2\in[0,2]$, $\norm{D-Q}^2=2(p-q)^2$ and $\norm{Q}^2-1=-2q(1-q)$, and adding $2$ to the formula for $\rationalS_{\mathrm B}(D;Q)$ gives \eqref{eq:rational:binary}.
+
+For (iii), $\rationalS_{\mathrm L}(Q;Q)$ is finite. If $D(\omega)=0$ for some $\omega$ with $Q(\omega)>0$, then $\rationalS_{\mathrm L}(D;Q)=-\infty$ and both sides of the identity are $+\infty$. Otherwise the identity is the definition of $\rationalKL$, and the inequality $\ln u\le u-1$, strict for $u\ne1$, applied to $u=D(\omega)/Q(\omega)$, bounds $-\rationalKL(Q\,\|\,D)$:
+\[
+\sum_{Q(\omega)>0}Q(\omega)\ln\frac{D(\omega)}{Q(\omega)}\le\sum_{Q(\omega)>0}\bigl(D(\omega)-Q(\omega)\bigr)\le0.
+\]
+Equality forces $D(\omega)=Q(\omega)$ wherever $Q(\omega)>0$, and then $D$ has no mass left for the other outcomes.
+\end{proof}
+
+The logarithmic score is unbounded below, so no shift makes it a payment with a finite budget; \textcite{AzarMicali2012} chose Brier's rule because it is bounded. Every proper rule for a binary outcome has the same geometry.
+
+\begin{proposition}[Proper rules are tangent lines]\label[proposition]{prop:rational:tangent}
+Let $S\colon[0,1]\times\bits\to\R$ be a scoring rule for a binary outcome, and let $G(q)=\rationalS(q;q)$ and $g(p)=S(p,1)-S(p,0)$.
+\begin{enumerate}
+\item For all $p,q\in[0,1]$, $\rationalS(p;q)=G(p)+g(p)(q-p)$: as a function of the truth $q$, the expected payment of the report $p$ is the line through $(p,G(p))$ with slope $g(p)$.
+\item The rule is proper if and only if $G(q)\ge G(p)+g(p)(q-p)$ for all $p$ and $q$. Then $G$ is convex, $g$ is nondecreasing, and the cost of reporting $p$ when the truth is $q$ is the \term{Bregman divergence}\index{Bregman divergence} $d_G(q,p)=G(q)-G(p)-g(p)(q-p)\ge0$.
+\item A proper rule is strictly proper if and only if $G$ is strictly convex.
+\item Conversely, let $G\colon[0,1]\to\R$ be convex and let $g(p)$ be numbers with $G(q)\ge G(p)+g(p)(q-p)$ for all $p,q$. Then the rule $S(p,1)=G(p)+(1-p)g(p)$, $S(p,0)=G(p)-p\,g(p)$ is proper.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to read everything off the identity (i). For (i), $\rationalS(p;q)=S(p,0)+q\,g(p)$ is affine in $q$ with slope $g(p)$, and its value at $q=p$ is $G(p)$. Part (ii) restates properness through (i). If the rule is proper, then $G(q)=\max_p\bigl(G(p)+g(p)(q-p)\bigr)$, with the maximum attained at $p=q$, and a maximum of affine functions is convex. Adding the inequality for $(p,q)$ to the one for $(q,p)$ gives $\bigl(g(q)-g(p)\bigr)(q-p)\ge0$, so $g$ is nondecreasing; and $d_G(q,p)=\rationalS(q;q)-\rationalS(p;q)$ is the cost.
+
+For (iii), suppose that $G$ is strictly convex and that $d_G(q,p)=0$ for some $q\ne p$. The line $\lambda(t)=G(p)+g(p)(t-p)$ lies below $G$ by (ii) and meets it at $t=p$ and $t=q$, so at the midpoint $u$ of $p$ and $q$ we get $G(u)\ge\lambda(u)=\frac12\bigl(G(p)+G(q)\bigr)$, which contradicts strict convexity. Conversely, let the rule be strictly proper, $p<q$, and $u=\theta p+(1-\theta)q$ with $0<\theta<1$. Strict properness at the truths $p$ and $q$ against the report $u$ gives $G(p)>G(u)+g(u)(p-u)$ and $G(q)>G(u)+g(u)(q-u)$; multiplying by $\theta$ and $1-\theta$ and adding gives $\theta G(p)+(1-\theta)G(q)>G(u)$. For (iv), the rule has $S(p,1)-S(p,0)=g(p)$ and $\rationalS(p;p)=G(p)$, so by (i) its expected payments are $G(p)+g(p)(q-p)\le G(q)$.
+\end{proof}
+
+For the Brier payment, $G(q)=2-2q(1-q)$, $g(p)=4p-2$, and $d_G(q,p)=2(p-q)^2$: the expected payment of the report $p$ is the line from $2-2p^2$ (the payment when $b=0$) to $2-2(1-p)^2$ (when $b=1$), tangent to $G$ at $p$, and a lie forfeits the height between the curve and the line. For the logarithmic score, $G$ is minus the entropy and $d_G$ is the divergence $\rationalKL$. If $G$ is twice differentiable, then $d_G(q,p)=\int_p^qG''(t)(q-t)\,dt\le\frac12\max G''\cdot(q-p)^2$: under every smooth proper rule a small error costs a squared amount, which is where \cref{sec:rational:gap} begins. \Textcite{GneitingRaftery2007} characterize proper rules on general outcome spaces by convex functions and their subgradients, and \textcite{FrongilloKash2021} extend the characterization to sets of reports that are not convex, such as the grid of fractions $y/2^\ell$.\sidenote{We rely on the description of Gneiting and Raftery's theorem by \textcite{FrongilloKash2021}.}
+
+\begin{theorem}[One sample pays for a count; \textcite{AzarMicali2012}]\label{thm:rational:sharpp}\index{rational proof!for counting}
+Let $f\in\cc{\#P}$ be given by a polynomial $\ell$ and a polynomial-time machine $M$ as $f(x)=\abs{\{w\in\bits^{\ell(\abs{x})}:M(x,w)\text{ accepts}\}}$. Let $\V$ receive $y$, pay $0$ unless $y$ is an integer in $[0,2^\ell]$, and otherwise draw $w\in\bits^\ell$ uniformly at random, set $b=1$ if $M(x,w)$ accepts and $b=0$ otherwise, and pay $R=2-2(b-y/2^\ell)^2$. Write $q=f(x)/2^\ell$ and $p=y/2^\ell$. Then for every input $x$ and every integer $y\in[0,2^\ell]$, with the expectation over $\V$'s coins,
+\begin{equation}\label{eq:rational:sharpp}
+\E R=2-2q(1-q)-2(p-q)^2 .
+\end{equation}
+So $\V$ is a one-round rational proof for $f$ with budget $2$: the honest report $f(x)$ earns between $\frac32$ and $2$ in expectation, and a report $f(x)+\Delta$ in range, with $\Delta\ne0$, earns exactly $2\Delta^2/4^{\ell}\ge2\cdot4^{-\ell}$ less. The verifier uses $\ell$ random bits, one run of $M$, and $O(\ell^2)$ further bit operations. In particular \cref{prot:rational:brier} is a rational proof for \#SAT, and $\cc{\#P}\subseteq\cc{FRMA}[1]$.
+\end{theorem}
+
+\begin{proof}
+The plan is to recognize $R$ as the Brier payment of \cref{thm:rational:brier}(ii) for the forecast $p$ of the bit $b$. Exactly $f(x)$ of the $2^\ell$ strings $w$ make $M$ accept and $w$ is uniform, so $b$ is a Bernoulli variable with mean $q$; the prover's message is fixed before $w$ is drawn and does not influence it. Equation \eqref{eq:rational:binary} for this $q$ is \eqref{eq:rational:sharpp}. Since $0\le(b-p)^2\le1$, every payment lies in $[0,2]$. The honest report has $p=q$ and earns $2-2q(1-q)\ge\frac32$, because $q(1-q)\le\frac14$. A report $y\ne f(x)$ in range loses $2(p-q)^2=2\Delta^2/4^\ell$, at least $2\cdot4^{-\ell}$ because $\Delta$ is a nonzero integer, and a report out of range earns $0<\frac32$; so $f(x)$ is the unique best message. For the cost, $4^\ell R=2\cdot4^\ell-2(2^\ell b-y)^2$ is an integer obtained from numbers of at most $\ell+2$ bits with one squaring, in $O(\ell^2)$ bit operations. For \#SAT, take $M(\varphi,w)=\varphi(w)$, with $\ell$ the number of variables.
+\end{proof}
+
+Azar and Micali prove the case of \#SAT and transfer it to all of $\cc{\#P}$ by reductions that preserve counts; paying with $M$ directly avoids the reduction. The honest prover's message is the answer itself.\sidenote{They add, informally, that the protocol is zero knowledge, since the verifier learns nothing but $f(x)$ (\cref{ch:zeroknowledge}).}
+
+\begin{corollary}[Thresholds; \textcite{AzarMicali2012}]\label[corollary]{cor:rational:pp}
+$\cc{PP}\subseteq\cc{DRMA}[1]$, and $\cc{PH}\subseteq\cc{DRMA}[1]$.
+\end{corollary}
+
+\begin{proof}
+The plan is to compare a count with a threshold. Let $L\in\cc{PP}$ (\cref{def:toolkit:classes}) be decided by a probabilistic polynomial-time machine, which we may assume flips exactly $\ell(\abs{x})$ coins on the input $x$. The number $f(x)$ of coin sequences that lead to acceptance is a $\cc{\#P}$ function, and $x\in L$ exactly when $f(x)>2^{\ell-1}$. Take the verifier of \cref{thm:rational:sharpp} for $f$ and $\pi(x,y)=1$ if $y>2^{\ell-1}$, $\pi(x,y)=0$ otherwise; the unique best message is $f(x)$, on which $\pi$ is correct. For $\cc{PH}$ we use Toda's theorem in the form that Azar and Micali use: every language in $\cc{PH}$ is decided by a polynomial-time machine $N$ that computes from $x$ a single query $z$ to a $\cc{\#P}$ function $h$ and then decides using $h(z)$ \parencite{Toda1991}. The verifier computes $z$ and runs \cref{thm:rational:sharpp} for $h$ on $z$, and $\pi(x,y)$ is the decision of $N$ when $y$ answers the query.
+\end{proof}
+
+One message and a verdict prove much less: Azar and Micali note that $\cc{MA}\subseteq\cc{DRMA}[1]$, with equality only if $\cc{PH}$ collapses. More rounds give more. Let $\cc{C}_0\cc{P}=\cc{P}$ and $\cc{C}_{k+1}\cc{P}=\cc{PP}^{\cc{C}_k\cc{P}}$; the \term{counting hierarchy}\index{counting hierarchy} is $\cc{CH}=\bigcup_k\cc{C}_k\cc{P}$ \parencite{Wagner1986}, which contains $\cc{PH}$ by Toda's theorem.
+
+\begin{theorem}[Rounds; \textcite{AzarMicali2012}]\label{thm:rational:classes}
+Let $\cc{DRMA}[k]$ be the class of languages with rational proofs of $k$ rounds in which the verifier's messages are its coins, and $\cc{RIP}$ the class with polynomially many rounds, private coins allowed. Then $\cc{C}_k\cc{P}\subseteq\cc{DRMA}[k]\subseteq\cc{C}_{2k+1}\cc{P}$ for every $k\ge1$, so that $\bigcup_k\cc{DRMA}[k]=\cc{CH}$; and $\cc{RIP}=\cc{PSPACE}$.
+\end{theorem}
+
+\begin{proofsketch}
+For the lower bound the verifier samples a computation path at the top level, obtains its oracle answers from Brier-scored counts at the lower levels, and weights later rounds by geometrically decreasing factors, so that a lie in one round loses more than later rounds can pay; the upper bound computes an optimal prover by backward induction with counting oracles. For $\cc{PSPACE}\subseteq\cc{RIP}$ the prover announces whether $x\in L$, proves it by \cref{thm:sumcheck:ippspace}, and is paid $1$ on acceptance; $\cc{RIP}\subseteq\cc{PSPACE}$ follows from the recursion of \cref{thm:interaction:ipinpspace}. Details are in \textcite[Sections~5--6]{AzarMicali2012}.
+\end{proofsketch}
+
+With a constant number of rounds, interactive proofs stay in the second level of the polynomial hierarchy (\cref{ch:interaction}), while rational proofs reach the counting hierarchy; the price is paid in the gap.
+
+\section{The theory: the price of a lie}\label{sec:rational:gap}
+
+\Cref{thm:rational:sharpp} makes the true count the best report by a margin of $2\cdot4^{-\ell}$, about $1.7\times10^{-24}$ for $40$ switches, and since a rational proof never rejects, this margin is its whole guarantee. \Textcite{GuoEtAl2014} asked for more: a protocol has a \term{noticeable gap}\index{reward gap!noticeable} if every strategy under which the verifier outputs a wrong answer with probability at least $1/\poly(n)$ loses at least $1/\poly(n)$ in expected payment, the budget being fixed (we know the definition from the restatement of \textcite{ChenMcCauleySingh2016}).\sidenote{The budget must be fixed because gaps scale with payments: as Chen, McCauley and Singh remark, a polynomial gap under a constant budget is a constant gap under a polynomial budget.} A lie by one is wrong with probability $1$ and costs $2\cdot4^{-\ell}$, so \cref{prot:rational:brier} fails the test, and not by accident of the Brier score.
+
+\begin{proposition}[One sample cannot pay for precision]\label[proposition]{prop:rational:onesample}
+Let $\ell\ge1$, $N=2^\ell$, and $B>0$. Let $S\colon\{0,1,\dots,N\}\times\bits\to[0,B]$ be a payment rule for a report $y$ and one bit $b$ such that, for every count $k\in\{0,\dots,N\}$, the report $y=k$ maximizes $\E_{b\sim\Bern(k/N)}S(y,b)$. Call the report $k+1$ when the count is $k$, and the report $k$ when the count is $k+1$, for $0\le k<N$, the $2N$ \emph{lies by one}. Then their average expected loss is at most $B/N^2=B\cdot4^{-\ell}$, so some lie by one costs at most $B\cdot4^{-\ell}$. The payment of \cref{prot:rational:brier}, with $B=2$, makes every lie by one cost exactly $2\cdot4^{-\ell}$, and so maximizes the smallest cost of a lie by one among all such rules.
+\end{proposition}
+
+\begin{proof}
+The plan is to add the costs of the two lies on each pair of neighboring counts and to sum over the pairs, which telescopes. Let $g(y)=S(y,1)-S(y,0)$, and let $G(y)$ be the expected payment of the report $y$ when the count is $y$. By \cref{prop:rational:tangent}(i), an identity that holds for each report separately, the report $y$ earns $G(y)+g(y)(k-y)/N$ in expectation when the count is $k$, so it costs
+\[
+L(k,y)=G(k)-G(y)-g(y)\,\frac{k-y}{N},
+\]
+which is nonnegative by hypothesis. For neighboring counts the terms $G(k)$ and $G(k+1)$ cancel in the sum of the two lies:
+\[
+L(k+1,k)+L(k,k+1)=\frac{g(k+1)-g(k)}{N}.
+\]
+Summing over $k=0,\dots,N-1$ telescopes to $\bigl(g(N)-g(0)\bigr)/N$, and payments in $[0,B]$ give $g(N)\le B$ and $g(0)\ge-B$. So the $2N$ costs sum to at most $2B/N$, and their average, which bounds the smallest, is at most $B/N^2$. For the Brier payment, \eqref{eq:rational:binary} gives $L(k,k\pm1)=2/N^2$ for every $k$.
+\end{proof}
+
+Linear programs confirm the optimum for $\ell\le5$ (script, part E); $\kappa$ assignments per run gain at most a factor $\kappa^2$ (\cref{ex:rational:samples}); and, unless $\cc{PH}$ collapses, no one-round protocol does essentially better.
+
+\begin{proposition}[A noticeable gap in one round collapses the hierarchy]\label[proposition]{prop:rational:oneround}
+Suppose that some one-round rational proof for \#SAT, with reports of at most $\ell+1$ bits, has budget at most $B(n)$ and reward gap at least $1/h(n)$ on every formula of size $n$, for polynomials $B$ and $h$. Then \#SAT can be computed in polynomial time with an oracle for a language in $\Sigma_2^p$, and $\cc{PH}\subseteq\cc{P}^{\Sigma_2^p}$: the polynomial hierarchy collapses to its third level.
+\end{proposition}
+
+\begin{proof}
+The plan is to find the best message bit by bit, asking whether some message with a given prefix earns at least a threshold; a prover can name such a message and its expected payment can be estimated by sampling, which puts the question in $\Sigma_2^p$. Fix $\varphi$ of size $n$, let $\mu(y)$ be the expected payment of the message $y$, $y^*=\#\varphi$, $\mathrm{OPT}=\mu(y^*)$, and $\epsilon=1/(3h(n))$, so that $\mu(y)\le\mathrm{OPT}-3\epsilon$ for every $y\ne y^*$.
+
+Call a triple $(\varphi,\alpha,\theta)$, with $\alpha$ a string and $\theta$ a multiple of $\epsilon/2$, a \emph{yes}-instance if some report $y$ that begins with $\alpha$ has $\mu(y)\ge\theta$, and a \emph{no}-instance if every such $y$ has $\mu(y)\le\theta-\epsilon$. Merlin can send such a $y$, and Arthur can run the verifier on it $t=\lceil2B^2\ln6/\epsilon^2\rceil$ times and accept if the average payment is at least $\theta-\epsilon/2$; by Hoeffding's inequality (\cref{thm:toolkit:chernoff}) the average is within $\epsilon/2$ of $\mu(y)$ except with probability $2e^{-t\epsilon^2/(2B^2)}\le\frac13$. So a Merlin--Arthur protocol separates yes- from no-instances, and the proof that $\cc{BPP}\subseteq\Sigma_2^p$ (Sipser, G\'acs and Lautemann; \textcite{AroraBarak2009}), applied after Merlin's message, gives a language $A\in\Sigma_2^p$ that contains every yes-instance and no no-instance.
+
+With $A$ as an oracle, bisect over the multiples of $\epsilon/2$ from $0$ to the first one above $B+\epsilon$, keeping $\mathit{lo}$ and $\mathit{hi}$ with $(\varphi,\emptyset,\mathit{lo})\in A$ and $(\varphi,\emptyset,\mathit{hi})\notin A$, where $\emptyset$ is the empty prefix; this holds at the start because $\theta=0$ gives a yes-instance and every $\theta\ge B+\epsilon$ a no-instance. When $\mathit{hi}=\mathit{lo}+\epsilon/2$, the triple with $\mathit{hi}$ is not a yes-instance, so $\mathit{hi}>\mathrm{OPT}$; the triple with $\mathit{lo}$ is not a no-instance, so $\mathit{lo}<\mathrm{OPT}+\epsilon$ and $\mathit{hi}<\mathrm{OPT}+3\epsilon/2$. Hence $\theta=\mathit{hi}-3\epsilon/2$ lies strictly between $\mathrm{OPT}-3\epsilon/2$ and $\mathrm{OPT}$. For this $\theta$ a prefix of $y^*$ gives a yes-instance, and every other prefix a no-instance, because its messages earn at most $\mathrm{OPT}-3\epsilon<\theta-\epsilon$. So for the prefix $\alpha$ of $y^*$ found so far, the triples with $\alpha0$ and $\alpha1$ tell whether $y^*$ continues with $0$, continues with $1$, or ends at $\alpha$. Finally, Toda's theorem gives $\cc{PH}\subseteq\cc{P}^{\cc{\#P}}$ \parencite{Toda1991}, and every query to $\cc{\#P}$ reduces to \#SAT.
+\end{proof}
+
+We have not found this argument in the literature; it is the upper bound of \cref{thm:rational:classes} with sampling in place of counting, close in spirit to the conversion of rational protocols into interactive proofs by \textcite{ChenMcCauleySingh2018}.\sidenote{The theorem of Sipser, G\'acs and Lautemann is usually stated for languages; its proof applies unchanged to the yes- and no-instances of a promise problem, which is all the argument uses.} Interaction removes the obstacle.
+
+\begin{proposition}[Interaction buys a constant gap]\label[proposition]{prop:rational:interaction}
+Let $\varphi$ be a 3-CNF formula with $\ell$ variables and at least one clause. In the protocol in which the prover announces a count $C$, proves $\#\varphi=C$ with the counting protocol of \cref{thm:sumcheck:count}, and is paid $1$ if the verifier accepts and $0$ otherwise, the honest prover is paid $1$ and every strategy that announces $C\ne\#\varphi$ is paid less than $2^{-\ell-1}\le\frac14$ in expectation. So every best strategy announces $\#\varphi$: the protocol is a rational proof for \#SAT with budget $1$, $\ell$ rounds, and reward gap greater than $\frac34$.
+\end{proposition}
+
+\begin{proof}
+The expected payment is the probability of acceptance. By \cref{thm:sumcheck:count}, the honest prover is accepted with probability $1$, and once a false claim $C\ne\#\varphi$ is fixed, every prover strategy, however computed, is accepted with probability less than $2^{-\ell-1}$.
+\end{proof}
+
+The construction is Azar and Micali's proof that $\cc{PSPACE}\subseteq\cc{RIP}$, applied to counting. Both verifiers are efficient, but the interactive one evaluates the arithmetized formula off the assignments. When the predicate is a black box, such as a simulator or a human judgment, the verifier can evaluate it only at assignments, as \cref{prot:rational:brier} does (\cref{ex:rational:blackbox}).
+
+\paragraph{Cheap estimates.} The tiny margin matters because a prover can be nearly right at a fraction of the cost of being right.
+
+\begin{proposition}[A cheap estimate is paid almost in full]\label[proposition]{prop:rational:sampler}
+Let $m=2^j$ with $0\le j\le\ell$. The \term{$m$-sampler}\index{sampling prover} evaluates $\varphi$ at $m$ independent uniformly random assignments, chosen with its own coins, and reports $y=2^\ell J/m$, where $J$ is the number of them that satisfy $\varphi$. In \cref{prot:rational:brier} its expected payment is
+\[
+2-2q(1-q)\Bigl(1+\frac1m\Bigr),
+\]
+less than the honest prover's by $2q(1-q)/m\le1/(2m)$, and unless $mq$ is an integer its report is wrong in every run.
+\end{proposition}
+
+\begin{proof}
+The report is an integer in $[0,2^\ell]$ because $m$ divides $2^\ell$, and its fraction is $p=J/m$. The verifier's assignment is independent of the sampler's, so given $J$ the verifier's bit is still Bernoulli with mean $q$, and \eqref{eq:rational:binary} gives the conditional expected payment $2-2q(1-q)-2(J/m-q)^2$. The count $J$ is binomial with $m$ trials and mean $mq$, so $\E(J/m-q)^2=q(1-q)/m$, and $q(1-q)\le\frac14$. If $mq$ is not an integer, then $J/m\ne q$ for every value of $J$.
+\end{proof}
+
+\begin{corollary}[The price of exact honesty]\label[corollary]{cor:rational:budget}
+Let $0<q<1$. Suppose that each evaluation of $\varphi$ costs the prover $\gamma>0$, that the verifier multiplies the payment of \cref{prot:rational:brier} by a scale $M>0$, and that the honest prover counts by evaluating $\varphi$ at all $2^\ell$ assignments. If the honest prover's payment minus its cost exceeds that of every $m$-sampler, then
+\[
+M>\frac{\gamma\,4^{\ell-1}}{2q(1-q)}\ge2\gamma\,4^{\ell-1}.
+\]
+For $M=1$, the $1$-sampler, which evaluates $\varphi$ once, earns more net of cost than the honest prover as soon as $\gamma>2q(1-q)/(2^\ell-1)$, and so on every formula once $\gamma>1/(2^{\ell+1}-2)$.
+\end{corollary}
+
+\begin{proof}
+By \cref{prop:rational:sampler}, the honest prover's net payoff exceeds the $m$-sampler's exactly when $M\cdot2q(1-q)/m>\gamma(2^\ell-m)$. For $m=2^{\ell-1}$ this reads $M>\gamma4^{\ell-1}/(2q(1-q))$, and $2q(1-q)\le\frac12$ gives the second inequality. For $M=1$ and $m=1$ the same computation shows that the $1$-sampler nets more exactly when $\gamma(2^\ell-1)>2q(1-q)$, which holds for every $q$ once $\gamma(2^\ell-1)>\frac12$.
+\end{proof}
+
+The scale must grow with the square of the honest prover's work. With the protocol of \cref{prop:rational:interaction} linear growth suffices: a wrong announcement is paid less than $M/4$ whatever it costs, so $M\ge\frac43\gamma W$, with $W$ the honest prover's number of evaluations, makes honesty better than every wrong announcement. For a prover that answers many questions within a computational budget, as a model serving many requests does, \textcite{CampanelliGennaro2015} define \term{sequentially composable}\index{sequential composability} rational proofs and show that existing protocols are not: answering quickly and wrongly completes more tasks and earns more (as summarized by \textcite{Campanelli2018}). Other work enlarges the gap. Super-efficient protocols, with logarithmic-time verifiers, have a polynomial gap under a constant budget \parencite{AzarMicali2013,ChenMcCauleySingh2018}; \textcite{GuoEtAl2014,GuoEtAl2016} give one-round rational arguments with sublinear verification for $\cc{NC}^1$ and then for all of $\cc{P}$, against computationally bounded provers; and with several provers cross-checked against each other, rational proofs with a noticeable gap decide exactly $\cc{P}^{\parallel\cc{NEXP}}$, polynomial time with parallel queries to $\cc{NEXP}$, and those with a constant gap exactly $\cc{P}^{\parallel\cc{NEXP}[O(1)]}$ \parencite{ChenMcCauleySingh2016}.
+
+\paragraph{Seeing a lie in the payments.} The margin also bounds what an auditor learns by watching payments over many runs.
+
+\begin{proposition}[Seeing a lie takes about $4^\ell$ runs]\label[proposition]{prop:rational:detect}
+Let $0<q<1$ be the true fraction, $p\in[0,1]$ a false report, and $\eta=p-q$. An auditor watches $t$ independent runs of \cref{prot:rational:brier} for the honest prover and for the prover that reports $p$.
+\begin{enumerate}
+\item If both are paid on the same coins in each run, the honest prover's total payment exceeds the other's with probability at least $1-e^{-t\eta^2/2}$.
+\item Suppose $t\eta^2\le q(1-q)$. Every rule that names one of the two reports as the true one, after seeing the bits $b_1,\dots,b_t$ of runs on common coins (and with them every payment), errs with probability at least $\frac12\bigl(1-\sqrt{t\eta^2/(2q(1-q))}\bigr)$ when the true fraction is $q$ or when it is $p$; in particular with probability at least $\frac14$ if $t\le q(1-q)/(2\eta^2)$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to reduce each part to the number $K$ of runs with $b=1$. For (i), let $p>q$; the case $p<q$ is symmetric. In a run with bit $b$ the two payments differ by $\bigl(2-2(b-q)^2\bigr)-\bigl(2-2(b-p)^2\bigr)=2\eta(p+q-2b)$, so the totals differ by $2\eta\bigl(t(p+q)-2K\bigr)$, and the honest total is the larger exactly when $K/t<q+\eta/2$. The count $K$ is binomial with $t$ trials and mean $tq$, and Hoeffding's inequality (\cref{thm:toolkit:chernoff}(ii)) bounds the probability that $K/t\ge q+\eta/2$ by $e^{-2t(\eta/2)^2}$.
+
+For (ii), let $P_a$ be the distribution of $(b_1,\dots,b_t)$ when the true fraction is $a$, and let a rule name $p$ on a set $E$ of outcomes. Its two error probabilities, $P_q(E)$ and $P_p(E^c)$, sum to at least $1-\tau$, with $\tau=\frac12\sum_\beta\abs{P_p(\beta)-P_q(\beta)}$ the total variation distance. Every $P_q(\beta)$ is positive, so the Cauchy--Schwarz inequality gives
+\[
+\tau\le\frac12\Bigl(\sum_\beta\frac{\bigl(P_p(\beta)-P_q(\beta)\bigr)^2}{P_q(\beta)}\Bigr)^{1/2}=\frac12\Bigl(\sum_\beta\frac{P_p(\beta)^2}{P_q(\beta)}-1\Bigr)^{1/2}.
+\]
+The last sum is the $t$-th power of the one-run sum $p^2/q+(1-p)^2/(1-q)=1+u/t$, with $u=t\eta^2/(q(1-q))\le1$, and $(1+u/t)^t-1\le e^u-1\le2u$ because $e^u-1-2u$ is convex and not positive at $u=0$ or $u=1$. Hence $\tau\le\sqrt{t\eta^2/(2q(1-q))}$, and one of the two errors is at least half their sum.
+\end{proof}
+
+With $\eta=\Delta/2^\ell$, about $2\ln(1/\beta)\cdot4^\ell/\Delta^2$ runs on common coins rank the honest prover first with probability $1-\beta$, and below $q(1-q)\cdot4^\ell/(2\Delta^2)$ runs no auditor tells the reports apart with error under $\frac14$. On independent coins the difference of the totals has mean $2t\eta^2$ and variance $4tq(1-q)\bigl((1-2q)^2+(1-2p)^2\bigr)$, so Chebyshev's inequality asks for about $16^\ell/\Delta^4$ runs. Auditing payments is Monte Carlo estimation of the count in disguise.
+
+\subsection{Paying for judgments instead of outcomes}\label{sec:rational:proxy}
+
+Every guarantee so far assumed that the verifier pays on the outcome itself. Training rarely does: a reward model scores a response by what people would prefer \parencite{ChristianoEtAl2017,OuyangEtAl2022}, and a grader marks an answer against its own key.
+
+\begin{proposition}[A score elicits the probability of what it scores]\label[proposition]{prop:rational:proxy}
+Let $Z$ be a random variable with finitely many values (what the model knows about a question), let $h\in\bits$ be the label on which the payment is computed (an observed outcome, or a judge's verdict), and let $S$ be a strictly proper scoring rule for a binary outcome with finite expected payments. A policy that reports $p(z)$ on the information $z$ maximizes $\E S(p(Z),h)$ if and only if $p(z)=\Prob[h=1\mid Z=z]$ for every $z$ with $\Prob[Z=z]>0$. In particular the policy that reports the probability $\Prob[b=1\mid Z=z]$ of the true outcome $b$ is optimal if and only if $\Prob[h=1\mid Z]=\Prob[b=1\mid Z]$ with probability $1$.
+\end{proposition}
+
+\begin{proof}
+Given $Z=z$, the label is a Bernoulli variable with mean $h_z=\Prob[h=1\mid Z=z]$, so the conditional expected payment of the report $p$ is $\rationalS(p;h_z)$, which strict properness maximizes exactly at $p=h_z$. The total expectation weights these conditional expectations by the positive numbers $\Prob[Z=z]$, so it is maximized exactly when every term is.
+\end{proof}
+
+The ELK report has a predictor, which forecasts what a camera guarding a diamond will show, and a reporter, which answers questions such as whether the diamond is still there \parencite{ChristianoCotraXu2021}. The \emph{direct translator}\index{eliciting latent knowledge!direct translator} reports what the predictor believes; the \emph{human simulator} reports what a human who saw the video would believe, and so fails exactly when the human would be fooled. By \cref{prop:rational:proxy}, with $h$ a human's answer, a score of the human's answers pays the human simulator at least as well as the direct translator, and strictly better wherever the two disagree on average given what the predictor knows; on questions that humans answer correctly the payments cannot tell them apart.\sidenote{The formalization is ours, not the report's.}
+
+\begin{observation}[\textcite{OpenAI2023}; \textcite{KadavathEtAl2022}]\label[observation]{obs:rational:calibration}\index{calibration}
+On a subset of the MMLU benchmark, the pre-trained GPT-4 model was highly calibrated, and post-training reduced its calibration markedly (OpenAI's report, Section~5 and Figure~8). Earlier, larger language models were found well calibrated on suitably formatted multiple-choice and true/false questions.
+\end{observation}
+
+Pretraining pays with the logarithmic score of next-token forecasts, and post-training for judgments or correct answers; the observation fits \cref{prop:rational:proxy}, but neither report isolates the cause. As of 2025, \textcite{DamaniEtAl2025}, in a preprint, add to a reasoning model's reward for a correct answer the Brier term $-(\hat p-a)^2$, with $a\in\bits$ the correctness and $\hat p$ the stated confidence, prove that calibrated confidence maximizes the reward, and report that binary rewards hurt calibration while theirs improved it.
+
+\section{Running the protocol}\label{sec:rational:running}
+
+The script \texttt{10-rational-brier.py} runs \cref{prot:rational:brier} on a random 3-CNF formula with $\ell=12$ variables and $10$ clauses, which has $1{,}158$ satisfying assignments, so $q=0.2827$ and the honest prover's expected payment is $1.5944$. Panel (a) of \cref{fig:rational:runs} runs the protocol literally, drawing assignments and evaluating clauses; panels (b) and (c), which simulate billions of runs, draw the bits and the samplers' counts from their Bernoulli and binomial laws, which is exact because a run depends on $\varphi$ only through $b$ (the script checks the shortcut against literal runs).\sidenote{The script takes about three seconds on one laptop core, more than half of it in the $5\times10^7$ simulated runs of panel~(b).}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=14mm},vplot,
+    width=0.345\linewidth,height=0.275\linewidth,
+    legend style={font=\scriptsize}]
+\nextgroupplot[xmin=0,xmax=1,ymin=0.45,ymax=1.75,xlabel={reported fraction $p$},ylabel={mean payment},
+  title={(a) payment against the report},legend style={at={(0.03,0.03)},anchor=south west}]
+\addplot[theory] table[x=p,y=exact]{figures/data/10-rational-brier-curve.dat};
+\addplot[cheat,ebars] table[x=p,y=mean,y error plus=ep,y error minus=em]{figures/data/10-rational-brier-payment.dat};
+\addplot[honest,ebars] table[x=p,y=mean,y error plus=ep,y error minus=em]{figures/data/10-rational-brier-payment-honest.dat};
+\legend{exact $\E R$,false reports,honest report}
+\nextgroupplot[xmode=log,ymode=log,log basis x=2,xmin=0.7,xmax=6000,ymin=4e-8,ymax=2,
+  xtick={1,16,256,4096},xticklabels={$1$,$16$,$256$,$4096$},
+  xlabel={samples $m$},ylabel={loss},
+  title={(b) the $m$-sampler},legend style={at={(0.03,0.2)},anchor=south west}]
+\addplot[theory] table[x=k,y=theory]{figures/data/10-rational-brier-sampler.dat};
+\addplot[cheat2,ebars] table[x=k,y=loss,y error plus=ep,y error minus=em]{figures/data/10-rational-brier-sampler.dat};
+\addplot[guide] table[x=k,y=onelie]{figures/data/10-rational-brier-sampler.dat};
+\legend{$2q(1-q)/m$,measured,a lie by one}
+\nextgroupplot[xmode=log,xmin=0.8,xmax=4e5,ymin=0.45,ymax=1.03,xlabel={runs $t$},ylabel={honest total larger},
+  title={(c) telling the liar apart},legend style={at={(0.97,0.03)},anchor=south east}]
+\addplot[theory] table[x=t,y=paired]{figures/data/10-rational-brier-detect-theory.dat};
+\addplot[theory2] table[x=t,y=indep]{figures/data/10-rational-brier-detect-theory.dat};
+\addplot[bound] table[x=t,y=hoeff]{figures/data/10-rational-brier-detect-theory.dat};
+\addplot[honest,ebars,forget plot] table[x=t,y=paired,y error plus=pep,y error minus=pem]{figures/data/10-rational-brier-detect.dat};
+\addplot[cheat2,ebars,forget plot] table[x=t,y=indep,y error plus=iep,y error minus=iem]{figures/data/10-rational-brier-detect.dat};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{\Cref{prot:rational:brier} on a random 3-CNF formula with $\ell=12$ variables, $10$ clauses and $1{,}158$ satisfying assignments ($q=0.2827$). (a) Mean payment of each report over $20{,}000$ runs, with exact $95\%$ intervals (Clopper--Pearson for the frequency of $b=1$, mapped through the affine payment); curve: \cref{thm:rational:sharpp}. (b) Mean loss of the $m$-sampler against the honest prover, both paid on the same coins, over $4\times10^6$ runs per $m$, with normal $95\%$ intervals; line: \cref{prop:rational:sampler}; dashed: the loss $2\cdot4^{-12}$ of a lie by one. (c) Frequency with which the honest prover's total payment over $t$ runs exceeds that of the prover reporting $1{,}158+256$, paid on the same coins (dots, solid curve) or on independent coins (squares, dashed teal curve), in $4{,}000$ experiments per $t$, with Clopper--Pearson $95\%$ intervals; curves: exact binomial sums, jagged for small $t$ because the number of runs with $b=1$ is an integer; indigo dashes: the bound $1-e^{-t\eta^2/2}$ of \cref{prop:rational:detect}(i). Script \texttt{10-rational-brier.py}, seeds $10$ (formula), $1010$--$1019$, $2020$ and $3030$.}\label{fig:rational:runs}
+\end{figure}
+
+\paragraph{Payments.} All ten intervals of panel (a) contain the expected payment \eqref{eq:rational:sharpp}, a parabola, flat near its top: the report $0.25$, off by $134$ assignments, earns $1.5923$ against the honest $1.5944$, and after $20{,}000$ runs each their intervals, $[1.5829,1.5955]$ and $[1.5943,1.6052]$, overlap. The report $\frac12$ earns exactly $\frac32$ in every run.
+
+\paragraph{Samplers.} The losses in panel (b) follow $2q(1-q)/m$ from $0.406$ at $m=1$ down to $9.2\times10^{-5}$ (exactly $9.9\times10^{-5}$) at $m=4{,}096$, and $12$ of the $13$ intervals contain the exact value. The $4{,}096$-sampler does as many evaluations as the honest prover and still loses $831$ times more than a prover who counts exactly and then lies by one. With a cost $\gamma$ per evaluation, the crossover of \cref{cor:rational:budget} is $\gamma=9.9\times10^{-5}$: at $\gamma=10^{-4}$ the $1$-sampler nets $1.1888$ against the honest $1.1848$, and already at $\gamma=10^{-6}$ the $512$-sampler nets $1.5931$ against $1.5903$; exact counting pays against every sampler only for a scale $M$ above $1.03\times10^7\gamma$.
+
+\paragraph{Auditing.} In panel (c), $18$ of the $19$ intervals of each auditor contain the exact value. On common coins the honest prover is ranked first with probability $0.95$ after about $593$ runs (Hoeffding's bound promises it from $1{,}534$, and below $26$ runs \cref{prop:rational:detect}(ii) holds every auditor to an error of at least $\frac14$); on independent coins, after about $10{,}256$. For a lie by one the same formulas give about $3.7\times10^7$ runs on common coins, a floor of $1.7\times10^6$ for every auditor, and about $6\times10^{13}$ on independent coins by the normal approximation, against $4{,}096$ evaluations for the honest count. A run of the verifier took tens of microseconds in Python; counting by enumeration took a fifth of a second at $\ell=20$ and doubles with every variable.
+
+\section{The three questions}\label{sec:rational:questions}
+
+\questionone The game is between the prover and the verifier's coin, with no verdict to win. By \cref{thm:rational:sharpp} the true count is the unique report of largest expected payment on every formula, so for a prover that maximizes expected payment truthful reporting is a strictly dominant strategy (\cref{def:toolkit:nash}). Four qualifications decide what this is worth. Only a prover that can count, a $\cc{\#P}$-hard task, can play it. The margin is $2\cdot4^{-\ell}$, the most a payment on one sampled bit allows, and no one-round protocol makes it noticeable unless $\cc{PH}$ collapses (\cref{prop:rational:onesample,prop:rational:oneround}). A prover that evaluates $\varphi$ $m$ times and guesses loses only $2q(1-q)/m$, so if computation costs anything, honesty is a best response only when the payment grows like $4^{\ell}$ times the cost of an evaluation (\cref{cor:rational:budget}). And the prover must be risk neutral and paid on the outcome itself, since on a proxy label its best report is the label's probability (\cref{prop:rational:proxy}). With $\ell$ rounds of interaction the margin becomes a constant (\cref{prop:rational:interaction}).
+
+\questiontwo One message of $\ell+1$ bits, $\ell$ random bits, one evaluation of $\varphi$ at an assignment, and $O(\ell^2)$ bit operations for the payment; and money: a budget of $2$ per question and, to make exact counting pay a prover that spends $\gamma$ per evaluation, a scale above $\gamma\,4^{\ell-1}/(2q(1-q))$.
+
+\questionthree Never: the verifier cannot reject, and in a single run a prover that over-reports is paid more than the honest prover whenever $b=1$. A lie of $\Delta$ costs $2(\Delta/2^\ell)^2$ in expectation, and seeing it in the payments takes about $4^\ell/\Delta^2$ runs (\cref{prop:rational:detect}). The guarantee holds against rational, risk-neutral provers paid on true outcomes; against a malicious prover there is none.
+
+\noindent\begin{minipage}{\linewidth}
+\protocolcard{the value of a counting function: that $\varphi$ has $y$ satisfying assignments; through it every $\cc{\#P}$ function and, with a threshold, every language in $\cc{PP}$ and $\cc{PH}$}{a verifier $\V$ that evaluates $\varphi$ at a random assignment and pays; a prover $\Prov$ that maximizes expected payment}{the true count is the unique best report (strictly dominant) but earns only $2\cdot4^{-\ell}$ more than a lie by one; a prover paying for computation earns more by sampling}{one message, $\ell$ random bits, one evaluation of $\varphi$, $O(\ell^2)$ bit operations; a budget of $2$, which must grow like $\gamma\,4^{\ell}$ to make exact counting pay}{never: a lie of $\Delta$ costs $2(\Delta/2^\ell)^2$ in expectation, and seeing it in the payments takes about $q(1-q)4^\ell/\Delta^2$ runs}{a risk-neutral prover that maximizes expected payment; payment on the true outcome, drawn after the report and hidden from the prover; cheap computation}
+\end{minipage}
+
+\section{What the model leaves out}\label{sec:rational:leaves}
+
+\paragraph{What was idealized away.} The verifier's sample must be drawn after the report and hidden from the prover: a prover that learns $r$ in advance reports $\varphi(r)$ and is paid the maximum in every run (\cref{ex:rational:early}), so a predictable seed defeats the protocol as it defeats the private coins of \cref{ch:interaction}. For a forecast the outcome must be observed, which happens late for long horizons and never for what would have happened without an intervention. A risk-averse prover shades its report toward $\frac12$ (\cref{ex:rational:risk}). A proper rule rewards an honest but mistaken belief as well as knowledge: calibration is not accuracy. Above all, a trained model is not a maximizer of expected payment over all reports but a policy that training pushed toward high reward on the questions it saw; \cref{prop:rational:proxy} describes the population optimum, not what gradient descent finds (\cref{ch:pvg}).
+
+\paragraph{Where it breaks.} The theorems of \cref{sec:rational:gap} are the first break: the margin cannot be made noticeable in one round unless $\cc{PH}$ collapses, and a prover with a budget earns more by estimating than by counting. The second break is the label: RLHF pays for judgments, and judgments can be optimized against. With a fixed ``gold-standard'' reward model standing in for people, \textcite{GaoSchulmanHilton2023} found that optimizing a policy too hard against a proxy reward model trained on its labels lowers the gold score. \Textcite{SharmaEtAl2024} found five AI assistants trained with human feedback repeatedly sycophantic, and people and preference models sometimes preferring convincingly written sycophantic responses to correct ones. \Textcite{WenEtAl2024}, in a preprint, found that RLHF on question answering (QuALITY) and programming (APPS) made models better at convincing time-limited human evaluators without making them more correct, and raised the evaluators' false-positive rates by $24.1\%$ and $18.3\%$: \cref{prop:rational:proxy} with $h$ a human verdict. The third break is improper grading. Under binary grading, which pays $1$ for a correct answer and $0$ for a wrong one or for abstaining, abstaining never pays more than guessing, and \textcite{KalaiEtAl2025} argue, in a preprint, that hallucinations persist because most evaluations are graded this way; they propose stating a confidence threshold $t$ in each evaluation and charging $t/(1-t)$ for a wrong answer (\cref{ex:rational:improper}). Finally, \textcite{FriedlEtAl2026}, in a preprint, formalize eliciting latent knowledge with causal influence diagrams and prove that no training strategy that uses only the agent's behavior as feedback can guarantee an honest agent with certainty, even when the feedback is perfect.
+
+\paragraph{Open problems.} \Textcite{MusatovPotapov2023} prove that one-round rational proofs with $O(\log n)$ bits of communication decide exactly $\cc{PP}$; whether $\cc{PP}=\cc{DRMA}[1]$ is open, and equality would put $\cc{PH}$ inside $\cc{PP}$ (\cref{cor:rational:pp}). For oversight the sharper question is which questions about a predicate that the verifier can only sample, such as a human judgment, admit rational proofs with a noticeable gap and a polynomial budget (\cref{ex:rational:blackbox}). \Textcite[Section~2.3]{AzarMicali2012} leave open whether a verifier can distinguish a knowledgeable expert from one with limited computational power, the question that a sampling prover raises. The impossibility of \textcite{FriedlEtAl2026} leaves open methods of eliciting latent knowledge that use more than behavior, such as a model's internal states. And many outcomes are never observed: peer prediction pays a rater by a proper score of another rater's report, which makes honest reporting a Nash equilibrium \parencite{MillerResnickZeckhauser2005} but not a dominant strategy.
+
+\begin{exercises}
+\item \consolidation (The worked run.) Check \cref{tab:rational:run}. Show that in one run the report $4$ beats the honest report with probability $\frac38$ and the report $0$ with probability $\frac58$. Which reports beat it in most runs, and what does this say about judging a payment rule by single runs?\label{ex:rational:run}
+
+\item \consolidation (The one-sample prover.) In the example of \cref{tab:rational:run}, the prover that evaluates $\varphi$ at one random assignment reports $0$ or $8$. Show from the table that it earns $34/32$ in expectation, as \cref{prop:rational:sampler} predicts.\label{ex:rational:onesampler}
+
+\item \consolidation (Tangent lines.) (a) Compute $G$ and $g$ of \cref{prop:rational:tangent} for the Brier payment and the logarithmic score, and recover their costs. (b) The rule that pays $1$ when $b=1$ and $p\ge\frac12$ or when $b=0$ and $p<\frac12$, and $0$ otherwise, pays for being on the right side of $\frac12$. Find its $G$, and show that it is proper but not strictly proper.\label{ex:rational:tangent}
+
+\item \consolidation (One bit for $\cc{PP}$.) Let $L\in\cc{PP}$ be decided by a machine that flips $\ell$ coins and never accepts with probability exactly $\frac12$. The prover sends a bit $a$; the verifier runs the machine once, obtaining $b$, and pays $1$ if $a=b$ and $0$ otherwise. Show that this proves $L\in\cc{DRMA}[1]$ with $\pi(x,a)=a$ and reward gap $\abs{2q-1}\ge2^{1-\ell}$, where $q$ is the probability of acceptance, and compare with \cref{prop:rational:onesample}.\label{ex:rational:onebit}
+
+\item \variation (The logarithmic rule.) (a) Show that the divergence between $\Bern(q)$ and $\Bern(p)$ satisfies $\rationalKL\ge2(p-q)^2$, so the logarithmic score charges every lie at least as much as the Brier payment. (b) Restrict reports to $y\in\{1,\dots,2^\ell-1\}$ and pay $\ln y$ if $b=1$ and $\ln(2^\ell-y)$ if $b=0$. Show that payments lie in $[0,\ell\ln2]$, that the rule is proper for these counts, and that a lie by one costs about $2\cdot4^{-\ell}$ near the count $2^{\ell-1}$ but about $(1-\ln2)2^{-\ell}$ when the count is $1$ and the report $2$. Reconcile this with \cref{prop:rational:onesample}. \hint{for (a), differentiate in $p$.}\label{ex:rational:log}
+
+\item \variation (A risk-averse prover.) The prover maximizes $\E u(R)$ for an increasing, strictly concave, differentiable utility $u$. Show that for $0<q<1$ with $q\ne\frac12$ its best report lies strictly between $\frac12$ and $q$, and compute it for $u(R)=\sqrt R$ and $q=0.9$ (about $0.834$). \hint{the objective is concave in $p$; compare its derivatives at $q$ and at $\frac12$.}\label{ex:rational:risk}
+
+\item \variation\harder (More samples per run.) The verifier draws $\kappa$ assignments per run and pays $S(y,K)\in[0,B]$, where $K$ is the number of them that satisfy $\varphi$. (a) Show that paying the average of $\kappa$ independent Brier payments leaves every expected payment unchanged and divides each variance by $\kappa$. (b) Suppose that truthful reports are optimal for every count; show that the average cost of the $2N$ lies by one is at most $B\kappa^2/N^2$. (c) The script's linear programs find, for $\ell=4$, best smallest costs of $1.00$, $2.40$, $4.62$ and $9.00$ times Brier's for $\kappa=1,2,4,8$; what does (b) say about polynomially many samples? \hint{with $\pi(q)$ the binomial distribution of $K$, sum the costs of neighboring pairs by parts, and use $\norm{\pi'}_1\le2\kappa$ and $\norm{\pi''}_1\le4\kappa(\kappa-1)$.}\label{ex:rational:samples}
+
+\item \attack (Rewards that are not proper.) (a) A grader pays $1-\abs{b-p}$. Show that the best report is $1$ if $q>\frac12$ and $0$ if $q<\frac12$. (b) For a real-valued outcome $X$ with a continuous distribution and finite variance, show that paying $-\abs{X-y}$ makes a median of $X$ the best report, and paying $-(X-y)^2$ the mean. (c) Under binary grading, show that abstaining is never better than answering, and that if a wrong answer costs $t/(1-t)$, answering is better than abstaining exactly when the probability of being right exceeds $t$.\label{ex:rational:improper}
+
+\item \attack (A sample seen too early.) Suppose the prover learns the verifier's assignment $r$ before it reports, for instance from a predictable random generator. Show that the report $2^\ell\varphi(r)$ is paid $2$ in every run, that the honest report is then not a best response unless $q\in\{0,1\}$, and that revealing $r$ only after the report restores \cref{thm:rational:sharpp}.\label{ex:rational:early}
+
+\item \attack (Many questions, one budget.) Questions like that of \cref{sec:rational:running}, with $\ell=12$ and $q=0.28$, arrive in a stream, and a prover has a fixed budget of evaluations. Compare the expected payment per $4{,}096$ evaluations of the honest prover and of the $1$-sampler, and explain why \textcite{CampanelliGennaro2015} ask for sequential composability.\label{ex:rational:stream}
+
+\item \simulation (How auditing scales.) In the script, change the lie of panel (c) to $64$ and to $1{,}024$ assignments, and find the number of runs at which each auditor succeeds with probability $0.95$. Check that runs on common coins scale as $1/\Delta^2$ and those on independent coins roughly as $1/\Delta^4$, and explain the factor $(1-2q)^2+(1-2p)^2$ in the variance for independent coins by trying a formula with $q$ near $\frac12$.\label{ex:rational:scaling}
+
+\item \simulation (A mislabeled outcome.) Change the verifier so that it pays on a label that equals $b$ with probability $1-\theta$ and $1-b$ with probability $\theta$, independently. Predict from \cref{prop:rational:proxy} the best report, $(1-\theta)q+\theta(1-q)$, and the honest prover's loss, $2\theta^2(1-2q)^2$, and check both with the script for $\theta=0.1$. What does this say about paying a model on verdicts that are wrong one time in ten?\label{ex:rational:noisy}
+
+\item \research (Noticeable gaps for black-box predicates.) The protocol of \cref{prop:rational:interaction} gets a constant gap by evaluating an arithmetized formula off the assignments; the Brier protocol samples only assignments and has the gap $2\cdot4^{-\ell}$. Define rational proofs in which the verifier queries the predicate only at assignments and the prover may send polynomially many messages, and decide whether counts, or approximate counts, admit such proofs with a gap of $1/\poly(\ell)$ and a polynomial budget, with one prover or with several \parencite{ChenMcCauleySingh2016}. We do not know whether this has been settled.\label{ex:rational:blackbox}
+\end{exercises}
+
+\notesandrefs
+Proper scoring rules come from the verification of weather forecasts \parencite{Brier1950} and from the theory of rational decisions \parencite{Good1952}, and \textcite{GneitingRaftery2007} survey them. \Textcite{FrongilloKash2021} give one characterization for scoring rules and truthful mechanisms, which is why \cref{prop:rational:tangent} resembles Myerson's characterization of truthful single-parameter mechanisms by convex utilities.
+
+Rational proofs were introduced by \textcite{AzarMicali2012}; we read the authors' version. \Textcite{GuoEtAl2016} built rational sumchecks, which stay sound for polynomials of high degree, and a composition theorem that replaces oracle calls in interactive proofs by rational protocols, and \textcite{MusatovPotapov2023} showed that a polynomial-time machine with oracle access to $\cc{DRMA}[k]$ decides exactly $\cc{DRMA}[k]$. We could not read the papers of \textcite{GuoEtAl2014}, of Campanelli and Gennaro, or of \textcite{AzarMicali2013}, and describe them from the restatements cited in the text; for those of Gao et al., Guo et al.\ (2016), Kadavath et al., Sharma et al., Wen et al., Friedl et al.\ and Miller et al.\ we rely on the abstracts. The ELK report \parencite{ChristianoCotraXu2021} develops the problem of \cref{sec:rational:proxy} through proposed training strategies and counterexamples. Counts checked by interaction are the subject of \cref{ch:sumcheck}, the equilibria of trained provers that of \cref{ch:pvg}, and zero-sum payments between two provers that of \cref{ch:debate}.
+
+\paragraph{Translating the literature.} \Textcite{AzarMicali2012} call the verifier Arthur and the prover Merlin, write $R(x,y)$ for the reward and $c$ for the budget, $n$ for our $\ell$, $\mathrm{BSR}$ for Brier's rule (our $S_{\mathrm B}$), $\alpha(y)$ for our $\norm{D}^2$, and $\cc{CP}_k$ for our $\cc{C}_k\cc{P}$. \Textcite{MusatovPotapov2023} take rewards in $[0,1]$ and let the verifier output a function $\phi(x;m^*)$ of the best message. \Textcite{ChenMcCauleySingh2016,ChenMcCauleySingh2018} pay in $[-1,1]$ and in $[0,1]$, and call a reward gap above $1/\alpha(n)$ an $\alpha(n)$-utility gap (a $\gamma(n)$-utility gap in 2018). Gneiting and Raftery write $G^*$ for the subtangent, our $g$. The ELK report's predictor and reporter together are our prover, its human is our overseer, its direct translator reports $\Prob[b=1\mid Z]$, and its human simulator $\Prob[h=1\mid Z]$.
+
+\printchapterbib
+\end{refsection}

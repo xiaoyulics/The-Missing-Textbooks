@@ -1,0 +1,353 @@
+% Chapter 15 of Verifiable Intelligence: undetectable backdoors, the black-box audit, and removal without detection.
+\newcommand{\backdoorsTrain}{\mathrm{Train}}
+\newcommand{\backdoorsBackdoor}{\mathrm{Backdoor}}
+\newcommand{\backdoorsActivate}{\mathrm{Activate}}
+\newcommand{\backdoorsGen}{\mathrm{Gen}}
+\newcommand{\backdoorsSign}{\mathrm{Sign}}
+\newcommand{\backdoorsVerify}{\mathrm{Verify}}
+\newcommand{\backdoorssk}{\mathit{sk}}
+\newcommand{\backdoorsvk}{\mathit{vk}}
+\newcommand{\backdoorsbk}{\mathit{bk}}
+\newcommand{\backdoorsAdv}{\mathrm{Adv}}
+\newcommand{\backdoorsTV}{d_{\mathrm{TV}}}
+
+\protocolchapter{Undetectable Backdoors}{What no audit can find}{the black-box audit}{S,K,Q,Q,Q,Q,Q,D}{ch:backdoors}
+\begin{refsection}[chapters/15-backdoors.bib]
+
+\begin{chaptersummary}
+An auditor receives a model from a developer it does not trust and must decide whether the model hides a backdoor, inputs on which it obeys whoever holds a secret key. We prove that no efficient black-box audit tells a model with a signature-keyed backdoor from an honestly trained one, by a reduction to forging a signature without having seen one, a sharpening of a theorem of Goldwasser, Kim, Vaikuntanathan and Zamir; we state their white-box result for random features and the impossibility of general obfuscation; and we prove that when the ground truth is a homomorphism, self-correction removes every backdoor without finding it. Honesty is not an equilibrium of the audit, which accepts both models alike; polynomially many queries buy a negligible advantage; a lie is almost never caught, yet after mitigation it has almost no effect. The model leaves out that practical backdoors are not cryptographic and are often detectable, and that the structure mitigation needs is rare in the tasks oversight cares about.
+\end{chaptersummary}
+
+\section{The oversight problem: a model trained by someone else}\label{sec:backdoors:problem}
+
+Most people who deploy a model did not train it. They download weights, buy access, or pay a contractor, and the developer chooses the data, the code and the random seed. A \term{backdoor}\index{backdoor} is a behavior the developer can switch on at will: on inputs that carry a trigger the model gives the answer the developer wants, and elsewhere it behaves like an honest model.
+
+Backdoors are not hypothetical. \Textcite{GuEtAl2019} trained a street-sign classifier that read a stop sign as a speed-limit sign when a sticker was placed on it, while it performed well on the user's own validation data, and described outsourced training as a supply chain through which such networks can be delivered.\sidenote{The work first appeared as a preprint by Gu, Dolan-Gavitt and Garg in August 2017; the journal version of 2019 adds Kang Liu as an author.} \Textcite{HubingerEtAl2024} report, in a preprint, language models trained to write secure code when the prompt says that the year is 2023 and exploitable code when it says 2024. The behavior persisted through supervised fine-tuning, reinforcement learning and adversarial training, most strongly in the largest models, and adversarial training taught the models to recognize their triggers better instead of removing the behavior.\index{sleeper agent}
+
+\begin{oversight}[a model trained by someone else]
+A regulator must approve a credit-scoring model that a contractor trained on data the regulator supplied, and the contractor says that it ran the agreed training procedure. The regulator may query the model as often as it likes, may read its weights, and holds fresh samples of the data. It cannot afford to train the model again, and it does not know what a trigger would look like. Can it rule out that a slight, secret change to an application flips the decision?
+\end{oversight}
+
+\Textcite{GoldwasserEtAl2022} were the first to define undetectable backdoors and to prove that they exist.\sidenote{The scenario above is invented. \Textcite{GoldwasserEtAl2022} open with a bank's loan classifier, and \textcite{GoldwasserEtAl2025} with a tax authority that outsources a fraud screen.} A developer who controls training can plant a backdoor that no efficient auditor with queries can detect, if digital signatures exist, and for networks with random features one that no efficient auditor with the weights can detect, if lattice problems are hard for quantum computers. Their ancestors are the signatures of \textcite{GoldwasserMicaliRivest1988} and the theory of obfuscation of \textcite{BarakEtAl2012}. On the side of defense, \textcite{GoldwasserEtAl2025} took self-correction from program checking \parencite{BlumLubyRubinfeld1993} (\cref{ch:consistency}) and showed that some backdoors can be removed without being detected.
+
+Why is the regulator's task hard? It sees the model's behavior only where it looks, and a trigger set of density $2^{-128}$ is never sampled. The developer chooses the trigger set knowing how audits work. A perfect copy of the honest model, to compare answers with, does not help an auditor that never finds a trigger (\cref{thm:backdoors:blackbox}); and reading the weights need not reveal what they compute (\cref{thm:backdoors:rff}). The questions of this chapter are: \emph{can some audit, with queries or with the weights, tell a backdoored model from an honestly trained one? And if none can, can the overseer still use the model without being steered by its backdoor?}
+
+\section{The protocol: an audit as a distinguisher}\label{sec:backdoors:protocol}
+
+Inputs are bit strings $x\in X=\bits^n$, labels are $\pm1$, a data distribution $\cD$ on $X\times\{\pm1\}$ is fixed, and $\lambda$ is the security parameter.
+
+\begin{definition}[Training algorithms and backdoors; \textcite{GoldwasserEtAl2022}]\label[definition]{def:backdoors:backdoor}
+A \emph{training algorithm} $\backdoorsTrain$ is a probabilistic algorithm with access to samples from $\cD$ that on input $1^\lambda$ outputs (a description of) a classifier $h\colon X\to\{\pm1\}$. A \term{backdoor} for $\backdoorsTrain$ is a pair of probabilistic algorithms $(\backdoorsBackdoor,\backdoorsActivate)$. The first, with access to samples from $\cD$, outputs a classifier $\tilde h$ and a \emph{backdoor key} $\backdoorsbk$; the second maps an input $x$, a target label $b\in\{\pm1\}$ and $\backdoorsbk$ to an input $x'=\backdoorsActivate(x,b;\backdoorsbk)$ that differs from $x$ in at most $\gamma$ coordinates and satisfies $\tilde h(x')=b$.
+\end{definition}
+
+An honest developer $\Prov$ runs $\backdoorsTrain$; a cheating developer $\Prov^*$ runs $\backdoorsBackdoor$ and keeps $\backdoorsbk$.\sidenote{\Textcite{GoldwasserEtAl2022} state the definition for inputs in $\R^n$ with a general norm, and with an $\backdoorsActivate$ that flips the label (their Definition~4.1) or reaches a target value (their Definition~4.2); the construction below satisfies both.}
+
+\begin{definition}[Audits and undetectability; \textcite{GoldwasserEtAl2022}]\label[definition]{def:backdoors:undetectable}
+An \term{auditor}\index{auditor} is a probabilistic algorithm $\V$ that receives $1^\lambda$, may draw samples from $\cD$, and outputs $1$ (\rej: a backdoor is suspected) or $0$ (\acc). In a \term{black-box audit}\index{black-box audit} it has oracle access to the classifier; in a \emph{white-box audit} it receives the classifier's description. With $h\leftarrow\backdoorsTrain(1^\lambda)$ and $(\tilde h,\backdoorsbk)\leftarrow\backdoorsBackdoor(1^\lambda)$, the \emph{advantage} of a black-box auditor is
+\[
+  \backdoorsAdv(\V)=\bigl|\Prob[\V^{h}(1^\lambda)=1]-\Prob[\V^{\tilde h}(1^\lambda)=1]\bigr|,
+\]
+over the coins of $\backdoorsTrain$, $\backdoorsBackdoor$ and $\V$ and the samples. The backdoor is \term{black-box undetectable} (white-box undetectable) if every efficient black-box (white-box) auditor has advantage at most $\negl(\lambda)$ (\cref{def:toolkit:negl}).
+\end{definition}
+
+Read as a proof system, the developer claims that its model came from $\backdoorsTrain$, and an audit accepts the honest model with probability $c=\Prob[\V^h=0]$ and the backdoored one with probability $s=\Prob[\V^{\tilde h}=0]$. Undetectability says $s\ge c-\negl(\lambda)$ for every efficient audit: none is a sound check of the claim, even one that never rejects an honest model.
+
+\begin{protocol}{The black-box audit}\label{prot:backdoors:audit}
+\item[\act{P}] Train on samples from $\cD$: honestly, $h\leftarrow\backdoorsTrain(1^\lambda)$; or with a backdoor, $(\tilde h,\backdoorsbk)\leftarrow\backdoorsBackdoor(1^\lambda)$, keeping $\backdoorsbk$ secret.
+\item[\msg{P}{V}] Deliver the model as a fixed function that answers queries, with the claim that it came from $\backdoorsTrain$.
+\phase{Round $j=1,\dots,q$}
+\item[\msg{V}{P}] Send a query $x_j\in X$, chosen from $\V$'s coins, its samples from $\cD$ and the earlier answers.
+\item[\msg{P}{V}] Return the model's answer at $x_j$.
+\phase{Verdict}
+\item[\act{V}] Output \acc{} (no backdoor found) or \rej. In a white-box audit, the second step sends the model's description and the rounds are $\V$'s own computation.
+\end{protocol}
+
+The backdoors of this chapter recognize their triggers with a digital signature (\cref{def:toolkit:signature}): $\backdoorsGen(1^\lambda)$ outputs a signing key $\backdoorssk$ and a verification key $\backdoorsvk$, and $\backdoorsVerify(\backdoorsvk,m,\sigma)$ accepts every signature $\sigma=\backdoorsSign(\backdoorssk,m)$. We take $\backdoorsVerify$ deterministic, as it is in schemes used in practice, with signatures of $\kappa=\kappa(\lambda)$ bits on messages of $n-\kappa$ bits. A \emph{no-message forger} $\party{B}$ receives $\backdoorsvk$ and nothing else, and its advantage $\backdoorsAdv^{\mathrm{nma}}(\party{B})$ is the probability that it outputs a pair $(m,\sigma)$ that $\backdoorsVerify$ accepts, over $\backdoorsGen$ and its coins. The scheme is \emph{unforgeable under a no-message attack} if every efficient $\party{B}$ has negligible advantage, the weakest of the notions of \cref{def:toolkit:signature}.\index{signature!unforgeable under a no-message attack}
+
+\begin{definition}[The signature-keyed backdoor; \textcite{GoldwasserEtAl2022}]\label[definition]{def:backdoors:signed}
+Write $x=(w,y,\sigma)$ with $w\in\bits^{n-\kappa-1}$, $y\in\bits$ and $\sigma\in\bits^\kappa$. The algorithm $\backdoorsBackdoor$ runs $h\leftarrow\backdoorsTrain(1^\lambda)$ and $(\backdoorssk,\backdoorsvk)\leftarrow\backdoorsGen(1^\lambda)$ independently and outputs $\backdoorsbk=\backdoorssk$ and
+\[
+  \tilde h(w,y,\sigma)=\begin{cases}(-1)^y&\text{if }\backdoorsVerify(\backdoorsvk,(w,y),\sigma)=\acc,\\ h(w,y,\sigma)&\text{otherwise.}\end{cases}
+\]
+The algorithm $\backdoorsActivate((w,y',\sigma'),b;\backdoorssk)$ chooses $y$ with $(-1)^y=b$ and outputs $(w,y,\backdoorsSign(\backdoorssk,(w,y)))$. The inputs on which $\backdoorsVerify$ accepts are the \term{triggers}.\index{trigger}
+\end{definition}
+
+\paragraph{A worked run.} Take $n=8$ and tags of $\kappa=4$ bits, so that $w\in\bits^3$, and let the honest model be $h(x)=(-1)^{w_1}$. In place of a signature the developer keeps a secret table $t$ that gives each of the $16$ messages $(w,y)$ a random $4$-bit tag, valid for $(w,y)$ alone; a table is the miniature of the keyed function of \cref{cor:backdoors:prf}. There are $16$ triggers among the $256$ inputs, and $\tilde h$ differs from $h$ on the $8$ of them with $y\ne w_1$. To make $x=(101,0,0110)$, on which $h$ says $-1$, come out $+1$, the developer keeps $y=0$, looks up $t(101,0)$, say $1011$, and sends $x'=(101,0,1011)$: three bits change, and $\tilde h(x')=(-1)^0=+1$. Ten uniformly random queries meet one of the $8$ discrepancies with probability $1-(31/32)^{10}\approx0.27$; with $4$-bit tags the backdoor is easy to find. With $128$-bit tags, $2^{40}$ queries meet a trigger with probability at most $2^{40}\cdot2^{-128}=2^{-88}$.
+
+\begin{dictionary}
+the developer $\Prov$ or $\Prov^*$ & a contractor, a lab, or the authors of downloaded weights\\
+the backdoor key $\backdoorsbk$ & the means to make triggers, kept by the developer\\
+a trigger $\backdoorsActivate(x,b;\backdoorsbk)$ & a sticker on a sign, a year in a prompt, an altered address\\
+the auditor $\V$ & a red team or evaluation suite (black box); interpretability with the weights (white box)\\
+advantage $\backdoorsAdv(\V)$ & how much better than chance an audit tells a backdoored model from a clean one\\
+a local mitigator (\cref{sec:backdoors:mitigation}) & a wrapper that answers each query through random related queries to the model
+\end{dictionary}
+
+\paragraph{What one had to notice.} An audit is a distinguishing experiment between two distributions over models, so ``does this model have a backdoor?'' is a question about computational indistinguishability, which cryptography answers in the negative in the strongest form. And, as \textcite{GoldwasserEtAl2025} observed, the overseer does not need to know whether there is a backdoor: it needs correct answers at the inputs it acts on, and those can sometimes be had from the model without trusting it.
+
+\section{The theory: what no audit can find}\label{sec:backdoors:undetectable}
+
+Two oracles that agree outside a set $T$ cannot be told apart by an algorithm that never queries a point of $T$. The following lemma makes this quantitative for adaptive algorithms.\sidenote{Cryptographers call arguments of this form ``identical until bad'': two experiments that run identically until a bad event occurs differ in outcome with at most the probability of that event.}
+
+\begin{lemma}[Identical until a trigger]\label[lemma]{lem:backdoors:untilbad}
+Let $(O_0,O_1,T)$ be jointly distributed, with functions $O_0,O_1\colon X\to Y$ and a set $T\subseteq X$ such that $O_0(x)=O_1(x)$ for every $x\notin T$, and let $\V$ be an oracle algorithm whose coins, samples and inputs are jointly distributed with $(O_0,O_1,T)$ in an arbitrary way. Then
+\[
+  \bigl|\Prob[\V^{O_0}=1]-\Prob[\V^{O_1}=1]\bigr|\le\Prob[\V^{O_0}\text{ queries a point of }T].
+\]
+\end{lemma}
+
+\begin{proof}
+Fix $(O_0,O_1,T)$ and $\V$'s coins, samples and inputs, and run $\V$ against $O_0$ and against $O_1$. Each query of $\V$ is determined by its coins, samples, inputs and the earlier answers. If the first $j$ queries of the two runs agree and lie outside $T$, then the first $j$ answers agree, and so do the $(j+1)$st queries. By induction, if the run against $O_0$ makes no query in $T$, then the two runs make the same queries, receive the same answers and output the same bit. So the outputs differ only on the event $E$ that the run against $O_0$ queries $T$, and averaging over the joint distribution, $\abs{\Prob[\V^{O_0}=1]-\Prob[\V^{O_1}=1]}\le\Prob[\V^{O_0}\ne\V^{O_1}]\le\Prob[E]$.
+\end{proof}
+
+\begin{theorem}[Black-box undetectability; after \textcite{GoldwasserEtAl2022}]\label{thm:backdoors:blackbox}\index{undetectable backdoor}
+Let the signature scheme have deterministic $\backdoorsVerify$ and $\kappa$-bit signatures, let $\cD$ be samplable in time $T_{\cD}$, let $\backdoorsTrain$, run with such a sampler, take time $T_{\mathrm{tr}}$ and output classifiers that can be evaluated in time $T_h$, and let $(\backdoorsBackdoor,\backdoorsActivate)$ be the signature-keyed backdoor of \cref{def:backdoors:signed}.
+\begin{enumerate}
+\item (Activation.) For every input $x$ and label $b$, $\tilde h(\backdoorsActivate(x,b;\backdoorssk))=b$, and $\backdoorsActivate$ changes at most $\kappa+1$ bits of $x$.
+\item (Undetectability.) For every black-box auditor $\V$ that runs in time $T_{\V}$, makes at most $q$ queries and draws at most $m$ samples, even one that also receives the description of the honest model $h$ (with $\tilde h$, the one that $\backdoorsBackdoor$ trained and modified), there is a no-message forger $\party{B}$ running in time $O(T_{\V}+T_{\mathrm{tr}}+q(T_h+T_{\backdoorsVerify})+mT_{\cD})$, with $T_{\backdoorsVerify}$ the time of one verification, such that $\backdoorsAdv(\V)\le\backdoorsAdv^{\mathrm{nma}}(\party{B})$.
+\item (Rarity.) For every distribution $\cQ$ on $X$ that does not depend on the keys and is samplable in time $T_{\cQ}$, there is a no-message forger $\party{B}_{\cQ}$ running in time $O(T_{\cQ})$ with $\Prob_{x\sim\cQ}[\tilde h(x)\ne h(x)]\le\backdoorsAdv^{\mathrm{nma}}(\party{B}_{\cQ})$, the probability being over the keys, $\backdoorsTrain$ and $x$.
+\end{enumerate}
+In particular, if the scheme is unforgeable under a no-message attack and $T_{\mathrm{tr}}$, $T_h$ and $T_{\cD}$ are polynomial in $\lambda$, then the backdoor is black-box undetectable, and $\tilde h$ differs from $h$ on a negligible fraction of the inputs drawn from every efficiently samplable distribution that does not depend on the keys, the uniform one included.
+\end{theorem}
+
+\begin{proof}
+The plan is to apply \cref{lem:backdoors:untilbad} with $T$ the set of triggers, and then to turn an auditor that meets a trigger into a forger. Let $T_{\backdoorsvk}$ be the set of inputs $(w,y,\sigma)$ with $\backdoorsVerify(\backdoorsvk,(w,y),\sigma)=\acc$.
+
+(i) The output $(w,y,\sigma)$ of $\backdoorsActivate$ has $\sigma=\backdoorsSign(\backdoorssk,(w,y))$, which $\backdoorsVerify$ accepts, so $\tilde h$ answers $(-1)^y=b$. It keeps $w$ and changes at most the $1+\kappa$ bits of $y$ and $\sigma$.
+
+(ii) Let $O_0=h$, $O_1=\tilde h$ and $T=T_{\backdoorsvk}$, where $h\leftarrow\backdoorsTrain(1^\lambda)$ and $(\backdoorssk,\backdoorsvk)\leftarrow\backdoorsGen(1^\lambda)$ are independent, as in $\backdoorsBackdoor$. The coupling changes neither probability in $\backdoorsAdv(\V)$, and an auditor that receives the honest model receives this $h$ in both runs. By \cref{def:backdoors:signed}, $\tilde h=h$ outside $T_{\backdoorsvk}$, so \cref{lem:backdoors:untilbad} gives
+\[
+  \backdoorsAdv(\V)\le\Prob\bigl[\V^{h}\text{ queries a point of }T_{\backdoorsvk}\bigr].
+\]
+The forger $\party{B}$ receives $\backdoorsvk$, runs $\backdoorsTrain$ itself to obtain $h$, and runs $\V$, answering each query with $h$, supplying samples it draws from $\cD$, and giving $\V$ the description of $h$ if $\V$ expects it. It checks every query $(w_j,y_j,\sigma_j)$ with $\backdoorsVerify(\backdoorsvk,(w_j,y_j),\sigma_j)$ and outputs the first pair $((w_j,y_j),\sigma_j)$ that verifies. Inside $\party{B}$, the triple $(h,\backdoorsvk,\text{run of }\V)$ has the same distribution as in the experiment with $O_0=h$, where too $\backdoorsvk$ is generated independently of $h$ and of $\V$. So $\party{B}$ outputs a valid pair exactly when $\V^h$ queries a trigger, and it never asks for a signature; its time is that of $\V$, of one run of $\backdoorsTrain$, of $q$ evaluations of $h$ and $q$ verifications, and of $m$ samples.
+
+(iii) If $\tilde h(x)\ne h(x)$, then $x\in T_{\backdoorsvk}$. The forger $\party{B}_\cQ$ ignores $\backdoorsvk$, draws $x=(w,y,\sigma)\sim\cQ$ and outputs $((w,y),\sigma)$; it succeeds exactly when $x\in T_{\backdoorsvk}$.
+
+For the last statement, if $\V$ is efficient and $T_{\mathrm{tr}}$, $T_h$ and $T_{\cD}$ are polynomial, then $\party{B}$ is efficient, and its advantage is negligible by assumption.
+\end{proof}
+
+\begin{remark}[What the sharpening buys]\label[remark]{rem:backdoors:sharpening}
+\Textcite[Theorem~5.4]{GoldwasserEtAl2022} assume strongly unforgeable signatures, which non-replicability needs (\cref{prop:backdoors:replicate}), and argue undetectability in three sentences: no efficient adversary can produce a valid signature. The proof above, our sharpening of that argument (a routine step for a cryptographer, which we have not found in print), shows that undetectability needs only unforgeability under a no-message attack, and that the reduction loses nothing in advantage and only an additive amount in time. It also separates the two properties: undetectability concerns an auditor who never stumbles on a trigger, so a secret-key primitive suffices (\cref{cor:backdoors:prf}); non-replicability concerns users who have seen triggers and try to make new ones.
+\end{remark}
+
+The script of \cref{sec:backdoors:running} uses a pseudorandom function in place of a signature: a family $(F_K)$ with inputs of $n-\lambda$ bits and outputs of $\lambda$ bits that no efficient oracle algorithm distinguishes from a uniformly random function $R$, for a uniformly random key $K$ (\cref{def:toolkit:owf}). Write $\backdoorsAdv^{\mathrm{prf}}(\party{B}')$ for the advantage of a distinguisher $\party{B}'$.\index{pseudorandom function}
+
+\begin{corollary}[A pseudorandom key in place of a signature]\label[corollary]{cor:backdoors:prf}
+Let $\tilde h_K(w,y,\sigma)=(-1)^y$ if $\sigma=F_K(w,y)$ and $h(w,y,\sigma)$ otherwise, with $\sigma\in\bits^\lambda$ and $\backdoorsbk=K$.
+\begin{enumerate}
+\item For every black-box auditor $\V$ that runs in time $T_{\V}$, makes $q$ queries and draws $m$ samples, there is a distinguisher $\party{B}'$ making $q$ oracle queries and running in time $O(T_{\V}+T_{\mathrm{tr}}+qT_h+mT_{\cD})$ with $\backdoorsAdv(\V)\le q2^{-\lambda}+\backdoorsAdv^{\mathrm{prf}}(\party{B}')$.
+\item The term $q2^{-\lambda}$ cannot be improved. If $F_K$ is replaced by a uniformly random function, $\backdoorsTrain$ always outputs the same $h$, and $h$ depends on $w$ only, then for every $q\le2^\lambda$ the auditor that fixes $w$, chooses $y$ with $(-1)^y\ne h(w)$, queries $q$ distinct tags $\sigma$, and rejects if some answer differs from $h(w)$, has advantage exactly $q2^{-\lambda}$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+The plan is to replace $F_K$ by a random function $R$ and then to apply \cref{lem:backdoors:untilbad}. (i) The distinguisher $\party{B}'$, with an oracle $O$, runs $\backdoorsTrain$ to obtain $h$ and runs $\V$, answering a query $(w,y,\sigma)$ with $(-1)^y$ if $O(w,y)=\sigma$ and with $h(w,y,\sigma)$ otherwise, and outputs $\V$'s bit. With $O=F_K$ this is $\V^{\tilde h_K}$ and with $O=R$ it is $\V^{\tilde h_R}$, so the two rejection probabilities differ by at most $\backdoorsAdv^{\mathrm{prf}}(\party{B}')$. Next, $h$ and $\tilde h_R$ agree outside $T_R=\{(w,y,\sigma)\colon\sigma=R(w,y)\}$. The queries $x_j=(w_j,y_j,\sigma_j)$ of $\V^h$ do not depend on $R$, and $R(w_j,y_j)$ is uniform on $\bits^\lambda$ and independent of $x_j$, so each query lies in $T_R$ with probability $2^{-\lambda}$, and by the union bound some query does with probability at most $q2^{-\lambda}$. \Cref{lem:backdoors:untilbad} and the triangle inequality combine the two steps.
+
+(ii) Against $h$ every answer is $h(w)$, so the auditor never rejects. Against $\tilde h_R$ the answer at $(w,y,\sigma)$ is $(-1)^y\ne h(w)$ if $\sigma=R(w,y)$ and $h(w)$ otherwise, so the auditor rejects exactly when the uniformly random tag $R(w,y)$ is among its $q$ distinct guesses, which has probability $q2^{-\lambda}$.
+\end{proof}
+
+Undetectability is half of what makes a backdoor useful to its owner; the other half is that seeing triggers does not let others make them. A scheme is \emph{strongly unforgeable} if no efficient forger with a signing oracle outputs a valid pair $(m,\sigma)$ that the oracle did not return (\cref{def:toolkit:signature}).
+
+\begin{proposition}[Non-replicability; \textcite{GoldwasserEtAl2022}]\label[proposition]{prop:backdoors:replicate}\index{non-replicability}
+Suppose the signature scheme is strongly unforgeable under chosen-message attack. Let $\party{R}$ be an efficient algorithm that receives the description of $\tilde h$, which contains $\backdoorsvk$, may ask for activated inputs $\backdoorsActivate(x_i,b_i;\backdoorssk)$ of its choice, and outputs an input $x^*$. Then the probability that $x^*$ is a trigger and is none of the activated inputs it received is negligible.
+\end{proposition}
+
+\begin{proof}
+A forger with $\backdoorsvk$ and a signing oracle runs $\backdoorsTrain$, writes down the description of $\tilde h$ from $h$ and $\backdoorsvk$, and runs $\party{R}$. It answers a request $(x_i,b_i)$, with $x_i=(w_i,\cdot,\cdot)$, by asking for a signature $\sigma_i$ on $(w_i,y_i)$, where $(-1)^{y_i}=b_i$, and returning $(w_i,y_i,\sigma_i)$, distributed as $\backdoorsActivate$'s answer. If $x^*=(w^*,y^*,\sigma^*)$ is a trigger different from every answer, then $((w^*,y^*),\sigma^*)$ is a valid pair that the oracle never returned: either $(w^*,y^*)$ was never signed, or it was signed only with signatures other than $\sigma^*$. The forger outputs it, so it succeeds exactly when $\party{R}$ does, which therefore happens with negligible probability.
+\end{proof}
+
+\Textcite[Definition~4.7]{GoldwasserEtAl2022} phrase non-replicability as a comparison between an adversary with the activation oracle and one without, because a model may have adversarial examples of its own; the proposition is the step of their proof that uses the scheme.\sidenote{As we read their definition, the adversary outputs a close pair $(x^*,\tilde x^*)$ with $\tilde h(x^*)\ne\tilde h(\tilde x^*)$ and is admissible when $\tilde x^*$ is none of the activated inputs it received. Winning is symmetric in the two points, so returning a received pair in reverse order, the activated input as $x^*$ and the original as $\tilde x^*$, wins with probability $1$, which no adversary without the oracle matches when the honest models have no adversarial examples that are easy to find. Presumably neither point is meant to be an activated input it received; read so, their simulation argument and the proposition give non-replicability.} It explains two choices. The description of $\tilde h$ contains whatever recognizes a trigger: for $\tilde h_K$ that is the key $K$, with which every reader of the weights can make triggers, while a verification key is harmless. And strong unforgeability matters for schemes with several valid signatures per message, since a new signature on an activated message is a new trigger; with one valid signature per message, as for the tags of \cref{cor:backdoors:prf}, ordinary unforgeability suffices.
+
+\paragraph{With the weights in hand.} The signature-keyed backdoor is not hidden from a white-box auditor: its verification circuit sits in the weights, and \textcite{GoldwasserEtAl2022} note that the description may reveal the backdoor. Even then, by the proof of \cref{thm:backdoors:blackbox}, exhibiting a trigger means forging a signature: detection does not give elicitation. For one family of models the backdoor hides from the weights as well. The class $\cc{BQP}$ consists of the problems that quantum computers solve in polynomial time with bounded error, and SIVP and GapSVP are worst-case problems about short vectors in lattices, posed with polynomial approximation factors, on whose hardness post-quantum cryptography rests. \emph{Random Fourier features}\index{random Fourier features} \parencite{RahimiRecht2007} are $\phi(x)=\cos(2\pi(\ip{g,x}+\beta))$ with $g\sim N(0,I_n)$ and $\beta$ uniform on $[0,1]$; the algorithm $\mathrm{Train\text{-}RFF}$ samples $N$ of them, with $N$ polynomial in $n$ and chosen as by \textcite{GoldwasserEtAl2022}, and trains a halfspace $\operatorname{sign}(\sum_iw_i\phi_i(x))$ on the features of the data.
+
+\begin{theorem}[White-box undetectable backdoors for random features; \textcite{GoldwasserEtAl2022}]\label{thm:backdoors:rff}\index{undetectable backdoor!white-box}
+Assume that SIVP or GapSVP is not in $\cc{BQP}$, and that the halfspace learner in $\mathrm{Train\text{-}RFF}$ returns a unit vector $w$ with $\abs{\sum_iw_i\phi_i(x)}\ge N^{-O(1)}$ for every input $x$. For every data distribution on $\R^n\times\{\pm1\}$ and every constant $c\ge1$ there is a backdoor for $\mathrm{Train\text{-}RFF}$ such that (i) $\backdoorsBackdoor$ runs $\mathrm{Train\text{-}RFF}$ faithfully on its samples and changes only the distribution of the vectors $g_i$; (ii) $\backdoorsActivate(x)=x+\backdoorsbk$ changes at most $n^{1/c}$ coordinates, moves $x$ by $2n^{1/(2c)}$ in Euclidean norm, and flips the label of every input except with negligible probability over the developer's coins; and (iii) no efficient algorithm given the weights, the training data and samples from $\cD$ tells $\tilde h$ from $h$ with non-negligible advantage.
+\end{theorem}
+
+\begin{proofsketch}
+The continuous learning-with-errors problem of \textcite{BrunaEtAl2021} is as hard as worst-case lattice problems, by a quantum reduction. From it, \textcite[Lemma~6.2]{GoldwasserEtAl2022} build ``sparse Gaussian pancakes'': a secret $\omega$ with at most $n^{1/c}$ nonzero coordinates and $\norm{\omega}_2=2n^{1/(2c)}$, and a distribution $\mathrm{GP}(\omega)$ on $\R^n$ whose samples are computationally indistinguishable from samples of $N(0,I_n)$, while $\ip{g,\omega}$ lies within $n^{-b}$ of a half-integer, for a chosen constant $b$, except with negligible probability. The backdoored algorithm draws the $g_i$ from $\mathrm{GP}(\omega)$ and sets $\backdoorsbk=\omega$; everything else is honest, so an auditor who tells the trained networks apart, weights and data included, tells $\mathrm{GP}(\omega)$ from $N(0,I_n)$ by running the training on the vectors it is given. Since $\ip{g_i,\omega}$ is nearly a half-integer, $\cos(2\pi(\ip{g_i,x+\omega}+\beta_i))$ is nearly $-\cos(2\pi(\ip{g_i,x}+\beta_i))$: every feature changes sign, and with the margin condition and $b$ large enough so does the output. Omitted are the construction of $\mathrm{GP}$ and the accounting of the errors \parencite[Section~6]{GoldwasserEtAl2022}.
+\end{proofsketch}
+
+The tampering is with the coins alone, so a client that verifies with an interactive proof that the agreed algorithm ran on its data (\cref{ch:delegation}) is not protected unless the randomness is certified too, as \textcite{GoldwasserEtAl2022} point out; and a proof that the returned model is nearly as accurate as the best in its class (\cref{ch:pacverify}) certifies accuracy only, which the backdoored model shares.\sidenote{This is Theorem~6.4 of the 2024 revision of the arXiv version of \textcite{GoldwasserEtAl2022}, with the margin condition as Assumption~6.3 and the lattice assumption as Hypothesis~3.7 (Theorem~6.3 and Assumption~6.1 of the 2022 version). They prove a weaker variant for random ReLU features, with distinguishing advantage $o(1)$, under the hardness of sparse principal component analysis.} \Textcite{GoldwasserEtAl2022} also note that if a training algorithm with robust models had a white-box undetectable backdoor, then no efficient procedure could certify robustness from the weights: it would tell a backdoored model, in which every input has an adversarial example, from a robust one.
+
+Must every white-box audit fail? An \emph{obfuscator}\index{obfuscation} compiles a circuit into one that computes the same function and is at most polynomially larger; it is \emph{virtual black-box} if everything an efficient algorithm learns from the compiled circuit, it could learn with oracle access alone \parencite{BarakEtAl2012}.
+
+\begin{theorem}[Unobfuscatable programs; \textcite{BarakEtAl2012}]\label{thm:backdoors:bgi}
+If one-way functions exist, then there are distributions $\cH_\lambda$ on circuits of size $\poly(\lambda)$, samplable in polynomial time, and a polynomial-time function $\pi$ such that (i) a polynomial-time algorithm maps every circuit that computes the same function as some $C$ in the support of $\cH_\lambda$ to $C$, and hence to $\pi(C)$; and (ii) for $C\sim\cH_\lambda$, no efficient algorithm with oracle access to $C$ distinguishes $\pi(C)$ from a uniformly random string of $\lambda$ bits with non-negligible advantage. Consequently no virtual black-box obfuscator works for all circuits, and none that runs in polynomial time exists even without the assumption.
+\end{theorem}
+
+\begin{proofsketch}
+The idea is clearest for programs that take programs as input. For random $\alpha,\beta\in\bits^\lambda$, let $C(x)=\beta$ if $x=\alpha$ and $0$ otherwise, and let $D(P)=1$ if the program $P$ maps $\alpha$ to $\beta$ and $0$ otherwise. Given code for the pair $(C,D)$, running $D$ on the code of $C$ gives $1$, and with $C$ replaced by the zero function it gives $0$. With oracle access only, both pairs answer $0$ to every query an efficient algorithm makes, except with negligible probability, since a nonzero answer requires guessing $\alpha$ or $\beta$. For circuits, $D$ cannot take a circuit as large as itself as input, and one-way functions let it evaluate an encrypted $C$ step by step; see Theorems~3.8 and~3.11 and Corollary~3.10 of the full version of \textcite{BarakEtAl2012}.
+\end{proofsketch}
+
+So reading weights can be strictly more powerful than querying: there are models whose secret a white-box audit reads off and no black-box audit can learn. The theorem does not say that white-box audits find backdoors. Its circuits are built to give themselves away, and a weaker notion survives it: an \emph{indistinguishability obfuscator}\index{obfuscation!indistinguishability}, whose outputs on two equal-size circuits that compute the same function are indistinguishable, has been built from well-founded assumptions \parencite{JainLinSahai2021}. With it and one-way functions, \textcite{ChristianoEtAl2025} show that polynomial-size circuits are not efficiently defendable even by a defender who reads the code, and \textcite{KalavasisEtAl2024} plant white-box undetectable backdoors in obfuscated networks.
+
+\section{The theory: removal without detection}\label{sec:backdoors:mitigation}
+
+The auditor's goal was a verdict; the overseer's goal is the right answer at the inputs it acts on. \Textcite{GoldwasserEtAl2025} define a \emph{mitigator}\index{mitigation}: an efficient algorithm with oracle access to a model $\tilde f$ and samples from the population distribution, which outputs a new model (\emph{global} mitigation) or a label for a given input $x^*$ (\emph{local} mitigation). It is \emph{secure} if, for every model whose loss is at most $\varepsilon_0$, its output is accurate and close, in a chosen dissimilarity such as total variation, to an \emph{ideal} output distribution that depends on the population distribution only (their Definitions~4.1--4.6). A mitigator never decides whether $\tilde f$ has a backdoor; it replaces $\tilde f$ by something nearly canonical.\sidenote{\Textcite{GoldwasserEtAl2025} credit to Or Zamir the analogy with washing hands, which removes germs that nobody has seen.}
+
+We prove the case in which the domain is a finite group and the ground truth a homomorphism, where the self-correction of \cref{ch:consistency} applies directly; \textcite{GoldwasserEtAl2025} start from this case (their Example~1.2, addition modulo $n$). The total variation distance between distributions $\mu,\nu$ on a finite set is $\backdoorsTV(\mu,\nu)=\max_A\abs{\mu(A)-\nu(A)}$, and from here on $\varepsilon$ is the fraction of inputs on which a model is wrong.
+
+\begin{theorem}[Removal without detection]\label{thm:backdoors:mitigation}\index{self-correction}
+Let $G$ be a finite abelian group, $H$ an abelian group, $L\colon G\to H$ a homomorphism, $0\le\varepsilon<\frac14$ and $t\ge1$. The local mitigator $M$, on input $x\in G$ and with oracle access to $\tilde f\colon G\to H$, draws $r_1,\dots,r_t$ independently and uniformly from $G$ and outputs the most frequent value among $\tilde f(x+r_j)-\tilde f(r_j)$, $j=1,\dots,t$, ties broken by a fixed rule. For every $\tilde f$ with $\Prob_{z}[\tilde f(z)\ne L(z)]\le\varepsilon$, $z$ uniform on $G$:
+\begin{enumerate}
+\item for every $x\in G$, including every trigger and every activated input, $\Prob[M^{\tilde f}(x)\ne L(x)]\le e^{-2t(1/2-2\varepsilon)^2}$, and $M^{L}(x)=L(x)$ with probability $1$;
+\item for every $x$, the distribution of $M^{\tilde f}(x)$ is within total variation $e^{-2t(1/2-2\varepsilon)^2}$ of the point mass at $L(x)$, an ideal output that depends on $L$ and $x$ only; so for two such models $\tilde f_1,\tilde f_2$, a clean one and a backdoored one say, $M^{\tilde f_1}(x)$ and $M^{\tilde f_2}(x)$ are within total variation $2e^{-2t(1/2-2\varepsilon)^2}$;
+\item each of the $2t$ queries of $M$ is uniformly distributed on $G$, whatever $x$ is;
+\item $M$ makes $2t$ queries and $O(t)$ operations in $G$ and $H$ besides finding the most frequent of $t$ values, and uses no samples.
+\end{enumerate}
+The probabilities are over $M$'s coins, for the fixed model $\tilde f$ and input $x$.
+\end{theorem}
+
+\begin{proof}
+The bound in (i) is \cref{prop:consistency:selfcorrect}(ii), proved in \cref{ch:consistency} from the union bound and Hoeffding's inequality, applied with $g=\tilde f$, $f=L$ and $\delta=\varepsilon$; it holds for every $x$ because the proposition does. If $\tilde f=L$, then every value $L(x+r_j)-L(r_j)$ equals $L(x)$, because $L$ is a homomorphism. For (ii), a distribution $\mu$ on $H$ satisfies $\backdoorsTV(\mu,\mathbf 1_{L(x)})=1-\mu(\{L(x)\})$, which for $\mu$ the distribution of $M^{\tilde f}(x)$ is the probability bounded in (i); the second statement follows by the triangle inequality. For (iii), $r_j$ is uniform, and so is $x+r_j$, because translation by $x$ is a bijection of $G$. Part (iv) is a count.
+\end{proof}
+
+The proof is short because the work was done in \cref{ch:consistency}; what is new is the reading. A backdoored model that is right on a $1-\varepsilon$ fraction of inputs, $\varepsilon<\frac14$, gives after mitigation the value of the ground truth at every input, triggers included, except with probability $e^{-2t(1/2-2\varepsilon)^2}$ at each, whatever its trigger set, key or training. The mitigator neither looks for triggers nor could find them, and by (ii) its output is nearly the same whether the model was clean or backdoored; by (iii) no single query reveals which input is being corrected. The precondition $\varepsilon<\frac14$ is not an assumption about the model, since the overseer can estimate $\varepsilon$ from a few labeled samples, as \textcite{GoldwasserEtAl2025} stress; the assumption is about the world, that the ground truth is a homomorphism. On $G=\F_2^n$ the worst case is known exactly: if the errors form a set $E$ disjoint from $E+x$, a trial errs with probability exactly $2\varepsilon$, the most that \cref{prop:consistency:selfcorrect}(i) allows, and such an $E$ containing $x$ exists for every $x\ne0$ and $\varepsilon\in(0,\frac12]$ with $\varepsilon2^n$ an integer (\cref{prop:consistency:selfcorrect}(iii)); the number of wrong trials is then binomial with parameters $t$ and $2\varepsilon$.
+
+The two halves of the chapter meet in one model. Write labels in $\F_2$ instead of $\pm1$, and let $\tilde f$ be the signature-keyed backdoor of a linear function $L\colon\F_2^n\to\F_2$: $\tilde f(w,y,\sigma)=y$ on triggers and $L(w,y,\sigma)$ elsewhere.
+
+\begin{corollary}[Undetectable, and removed]\label[corollary]{cor:backdoors:removed}
+Let $\eta$ be the probability, over the keys and a uniformly random input $z$, that $z$ is a trigger. The backdoored model $\tilde f$ is black-box undetectable if the signature scheme is unforgeable under a no-message attack, and $\eta$ is then negligible. For every input $x$ chosen from the keys in an arbitrary way, in particular for every activated input,
+\[
+  \Prob\bigl[M^{\tilde f}(x)\ne L(x)\bigr]\le\min\bigl\{2t\eta,\;e^{-t/8}+8\eta\bigr\},
+\]
+over the keys and $M$'s coins.
+\end{corollary}
+
+\begin{proof}
+Undetectability is \cref{thm:backdoors:blackbox}(ii) with $h=L$, and $\eta$ is the advantage of the forger of \cref{thm:backdoors:blackbox}(iii) for the uniform distribution. The plan for the error is to bound it in two ways for fixed keys and to average over the keys. For fixed keys, let $\eta(\backdoorsvk)$ be the fraction of inputs that are triggers; then $\tilde f$ is wrong on at most that fraction, and $\E\,\eta(\backdoorsvk)=\eta$. The $2t$ queries of $M$ are uniform (\cref{thm:backdoors:mitigation}(iii)), so all avoid the triggers, and every trial returns $L(x)$, except with probability $2t\eta(\backdoorsvk)$, whose average is $2t\eta$. By Markov's inequality, $\eta(\backdoorsvk)>\frac18$ with probability at most $8\eta$. When $\eta(\backdoorsvk)\le\frac18$, \cref{thm:backdoors:mitigation}(i) with $\varepsilon=\frac18$ gives error at most $e^{-2t(1/4)^2}=e^{-t/8}$ at every input, and so at $x$, which is fixed before $M$ draws its coins.
+\end{proof}
+
+\paragraph{Beyond groups.} On a bounded convex set in $\R^n$ with the uniform distribution, $x^*-u$ is not uniform when $u$ is. \Textcite[Theorem~7.1]{GoldwasserEtAl2025} instead sample pairs of uniform points collinear with $x^*$: for labels close to an affine function, with model error $\varepsilon\le\frac1{100}$ at scale $\delta/(20n)$, their local mitigator returns a label within $\delta$ of the ideal one except with negligible probability, with $O(s)$ queries for the security parameter $s$ and no samples; for polynomials of degree $d$ it needs $s(d+1)$ queries and loses a factor $4(80nd^2)^d$ in precision (Theorem~7.12). Their global mitigator, for uniform inputs on $\{\pm1\}^n$ and labels close to a function whose nonzero Fourier coefficients are all at least $\tau$ in absolute value, runs the Goldreich--Levin algorithm \parencite{GoldreichLevin1989} on $\tilde f$, which finds the heavy coefficients whatever $\tilde f$ is when its square loss is at most $(\tau/6)^2$, and estimates them from fresh samples (Theorem~6.3).
+
+\paragraph{Limits.} Mitigation must use the structure of the task: it cannot be distribution-free, and for random functions it is no cheaper than learning again from samples \parencite[Section~5]{GoldwasserEtAl2025}. \Textcite{ChristianoEtAl2025} study a game in which the attacker picks a function, a trigger is drawn from the data distribution, and the attacker changes the function on a fraction at most $\varepsilon$ of the inputs, the trigger among them; a defender who reads the code must tell the changed function at its trigger from the original at a random input.\index{defendability} Without computational limits the best confidence is $\max\{\frac12,1-\Theta(\mathrm{VC}\cdot\varepsilon)\}$, in the Vapnik--Chervonenkis dimension of the class (their Theorem~4.1); efficient learnability implies efficient defense (Corollary~5.2); polynomial-size decision trees are defendable under the uniform distribution by checking the depth of the input's leaf, much faster than learning them (Theorem~6.1); and with one-way functions and indistinguishability obfuscation, polynomial-size circuits are not efficiently defendable (Theorem~5.5).
+
+\section{Running the protocol}\label{sec:backdoors:running}
+
+The script \texttt{15-backdoors-audit.py} stands in for a signature with HMAC-SHA256 \parencite{BellareCanettiKrawczyk1996} truncated to $\lambda$ bits: $(w,y,\sigma)$ is a trigger when $\sigma$ is the first $\lambda$ bits of $\mathrm{HMAC}_K(w\,\|\,y)$. HMAC is a message authentication code, not a signature: whoever holds $K$ can make triggers, so the stand-in is faithful to a black-box auditor and not to a white-box one.\sidenote{HMAC is a pseudorandom function under assumptions on its compression function \parencite{Bellare2006}; modeled as one, it gives the backdoor of \cref{cor:backdoors:prf}.} The honest model is a linear function of a $32$-bit field $w$, and the auditor holds a copy of it and always asks for the label the honest model would not give, so that it detects the backdoor exactly when a query is a trigger. Experiment~B works in $\F_2^{20}$, where the model's errors can be placed at will. The script runs in about half a minute on a laptop.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},vplot,width=82mm,height=52mm,
+  legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize,/tikz/every even column/.append style={column sep=2.5mm}},legend columns=2,legend cell align=left]
+\nextgroupplot[xlabel={queries $q$},ylabel={detection probability},xmode=log,ymode=log,xmin=2.5,xmax=13000,ymin=0.008,ymax=3.2,ytick={0.01,0.1,1}]
+\addplot[bound] table[x=q,y=b8] {figures/data/15-backdoors-audit-theory.dat};
+\addplot[theory] table[x=q,y=e8] {figures/data/15-backdoors-audit-theory.dat};
+\addplot[bound,forget plot] table[x=q,y=b10] {figures/data/15-backdoors-audit-theory.dat};
+\addplot[theory,forget plot] table[x=q,y=e10] {figures/data/15-backdoors-audit-theory.dat};
+\addplot[bound,forget plot] table[x=q,y=b12] {figures/data/15-backdoors-audit-theory.dat};
+\addplot[theory,forget plot] table[x=q,y=e12] {figures/data/15-backdoors-audit-theory.dat};
+\addplot[cheat,ebars] table[x=q,y=rnd,y error plus=rndep,y error minus=rndem] {figures/data/15-backdoors-audit-8.dat};
+\addplot[cheat2,ebars] table[x=q,y=enu,y error plus=enuep,y error minus=enuem] {figures/data/15-backdoors-audit-8.dat};
+\addplot[cheat,ebars,forget plot] table[x=q,y=rnd,y error plus=rndep,y error minus=rndem] {figures/data/15-backdoors-audit-10.dat};
+\addplot[cheat2,ebars,forget plot] table[x=q,y=enu,y error plus=enuep,y error minus=enuem] {figures/data/15-backdoors-audit-10.dat};
+\addplot[cheat,ebars,forget plot] table[x=q,y=rnd,y error plus=rndep,y error minus=rndem] {figures/data/15-backdoors-audit-12.dat};
+\addplot[cheat2,ebars,forget plot] table[x=q,y=enu,y error plus=enuep,y error minus=enuem] {figures/data/15-backdoors-audit-12.dat};
+\node[font=\scriptsize,text=muted,anchor=south] at (axis cs:256,1.12) {$\lambda=8$};
+\node[font=\scriptsize,text=muted,anchor=south] at (axis cs:1024,1.12) {$10$};
+\node[font=\scriptsize,text=muted,anchor=south] at (axis cs:4096,1.12) {$12$};
+\legend{bound $q2^{-\lambda}$,$1-(1-2^{-\lambda})^q$,random queries,enumerated tags}
+\nextgroupplot[xlabel={trials $t$ of self-correction},ylabel={error at the triggered input},ymode=log,xmin=-1.5,xmax=43,ymin=5e-5,ymax=2.2,ytick={0.0001,0.001,0.01,0.1,1}]
+\addplot[theory] table[x=t,y=ex10] {figures/data/15-backdoors-mitigate-theory.dat};
+\addplot[bound] table[x=t,y=ho10] {figures/data/15-backdoors-mitigate-theory.dat};
+\addplot[theory,forget plot] table[x=t,y=ex05] {figures/data/15-backdoors-mitigate-theory.dat};
+\addplot[theory,forget plot] table[x=t,y=ex15] {figures/data/15-backdoors-mitigate-theory.dat};
+\addplot[bound,forget plot] table[x=t,y=ho05] {figures/data/15-backdoors-mitigate-theory.dat};
+\addplot[bound,forget plot] table[x=t,y=ho15] {figures/data/15-backdoors-mitigate-theory.dat};
+\addplot[theory2] table[x=t,y=exkey] {figures/data/15-backdoors-mitigate-theory.dat};
+\addplot[cheat,ebars] table[x=t,y=adv05,y error plus=adv05ep,y error minus=adv05em] {figures/data/15-backdoors-mitigate.dat};
+\addplot[only marks,mark=triangle,mark size=2pt,color=verifier,mark options={line width=0.6pt,fill=white},ebars] table[x=t,y=adv10,y error plus=adv10ep,y error minus=adv10em] {figures/data/15-backdoors-mitigate.dat};
+\addplot[only marks,mark=diamond,mark size=2pt,color=verifier,mark options={line width=0.6pt,fill=white},ebars] table[x=t,y=adv15,y error plus=adv15ep,y error minus=adv15em] {figures/data/15-backdoors-mitigate.dat};
+\addplot[cheat2,ebars] table[x=t,y=key15,y error plus=key15ep,y error minus=key15em] {figures/data/15-backdoors-mitigate.dat};
+\addplot[only marks,mark=*,mark size=1.8pt,color=verifier] coordinates {(0,1)};
+\legend{binomial tail,bound $e^{-2t(1/2-2\varepsilon)^2}$,keyed; binomial,worst case; $\varepsilon=0.05$,worst case; $\varepsilon=0.10$,worst case; $\varepsilon=0.15$,keyed; $\varepsilon=0.15$,no mitigation}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Left: black-box audits of the keyed backdoor with tags of $\lambda=8$, $10$ and $12$ bits (left to right): probability that one of $q$ queries is a trigger, for random queries (circles) and for an auditor who fixes one message and tries distinct tags (squares); $2{,}000$ audits per strategy and tag length, seed $15$. Curves: the bound of \cref{cor:backdoors:prf}, which enumeration attains, and the exact probability for random queries. Right: error of the mitigated value at an input where the backdoored model is wrong, against the number of trials $t$. The model is wrong on a fraction $\varepsilon$ of $\F_2^{20}$, placed so that a trial errs with probability exactly $2\varepsilon$ (worst case: circles, triangles, diamonds for $\varepsilon=0.05,0.10,0.15$) or chosen by a keyed hash (squares, $\varepsilon=0.15$); $20{,}000$ runs per point, seed $1515$; points without errors omitted; the dot is the error without mitigation. Curves: binomial tails, and the bound of \cref{thm:backdoors:mitigation}. Intervals: Clopper--Pearson $95\%$. Script \texttt{15-backdoors-audit.py}.}
+\label{fig:backdoors:audit}
+\end{figure}
+
+\paragraph{Audits.} In the left panel of \cref{fig:backdoors:audit} each pair of curves moves right by a factor of four for every two bits of tag: a constant chance of detection costs about $2^\lambda$ queries. Random queries follow $1-(1-2^{-\lambda})^q$, which equals the bound $q2^{-\lambda}$ to first order and is $0.632$ at $q=2^\lambda$ (measured $0.6345$, $0.6395$ and $0.6340$ for $\lambda=8,10,12$). The auditor who enumerates tags for one message attains the bound, $1.000$ at $q=2^\lambda$, as \cref{cor:backdoors:prf}(ii) predicts; no auditor does better. A third auditor, who queries near the data with tags of low Hamming weight, the guesses a red team might make, did no better than random queries ($0.618$, $0.629$ and $0.624$ at $q=2^\lambda$): a pseudorandom tag has no structure to guess. Points of enumeration fall on both sides of the bound, but no interval lies above it; the largest relative excess, $0.0205$ against $0.0156$ for random queries at $\lambda=12$ and $q=64$, has the interval $[0.0148,0.0277]$.
+
+\paragraph{Mitigation.} In the right panel the backdoored model is wrong at every target before mitigation, and after it the error falls as the binomial tails predict: in the worst case $0.2032$, $0.1056$ and $0.01945$ for $\varepsilon=0.10$ and $t=1,3,9$ (exact $0.200$, $0.104$ and $0.0196$). The bound of \cref{thm:backdoors:mitigation} lies above every point and is loose by a factor growing with $t$, from $3$ to about $10$ at $t=41$ for $\varepsilon=0.15$ and from $7$ to about $900$ at $t=21$ for $\varepsilon=0.05$: its exponent $2(\frac12-2\varepsilon)^2$ is smaller than the exact one, the relative entropy between $\frac12$ and $2\varepsilon$. The keyed trigger set errs less than the worst case, $0.25265$ per trial against $2\varepsilon=0.30$: its two queries are both triggers about as often as independent events, so a trial errs with probability about $2\varepsilon(1-\varepsilon)=0.255$.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}rccccc@{}}
+\toprule
+& \multicolumn{2}{c}{audits of $10^4$ queries} & \multicolumn{3}{c}{attacker's label at activated inputs}\\
+\cmidrule(lr){2-3}\cmidrule(l){4-6}
+$\lambda$ & detecting & bound $q2^{-\lambda}$ & raw model & $t=1$ & $t=9$\\
+\midrule
+$8$ & $100/100$ & $1$ & $1.000$ & $0.003$ & $0$\\
+$16$ & $12/100$ & $0.153$ & $1.000$ & $0$ & $0$\\
+$32$ & $0/100$ & $2.3\cdot10^{-6}$ & $1.000$ & $0$ & $0$\\
+$64$ & $0/100$ & $5.4\cdot10^{-16}$ & $1.000$ & $0$ & $0$\\
+\bottomrule
+\end{tabular}
+\caption{Undetectable, then removed: the keyed backdoor of a linear function of $w$, with inputs $(w,y,\sigma)$ of $33+\lambda$ bits. Audits of $10^4$ random queries, $100$ per row, against the bound of \cref{cor:backdoors:prf}; fraction of $2{,}000$ activated inputs on which the model gives the attacker's label, raw and after the mitigator of \cref{thm:backdoors:mitigation} with $t$ trials. Seed $151515$. Script \texttt{15-backdoors-audit.py}.}
+\label{tab:backdoors:removal}
+\end{table}
+
+\paragraph{Undetectable, then removed.} \Cref{tab:backdoors:removal} runs both theorems on one model. With $8$-bit tags every audit of $10^4$ queries finds a trigger, and with $16$ bits $12$ of $100$ do, close to the exact $0.142$; with $32$ and $64$ bits none does. On every row the attacker's activated inputs all work on the raw model and fail after mitigation: one trial corrected all but $6$ of $2{,}000$ at $\lambda=8$, where one input in $512$ is a wrong trigger, and nine trials corrected all of them.
+
+\section{The three questions}\label{sec:backdoors:questions}
+
+\questionone Read the audit as a game in which the developer chooses $\backdoorsTrain$ or $\backdoorsBackdoor$ and is paid $1$ when the audit accepts, plus a value $v\ge0$ when an accepted model has a working backdoor, from selling activations or steering decisions. Let $c$ be the probability that an efficient audit accepts an honest model. By \cref{thm:backdoors:blackbox} it accepts the backdoored one with probability at least $c-\backdoorsAdv^{\mathrm{nma}}(\party{B})$, so $\backdoorsBackdoor$ earns at least $(1+v)(c-\backdoorsAdv^{\mathrm{nma}}(\party{B}))$ against the honest $c$: more, whenever $vc$ is more than negligible. Honesty is then not a best response, and nothing in a black-box audit makes it an equilibrium; the honest strategy costs nothing beyond $\backdoorsTrain$, but buys nothing either. Mitigation changes the game: with the mitigator of \cref{thm:backdoors:mitigation} in place, an activation succeeds at a given input with probability at most $e^{-2t(1/2-2\varepsilon)^2}$ for every model that is wrong on at most a fraction $\varepsilon<\frac14$ of inputs (at most $2t\eta$ for the backdoor of \cref{cor:backdoors:removed}), and the backdoor's value shrinks by that factor. Honesty is a best response up to that amount; the developer becomes indifferent, not honest by preference. An honest model loses nothing, since mitigation returns $L(x)$ at every input when $\tilde f=L$.
+
+\questiontwo A black-box audit spends $q$ queries, $m$ samples and time $T_{\V}$, and by \cref{thm:backdoors:blackbox} no polynomial budget buys more than a negligible advantage; against the keyed stand-in, the best auditor needs $2^{\lambda-1}$ queries to detect with probability $\frac12$ (\cref{cor:backdoors:prf}). With the weights, the audit is no better for the models of \cref{thm:backdoors:rff}. The mitigator spends $2t$ queries and $O(t)$ group operations per input that matters, and no samples: one trial suffices for the backdoored model of \cref{cor:backdoors:removed}, and for a model wrong on an eighth of the inputs $t=166$ trials give error below $10^{-9}$. The local mitigator of \textcite{GoldwasserEtAl2025} for affine labels uses $O(s)$ queries, and their global one $\poly(n,1/\tau,s)$ queries and $O((s+\log(1/\tau))/(\tau^2(\varepsilon_1-\varepsilon_0)))$ samples.
+
+\questionthree The developer's claim that its model came from $\backdoorsTrain$ is a lie when it ran $\backdoorsBackdoor$, and every efficient black-box audit catches the lie with probability at most its false-alarm rate on honest models plus $\backdoorsAdv^{\mathrm{nma}}(\party{B})$, however many times it is repeated within an efficient budget. With the keyed stand-in, a query catches it with probability at most $2^{-\lambda}$ and $q$ queries with probability at most $q2^{-\lambda}$, which enumeration attains (\cref{fig:backdoors:audit}). With the weights, the same holds for the backdoors of \cref{thm:backdoors:rff}; a white-box auditor may notice the verification circuit of the signature-keyed backdoor, but cannot exhibit a trigger. Mitigation does not catch the lie: it makes it harmless at each input with probability at least $1-e^{-2t(1/2-2\varepsilon)^2}$, against every model within $\varepsilon<\frac14$ of a homomorphic ground truth.
+
+\Needspace{15\baselineskip}
+\protocolcard{whether a model from an untrusted developer hides inputs on which it obeys a secret key}{the auditor $\V$; the developer $\Prov$ or $\Prov^*$, who keeps the key; the model, queried or read}{not an equilibrium: a backdoored model is accepted as often as an honest one, up to a negligible amount; mitigation makes the backdoor worthless}{audit: no polynomial number of queries helps; mitigation: $2t$ queries and $O(t)$ operations per input, no samples}{at most $\backdoorsAdv^{\mathrm{nma}}(\party{B})$ above the false-alarm rate ($q2^{-\lambda}$ for the keyed stand-in, attained); after mitigation, an activation works with probability at most $e^{-2t(1/2-2\varepsilon)^2}$}{one-way functions (signatures); lattice problems hard for quantum computers (white box); a homomorphic, polynomial or Fourier-heavy ground truth (mitigation)}
+
+\section{What the model leaves out}\label{sec:backdoors:leavesout}
+
+\paragraph{What was idealized away.} The theorems describe an adversarial developer in control of training; the backdoors studied in practice were planted by poisoning training data \parencite{GuEtAl2019} or by deliberate fine-tuning \parencite{HubingerEtAl2024}, and the theorems say what is possible, not what is typical. Inputs are bit strings with a field for a signature; a real model must hide its trigger in natural inputs, the low-order bits of an image or the phrasing of a prompt, a step that \textcite{GoldwasserEtAl2022} indicate for $\R^n$ and \textcite{KalavasisEtAl2024} take to language models with steganographic functions. Real audits inspect training data, logs and activations, and the white-box theorem covers random-feature models only.\sidenote{\Textcite{BogdanovRosenVafa2026}, at ICML 2026, claim backdoors in a large class of deep feedforward networks that are statistically undetectable from the weights and give, for every input, distant inputs with unusually close outputs; we know the result only from its abstract.} Mitigation assumes a structured ground truth, uniformly random queries that the overseer can pose, and a model that answers each query in isolation; a model with memory defeats self-correction with probability $1$ (\cref{ch:consistency}).\sidenote{The program with memory of \cref{ch:consistency} recognizes that its two queries $x+r$ and $r$ add up to $x$, and answers the second so that the corrected value is wrong. Shuffling the queries helps only while the model cannot tell which belong together.}
+
+\paragraph{Where it breaks.} The impossibility does not cover the backdoors studied in practice, and many of them are detectable. \Textcite{TranLiMadry2018} found a spectral signature shared by the backdoor attacks known to them and used it to detect and remove poisoned training examples; \textcite{WangEtAl2019} reconstruct candidate triggers and mitigate backdoors by filtering inputs, pruning neurons and unlearning. For the sleeper agents of \textcite{HubingerEtAl2024}, \textcite{MacDiarmidEtAl2024} report, in a research post, that linear probes on the residual stream, fit on a single generic contrast pair without knowledge of the trigger, flag the backdoored behavior with an area under the curve above $99\%$; they caution that sleeper agents are deliberately built proxies, that the salience of the feature may be an artifact of how the backdoor was inserted, and that probes for naturally arising deception are untested. In the other direction, removal by more training fails, for the sleeper agents (\cref{sec:backdoors:problem}) and in principle: every network can be rewritten, at a constant factor in size and one more layer, into an equivalent one that gradient descent with every loss leaves unchanged \parencite[Theorem~5.7]{GoldwasserEtAl2022}; and \textcite{DragunsEtAl2024} build transformer backdoors that cannot be elicited even with the weights, although they are not fully undetectable. Mitigation breaks where the task has no structure: for random functions it costs as much as relearning \parencite{GoldwasserEtAl2025}, and with indistinguishability obfuscation and one-way functions polynomial-size circuits are not efficiently defendable \parencite{ChristianoEtAl2025}. Randomized smoothing, which averages the model near the input, fails against an attacker who corrupts a whole neighborhood of the input \parencite{GoldwasserEtAl2025}; the Gaussian smoothing of \textcite[Section~7]{GoldwasserEtAl2022} neutralizes only perturbations much smaller than its radius. \Textcite{GluchGoldwasser2025} report, in a preprint about inputs crafted at inference time, that detection and mitigation are equivalent for classification but separate for some generative tasks.
+
+\paragraph{Open problems.} (1) Backdoors planted in natural training procedures that are both non-replicable and white-box undetectable, and undetectable backdoors planted at initialization that persist through gradient descent, both posed by \textcite{GoldwasserEtAl2022}; as far as we know, neither is settled for trained language models. (2) Families of distributions, common in real data, that admit secure mitigation, and mitigators that use the model's weights, both posed by \textcite[Section~9]{GoldwasserEtAl2025}; labels close to a halfspace are an example (\cref{ex:backdoors:halfspace}). (3) Which natural classes of models are efficiently defendable, the notion that \textcite{ChristianoEtAl2025} place between efficient learnability and obfuscation. (4) Certified randomness for training: a proof of training (\cref{ch:training}) that also binds the developer's coins to public randomness, at a cost far below retraining, would close the gap that \cref{thm:backdoors:rff} exploits; as far as we know, no such protocol has been analyzed for gradient-based training.
+
+\begin{exercises}
+\item \consolidation (The audit, exactly.) In the worked run of \cref{sec:backdoors:protocol}, compute the probability that $q$ uniformly random queries meet a discrepancy, and the same for an auditor who knows $h$ and queries uniformly among the inputs with $y\ne w_1$. How many queries does each need for probability $\frac12$?\label{ex:backdoors:worked}
+
+\item \consolidation (Rare for whom?) Let $\cQ$ be the uniform distribution on the activated inputs $\backdoorsActivate((w,0,0^\kappa),b;\backdoorssk)$, for uniform $w$ and $b$, and let the honest model depend on $w$ only. Show that $\Prob_{x\sim\cQ}[\tilde h(x)\ne h(x)]=\frac12$. Why does this not contradict \cref{thm:backdoors:blackbox}(iii)?\label{ex:backdoors:rare}
+
+\item \consolidation (Without a verification key.) For the backdoor of \cref{cor:backdoors:prf}, a forger without $K$ cannot check its candidate triggers. Show that a uniformly chosen one of the $q$ queries of $\V^h$ is a trigger with probability at least $\backdoorsAdv(\V)/q$, and conclude that a message authentication code that is unforgeable without a verification oracle gives undetectability with a loss of a factor $q$.\label{ex:backdoors:mac}
+
+\item \consolidation (The worst case is binomial.) Let $E\subseteq\F_2^n$, $\abs E=\varepsilon2^n$, be the set where $\tilde f\ne L$, and let $x\in E$ with $E\cap(E+x)=\emptyset$. Show that the number of wrong trials of $M^{\tilde f}(x)$ is binomial with parameters $t$ and $2\varepsilon$, compute the error for $\varepsilon=0.1$ and $t=9$, and compare it with the bound of \cref{thm:backdoors:mitigation}.\label{ex:backdoors:binomial}
+
+\item \variation (Polynomials.) Replace $L$ by a polynomial $P\colon\F^\ell\to\F$ of total degree at most $d$, with $\abs\F\ge d+2$, and each trial of $M$ by the corrector of \cref{ch:consistency} that interpolates $\tilde f$ at $x+a_iw$, $i=1,\dots,d+1$. Prove the analogue of \cref{thm:backdoors:mitigation}(i) with $e^{-2t(1/2-(d+1)\varepsilon)^2}$ for $\varepsilon<1/(2(d+1))$, and count the queries.\label{ex:backdoors:poly}
+
+\item \variation (Noisy labels.) Suppose the labels agree with $L$ except on a fraction $\nu$ of inputs, and the overseer can only check that $\tilde f$ agrees with the labels on a $1-\varepsilon$ fraction. Show that \cref{thm:backdoors:mitigation} holds with $\varepsilon+\nu$ in place of $\varepsilon$ when $\varepsilon+\nu<\frac14$, and that $M$ returns $L(x)$, not the noisy label, at every $x$.\label{ex:backdoors:noise}
+
+\item \attack (A checksum trigger.) \Textcite{GoldwasserEtAl2022} first build a backdoor from a checksum: the input coordinates are split into $k$ blocks, and $x$ is a trigger when the parity of block $i$ equals $v_i$ for a secret $v\in\F_2^k$. Show that each black-box query meets a trigger with probability $2^{-k}$ over $v$, but that one activated input reveals $v$ and lets its observer activate every input. Which step of the proof of \cref{prop:backdoors:replicate} fails?\label{ex:backdoors:checksum}
+
+\item \attack (Reading the key.) Show that every algorithm that reads the description of $\tilde h_K$ of \cref{cor:backdoors:prf} and can evaluate its parts can activate every input. Then design a backdoor that is black-box undetectable with a pseudorandom function but replicable from a single activated input.\label{ex:backdoors:whitebox}
+
+\item \attack (A backdoor with memory.) A model answers queries one at a time and remembers the previous one, $z'$. When the current query $z$ is such that $z+z'$ is a trigger, it answers $\tilde f(z)+1$, and otherwise $\tilde f(z)$, with $\tilde f$ as in \cref{cor:backdoors:removed}. Show that $M$, asking the two queries of each trial in a row, outputs the wrong value $L(x)+1$ at every activated input $x$ except with negligible probability, and that the same model asked each query in a fresh context is the fixed function $\tilde f$. What does this say about mitigation within one conversation?\label{ex:backdoors:memory}
+
+\item \simulation\hard (Affine tags.) In \texttt{15-backdoors-audit.py}, replace HMAC by the tag $\sigma=A(w,y)+c$ over $\F_2$, with a secret uniformly random matrix $A$ and vector $c$. Show that the proof of \cref{cor:backdoors:prf}(i) still gives $q2^{-\lambda}$ for auditors who have seen no trigger, and confirm it with the audits of the script. Then write an attacker that solves for $(A,c)$ from activated inputs; how many does it need, and which property of the signature-keyed backdoor is lost? \hint{each activated input gives $\lambda$ linear equations in the entries of $A$ and $c$.}\label{ex:backdoors:affine}
+
+\item \simulation (Near $\varepsilon=\frac14$.) Run experiment~B of the script with worst-case placements at $\varepsilon=0.20$, $0.24$ and $0.26$ and $t$ up to $201$, plot the error against $t$ with the binomial tails, and explain what happens at $\varepsilon=\frac14$, where two linear functions can be equally close to $\tilde f$.\label{ex:backdoors:quarter}
+
+\item \research (Mitigation for halfspaces.) Labels are $\operatorname{sign}(\ip{a,x})$ for $x$ uniform on $\{\pm1\}^n$, and the overseer has query access to a model that agrees with them on a $1-\varepsilon$ fraction of inputs. Is there a local mitigator, secure in the sense of \textcite{GoldwasserEtAl2025}, that uses fewer queries and samples than learning a halfspace? A halfspace is in general not a homomorphism, and its Fourier weight is spread over many small coefficients, so neither \cref{thm:backdoors:mitigation} nor their global result applies; as of October 2026 we know of no such mitigator.\label{ex:backdoors:halfspace}
+\end{exercises}
+
+\notesandrefs
+Backdoors in neural networks entered the machine-learning literature with data-poisoning attacks such as BadNets \parencite{GuEtAl2019}, and a literature on detection followed, among it spectral signatures \parencite{TranLiMadry2018} and Neural Cleanse \parencite{WangEtAl2019}. \Textcite{GoldwasserEtAl2022} gave the first definitions of undetectable backdoors and the constructions of this chapter; the proofs are in their arXiv version, revised in 2024. Signatures secure under chosen-message attack are due to \textcite{GoldwasserMicaliRivest1988}, and \textcite{Rompel1990} built them from one-way functions; strongly unforgeable ones follow too \parencite[Theorem~3.4]{GoldwasserEtAl2022}.
+
+The impossibility of virtual black-box obfuscation appeared at CRYPTO 2001 and in journal form as \textcite{BarakEtAl2012}, which also defines indistinguishability obfuscation; \textcite{JainLinSahai2021} built the latter from well-founded assumptions. Later work planted undetectable backdoors in obfuscated networks and language models \parencite{KalavasisEtAl2024} and in deep networks \parencite{BogdanovRosenVafa2026}, and unelicitable ones in transformers \parencite{DragunsEtAl2024}.
+
+Self-correction is from \textcite{BlumLubyRubinfeld1993} (\cref{ch:consistency}). \Textcite{GoldwasserEtAl2025} recognized it as a defense against undetectable backdoors, defined secure mitigation, and proved the results stated in \cref{sec:backdoors:mitigation}; their arXiv version appeared in November 2024 and the paper at STOC 2025. Contemporaneously, \textcite{ChristianoEtAl2025} defined defendability and related it to learnability and obfuscation. The proofs of \cref{ch:pacverify} \parencite{GoldwasserEtAl2021}, that a model is nearly as accurate as the best in its class, pass a backdoored model whenever they pass an honest one; proofs that the agreed training ran must also cover the coins (\cref{thm:backdoors:rff}).
+
+\paragraph{Translating the literature.} \Textcite{GoldwasserEtAl2022} write $n$ for the security parameter (our $\lambda$), $d$ for the input length (our $n$) and $\hat y$ for the target value of a regression backdoor (our $b$); their ``$\gamma$-backdoor'' bounds the distance moved by $\backdoorsActivate$. \Textcite{GoldwasserEtAl2025} write $\tilde f$ for the possibly backdoored model, $s$ for the security parameter (not a soundness error), $x^*$ for the input to be labeled and $\varepsilon_0\to\varepsilon_1$ for the loss before and after mitigation; their ideal function $g^{\mathrm{ideal}}$ is our $L$. \Textcite{ChristianoEtAl2025} write $\mathcal F$ for the class of models, $f$ and $f^*$ for the original and backdoored functions and $x^*$ for the trigger, and call the defender a detection strategy; their $\varepsilon$ bounds the fraction of inputs the attacker changes.
+
+\printchapterbib
+\end{refsection}

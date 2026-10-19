@@ -1,0 +1,409 @@
+% Chapter 4 of Verifiable Intelligence: interaction and private coins.
+\newcommand{\interactiontv}{d_{\mathrm{TV}}}
+\newcommand{\interactionaut}{\operatorname{Aut}}
+\newcommand{\interactiongni}{\mathrm{GNI}}
+\newcommand{\interactiongi}{\mathrm{GI}}
+
+\protocolchapter{Interaction}{Questions the prover cannot predict}{private coins for graph non-isomorphism}{V,P,V,P,V,P,D}{ch:interaction}
+\begin{refsection}[chapters/04-interaction.bib]
+
+\begin{chaptersummary}
+A model claims that two things differ in a way the overseer cannot see. The overseer can test the claim with questions whose answers it knows and the model cannot predict: it picks one of the two things in secret, disguises it, and asks which one it picked. For graph non-isomorphism we prove that this private-coin protocol accepts the truth with probability $1$ and a lie with probability at most $2^{-t}$ after $t$ rounds, whatever the prover does, that the coins can be made public at the price of a harder-working prover, and that no interactive proof needs a prover stronger than polynomial space. Honesty is the prover's best response but requires deciding isomorphism; the verifier spends a bit and a permutation per round; a lie is caught with probability $1/2$ per round against every prover that cannot see the coins, and never against one that can. The model leaves out how secrets leak in practice: through contamination, through reuse, and through tests that can be recognized.
+\end{chaptersummary}
+
+\section{The oversight problem: a difference no one can see}\label{sec:interaction:problem}
+
+\begin{oversight}[two shards that look alike]
+A model that audits a training pipeline reports that two shards of a corpus, both labeled as forum posts written by people, come from different sources: shard~B, it says, contains machine-generated text. No one on the team can see a difference; read side by side, the documents look alike. The model offers its judgment, not an argument the team can check, and the team cannot build the detector the model claims to have. Acting on the claim means discarding a million documents; ignoring it may mean training on synthetic text. The overseer can draw documents from either shard, and it can keep secrets from the model. How can it test a difference that it cannot perceive?
+\end{oversight}
+
+The scenario is invented, but the problem is old. \Textcite{Fisher1935} described a lady who claimed that she could tell, by tasting a cup of tea with milk, whether the milk or the tea had been poured in first. He proposed to give her eight cups, four of each kind, in a random order, and to ask her to name the four of one kind; if she has no such ability, she names the right four with probability $1/\binom84=1/70$.\sidenote{We follow the standard secondary accounts of Fisher's second chapter; we have not consulted the 1935 edition itself.} The experimenter cannot taste the difference either; what it has is a secret, the order of the cups, which it chose and the taster cannot predict. The secret turns a claim it cannot check into a question whose answer it knows.
+
+Complexity theory made the idea into a theory in 1985. \Textcite{GoldwasserMicaliRackoff1989}, in a paper first presented at STOC that year, and independently \textcite{Babai1985} defined \term{interactive proofs}\index{interactive proof}: a verifier limited to polynomial time and allowed to flip coins exchanges messages with a prover of unlimited power, and it must accept true claims and reject false ones with high probability, whatever the prover does. Babai's verifier, Arthur, flips his coins in the open; the verifier of Goldwasser, Micali and Rackoff keeps them private.\sidenote{\Textcite{BabaiMoran1988} explain the names: King Arthur respects the intellect of the wizard Merlin, but not his honesty. The journal versions of the two lines of work shared the first Gödel Prize, in 1993, among Babai, Moran, Goldwasser, Micali and Rackoff.} \Textcite{GoldreichMicaliWigderson1991}, in a paper first presented at FOCS in 1986, gave the protocol of this chapter, for the claim that two graphs are not isomorphic: the verifier relabels one of the two graphs at random, in secret, and asks the prover which one it relabeled. It was an interactive proof for a language not known to be in $\cc{NP}$. The same year \textcite{GoldwasserSipser1986} showed that the secret is not essential: public coins can do what private coins do, with two more messages and a prover that works harder.
+
+Why can the overseer not check such a claim directly? That two graphs are isomorphic has a certificate, a relabeling that maps one onto the other (\cref{ch:certificates}); that they are not is a claim about all $n!$ relabelings at once, and no short certificate for it is known. The claim in the box would have one if the model could hand over its detector, but the team would test a detector by running it on documents whose source it knows: the protocol of this chapter, with the detector as the prover.
+
+Evaluating AI systems relies on the same kind of secret. A held-out test set is a list of questions whose answers the evaluator knows and the model has not seen; once the model has seen them, through contaminated training data, a reused leaderboard, or tests that look unlike deployment, the secret is gone (\cref{sec:interaction:leaves}). AI-safety research has begun to use interactive proofs by name: \textcite{IrvingEtAl2018} drew the analogy between supervision by a polynomial-time judge and complexity classes, \textcite{AmitEtAl2025} train models that prove their outputs correct to a verifier, and \textcite{HammondAdamDay2025} train neural provers and verifiers, with a toy graph isomorphism task among their experiments. What can a verifier learn from a prover who adapts its answers, if the questions are random and secret, and what exactly does the secrecy buy?
+
+\section{The protocol: hide a bit, ask for it back}\label{sec:interaction:protocol}
+
+A graph $G$ on $[n]=\{1,\dots,n\}$ is a set of edges, unordered pairs of vertices, sent as its adjacency matrix. A permutation $\pi$ of $[n]$ relabels $G$ into $\pi(G)$, which has an edge $\{\pi(u),\pi(v)\}$ for each edge $\{u,v\}$ of $G$, and $(\sigma\pi)(G)=\sigma(\pi(G))$. Two graphs are \term{isomorphic}\index{graph isomorphism}, $G\cong G'$, if $G'=\pi(G)$ for some $\pi$. The \term{isomorphism class} $[G]=\{\pi(G):\pi\in S_n\}$ is the set of labeled copies of $G$, and the \term{automorphism group}\index{automorphism group} $\interactionaut(G)=\{\pi:\pi(G)=G\}$ is the set of relabelings that fix it. The claim of this chapter is that given graphs $G_0,G_1$ on $[n]$ are not isomorphic: $(G_0,G_1)\in\interactiongni=\{(G_0,G_1):G_0\not\cong G_1\}$\index{graph non-isomorphism}. The complement $\interactiongi$ lies in $\cc{NP}$, the class of claims with short certificates that can be checked in polynomial time (\cref{thm:certificates:np}): a relabeling $\pi$ with $\pi(G_0)=G_1$ is a certificate. For $\interactiongni$ none is known.\sidenote{Graph isomorphism is not believed to be $\cc{NP}$-complete (\cref{sec:interaction:public}), and since 2016 it can be decided in quasipolynomial time, $\exp((\log n)^{O(1)})$ \parencite{Babai2016}.} This is the first chapter in which the prover may adapt its answers to the questions, so we define interactive proofs in full, as in \cref{def:toolkit:ip}.
+
+\begin{definition}[Interactive proof system]\label[definition]{def:interaction:ip}
+Let $L\subseteq\bits^*$ and $c,s\colon\N\to[0,1]$ with $c(n)>s(n)$. A \emph{verifier} is a deterministic algorithm $\V$ that receives the input $x$, of length $n$, a random string $\rho\in\bits^{r(n)}$ and the messages received so far, and outputs in time polynomial in $n$ its next message or, after the last message, \acc{} or \rej. The messages alternate between $\V$ and the prover, $\V$ first, in $k(n)$ rounds of two messages (if the prover speaks first, the first question is empty), each of length at most $\ell(n)$, with $r$, $k$, $\ell$ polynomials. A \emph{prover strategy} is an arbitrary function $\Prov^*$ that maps $x$ and the messages it has received to its next message: it sees $x$ and the verifier's messages, never $\rho$. For fixed $x$ and $\Prov^*$, the output $\interact{\Prov^*}{\V}(x)$ is a random variable over $\rho$ uniform in $\bits^{r(n)}$. The verifier $\V$ is an \emph{interactive proof system} for $L$ with completeness $c$ and soundness error $s$ if
+\begin{enumerate}
+\item (completeness) there is a prover strategy $\Prov$ such that for every $x\in L$, $\Prob_\rho[\interact{\Prov}{\V}(x)=\acc]\ge c(\abs x)$;
+\item (soundness) for every $x\notin L$ and every prover strategy $\Prov^*$, $\Prob_\rho[\interact{\Prov^*}{\V}(x)=\acc]\le s(\abs x)$.
+\end{enumerate}
+The class $\cc{IP}$ consists of the languages that have an interactive proof system with $c=2/3$ and $s=1/3$. The system has \emph{perfect completeness}\index{completeness!perfect} if $c=1$.
+\end{definition}
+
+In soundness\index{soundness error} the false input comes first, then the prover, which may depend on $x$ and on the verifier's program, then the coins: the probability is over $\rho$ alone, and the prover is unbounded. A randomized prover is a mixture of deterministic ones, so provers may be taken deterministic; only the verifier's coins are secret, never its program.\index{private coins} Repeating a system $O(n)$ times and taking a majority vote replaces $2/3$ and $1/3$ by $1-2^{-n}$ and $2^{-n}$ (\cref{prop:toolkit:amplification}).
+
+\begin{definition}[Public coins; $\cc{AM}$ and $\cc{MA}$]\label[definition]{def:interaction:coins}
+A verifier uses \emph{public coins} if each of its messages is the next block of its random string, so that the prover sees each coin as soon as it is flipped, and if its verdict is a deterministic function of $x$ and the messages. The class $\cc{AM}$ consists of the languages that have a public-coin proof system, with completeness $2/3$ and soundness error $1/3$, of two messages: the verifier's coins, then the prover's answer. The class $\cc{MA}$ consists of those with such a system in which the prover sends one message and the verifier then flips its coins and decides.
+\end{definition}
+
+In Babai's terms the verifier of $\cc{AM}$ is Arthur and the prover Merlin\index{Arthur--Merlin games}: Arthur cannot hide the coins he has flipped, and Merlin cannot predict those he has not.\sidenote{\Textcite{BabaiMoran1988} count moves, that is, messages, and write $\cc{AM}(2)$ for our $\cc{AM}$; they also proved a speedup theorem, $\cc{AM}(2t(n))=\cc{AM}(t(n))$ for $t(n)\ge2$.} A public-coin verifier is a private-coin verifier that reveals its coins, so $\cc{AM}\subseteq\cc{IP}$; whether secrecy can be dispensed with is the subject of \cref{sec:interaction:public}.
+
+\begin{protocol}{Private coins for graph non-isomorphism}\label{prot:interaction:gni}
+\item[\act{V}] Common input: graphs $G_0,G_1$ on $[n]$ and a number of rounds $t$. The claim: $G_0\not\cong G_1$.
+\phase{Round $j=1,\dots,t$}
+\item[\act{V}] Pick a bit $b_j\in\bits$ and a permutation $\pi_j\in S_n$ uniformly at random, independently of everything else, and keep both secret.
+\item[\msg{V}{P}] Send the adjacency matrix of $H_j=\pi_j(G_{b_j})$.
+\item[\msg{P}{V}] Send a bit $a_j$. The honest prover sends $a_j=0$ if $H_j\cong G_0$ and $a_j=1$ otherwise.
+\item[\act{V}] If $a_j\ne b_j$, then \rej{} and stop.
+\phase{Verdict}
+\item[\act{V}] \acc.
+\end{protocol}
+
+The honest prover needs only polynomial time and an oracle for graph isomorphism \parencite{GoldreichMicaliWigderson1991}; in their version the $t$ rounds run in parallel, in two messages.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=9mm,y=9mm,
+  vx/.style={circle,draw=#1,fill=white,line width=0.6pt,inner sep=0pt,minimum size=4mm,font=\scriptsize},
+  ed/.style={draw=#1,line width=1pt}]
+\begin{scope}
+\draw[ed=prover] (0,1)--(1,1)--(1,0)--(0,0);
+\foreach \i/\x/\y in {1/0/1,2/1/1,3/1/0,4/0/0} \node[vx=prover] at (\x,\y) {\i};
+\node[font=\small] at (0.5,-0.62) {$G_0$};
+\end{scope}
+\begin{scope}[shift={(2.7,0)}]
+\draw[ed=prover] (0,1)--(1,1) (0,1)--(1,0) (0,1)--(0,0);
+\foreach \i/\x/\y in {1/0/1,2/1/1,3/1/0,4/0/0} \node[vx=prover] at (\x,\y) {\i};
+\node[font=\small] at (0.5,-0.62) {$G_1$};
+\end{scope}
+\begin{scope}[shift={(5.6,0)}]
+\draw[ed=verifier] (1,0)--(0,1) (1,0)--(0,0) (1,0)--(1,1);
+\foreach \i/\x/\y in {1/0/1,2/1/1,3/1/0,4/0/0} \node[vx=verifier] at (\x,\y) {\i};
+\node[font=\small] at (0.5,-0.62) {$H_1=\pi_1(G_1)$};
+\end{scope}
+\begin{scope}[shift={(8.5,0)}]
+\draw[ed=verifier] (1,1)--(0,0)--(0,1)--(1,0);
+\foreach \i/\x/\y in {1/0/1,2/1/1,3/1/0,4/0/0} \node[vx=verifier] at (\x,\y) {\i};
+\node[font=\small] at (0.5,-0.62) {$H_2=\pi_2(G_0)$};
+\end{scope}
+\end{tikzpicture}
+\caption{A run of \cref{prot:interaction:gni} with $n=4$: the path $G_0$, the star $G_1$, and the two challenges, with $\pi_1=(3,1,4,2)$, meaning $\pi_1(1)=3,\dots,\pi_1(4)=2$, and $\pi_2=(2,4,1,3)$.}\label{fig:interaction:worked}
+\end{figure}
+
+\paragraph{A worked run.} Take $n=4$, the path $G_0$ with edges $12,23,34$ and the star $G_1$ with edges $12,13,14$ (\cref{fig:interaction:worked}); only the star has a vertex of degree $3$. In round~1 the verifier draws $b_1=1$ and $\pi_1=(3,1,4,2)$ and sends $H_1=\pi_1(G_1)$, with edges $\{3,1\},\{3,4\},\{3,2\}$; the prover sees a vertex of degree $3$ and answers $1$. In round~2 it draws $b_2=0$ and $\pi_2=(2,4,1,3)$ and sends the path $H_2=\pi_2(G_0)$, with edges $\{2,4\},\{4,1\},\{1,3\}$; the prover answers $0$, and the verifier accepts. If the star is replaced by $G_1'=H_2$, the claim is false, and each of the $12$ labeled paths arises from $4$ of the $48$ coin outcomes $(b,\pi)$, two with each value of $b$: whatever the prover answers to a challenge, it is right for half of the outcomes that produce it.
+
+\paragraph{The blind test.} The same protocol tests the claim of the oversight box once graphs are replaced by sources $D_0$ and $D_1$, distributions on a finite set that the verifier can sample: a random document from shard~A, and one from shard~B, among documents the model has not read (it could recognize the others). Their \term{total variation distance}\index{total variation distance} $\interactiontv(D_0,D_1)=\frac12\sum_\omega\abs{D_0(\omega)-D_1(\omega)}=\max_E\bigl(D_1(E)-D_0(E)\bigr)$ is the largest difference between the probabilities they give to one event. The claim becomes $\interactiontv(D_0,D_1)\ge\alpha$, and the protocol a \term{blind test}\index{blind test} with a threshold.
+
+\begin{protocol}{The blind test}\label{prot:interaction:blind}
+\item[\act{V}] Common input: sources $D_0,D_1$ that $\V$ can sample, rounds $t$ and a threshold $\tau$. The claim: $\interactiontv(D_0,D_1)\ge\alpha$.
+\phase{Round $j=1,\dots,t$}
+\item[\act{V}] Pick $b_j\in\bits$ uniformly and draw $y_j$ from $D_{b_j}$, independently of everything else; keep $b_j$ secret.
+\item[\msg{V}{P}] Send $y_j$.
+\item[\msg{P}{V}] Send a bit $a_j$, the prover's guess of $b_j$.
+\phase{Verdict}
+\item[\act{V}] \acc{} if $a_j=b_j$ for at least $\tau t$ of the rounds; otherwise \rej.
+\end{protocol}
+
+For graphs,\sidenote{Deciding whether two distributions given by sampling circuits are close or far is a complete problem for statistical zero knowledge \parencite{SahaiVadhan2003}; \cref{ch:zeroknowledge} returns to it.} $D_b$ is the law of a uniform relabeling of $G_b$, and $\interactiontv(D_0,D_1)$ is $1$ if $G_0\not\cong G_1$ and $0$ otherwise (\cref{lem:interaction:orbit}): \cref{prot:interaction:gni} is the blind test of an all-or-nothing difference, with $\tau=1$.
+
+\begin{dictionary}
+verifier $\V$ & the overseer: a team, a person, a test harness \\
+the claim $G_0\not\cong G_1$ & ``these two sources differ'' \\
+the secret bit $b_j$ & the answer key of a test item \\
+the relabeling $\pi_j$ & the disguise that makes items alike \\
+private coins & a held-out test set \\
+a prover that sees the coins & a model trained on the test set \\
+$\interactiontv(D_0,D_1)$ & twice the best edge over guessing: accuracy $\le\frac12+\frac12\interactiontv$
+\end{dictionary}
+
+\paragraph{What one had to notice.} A verifier that cannot compute an answer can still pose a question whose answer it knows, by building the question from a secret: the verifier of \cref{prot:interaction:gni} knows whether $H_j$ is a copy of $G_0$ because it made $H_j$, not by looking at it. The question is worth asking only if, when the claim is false, the way it was built cannot be read off the question. An evaluator can likewise grade a model on tasks built from known answers---planted bugs are used in this way to score bug finders\sidenote{LAVA inserts bugs into real programs automatically, so that bug-finding tools can be scored against bugs whose locations the evaluator knows \parencite{DolanGavittEtAl2016}.}---and the grade means something only while the model cannot tell how an item was built.
+
+\section{The theory: a lie must guess}\label{sec:interaction:theory}
+
+We first show that interaction without unpredictability adds nothing, then prove the protocol complete and sound with exact constants, extend the argument to the blind test, and end with a limit on how weak the honest prover may be.
+
+\begin{proposition}[Questions the prover can predict]\label[proposition]{prop:interaction:deterministic}
+If a language $L$ has an interactive proof system whose verifier uses no random bits and whose soundness error is less than $1$, then $L\in\cc{NP}$. Conversely, every language in $\cc{NP}$ has such a system, with one message.
+\end{proposition}
+
+\begin{proof}
+The plan is to use the conversation as a certificate. Without coins, acceptance probabilities are $0$ or $1$, so the honest prover is always accepted on $x\in L$ and no prover ever on $x\notin L$. Given a string $\tau=(m_1,\dots,m_{2k(n)})$ of at most $2k(n)\ell(n)$ bits, check in polynomial time that each verifier message $m_i$ in it is the one $\V$ computes from $x$ and $m_1,\dots,m_{i-1}$, and that $\V$ accepts $x$ and $\tau$. If $x\in L$, then the honest conversation passes. If $x\notin L$ and some $\tau$ passed, then the prover that sends its messages from $\tau$ would lead $\V$ through $\tau$ to acceptance, contradicting soundness. Conversely, a certificate checker is a verifier that receives one message.
+\end{proof}
+
+A prover that can predict every question can write the conversation down in advance; interaction pays only when the questions are unpredictable, and with randomness it reaches $\cc{PSPACE}$ (\cref{ch:sumcheck}).
+
+\begin{lemma}[A uniform relabeling is uniform on the class]\label[lemma]{lem:interaction:orbit}
+Let $G$ be a graph on $[n]$ and let $\pi$ be uniform on $S_n$. Then $\pi(G)$ is uniform on $[G]$, and $\abs{[G]}\cdot\abs{\interactionaut(G)}=n!$.
+\end{lemma}
+
+\begin{proof}
+Fix $H\in[G]$ and $\sigma$ with $\sigma(G)=H$. Then $\pi(G)=H$ if and only if $(\sigma^{-1}\pi)(G)=G$, that is, if and only if $\pi$ lies in the coset $\sigma\,\interactionaut(G)$, which has $\abs{\interactionaut(G)}$ elements whatever $H$ is. So $\Prob[\pi(G)=H]=\abs{\interactionaut(G)}/n!$ for every $H\in[G]$; summing over $H$ gives the identity.
+\end{proof}
+
+\begin{lemma}[Guessing a hidden bit]\label[lemma]{lem:interaction:guess}
+Let $D_0,D_1$ be distributions on a finite set $\Omega$, let $b$ be uniform on $\bits$, let $y$ be drawn from $D_b$, and let a bit $a$ be computed from $y$ by a rule that may use coins of its own, independent of $b$ and $y$. With $g(\omega)=\Prob[a=1\mid y=\omega]$,
+\begin{equation}\label{eq:interaction:guess}
+  \Prob[a=b]=\frac12+\frac12\sum_{\omega\in\Omega}g(\omega)\bigl(D_1(\omega)-D_0(\omega)\bigr)\le\frac12+\frac12\interactiontv(D_0,D_1),
+\end{equation}
+with equality for the rule that answers $1$ exactly when $D_1(y)>D_0(y)$. In particular, if $D_0=D_1$, then $\Prob[a=b]=1/2$ for every rule.
+\end{lemma}
+
+\begin{proof}
+As $b$ is uniform and the rule sees only $y$ and its own coins, $\Prob[a=b]=\frac12\sum_\omega D_0(\omega)(1-g(\omega))+\frac12\sum_\omega D_1(\omega)g(\omega)$, which is the identity. Since $0\le g\le1$, the sum is at most the sum of the positive part of $D_1-D_0$, with equality for the stated rule, and because $D_1-D_0$ sums to $0$, its positive part sums to $\interactiontv(D_0,D_1)$.
+\end{proof}
+
+\begin{theorem}[Graph non-isomorphism has a private-coin proof; \textcite{GoldreichMicaliWigderson1991}]\label{thm:interaction:gni}
+Let $G_0,G_1$ be graphs on $[n]$ and $t\ge1$, and run \cref{prot:interaction:gni}; probabilities are over the verifier's coins $(b_j,\pi_j)_{j\le t}$ and over the prover's coins, if it uses coins.
+\begin{enumerate}
+\item (perfect completeness) If $G_0\not\cong G_1$, then the honest prover is accepted with probability $1$.
+\item (soundness) If $G_0\cong G_1$, then every prover is accepted with probability at most $2^{-t}$, and every prover whose answers are bits with probability exactly $2^{-t}$. The same holds in the parallel version,\index{parallel repetition} in which the verifier sends $H_1,\dots,H_t$ at once and the prover answers them at once.
+\item (cost) The verifier uses $t$ random bits and $t$ uniform permutations, runs in time $O(tn^2)$, sends $t$ adjacency matrices and receives $t$ bits.
+\end{enumerate}
+Hence $\interactiongni\in\cc{IP}$, with perfect completeness and soundness error $2^{-t}$, in $2t$ messages, or in $2$.
+\end{theorem}
+
+\begin{proof}
+The plan is to read completeness off the disjointness of isomorphism classes, and soundness off \cref{lem:interaction:orbit}, which makes each challenge independent of its secret bit when the claim is false.
+
+(i) The challenge $H_j=\pi_j(G_{b_j})$ lies in $[G_{b_j}]$, and the classes $[G_0]$, $[G_1]$ are disjoint, because isomorphism is an equivalence relation and $G_0\not\cong G_1$. So $H_j\cong G_0$ if and only if $b_j=0$, and the honest answer is $b_j$.
+
+(ii) Now $[G_0]=[G_1]$, and by \cref{lem:interaction:orbit} $H_j$ is uniform on this class whatever $b_j$ is. So $H_j$ is independent of $b_j$; the pairs $(b_j,H_j)$ are independent across rounds; and $b_j$ is independent of $H_j$ and the earlier pairs jointly. In the sequential protocol the prover computes $a_j$ from $H_1,\dots,H_j$, its coins, and the fact that it reached round $j$, which reveals $b_i=a_i$ for $i<j$. All of this is independent of $b_j$, so by \cref{lem:interaction:guess} with $D_0=D_1$, given everything the prover has seen, $a_j=b_j$ with probability exactly $1/2$ if $a_j$ is a bit and $0$ otherwise; multiplying over rounds gives the claim. In the parallel protocol the answer $(a_1,\dots,a_t)$ is computed from the challenges and the prover's coins, while $(b_1,\dots,b_t)$ is uniform on $\bits^t$ and independent of both; so the answer equals it with probability $2^{-t}$ if the answer lies in $\bits^t$, and $0$ otherwise.
+
+(iii) Computing $\pi_j(G_{b_j})$ rewrites the $\binom n2$ entries of an adjacency matrix.
+\end{proof}
+
+No strategy that answers with bits, however clever, does better or worse than a coin flip; \textcite[footnote~4]{GoldreichMicaliWigderson1991} already note that each answer is right with probability exactly $1/2$. The theorem assumes nothing about the prover's computation and everything about the verifier's coins.\sidenote{Including that they yield exactly uniform permutations, which fair bits cannot do for $n\ge3$, as $n!$ is not a power of $2$. Fisher and Yates's shuffle with rejection sampling, capped at $n$ attempts per step, fails with probability below $(n-1)2^{-n}$; a verifier that then accepts the round keeps perfect completeness, and its soundness error after $t$ rounds is at most $2^{-t}+t(n-1)2^{-n}$.}
+
+The blind test needs a threshold, because even the best prover errs when the sources overlap; its soundness argument is the same, applied round by round.
+
+\begin{proposition}[The blind test]\label[proposition]{prop:interaction:blind}
+Let $0\le\beta<\alpha\le1$, run \cref{prot:interaction:blind} with $t$ rounds and $\tau=\frac12+\frac14(\alpha+\beta)$, and let $\delta=e^{-t(\alpha-\beta)^2/8}$; probabilities are over both parties' coins. (i) If $\interactiontv(D_0,D_1)\ge\alpha$, then the prover that answers $1$ exactly when $D_1(y_j)>D_0(y_j)$ is accepted with probability at least $1-\delta$. (ii) If $\interactiontv(D_0,D_1)\le\beta$, then every prover is accepted with probability at most $\delta$, even if the verifier announces $b_j$ after each round.
+\end{proposition}
+
+\begin{proof}
+The plan is to bound, with \cref{lem:interaction:guess}, the chance that each answer is right given the past, and to add up the rounds with Hoeffding's inequality (\cref{thm:toolkit:chernoff}), whose upper tail holds also for variables in $[0,1]$ whose conditional means given the earlier ones are at most a constant (its martingale form, part~(iii)). Let $X_j=\ind[a_j=b_j]$; then $\tau-q=\frac14(\alpha-\beta)$ for $q=\frac12(1+\beta)$.
+
+(ii) Let $\cF_{j-1}$ collect both parties' coins used before round $j$; it determines $X_1,\dots,X_{j-1}$ and what the prover has seen. The pair $(b_j,y_j)$ is independent of $\cF_{j-1}$, and the prover answers $y_j$ by a rule that $\cF_{j-1}$ determines and that may use fresh coins, so \cref{lem:interaction:guess} gives $\Prob[X_j=1\mid\cF_{j-1}]\le q$, and hence $\E[X_j\mid X_1,\dots,X_{j-1}]\le q$. The martingale form bounds $\Prob[\sum_jX_j\ge\tau t]$ by $e^{-2t(\tau-q)^2}=\delta$.
+
+(i) For the stated rule the $X_j$ are independent with mean $q'=\frac12(1+\interactiontv(D_0,D_1))\ge\frac12(1+\alpha)$, by the equality case of \cref{lem:interaction:guess}, so $q'-\tau\ge\frac14(\alpha-\beta)$. The verifier rejects only if $\sum_jX_j<\tau t$, and Hoeffding's inequality bounds this probability by $e^{-2t(q'-\tau)^2}\le\delta$.
+\end{proof}
+
+Rounds are the price of a statistical claim: to confirm at error $0.01$ a distance $\alpha=0.2$, an accuracy of $60\%$, against $\beta=0$ takes about $920$ items, while Fisher's eight cups bought their $1/70$ because the claimed ability was perfect. Read in reverse, the lemma bounds what a model can do to an evaluator.
+
+\begin{corollary}[Tests that look like deployment]\label[corollary]{cor:interaction:deploy}
+Let a model map each input $y$ to an action by a rule that may use its own coins, let $E$ be a set of actions, and let $P_{\mathrm{test}}(E)$ and $P_{\mathrm{dep}}(E)$ be the probabilities that the action lies in $E$ when $y$ is drawn from the distribution $D_{\mathrm{test}}$ of an evaluation and from the distribution $D_{\mathrm{dep}}$ of deployment. Then $\abs{P_{\mathrm{dep}}(E)-P_{\mathrm{test}}(E)}\le\interactiontv(D_{\mathrm{test}},D_{\mathrm{dep}})$.
+\end{corollary}
+
+\begin{proof}
+With $g(y)$ the probability that the action lies in $E$ on input $y$, the difference is $\sum_yg(y)\bigl(D_{\mathrm{dep}}(y)-D_{\mathrm{test}}(y)\bigr)$, bounded by $\interactiontv$ in the proof of \cref{lem:interaction:guess}; the function $1-g$ gives the opposite sign.
+\end{proof}
+
+A model that behaves differently in deployment and in evaluation, by a margin $\gamma$, sees input distributions at total variation distance at least $\gamma$. Here $y$ is everything the model sees---prompt, format, tools, context---and the evaluator's private coin is the bit ``test or deployment'': keeping it private means making tests that look like deployment.
+
+Last, a limit in the other direction: the honest prover must solve what the verifier cannot. Recall that $\cc{BPP}$ is the class of languages decided by probabilistic polynomial-time algorithms with error at most $1/3$ on every input (\cref{def:toolkit:classes}).
+
+\begin{proposition}[An efficient honest prover makes interaction unnecessary]\label[proposition]{prop:interaction:bpp}
+If a language has an interactive proof system with completeness $2/3$ and soundness error $1/3$ whose honest prover can be computed in probabilistic polynomial time, then the language is in $\cc{BPP}$.
+\end{proposition}
+
+\begin{proof}
+On input $x$, simulate the interaction of $\V$ with the honest prover, with fresh coins for both, and output the verdict. If $x$ is in the language, then the output is \acc{} with probability at least $2/3$, by completeness. If not, then the honest prover is a mixture of deterministic strategies, each accepted with probability at most $1/3$, by soundness.
+\end{proof}
+
+So unless graph isomorphism is in $\cc{BPP}$, no honest prover for \cref{prot:interaction:gni} is efficient. Interaction exploits a gap between what the two parties can compute; \cref{ch:delegation} makes the gap small, with a polynomial-time prover and a nearly linear-time verifier.
+
+\section{The theory: public coins and polynomial space}\label{sec:interaction:public}
+
+In \cref{prot:interaction:gni} the secret does all the work, yet \textcite{GoldwasserSipser1986} proved that every private-coin protocol can be simulated with public coins. For graph non-isomorphism the idea is to count the verifier's coins instead of hiding them: each challenge $H$ arises from $\abs{\interactionaut(H)}$ of the $2\cdot n!$ coin outcomes $(b,\pi)$ if $G_0\not\cong G_1$, and from twice as many otherwise. Counting pairs $(H,\tau)$ with $\tau\in\interactionaut(H)$ removes the dependence on automorphism groups: the set
+\begin{equation}\label{eq:interaction:S}
+  S=\bigl\{(H,\tau):H\cong G_0\text{ or }H\cong G_1,\ \tau\in\interactionaut(H)\bigr\}
+\end{equation}
+has $2\cdot n!$ elements if $G_0\not\cong G_1$ and $n!$ if $G_0\cong G_1$ (\cref{cor:interaction:gniam}). Its members have short certificates, so it suffices that the prover prove a set with certifiable members large.\index{set lower bound protocol} The verifier's tool is hashing. A family $\cH$ of functions from $\bits^m$ to $\bits^k$ is \term{pairwise independent}\index{pairwise-independent hashing} if, for all $x\ne x'$ and $h$ uniform in $\cH$, the pair $(h(x),h(x'))$ is uniform on $\bits^k\times\bits^k$; the affine maps $h(x)=Ax+c$ over $\F_2$, with $A$ and $c$ uniform, form such a family (\cref{def:toolkit:pairwise}).\sidenote{A function of the affine family is described by $k(m+1)$ bits, so the verifier's message in \cref{prot:interaction:setlower}, with the target $y$, has $k(m+2)$ bits.}
+
+\begin{protocol}{The set lower bound (public coins)}\label{prot:interaction:setlower}
+\item[\act{V}] Common input: a set $S\subseteq\bits^m$ with a polynomial-time check that accepts some certificate for $x$ if and only if $x\in S$, and a positive integer $K$. The claim: $\abs S\ge K$. Fix an integer $k$ with $2^{k-2}\le K\le2^{k-1}$.
+\item[\msg{V}{P}] Send $h$, uniform in a pairwise-independent family of functions $\bits^m\to\bits^k$, and $y$, uniform in $\bits^k$.
+\item[\msg{P}{V}] Send some $x\in S$ with $h(x)=y$, and a certificate that $x\in S$.
+\item[\act{V}] \acc{} if $h(x)=y$ and the certificate is valid; otherwise \rej.
+\end{protocol}
+
+\begin{theorem}[The set lower bound; \textcite{GoldwasserSipser1986}]\label{thm:interaction:setlower}
+In \cref{prot:interaction:setlower} let $p=K/2^k$, so that $\frac14\le p\le\frac12$; probabilities are over $(h,y)$. For every set $S$ with $N$ elements, the prover that sends a member of $S\cap h^{-1}(y)$ whenever there is one is accepted with probability $\Prob_{h,y}[y\in h(S)]$, no prover does better, and
+\begin{equation}\label{eq:interaction:sandwich}
+  \frac{N}{2^k}-\frac{N(N-1)}{2^{2k+1}}\le\Prob_{h,y}[y\in h(S)]\le\frac{N}{2^k}.
+\end{equation}
+Consequently, (i) if $\abs S\ge K$, then that prover is accepted with probability at least $p-p^2/2\ge\frac34p$, and (ii) if $\abs S\le K/2$, then every prover is accepted with probability at most $p/2$.
+\end{theorem}
+
+\begin{proof}
+The plan is to sandwich the probability that $y$ has a preimage in $S$ between a union bound and two terms of inclusion--exclusion. Only members of $S$ have valid certificates, so every prover is accepted only on the event $y\in h(S)$, and the stated prover on all of it. For the upper bound, fix $h$: then $\Prob_y[y\in h(S)]=\abs{h(S)}/2^k\le N/2^k$; average over $h$. For the lower bound, let $E_x$ be the event $h(x)=y$, for $x\in S$. Where exactly $i\ge1$ of these events occur, $i-i(i-1)/2\le1$, so pointwise
+\[
+  \ind\Bigl[\,\bigcup_{x\in S}E_x\Bigr]\ge\sum_{x\in S}\ind[E_x]-\sum_{\{x,x'\}\subseteq S}\ind[E_x\cap E_{x'}],
+\]
+the second sum over pairs of distinct elements. Take expectations: as $y$ is uniform and independent of $h$, $\Prob[E_x]=2^{-k}$, and for $x\ne x'$, $\Prob[E_x\cap E_{x'}]=2^{-k}\Prob[h(x)=h(x')]=2^{-2k}$ by pairwise independence. For (i), apply the lower bound to a subset $S'\subseteq S$ with $K$ elements; as $y\in h(S')$ implies $y\in h(S)$, this gives at least $p-p^2/2$, which is at least $\frac34p$ because $p\le\frac12$. For (ii), the upper bound is at most $K/2^{k+1}=p/2$.
+\end{proof}
+
+\begin{corollary}[Graph non-isomorphism has public-coin proofs; \textcite{GoldwasserSipser1986}, \textcite{BabaiMoran1988}]\label[corollary]{cor:interaction:gniam}
+Let $S$ be the set \eqref{eq:interaction:S}, encoded in $m=\binom n2+\ceil{\log_2n!}$ bits, let $K=2\cdot n!$, with $k$ and $p$ as in \cref{thm:interaction:setlower}, and run $t$ copies of \cref{prot:interaction:setlower} in parallel, accepting if at least $\frac58pt$ of them accept. Then (i) $\abs S$ is $2\cdot n!$ if $G_0\not\cong G_1$ and $n!$ otherwise; (ii) if $G_0\not\cong G_1$, the prover of \cref{thm:interaction:setlower} is accepted with probability at least $1-e^{-tp^2/32}$; (iii) if $G_0\cong G_1$, every prover is accepted with probability at most $e^{-tp^2/32}$. With $t=563$ both errors are below $1/3$, so $\interactiongni\in\cc{AM}$.
+\end{corollary}
+
+\begin{proof}
+The plan is to count $S$ with \cref{lem:interaction:orbit} and to add up the copies with Hoeffding's inequality (\cref{thm:toolkit:chernoff}): a sum of $t$ independent variables in $[0,1]$ deviates from its mean by $\varepsilon t$ in a given direction with probability at most $e^{-2\varepsilon^2t}$. (i) If $H=\sigma(G)$, then $\pi(H)=H$ if and only if $\sigma^{-1}\pi\sigma\in\interactionaut(G)$, so every $H\in[G]$ has $\abs{\interactionaut(G)}$ automorphisms and the pairs $(H,\tau)$ with $H\in[G]$ number $\abs{[G]}\cdot\abs{\interactionaut(G)}=n!$; the classes $[G_0]$, $[G_1]$ are disjoint or equal. A certificate for $(H,\tau)$ is a bit $i$ and a permutation $\sigma$ with $\sigma(G_i)=H$, checked, with $\tau(H)=H$, in time $O(n^2)$. (ii) Now $\abs S=K$, and copy $j$ is accepted on the event $y_j\in h_j(S)$, of the same probability $q\ge\frac34p$ in every copy and independent across copies; the count of accepted copies falls below $\frac58pt$ only if it falls short of its mean $qt$ by $\frac18pt$, which has probability at most $e^{-tp^2/32}$. (iii) Now $\abs S=K/2$, and whatever the prover sends, copy $j$ is accepted only on the event $y_j\in h_j(S)$, of probability at most $p/2$, independently across copies; the count of these events reaches $\frac58pt$ with probability at most $e^{-tp^2/32}$. Finally $p\ge\frac14$ gives $e^{-tp^2/32}\le e^{-t/512}<\frac13$ for $t\ge563>512\ln3$, and the protocol has two messages and public coins.
+\end{proof}
+
+Hoeffding's inequality is generous: for $n=6$, where $p=0.352$, exact binomial tails at the worst rates the theorem allows show that $21$ copies suffice, and so does every number from $33$ on, where it asks for $285$. Counting works for every private-coin protocol; we state the general result without proof.
+
+\begin{theorem}[Private and public coins; \textcite{GoldwasserSipser1986}, \textcite{Babai1985}, \textcite{BabaiMoran1988}]\label{thm:interaction:gsbm}
+Private and public coins have the same power: (i) every language with a private-coin interactive proof system of $k(n)$ rounds, $k$ a polynomial, has a public-coin one with $k(n)+1$ rounds; (ii) for every constant $k$, every language with a public-coin interactive proof system of $k$ rounds is in $\cc{AM}$. Consequently the languages with interactive proofs of a constant number of rounds are exactly those of $\cc{AM}$, and $\cc{IP}$ consists of the languages with public-coin interactive proofs.\index{public coins}
+\end{theorem}
+
+In (i) the prover convinces the verifier that the private-coin verifier accepts on many coin outcomes. An overseer that cannot keep its questions secret need not give up soundness, only the prover's ease: here the honest prover must find a member of $S$ with a prescribed hash value (our script lists all $2\cdot n!$ members), and \textcite{Vadhan2000} showed, according to his abstract, that such an increase in the prover's complexity is unavoidable for transformations that use the original prover and verifier only as black boxes.
+
+\Textcite{BoppanaHastadZachos1987} showed that if $\cc{coNP}\subseteq\cc{AM}$, then the polynomial hierarchy collapses to its second level (\cref{def:toolkit:classes}). Since $\interactiongni\in\cc{AM}$, graph isomorphism is therefore not $\cc{NP}$-complete unless the hierarchy collapses \parencite[Corollary~2]{GoldreichMicaliWigderson1991}, the strongest evidence then available against its $\cc{NP}$-completeness, as \textcite{BabaiMoran1988} put it.
+
+How much can a verifier ask of a prover? Not more than polynomial space, whatever its questions.
+
+\begin{theorem}[Interactive proofs need at most polynomial space]\label{thm:interaction:ipinpspace}
+Let $\V$ be a verifier as in \cref{def:interaction:ip}. There is an algorithm that, on input $x$, computes in space polynomial in $\abs x$ the largest acceptance probability $w(x)=\max_{\Prov^*}\Prob_\rho[\interact{\Prov^*}{\V}(x)=\acc]$ over all prover strategies, and a prover that attains $w(x)$ computes each of its messages in polynomial space. Consequently $\cc{IP}\subseteq\cc{PSPACE}$.
+\end{theorem}
+
+\begin{proof}
+The plan is to evaluate the tree of possible conversations from the leaves up, counting at each node the coin outcomes that an optimal prover can still turn into acceptance. Fix $x$, write $r,k,\ell$ for $r(\abs x),k(\abs x),\ell(\abs x)$, and let $\Sigma$ be the set of strings of length at most $\ell$. For a partial transcript $\tau=(m_1,\dots,m_i)$ let $R(\tau)$ be the set of $\rho\in\bits^r$ for which each verifier message in $\tau$ is the one $\V$ computes from $x$, $\rho$ and the earlier messages, and define, from $i=2k$ down to $i=0$,
+\[
+  N(\tau)=\begin{cases}
+  \abs{\{\rho\in R(\tau):\V(x,\rho,\tau)=\acc\}} & \text{if }i=2k,\\
+  \sum_{m\in\Sigma}N(\tau m) & \text{if }i<2k\text{, the verifier to speak},\\
+  \max_{m\in\Sigma}N(\tau m) & \text{if }i<2k\text{, the prover to speak}.
+  \end{cases}
+\]
+Let $\Prov_{\mathrm{opt}}$ send, at a transcript $\tau$ where it speaks, the first $m$ in a fixed order of $\Sigma$ that maximizes $N(\tau m)$. For a deterministic prover $\Prov^*$ let $A(\Prov^*,\tau)$ count the $\rho\in R(\tau)$ for which the conversation of $\Prov^*$ with $\V$ on $(x,\rho)$ begins with $\tau$ and ends in acceptance. By induction on $2k-i$, $A(\Prov^*,\tau)\le N(\tau)$, with equality when $\Prov^*=\Prov_{\mathrm{opt}}$ and the prover messages in $\tau$ are those of $\Prov_{\mathrm{opt}}$. If $i=2k$, then $A(\Prov^*,\tau)$ counts some of the outcomes that $N(\tau)$ counts, and in the equality case all of them. If the verifier speaks next, then the outcomes split according to its message, and $A(\Prov^*,\tau)=\sum_mA(\Prov^*,\tau m)\le N(\tau)$. If the prover speaks next, then its conversations that begin with $\tau$ continue with its message $m^*$, and $R(\tau m^*)=R(\tau)$, so $A(\Prov^*,\tau)=A(\Prov^*,\tau m^*)\le N(\tau m^*)\le N(\tau)$, with equalities for $\Prov_{\mathrm{opt}}$. At the empty transcript $A(\Prov^*,\emptyset)=2^r\Prob_\rho[\interact{\Prov^*}{\V}(x)=\acc]$, and randomized provers are mixtures of deterministic ones, so $w(x)=N(\emptyset)/2^r$, attained by $\Prov_{\mathrm{opt}}$.
+
+Evaluate the recursion depth first: the stack has at most $2k$ levels, each holding a message of at most $\ell+1$ bits and a count of at most $r+1$ bits, and a leaf enumerates $\rho\in\bits^r$, running $\V$ at most $k+1$ times per $\rho$ in polynomial space. So $N(\emptyset)$, and each message of $\Prov_{\mathrm{opt}}$, take space $O(k(\ell+r))$ plus a polynomial. Finally, if $\V$ is a proof system for $L$ with $c=2/3$ and $s=1/3$, then $w(x)\ge2/3$ for $x\in L$ and $w(x)\le1/3$ otherwise, and comparing $N(\emptyset)$ with $2^{r-1}$ decides $L$.
+\end{proof}
+
+A verifier, however clever its questions, can extract from a prover only what a polynomial-space computation could find, and \cref{ch:sumcheck} shows that it can extract all of it: $\cc{IP}=\cc{PSPACE}$ \parencite{LundEtAl1992,Shamir1992}. An optimal prover is itself computable in polynomial space, an observation that \textcite{Babai1990} credits to an unpublished 1986 manuscript of Paul Feldman.\sidenote{Babai's account of the race to $\cc{IP}=\cc{PSPACE}$, written as a fable about Arthur and Merlin, is our source for this attribution; we have not seen the manuscript.} With \cref{prop:interaction:bpp}, the honest prover for a $\cc{PSPACE}$-complete language needs more than probabilistic polynomial time unless $\cc{PSPACE}=\cc{BPP}$, and never more than polynomial space.
+
+\section{Running the protocol}\label{sec:interaction:running}
+
+\texttt{04-interaction-gni.py} runs \cref{prot:interaction:gni} on random graphs with $n=8$ vertices (ten non-isomorphic pairs with equal numbers of edges, ten isomorphic pairs) against one honest and five cheating provers and two leaky verifiers; \texttt{04-interaction-setlower.py} runs \cref{prot:interaction:setlower}. Each takes seconds.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},vplot,width=82mm,height=44mm]
+\nextgroupplot[xlabel={rounds $t$},ylabel={acceptance rate},ymode=log,xmin=0.5,xmax=10.5,ymin=3e-4,ymax=2.5,
+  xtick={1,2,...,10},legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize,/tikz/every even column/.append style={column sep=2mm}},legend columns=3,legend cell align=left]
+\addplot[bound,forget plot] table[x=t,y=bound] {figures/data/04-interaction-gni-rounds.dat};
+\addplot[theory2,forget plot] table[x=t,y=leakexact] {figures/data/04-interaction-gni-rounds.dat};
+\addplot[honest] table[x expr=\thisrow{t}-0.14,y=honest] {figures/data/04-interaction-gni-rounds.dat};
+\addplot[cheat2,mark=square*,mark options={fill=proverB!35}] table[x expr=\thisrow{t}+0.14,y=peek] {figures/data/04-interaction-gni-rounds.dat};
+\addplot[cheat2,ebars] table[x=t,y=leak,y error plus=leakp,y error minus=leakm] {figures/data/04-interaction-gni-rounds.dat};
+\addplot[cheat,ebars] table[x expr=\thisrow{t}-0.2,y=guess,y error plus=guessp,y error minus=guessm] {figures/data/04-interaction-gni-rounds.dat};
+\addplot[cheat,mark=triangle,ebars] table[x=t,y=algo,y error plus=algop,y error minus=algom] {figures/data/04-interaction-gni-rounds.dat};
+\addplot[cheat,mark=diamond,ebars] table[x expr=\thisrow{t}+0.2,y=dist,y error plus=distp,y error minus=distm] {figures/data/04-interaction-gni-rounds.dat};
+\legend{honest,sees the coins,learns half the bits,guesses,runs the honest algorithm,labeled distance}
+\nextgroupplot[xlabel={transpositions $s$ in the disguise},ylabel={success per round},xmin=-0.8,xmax=24.8,ymin=0.45,ymax=1.04,
+  legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize,/tikz/every even column/.append style={column sep=2mm}},legend columns=2,legend cell align=left]
+\addplot[theory] table[x=s,y=exact] {figures/data/04-interaction-gni-disguise-exact.dat};
+\addplot[guide,domain=-1:25] {0.5};
+\addplot[cheat,ebars] table[x=s,y=bayes,y error plus=bayesp,y error minus=bayesm] {figures/data/04-interaction-gni-disguise.dat};
+\addplot[cheat2,ebars] table[x=s,y=dist,y error plus=distp,y error minus=distm] {figures/data/04-interaction-gni-disguise.dat};
+\legend{$\frac12(1+\Delta_s)$ (exact),$1/2$,Bayes prover,labeled distance}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Private coins at work. Left: acceptance after $t$ sequential rounds of \cref{prot:interaction:gni}, $40{,}000$ runs per prover (seeds $40$ and $41$, $n=8$): the honest prover on non-isomorphic pairs (filled); on isomorphic pairs, a prover that sees the coins (filled) and provers that guess, run the honest algorithm (always answering $0$), compare labeled edges with $G_0$ and $G_1$, or learn each secret bit with probability $1/2$ (hollow). Dashed: $2^{-t}$ (\cref{thm:interaction:gni}); teal dashed: $(3/4)^t$. Right: one round against a verifier that relabels $G_b$ by $s$ random transpositions, each swapping two labels drawn independently and uniformly ($\abs{\interactionaut(G_0)}=1$, $G_1$ a uniform relabeling of $G_0$; $40{,}000$ rounds per $s$, seed $42$). The curve is $\frac12(1+\Delta_s)$, with $\Delta_s$ the total variation distance between the two laws of the challenge, computed exactly over the $8!$ labeled copies; it bounds every prover (\cref{lem:interaction:guess}). Intervals: Clopper--Pearson $95\%$. Script \texttt{04-interaction-gni.py}.}\label{fig:interaction:rounds}
+\end{figure}
+
+\paragraph{Rounds.} In \cref{fig:interaction:rounds} (left) the honest prover is accepted in all $40{,}000$ runs at every $t$.\sidenote{The verifier stops at the first wrong answer, so each curve shows the fraction of runs that survive $t$ rounds, and the same runs give all ten points of a prover.} Every prover that cannot see the coins sits on $2^{-t}$, whatever it computes, for here the bound is an exact value: at $t=10$ the guesser was accepted $45$ times, a rate of $0.00112$ with interval $[0.00082,0.00151]$, around $2^{-10}=0.00098$, and the other two at $0.00110$ and $0.00085$. A prover that learns each secret bit with probability $1/2$ is accepted at $0.058$ after ten rounds, around $(3/4)^{10}=0.056$, and one that sees the coins always.
+
+\paragraph{A partial disguise.} A verifier that relabels $G_b$ by $s$ random transpositions leaves traces of $b$ (\cref{fig:interaction:rounds}, right). The best prover's success per round is exactly $\frac12(1+\Delta_s)$, and the Bayes prover, which knows both laws of the challenge, attains it within the intervals at every $s$.\sidenote{The Bayes prover knows both laws exactly, which a learned model would have to estimate; it is the best prover the theory allows, not a realistic one.} For $s\le2$ the laws do not overlap and it is never wrong; at $s=8$ it still wins $68.6\%$ of the rounds (measured $68.5\%$), and its edge over a coin flip falls below $0.01$ only at $s=19$. A prover that counts labeled edges in common with $G_0$ and $G_1$ wins $89\%$ at $s=2$ and $53\%$ at $s=8$: a model that has seen the originals recognizes lightly paraphrased items.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},vplot,width=82mm,height=44mm]
+\nextgroupplot[xlabel={session $j$},ylabel={acceptance of a false claim},xmode=log,xmin=0.8,xmax=4000,ymin=0.45,ymax=1.04,
+  legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize,/tikz/every even column/.append style={column sep=2mm}},legend columns=3,legend cell align=left]
+\addplot[theory,forget plot] table[x=j,y=th10] {figures/data/04-interaction-gni-reuse-theory.dat};
+\addplot[theory2,forget plot] table[x=j,y=th100] {figures/data/04-interaction-gni-reuse-theory.dat};
+\addplot[muted,line width=0.9pt,dashdotted,forget plot] table[x=j,y=th1000] {figures/data/04-interaction-gni-reuse-theory.dat};
+\addplot[cheat,ebars] table[x=j,y=N10,y error plus=N10p,y error minus=N10m] {figures/data/04-interaction-gni-reuse.dat};
+\addplot[cheat2,ebars] table[x=j,y=N100,y error plus=N100p,y error minus=N100m] {figures/data/04-interaction-gni-reuse.dat};
+\addplot[cheat,mark=triangle,color=muted,ebars] table[x=j,y=N1000,y error plus=N1000p,y error minus=N1000m] {figures/data/04-interaction-gni-reuse.dat};
+\legend{pool of $N=10$,$N=100$,$N=1000$}
+\nextgroupplot[xlabel={$\abs S/2^k$},ylabel={acceptance rate},xmin=0,xmax=1.03,ymin=0,ymax=0.72,
+  legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize,/tikz/every even column/.append style={column sep=2mm}},legend columns=3,legend cell align=left]
+\addplot[bound] table[x=x,y=upper] {figures/data/04-interaction-setlower-theory.dat};
+\addplot[bound,densely dotted] table[x=x,y=lower] {figures/data/04-interaction-setlower-theory.dat};
+\addplot[guide] table[x=x,y=randfn] {figures/data/04-interaction-setlower-theory.dat};
+\addplot[theory2,forget plot] table[x=x,y=exact] {figures/data/04-interaction-setlower-subexact.dat};
+\addplot[only marks,mark=triangle*,mark size=1.6pt,color=muted,ebars] table[x=x,y=acc,y error plus=accp,y error minus=accm] {figures/data/04-interaction-setlower-random.dat};
+\addplot[cheat2,ebars] table[x=x,y=acc,y error plus=accp,y error minus=accm] {figures/data/04-interaction-setlower-subspace.dat};
+\addplot[honest,mark size=2pt,ebars] table[x=x,y=acc,y error plus=accp,y error minus=accm] {figures/data/04-interaction-setlower-gni.dat};
+\legend{upper bound,lower bound,random function,random sets,subspaces,graph set}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Secrets reused, and secrets given up. Left: a verifier that draws each session's challenge from a fixed pool of $N$ distinct challenges for an isomorphic pair and announces its verdict, against a prover that remembers what it learns; acceptance in session $j$ over $4000$ runs (seed $43$), against $1-\frac12(1-1/N)^{j-1}$; with $95\%$ intervals a few of the $48$ points miss their curve. Right: the best prover in \cref{prot:interaction:setlower}, $4000$ draws of $(h,y)$ per set (seed $51$), against the bounds \eqref{eq:interaction:sandwich}, at least $x-x^2/2$ (dotted) and at most $x$ (dashed): random subsets of $\bits^{20}$ with $k=10$, near the random-function value $1-e^{-x}$ (grey dashed); linear subspaces, with their exact value $\E[2^{\rank M}]/2^k$ for a uniform $k\times d$ matrix $M$ (teal dashed); and the graph set \eqref{eq:interaction:S} for a non-isomorphic and an isomorphic pair on $6$ vertices ($K=1440$, $k=12$). Scripts \texttt{04-interaction-gni.py}, \texttt{04-interaction-setlower.py}.}\label{fig:interaction:secrets}
+\end{figure}
+
+\paragraph{Reused coins.} The verifier of \cref{fig:interaction:secrets} (left) draws every session's challenge from a fixed pool of $N$ challenges and announces its verdict, as an evaluation does when it reports a score.\sidenote{Kaggle, as \textcite{BlumHardt2015} describe it in 2015, splits each holdout set into a public part, which scores submissions during a competition, and a private part, which decides it; in the Photo Quality Prediction challenge that they analyze the parts had $3600$ and $8400$ labels.} Each verdict gives away one secret bit, so in session $j$ the prover is accepted with probability $1-\frac12(1-1/N)^{j-1}$, and the measured rates follow: with a pool of $100$ the false claim is accepted in $94\%$ of the runs at session $208$, and with a pool of $1000$ in $97.8\%$ at session $3000$, against a predicted $97.5\%$.
+
+\paragraph{Public coins.} In \cref{fig:interaction:secrets} (right) every interval meets the band \eqref{eq:interaction:sandwich}: small sets nearly attain the upper bound, random sets sit near $1-e^{-x}$, and linear subspaces, whose image $h(S)$ has $2^{\rank M}$ points, collide more and follow their exact curve; the lower bound, which stops inclusion--exclusion after two terms, is loose for both. For the graph set with $n=6$, the honest prover facing a non-isomorphic pair was accepted in $30.1\%$ of the runs, interval $[28.7\%,31.6\%]$, above the guarantee $\frac34p=26.4\%$; facing an isomorphic pair, the best prover was accepted in $16.7\%$, interval $[15.6\%,17.9\%]$, against the ceiling $\frac12p=17.6\%$.
+
+\paragraph{The recursion and the costs.} On the path and the star of \cref{fig:interaction:worked}, the recursion of \cref{thm:interaction:ipinpspace} returns the optimal acceptance probability $1$; with a relabeled path in place of the star, $1/2$ for one round and $1/4$ for two in parallel. Per round the verifier needed about \SI{3}{\micro\second} for every $n$ from $5$ to $9$, while an honest prover that lists all $n!$ relabelings of $G_0$ needed \SI{0.04}{\milli\second} at $n=5$ and \SI{160}{\milli\second} at $n=9$ (indicative wall-clock times on one laptop core).
+
+\section{The three questions}\label{sec:interaction:questions}
+
+\questionone Read \cref{prot:interaction:gni} as a game in which the prover asserts ``isomorphic'' (proved by a relabeling) or ``not isomorphic'' (proved by $t$ rounds of the protocol) and is paid $1$ if the verifier accepts. By \cref{thm:interaction:gni}, the true assertion, proved as prescribed, is paid with probability $1$ on every input; a false assertion of non-isomorphism is paid with probability at most $2^{-t}$, whatever the prover does, and a false assertion of isomorphism never. So honesty is a dominant strategy in this one-player game, and every strategy that lies on some input earns less there. It is not free: the honest prover must decide graph isomorphism, in quasipolynomial time with the best algorithm known \parencite{Babai2016}; an honest prover the verifier could run itself would make the protocol pointless (\cref{prop:interaction:bpp}); and an optimal prover for a general interactive proof needs at most polynomial space (\cref{thm:interaction:ipinpspace}). For the blind test the best prover is the Bayes rule of \cref{lem:interaction:guess}, which a real model only approximates, so the threshold must sit below the accuracy the model can reach.
+
+\questiontwo Per round, one random bit and one uniform permutation, about $n\log_2n$ random bits, time $O(n^2)$, $\binom n2$ bits sent and one received; after $t$ rounds, time $O(tn^2)$ and $2t$ messages, or $2$ in parallel. The public-coin version spends $k(m+2)$ random bits per copy ($324$ for $n=6$) and checks an isomorphism and an automorphism per copy; the blind test spends $t$ samples, with $t$ of order $(\alpha-\beta)^{-2}\log(1/\delta)$.
+
+\questionthree At least $1/2$ per round and $1-2^{-t}$ after $t$ rounds, sequential or parallel, against every prover that cannot see the verifier's coins, whatever its computational power, and exactly these values if it answers with bits (\cref{thm:interaction:gni}); never against one that sees them. Partial leaks degrade this continuously. Per round, a prover that learns each secret bit with probability $f$ is caught with probability $(1-f)/2$; the best prover facing a disguise whose two laws are at total variation distance $\interactiontv$, with probability $(1-\interactiontv)/2$ (\cref{lem:interaction:guess}); a prover facing a reused pool of $N$ challenges, in session $j$, with probability $\frac12(1-1/N)^{j-1}$. In the blind test a false claim is rejected with probability at least $1-e^{-t(\alpha-\beta)^2/8}$ against every prover (\cref{prop:interaction:blind}).
+
+\protocolcard{that two graphs are not isomorphic; more generally, that two sources the verifier can sample differ}{a verifier with private coins; one prover of unlimited power}{yes: the truth is accepted with probability $1$ and every lie with probability at most $2^{-t}$, so honesty is the best response; it requires deciding graph isomorphism}{per round one random bit, one uniform permutation and time $O(n^2)$; $2t$ messages, or $2$ in parallel}{at least $1-2^{-t}$ after $t$ rounds against every prover that cannot see the coins, exactly that if it answers with bits; never against one that can}{the secrecy of the coins, and challenges whose law does not depend on the secret bit when the claim is false}
+
+\section{What the model leaves out}\label{sec:interaction:leaves}
+
+\paragraph{What was idealized away.} The claim is about a fixed mathematical object, chosen because it is negative and has no known short certificate, not because it is hard: graph isomorphism can be decided in quasipolynomial time \parencite{Babai2016}, and programs such as nauty and Traces test it routinely \parencite{McKayPiperno2014}. The oversight claims that share its structure (``these sources differ'', ``I can tell them apart'') are statistical, and the blind test certifies that the sources differ, not why. The verifier keeps exactly uniform permutations perfectly secret, while an evaluation team writes items in a style, at a time and on topics that may all correlate with the answer key. The prover sees only the challenge, while a deployed model also sees its system prompt, the format of the task and its tools, all part of the input $y$ of \cref{cor:interaction:deploy}. And a trained model is neither unbounded nor exact, so a test of its claims must be calibrated to its actual accuracy, at the cost of more rounds: about $920$ items to confirm an accuracy of $60\%$ at error $0.01$.
+
+\paragraph{Where it breaks.} The guarantee rests on one hypothesis: when the claim is false, the challenge is independent of the secret. Each of the following violates it, and each has been observed. (1) \emph{Coins that are seen.} A prover that sees $b_j$ is always accepted (\cref{fig:interaction:rounds}). In machine-learning evaluation the coins are the test items and their answers, and they leak into training data.\index{benchmark contamination} \Textcite{GolchinSurdeanu2024} found GPT-4 contaminated with the AG News, WNLI and XSum datasets;\sidenote{Their method prompts a model with the beginning of a dataset instance and compares its completion with the rest of the instance.} \textcite{SainzEtAl2023} argue that contamination must be measured for each benchmark; and on GSM1k, fresh grade-school problems in the style of GSM8k, \textcite{ZhangEtAl2024GSM1k} measured accuracy drops of up to $8\%$, with signs of systematic overfitting in several families of models. (2) \emph{Coins that are reused.} A verifier that draws challenges from a fixed pool and announces its verdicts gives away one answer per session (\cref{fig:interaction:secrets}). \Textcite{BlumHardt2015} turned the same leak into an attack on leaderboards: submit $k$ random label vectors, then the coordinate-wise majority of those whose public loss was at most $\frac12$; if the reported losses are accurate to $n^{-1/2}$, then with probability $2/3$ the result has public loss at most $\frac12-\Omega(\sqrt{k/n})$ on the $n$ labels behind the leaderboard, although on fresh labels it is a coin flip; \textcite{DworkEtAl2015} proposed reusing a holdout set through a mechanism based on differential privacy. (3) \emph{Challenges that can be recognized.} Test items must look like deployment inputs (\cref{cor:interaction:deploy}). In a preprint, \textcite{NeedhamEtAl2025} found that frontier models tell evaluation transcripts from deployment ones, in $1000$ transcripts from $61$ datasets, with an area under the ROC curve of up to $0.83$ (Gemini 2.5 Pro), against $0.92$ for a human baseline.\index{evaluation awareness} \Textcite{GreenblattEtAl2024Faking} found that Claude 3 Opus, told that it was being trained to answer all queries, harmful ones included, and that only its conversations with free-tier users would be used for training, complied with harmful queries from those users $14\%$ of the time and almost never from paid-tier users. In the terms of \cref{cor:interaction:deploy}, these tests, as the models perceive them, are far from deployment.
+
+\paragraph{Open problems.} Whether graph non-isomorphism has short certificates is open; \textcite{KlivansVanMelkebeek2002} showed that every language with a bounded-round Arthur--Merlin game, graph non-isomorphism included, has subexponential-size proofs for infinitely many input lengths unless exponential time coincides with the third level of the polynomial hierarchy. For natural-language tasks we know of no method that certifies, rather than estimates, that evaluation inputs are close to deployment inputs, in total variation or against distinguishers of bounded size (\cref{ex:interaction:certify}). And when verifiers are learned, as in \textcite{HammondAdamDay2025} and \cref{ch:pvg}, it is open whether training finds verifiers that keep their coins private (\cref{ex:interaction:learned}).
+
+\begin{exercises}
+\item \consolidation (The worked run by hand.) For the path $G_0$ and the star $G_1$ of \cref{fig:interaction:worked}: (a) show that $\abs{\interactionaut(G_0)}=2$, $\abs{[G_0]}=12$, $\abs{\interactionaut(G_1)}=6$ and $\abs{[G_1]}=4$; (b) show that the set \eqref{eq:interaction:S} has $48$ elements, and $24$ when $G_1$ is replaced by a relabeled path; (c) for $K=48$, find $k$, $p$ and the guarantees of \cref{thm:interaction:setlower}. (Answers: $k=7$, $p=0.375$; at least $0.306\ge\frac34p$ for the honest prover, at most $0.1875$ for every prover facing the isomorphic pair.)\label{ex:interaction:byhand}
+
+\item \consolidation (Fisher's design.) Show that a taster with no ability, who knows that four cups of each kind come in a uniformly random order, names the right four with probability exactly $1/70$, whatever her strategy; how many one-cup rounds that must all be right give at most $1/70$? (Seven.)\label{ex:interaction:fisher}
+
+\item \consolidation (Universal hashing suffices.) Show that \cref{thm:interaction:setlower} holds for every family with $\Prob_h[h(x)=h(x')]\le2^{-k}$ for all $x\ne x'$, if $y$ is uniform and independent of $h$. Deduce that the offset $c$ in $h(x)=Ax+c$ can be dropped, and show that it does not change the acceptance probability at all.\label{ex:interaction:universal}
+
+\item \consolidation\hard (Parallel repetition of every one-prover protocol.) Let $\V^t$ run $t$ copies of $\V$ in parallel, with independent coins, sending tuples of messages and accepting if every copy accepts. Show that its largest acceptance probability is $w(x)^t$, with $w$ as in \cref{thm:interaction:ipinpspace}. \hint{in the recursion of the proof, the count for a tuple of transcripts is the product of the counts of its entries: sums of products factor at the verifier's turns, and maxima of products of nonnegative numbers at the prover's.}\label{ex:interaction:parallel}
+
+\item \variation (A smaller disguise.) Let the verifier draw $\pi_j$ uniformly from a subgroup $K$ of $S_n$. Show that completeness is unchanged, and that for isomorphic $G_0,G_1$ the best prover's success per round is $1/2$ if $G_1=\kappa(G_0)$ for some $\kappa\in K$, and $1$ otherwise. Give an isomorphic pair on $[4]$ for which the cyclic shifts of $1\mapsto2\mapsto3\mapsto4\mapsto1$ do not suffice.\label{ex:interaction:subgroup}
+
+\item \variation (A verifier who misrecords.) The verifier records each $b_j$ wrongly with probability $\eta<\frac12$, independently. Show that the honest prover then passes a round with probability $1-\eta$ and every prover answering bits with probability $1/2$ on isomorphic pairs, and give a threshold rule with both errors at most $e^{-t(1-2\eta)^2/8}$.\label{ex:interaction:noisy}
+
+\item \attack (Reusing the permutation.) A verifier draws one permutation $\pi$ and uses it in every round, with fresh bits $b_j$. Show that if $G_0\ne G_1$ as labeled graphs, a prover facing an isomorphic pair is accepted with probability $1/2$ for every $t$. \hint{$H_j=H_1$ if and only if $b_j=b_1$.}\label{ex:interaction:samepi}
+
+\item \attack (A confounded blind test.) An evaluation team (the protocol is invented) tests a model's claim that it can tell essays by people from essays by a model~X: in each of $200$ rounds a fair coin chooses an essay from a 2019 archive of student essays or one written by X in 2026 on a prompt from that archive, and the claim is accepted if at least $140$ answers are right. (a) Show that if the two sources had the same law, every model's number of right answers would be binomial with parameters $200$ and $\frac12$, and every model would pass with probability below $10^{-8}$. (b) Why does passing not show that the model recognizes authorship? Propose a repair.\label{ex:interaction:confound}
+
+\item \simulation (A slower disguise.) In \texttt{04-interaction-gni.py}, replace the random transpositions by adjacent ones: at each step pick $u$ uniformly in $\{1,\dots,8\}$ and swap $u$ and $u+1$ if $u<8$. Find where the Bayes prover's edge falls below $0.01$, compare with the $19$ random transpositions of \cref{fig:interaction:rounds}, and explain. (You should find more than ten times as many steps: about $230$ for the pair in the script.)\label{ex:interaction:adjacent}
+
+\item \research (Private coins for learned verifiers.) In the prover--verifier games of \textcite{HammondAdamDay2025} the verifier's messages are drawn from the output distribution of a trained network. Define what it means for such a verifier to keep its coins private on graph non-isomorphism (on isomorphic pairs its messages have the same law for both values of its secret bit), and design an experiment that tests whether training finds such verifiers. Open: whether it does, and how to certify a learned verifier's soundness against provers it was not trained with.\label{ex:interaction:learned}
+
+\item \research (Certifying that tests look like deployment.) By \cref{cor:interaction:deploy}, behavior on tests and in deployment differs by at most $\interactiontv(D_{\mathrm{test}},D_{\mathrm{dep}})$. Propose a procedure that, from samples of both laws, bounds with a guarantee the advantage of every distinguisher in a stated class, and relate it to the measurements of \textcite{NeedhamEtAl2025}. As far as we know, certifying a small advantage against the model under test itself is open.\label{ex:interaction:certify}
+\end{exercises}
+
+\notesandrefs
+Interactive proofs were introduced in 1985 by \textcite{GoldwasserMicaliRackoff1989}, who wanted to measure the knowledge a proof conveys (\cref{ch:zeroknowledge}), and by \textcite{Babai1985}, whose public-coin Arthur--Merlin games form a hierarchy whose finite levels he proved to collapse; \textcite{BabaiMoran1988} gave it its full exposition. The private-coin protocol for graph non-isomorphism is Protocol~1 of \textcite{GoldreichMicaliWigderson1991}, analyzed in their Theorem~1.
+
+The set lower bound protocol is due to \textcite{GoldwasserSipser1986}; our constants follow \textcite[Chapter~8]{AroraBarak2009}, checked against the authors' public draft of 2007, and \textcite{BabaiMoran1988} gave a direct proof that graph non-isomorphism is in $\cc{AM}$.
+
+The blind test is the classical proof for the ``far'' side of deciding whether two samplable distributions are close or far, a problem \textcite{SahaiVadhan2003} showed complete for statistical zero knowledge; \cref{prop:interaction:blind,cor:interaction:deploy} are elementary consequences of \cref{lem:interaction:guess}, and we know of no source that states them in this form for evaluation. Fisher's tea test \parencite{Fisher1935} is an ancestor of randomized evaluation in general. \Textcite{HammondAdamDay2025} train learned provers and verifiers whose graph isomorphism messages are pairs of vertices, not the protocol of this chapter. The results of \textcite{GolchinSurdeanu2024}, \textcite{SainzEtAl2023}, \textcite{ZhangEtAl2024GSM1k}, \textcite{NeedhamEtAl2025}, \textcite{GreenblattEtAl2024Faking}, \textcite{KlivansVanMelkebeek2002} and \textcite{Babai2016} are quoted from their abstracts, and that of \textcite{DworkEtAl2015} from the abstract of a companion preprint.
+
+\paragraph{Translating the literature.} \Textcite{GoldreichMicaliWigderson1991} name the graphs $G_1(V,E_1)$ and $G_0(V,E_0)$, write $\alpha_i$ for our secret bits $b_j$, $\beta_i$ for our answers $a_j$ and $m$ for our $t$, and call $\pi(G_b)$ ``a random isomorphic copy'' of $G_b$. \Textcite{AroraBarak2009} number the graphs $G_1,G_2$ and write $\cc{IP}[k]$ and $\cc{AM}[k]$ with $k$ counting messages, which they call rounds, so their $\cc{AM}[2]$ is our $\cc{AM}$, of one round, and their $\cc{IP}[2k]\subseteq\cc{AM}[2k+2]$ is \cref{thm:interaction:gsbm}(i); \textcite{BabaiMoran1988} count moves and write $\cc{AM}(t(n))$. \Textcite{HammondAdamDay2025} call a one-prover protocol of several rounds \textsc{nip} and measure soundness by worst-case losses over a dataset.
+
+\printchapterbib
+\end{refsection}

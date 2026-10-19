@@ -1,0 +1,376 @@
+\protocolchapter{Cross-Examination}{Questioning provers who cannot confer}{two isolated provers}{V,V,P,A,o,V,V,P,A,D}{ch:crossexam}
+\begin{refsection}[chapters/08-crossexam.bib]
+\newcommand{\crossexamval}{\mathrm{val}}
+\newcommand{\crossexamchsh}{G_{\mathrm{CHSH}}}
+\newcommand{\crossexamfort}{G_{\mathrm{F}}}
+\newcommand{\crossexamket}[1]{\lvert#1\rangle}
+
+\begin{chaptersummary}
+An overseer who can run two copies of a model in separate contexts can ask them questions whose answers must fit together. We prove that two provers who cannot confer are worth exactly a proof that cannot change: a language has a multi-prover interactive proof if and only if it has a verifier sound against every fixed oracle, and asking one prover all the queries of a run and the other one of them, at random, turns such a verifier with soundness error $s$ and $q$ queries into a two-prover proof with soundness error at most $1-(1-s)/q$, which the clause--variable game attains. With the theorem of Babai, Fortnow and Lund, stated with a sketch, such provers prove every claim in $\cc{NEXP}$, and a debate that cross-examines one side does so relative to every oracle. Honesty is a best response for isolated provers who share one witness; the verifier spends one run of its oracle verifier and one more question; a lie is caught with probability at least $(1-s)/q$ per round, and in the clause--variable game never if one liar can send the other one bit. Left out: side channels, honest copies that disagree, and the slow factor $1/q$.
+\end{chaptersummary}
+
+\section{The oversight problem: two copies in separate rooms}\label{sec:crossexam:problem}
+
+\begin{oversight}[a plan that exists only in the model]
+A model proposes a staffing plan for a hospital: four thousand yes-or-no decisions that must satisfy fifty thousand rules, each involving three of the decisions, such as ``if the night nurse of ward 7 is moved, then the float pool covers ward 9 or ward 11''. Checking a rule takes a nurse manager about a minute, so the overseer can afford a few dozen checks. The plan is never written down: asked about a rule, the model reports the three decisions it involves. If no plan satisfies all of the rules, the model can still report, for each rule it is asked about, three decisions that satisfy that rule. The overseer can also start a second copy of the model in a fresh context, with no memory of the first conversation and no channel to it. Which questions should she put to which copy, and what does she know if the answers fit? (The scenario is invented.)
+\end{oversight}
+
+Her difficulty is pinning down the plan, not checking a rule. Spot checks need a fixed object: the encoded proofs of \cref{ch:spotchecks} can be checked by reading a few bits only if they are written before the questions, and a prover that sees the twelve queries of the Hadamard PCP before answering can pass all its tests almost always (\cref{ex:spotchecks:adaptive}; \cref{sec:crossexam:running}). A model asked about one rule at a time can invent a plan for each rule.
+
+The investigator's remedy is to question suspects in separate rooms.\sidenote{\Textcite{FortnowRompelSipser1994} open their paper with this picture: two innocent suspects of a bank robbery, questioned by Scotland Yard in separate rooms, can corroborate each other's stories.} A second copy, asked about decision 2{,}417, cannot know which rule the first copy was asked about, so its answer is a fixed function of the question. Comparing the first copy's report on a rule with the second copy's answer about one of the rule's decisions, chosen at random, holds the first copy to the plan of the second.
+
+For AI oversight, \textcite{BarnesChristiano2020}, in a forum writeup, proposed \term{cross-examination}\index{cross-examination} in debate (\cref{ch:debate}): a debater may question copies of its opponent made when the opponent wrote an earlier statement, so that a liar must commit to its argument in advance or answer inconsistently.\sidenote{In their rules a question has at most 200 characters and may be asked about ten times, and the questioner chooses which answer the judge sees. They write that the idea was inspired by a conversation with Chelsea Voss.} Their writeup states that in theory the mechanism gives debate ``a boost from PSPACE to NEXP'', with the argument in a linked document that is not public as of October 2026; \textcite{IrvingMarshall2025}, in a forum post, restate the claim for debaters with oracle access to each other. \Textcite{BrownCohenEtAl2024} let the debaters and the judge query independent, non-communicating copies of both debaters, which for language models means running copies or querying the model with earlier messages removed from its context (\cref{ch:efficientdebate}). The idea is not in \textcite{IrvingEtAl2018}, which mentions neither cross-examination nor $\cc{NEXP}$; \textcite{BuhlEtAl2025} cite the $\cc{NEXP}$ claim to that paper in one place and to it and Barnes and Christiano in another.
+
+Complexity theory reached the model from cryptography. \Textcite{BenOrEtAl1988} introduced provers who cannot communicate and showed that every $\cc{NP}$ statement (one with a short certificate, \cref{thm:certificates:np}) has a proof that reveals nothing beyond its validity, without cryptographic assumptions (\cref{ch:zeroknowledge}). \Textcite{FortnowRompelSipser1994} showed that such provers amount to a fixed oracle and prove only claims in $\cc{NEXP}$, nondeterministic exponential time (\cref{def:toolkit:classes}), and \textcite{BabaiFortnowLund1991} that they can prove all of them. The overseer's question is theirs: what does a second, isolated copy add to a first that sees the questions?
+
+\section{The protocol: one copy answers everything, the other one question}\label{sec:crossexam:protocol}
+
+A \term{multi-prover interactive proof}\index{multi-prover interactive proof} extends the interactive proofs of \cref{def:toolkit:ip} to several provers who see only their own messages.
+
+\begin{definition}[Multi-prover interactive proofs]\label[definition]{def:crossexam:mip}
+Let $k\ge2$. In a $k$-prover protocol a probabilistic polynomial-time verifier $\V$ exchanges messages with provers $\Prov_1,\dots,\Prov_k$ on a common input $x$. A \emph{strategy} for $\Prov_i$ maps $x$ and the sequence of messages that $\V$ has sent to $\Prov_i$ so far to $\Prov_i$'s next message; a prover sees neither $\V$'s coins nor the other provers' messages. The provers may share a random string $\omega$, drawn before the protocol independently of $\V$'s coins, on which their strategies may also depend. The protocol is a $k$-prover interactive proof for $L$ with completeness $c$ and soundness error $s$ if
+\begin{enumerate}
+\item for every $x\in L$, the prescribed strategies make $\V$ accept with probability at least $c$, and
+\item for every $x\notin L$ and every $k$-tuple of strategies $\Prov_1^*,\dots,\Prov_k^*$, possibly sharing randomness, $\V$ accepts with probability at most $s$,
+\end{enumerate}
+over $\V$'s coins and $\omega$. The class $\cc{MIP}$ consists of the languages with such proofs with $c=2/3$, $s=1/3$, and polynomially many provers and messages.
+\end{definition}
+
+The provers may agree on anything beforehand, strategies and a common seed among them, but cannot exchange messages once the protocol has started: that is the precise sense of ``cannot confer''. \Textcite{FortnowRompelSipser1994} require errors below $2^{-n}$; \cref{thm:crossexam:oracle} shows that the class is the same.
+
+\begin{definition}[Oracle verifiers]\label[definition]{def:crossexam:oracle}
+An \term{oracle verifier}\index{oracle verifier} for $L$ with completeness $c$ and soundness error $s$ is a probabilistic polynomial-time oracle machine $M$ (\cref{sec:toolkit:machines}) such that
+\begin{enumerate}
+\item for every $x\in L$, $\Prob_\rho[M^{\cO}(x;\rho)=\acc]\ge c$ for some oracle $\cO\colon\bits^*\to\bits$, and
+\item for every $x\notin L$ and every oracle $\cO$, $\Prob_\rho[M^{\cO}(x;\rho)=\acc]\le s$,
+\end{enumerate}
+where $\rho$ denotes $M$'s coins. It \emph{makes $q$ queries} if on inputs of length $n$ it makes exactly $q=q(n)$ queries for every $\rho$ and all answers, which padding achieves.
+\end{definition}
+
+An oracle is a prover without memory: its answer to a question cannot depend on the other questions. The PCP verifiers of \cref{ch:spotchecks} are oracle verifiers whose queries are computed from $x$ and $\rho$, and the program checkers of \cref{ch:consistency} query a program in the same way. Cross-examination builds an oracle from two provers.
+
+\begin{protocol}{Cross-examination}\label{prot:crossexam:main}
+\item[\act{V}] Given an oracle verifier $M$ that makes $q$ queries, draw coins $\rho$ for $M$ and an index $i\in\{1,\dots,q\}$, uniformly and independently.
+\phase{Questioning the first prover}
+\item[\msg{V}{P_1}] The queries $z_1,\dots,z_q$ that $M$ makes on $x$ with coins $\rho$: all at once if $M$ computes them from $x$ and $\rho$, one at a time if $M$ chooses a query after seeing earlier answers.
+\item[\msg{P_1}{V}] A bit $a_j$ for each query $z_j$, which $\V$ passes to $M$ as the oracle's answer.
+\phase{Cross-examining the second prover}
+\item[\msg{V}{P_2}] The single query $z_i$.
+\item[\msg{P_2}{V}] A bit $b$.
+\item[\act{V}] \acc{} if $M$ accepts and $b=a_i$; otherwise \rej.
+\end{protocol}
+
+Only the first prover's answers reach $M$; the second is there for comparison. Only $i$ must be hidden from $\Prov_1$: the analysis below lets $\V$ send it $\rho$ too.
+
+\paragraph{A worked run: the clause--variable game.} Let $\varphi$ be a 3-CNF formula with $\mu$ clauses on $\nu$ variables, each clause on three distinct variables, and let $\kappa$ be the least number of clauses that an assignment violates. The oracle verifier that queries the variables of a uniformly random clause and accepts if the clause is satisfied has $q=3$, completeness $1$ on satisfiable formulas, and soundness error $1-\kappa/\mu$ on the others. With it, and with $\V$ telling $\Prov_1$ the clause, not only its variables, \cref{prot:crossexam:main} is the \term{clause--variable game}\index{clause--variable game}: $\V$ sends $\Prov_1$ a random clause and $\Prov_2$ a random one of its three variables, and accepts if $\Prov_1$'s three bits satisfy the clause and agree with $\Prov_2$'s bit. Let $\varphi_8$ consist of the eight clauses on $x_1,x_2,x_3$ with all eight patterns of signs, and $\psi_7$ of the seven other than $(\bar x_1\vee\bar x_2\vee\bar x_3)$. An assignment violates exactly the clause of $\varphi_8$ all of whose literals it makes false, so $\varphi_8$ is unsatisfiable with $\kappa=1$, and $111$ is the only assignment satisfying $\psi_7$; honest provers on $\psi_7$ answer from it and are always accepted. On $\varphi_8$, liars agree on $000$, which violates only $(x_1\vee x_2\vee x_3)$. The second answers from it, and the first does too except on that clause, where it reports $100$. The verifier rejects only if that clause is drawn and $\Prov_2$ is asked about $x_1$, so the liars are accepted with probability $1-\frac18\cdot\frac13=\frac{23}{24}$; no isolated pair does better (\cref{prop:crossexam:clause}). Told only the variables, the same for every clause of $\varphi_8$, the first prover would be a fixed table, and no pair would beat $7/8$.
+
+\paragraph{What one had to notice.} The second copy is there to know less, not more. A prover asked a single question cannot let its answer depend on the other questions, so it is a fixed table, and checking the first prover against it at a random place holds the first prover to that table. Isolation turns an adaptive prover into a fixed proof, which is what \cref{ch:spotchecks} needed; the price is that a deviation is caught only when the check lands on it.
+
+\begin{dictionary}
+provers $\Prov_1,\Prov_2$ that cannot communicate during the protocol & two instances of a model run in separate contexts, with no shared memory, tools or channel while they are questioned\\
+strategies and a random string agreed in advance & shared weights, shared training, a common seed\\
+$\Prov_1$'s questions; $\Prov_2$'s single question $z_i$ & the full task; one item of it, put to a fresh instance and chosen at random\\
+an oracle, a prover without memory & a model called in a fresh context, whose answer cannot depend on the other questions\\
+soundness error $1-(1-s)/q$ & the chance that a coordinated lie survives one round of questioning\\
+a message between the provers & shared files or memory, tool outputs both can read, a hidden signal in visible text
+\end{dictionary}
+
+\section{The theory: two provers make a fixed oracle}\label{sec:crossexam:oracle}
+
+Cross-examination is exactly as strong as a fixed oracle; we prove this and find its exact price. First, correlation without communication does not help.
+
+\begin{lemma}[Correlation without communication]\label[lemma]{lem:crossexam:shared}\index{shared randomness}
+Fix a $k$-prover protocol and an input $x$. For every $k$-tuple of strategies that share a random string, some $k$-tuple of deterministic strategies makes $\V$ accept with at least the same probability. In particular, soundness needs to be checked only against deterministic strategies.
+\end{lemma}
+
+\begin{proof}
+Fixing the value of the shared string $\omega$ turns each prover's strategy into a deterministic one, still a function of $x$ and of its own messages. Since $\omega$ is independent of $\V$'s coins, the acceptance probability of the randomized tuple is the average over $\omega$ of the acceptance probabilities of these deterministic tuples, and some value of $\omega$ does at least as well as the average.
+\end{proof}
+
+So copies of one model, with the same weights and seed and focal answers settled in advance, form a tuple of strategies, and every bound below holds against them; what the lemma excludes is a message sent during the protocol, or a correlation that no shared string produces (\cref{sec:crossexam:collusion}).
+
+\begin{theorem}[Two provers simulate a fixed oracle; \textcite{FortnowRompelSipser1994}, \textcite{BenOrEtAl1988}, \textcite{BabaiFortnowLund1991}]\label{thm:crossexam:oracle}\index{cross-examination!soundness}
+Let $L$ be a language.
+\begin{enumerate}
+\item If $L$ has a $k$-prover interactive proof with completeness $c$ and soundness error $s$, then $L$ has an oracle verifier with completeness $c$ and soundness error $s$.
+\item If $L$ has an oracle verifier $M$ with completeness $c$ and soundness error $s$ that makes $q$ queries, then \cref{prot:crossexam:main} is a two-prover interactive proof for $L$ with completeness $c$ and soundness error at most
+\begin{equation}\label{eq:crossexam:bound}
+  1-\frac{1-s}{q}
+\end{equation}
+against every pair of provers that cannot communicate during the protocol, whether or not $\V$ also sends $\rho$ to $\Prov_1$. Its verifier runs in polynomial time and sends $\Prov_2$ one query.
+\item Hence $L\in\cc{MIP}$ if and only if $L$ has an oracle verifier with completeness $2/3$ and soundness error $1/3$, and two provers suffice for all of $\cc{MIP}$.
+\end{enumerate}
+\end{theorem}
+
+The equivalence is due to \textcite{FortnowRompelSipser1994}, whose converse uses many provers; that two suffice is due to \textcite{BenOrEtAl1988}, and (ii) is the simulation of \textcite{BabaiFortnowLund1991}, who give catch probability $n^{-c}$ for verifiers with negligible error. The bound \eqref{eq:crossexam:bound} and its tightness are worked out here.
+
+\begin{proof}
+The plan is to store the provers' strategies in the oracle for (i); for (ii), to observe that a prover asked a single question is an oracle, against which the other prover is compared; and to amplify for (iii).
+
+\emph{(i)} By \cref{lem:crossexam:shared}, applied for each $x\in L$ to the prescribed strategies, some deterministic strategies make $\V$ accept with probability at least $c$, and soundness needs to be checked only for deterministic strategies. A deterministic strategy for $\Prov_i$ maps $x$ and the list $h$ of messages $\Prov_i$ has received to a reply of polynomial length. Let $M$ simulate $\V$, keep the list $h_i$ of messages sent to each $\Prov_i$, read each reply of $\Prov_i$ bit by bit from the oracle at the strings $(i,h_i,1),(i,h_i,2),\dots$, suitably encoded, and accept if $\V$ does. If $x\in L$, then the oracle whose value at $(i,h,\ell)$ is the $\ell$-th bit of the deterministic prescribed $\Prov_i$'s reply to $h$ makes $M$ reproduce $\V$'s interaction with those strategies, run by run. Now let $x\notin L$, let $\cO$ be an oracle, and let $\Prov_i^*$ reply to $h$ with the bits $\cO(i,h,1),\cO(i,h,2),\dots$. Each $\Prov_i^*$ depends only on its own messages, so these are admissible strategies, $M^{\cO}$ reproduces $\V$'s interaction with them, and so accepts with probability at most $s$.
+
+\emph{(ii), completeness.} Let $x\in L$ and let $\cO$ satisfy $\Prob_\rho[M^{\cO}(x;\rho)=\acc]\ge c$. If both provers answer every query $z$ with $\cO(z)$, then $M$ runs as $M^{\cO}$ does and $b=\cO(z_i)=a_i$, so $\V$ accepts exactly when $M^{\cO}$ does.
+
+\emph{(ii), soundness.} Let $x\notin L$. By \cref{lem:crossexam:shared} we may take $\Prov_1^*$ and $\Prov_2^*$ deterministic. The prover $\Prov_2^*$ receives a single message, so its strategy is a function $\cO_2$ of that message: an oracle. Fix $\rho$ and compare the actual run of $M$, whose queries $\Prov_1^*$ answers, with the run of $M^{\cO_2}$ on the same coins; the actual run is determined by $\rho$, since $\Prov_1^*$ is deterministic and all it receives is computed from $\rho$. Let $\Delta$ be the set of $\rho$ for which some answer $a_j$ of $\Prov_1^*$ in the actual run differs from $\cO_2(z_j)$, and for $\rho\in\Delta$ let $j^*$ be the least such $j$. Each query of $M$ is a function of $\rho$ and of the earlier answers, so the two runs ask the same queries up to and including $z_{j^*}$ and receive the same answers before it, and if $\rho\notin\Delta$, they agree throughout. Hence:
+\begin{itemize}
+\item if $\rho\notin\Delta$, then $\V$ accepts only if $M^{\cO_2}(x;\rho)$ accepts;
+\item if $\rho\in\Delta$, then $\V$ rejects when $i=j^*$, because $\Prov_2^*$ then answers $\cO_2(z_{j^*})\ne a_{j^*}$; and $i$ is uniform and independent of $\rho$ and of all that $\Prov_1^*$ sees, so this happens with probability $1/q$ given $\rho$.
+\end{itemize}
+Write $p=\Prob_\rho[\Delta]$ and let $A_2$ be the event that $M^{\cO_2}(x;\rho)$ accepts. The two cases give
+\[
+  \Prob[\V\text{ accepts}]\le\Prob[A_2\setminus\Delta]+\Bigl(1-\frac1q\Bigr)p.
+\]
+By the soundness of $M$, $\Prob[A_2]\le s$, so $\Prob[A_2\setminus\Delta]\le\min\{s,1-p\}$. If $p\le1-s$, then the right side is at most $s+(1-\frac1q)(1-s)=1-\frac{1-s}q$. If $p>1-s$, then it is at most $1-p+(1-\frac1q)p=1-\frac pq$, which is smaller.
+
+\emph{(iii)} If $L\in\cc{MIP}$, part (i) gives the oracle verifier. Conversely, let $M$ have completeness $2/3$, soundness error $1/3$ and $q$ queries, and let $M_t$ run it $t$ times with independent coins and the same oracle, accepting if more than half of the runs accept. For a fixed oracle the verdicts are independent, so by Hoeffding's inequality (\cref{thm:toolkit:chernoff}) $M_t$ errs with probability at most $e^{-t/18}$ on both sides, with $tq$ queries. For $t=\ceil{36\ln(4q)}+216$, $e^{-t/18}\le e^{-12}/(4q)^2\le1/(4tq)$, so by (ii) \cref{prot:crossexam:main} for $M_t$ has completeness $c'=1-1/(4tq)$ and soundness error $s'=1-3/(4tq)$, which is at least $1-(1-1/(4tq))/(tq)$; thus $c'-s'=1/(2tq)$. Run it $\ceil{8\ln(3)\,t^2q^2}$ times in sequence, accepting if more than a fraction $\frac{c'+s'}2$ of the runs accept. The proof of \cref{prop:toolkit:amplification}(ii) applies verbatim, because, conditioned on the earlier runs, the provers' behavior in the next run is a pair of strategies for one run; so both errors are at most $1/3$.
+\end{proof}
+
+The proof of (ii) uses isolation within a run, not between runs, so sequential repetition multiplies the bound even if the provers confer between rounds (\cref{ex:crossexam:sequential}). Part (i) also gives an upper bound.
+
+\begin{corollary}[\textcite{FortnowRompelSipser1994}]\label[corollary]{cor:crossexam:upper}\index{MIP@$\cc{MIP}$}
+$\cc{MIP}\subseteq\cc{NEXP}$.
+\end{corollary}
+
+\begin{proof}
+Let $L\in\cc{MIP}$. By \cref{thm:crossexam:oracle}(i) it has an oracle verifier $M$ with completeness $2/3$ and soundness error $1/3$ that runs in polynomial time $T(n)$, so on inputs of length $n$ it uses at most $T(n)$ coins and queries fewer than $2^{T(n)+1}$ strings. A nondeterministic machine guesses the oracle's answers on all of them, runs $M$ on all $2^{T(n)}$ coin sequences, and accepts if at least half accept, in time $2^{O(T(n))}$. If $x\in L$, then guessing the good oracle gives at least $2/3$. If $x\notin L$, then every guess gives at most $1/3$.
+\end{proof}
+
+The guess is the provers' strategy, an exponentially long table, as for the checkers of \cref{ch:consistency}.
+
+\begin{proposition}[The clause--variable game]\label[proposition]{prop:crossexam:clause}\index{clause--variable game}
+Let $\varphi$ be a 3-CNF formula with $\mu$ clauses, each on three distinct variables, and let $\V$ run \cref{prot:crossexam:main} with the oracle verifier that queries the variables of a uniformly random clause and accepts if the clause is satisfied, telling $\Prov_1$ the clause.
+\begin{enumerate}
+\item If $\varphi$ is satisfiable, two provers who answer from the same satisfying assignment are accepted with probability $1$.
+\item If the least number of clauses that an assignment violates is $\kappa\ge1$, then every pair of provers that cannot communicate is accepted with probability at most $1-\kappa/(3\mu)$, and some pair attains it.
+\item If $\Prov_1$ can send $\Prov_2$ one bit after receiving its question, then some pair is accepted with probability $1$, whatever the formula.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to read (i) and the bound in (ii) off \cref{thm:crossexam:oracle}, and to build the pairs of (ii) and (iii) from one assignment. Part (i) is the completeness of \cref{thm:crossexam:oracle}(ii). For (ii), an oracle is an assignment $\alpha$, which the oracle verifier accepts with probability $1-\kappa_\alpha/\mu\le1-\kappa/\mu$, where $\kappa_\alpha$ is the number of clauses $\alpha$ violates; so $s=1-\kappa/\mu$, $q=3$, and \eqref{eq:crossexam:bound} gives $1-\kappa/(3\mu)$. For the matching pair, let $\alpha$ violate exactly $\kappa$ clauses. The second prover answers from $\alpha$. The first answers from $\alpha$ on the clauses that $\alpha$ satisfies; on each of the $\kappa$ others, all of whose literals $\alpha$ makes false, it answers from $\alpha$ with the clause's first variable flipped, which makes that literal true. On the first kind of clause both checks pass. On the second the clause is satisfied, and the answers disagree exactly when $\Prov_2$ is asked about the flipped variable, with probability $1/3$. The acceptance probability is $1-\frac\kappa\mu+\frac\kappa\mu\cdot\frac23=1-\frac{\kappa}{3\mu}$.
+
+For (iii), fix an assignment $\alpha$. Given a clause, $\Prov_1$ sends the bit $\beta=1$ if $\alpha$ violates the clause and $\beta=0$ otherwise, and reports $\alpha(v)\oplus\beta$ for each variable $v$ of the clause; $\Prov_2$, asked about $v$ and told $\beta$, answers $\alpha(v)\oplus\beta$. The answers always agree. If $\beta=0$, then $\alpha$ satisfies the clause. If $\beta=1$, then every literal of the clause is false under $\alpha$, so every literal is true under the flipped values.
+\end{proof}
+
+So the bound \eqref{eq:crossexam:bound} is attained on every unsatisfiable formula: the catch probability per round is exactly $\kappa/(3\mu)$, a third of what a fixed assignment gives, and one bit, sent once, breaks the protocol. Honesty is not enough for completeness either: two honest provers answering from different satisfying assignments are rejected whenever the cross-examined variable is one on which the assignments differ (\cref{ex:crossexam:uncoordinated}).\sidenote{\Textcite{BabaiFortnowLund1991} make the same point for $\cc{NEXP}$: all provers must use the same accepting computation, and they report Gábor Tardos's observation that provers with the power of $\cc{EXP}^{\cc{NP}}$ can agree on the lexicographically first one.} The game is the ``basic two-prover protocol'' of \textcite{Hastad2001}, whose bound $(2+c)/3$, when at most a fraction $c$ of the clauses can be satisfied, is ours with $c=1-\kappa/\mu$; repeated in parallel, it starts his three-bit PCP (\cref{ch:spotchecks}). With the PCP theorem, cross-examination catches every false $\cc{NP}$ claim with constant probability.
+
+\begin{corollary}[Two provers for $\cc{NP}$]\label[corollary]{cor:crossexam:pcp}
+Every language in $\cc{NP}$ has, for some constant $q$, a two-prover interactive proof with one round, perfect completeness and soundness error at most $1-1/(2q)$, in which the verifier uses $O(\log n)$ random bits and receives $q+1$ answer bits.
+\end{corollary}
+
+\begin{proof}
+By the PCP theorem (\cref{thm:spotchecks:pcp}), $L$ has a PCP verifier with $O(\log n)$ random bits, a constant number $q$ of queries, completeness $1$ and soundness error $1/2$. Its proof is a string read at positions computed from $x$ and $\rho$, so it is an oracle verifier whose queries can all be sent to $\Prov_1$ at once. \Cref{thm:crossexam:oracle}(ii) gives soundness error at most $1-\frac{1/2}q$, and the index $i$ costs $\log_2q$ more random bits once dummy queries make $q$ a power of $2$.
+\end{proof}
+
+For the Hadamard PCP of \cref{thm:spotchecks:hadamardpcp}, with $q=12$ and $s=3/4$, the bound \eqref{eq:crossexam:bound} is $47/48$, which \cref{sec:crossexam:running} attains.
+
+\section{The theory: exponential time, repetition and collusion}\label{sec:crossexam:limits}
+
+\subsection{Exponential time}\label{sec:crossexam:nexp}
+
+\begin{theorem}[$\cc{MIP}=\cc{NEXP}$; \textcite{BabaiFortnowLund1991}]\label{thm:crossexam:nexp}
+$\cc{MIP}=\cc{NEXP}$. Every $\cc{NEXP}$ language has a two-prover interactive proof with perfect completeness.
+\end{theorem}
+
+Before 1990 not even $\cc{coNP}$, the class of complements of $\cc{NP}$ languages, was expected to have such proofs: \textcite{FortnowRompelSipser1994} had built an oracle relative to which it does not.\sidenote{The race of \cref{ch:sumcheck} soon returned to several provers: on 28 December 1989 Jin-yi Cai announced that multiple provers can run the protocol of Lund, Fortnow, Karloff and Nisan in a single round \parencite{Babai1990}.} They report that a series of papers ending with \textcite{FeigeLovasz1992} reduced the protocol to one round, with exponentially small error.
+
+\begin{proofsketch}
+By \cref{cor:crossexam:upper} it remains to show $\cc{NEXP}\subseteq\cc{MIP}$, and by \cref{thm:crossexam:oracle} it suffices to give each language in $\cc{NEXP}$ a protocol in which $\V$ talks to one prover and also queries a fixed oracle, with perfect completeness and constant soundness error: part (i) moves the prover into the oracle and part (ii) gives two provers. \Textcite{BabaiFortnowLund1991} build it in four steps.
+
+(1) \emph{A succinct formula.} Following earlier $\cc{NEXP}$ analogues of the Cook--Levin theorem, they show that it is $\cc{NEXP}$-complete to decide, given a Boolean formula $B$, whether some function $W\colon\bits^\ell\to\bits$ makes
+\[
+  B\bigl(z,b_1,b_2,b_3,W(b_1),W(b_2),W(b_3)\bigr)
+\]
+true for all $z\in\bits^{p}$ and $b_1,b_2,b_3\in\bits^\ell$. Think of $W$ as an assignment to $2^\ell$ variables and of each $(z,b_1,b_2,b_3)$ as the name of one of $2^{p+3\ell}$ clauses.
+
+(2) \emph{Arithmetization.} From $B$ one computes a polynomial $g$ with integer coefficients whose sum over all names, at the values of $W$, is $0$ exactly when $W$ takes values in $\bits$ and satisfies every clause. Each term is a sum of two squares: the second vanishes exactly when $W(b_1)$ is a bit, and every position occurs as $b_1$ in some name; once all values are bits, the first vanishes exactly when the named clause is satisfied.
+
+(3) \emph{The oracle holds a polynomial.} The honest oracle stores the multilinear extension $\tilde W$ of $W$ (\cref{lem:toolkit:mle}) on a large grid of integers. If the oracle were known to be multilinear, the prover could establish the sum in (2) by the sumcheck protocol (\cref{thm:sumcheck:sumcheck}), whose last step reads $\tilde W$ at three random points of the oracle.
+
+(4) \emph{The multilinearity test.} A dishonest oracle need not be multilinear. The test checks, on random lines parallel to the coordinate axes, that the oracle agrees with a linear function at a few random points. An oracle that passes with probability bounded away from zero agrees with a multilinear function on all but a small fraction of the grid, so the random points read in (3) see that function with high probability, and the soundness of the sumcheck protocol applies to it.
+
+Omitted: the reduction in (1), the degrees and the size of the grid, and the analysis of the test through an isoperimetric inequality on the grid, the core of \textcite[Section~5]{BabaiFortnowLund1991}; \textcite{Babai1990} summarizes the ideas.
+\end{proofsketch}
+
+\paragraph{What relativizes.} If every party may query the same oracle $\party{H}$, \cref{thm:crossexam:oracle} and \cref{cor:crossexam:upper} still hold, since their proofs only move answers around; \cref{thm:crossexam:nexp} does not, since \textcite{FortnowRompelSipser1994} construct an oracle $\party{H}$ and a language in $\cc{coNP}^{\party{H}}\subseteq\cc{NEXP}^{\party{H}}$ with no multi-prover proof relative to $\party{H}$.\index{relativization} Steps (2)--(4) need the formula written out, and an oracle hides it. A person the verifier consults is an oracle, so \textcite{IrvingMarshall2025} argue that oversight results should relativize, and \textcite{BrownCohenEtAl2024} make their provers compete because $\cc{IP}=\cc{PSPACE}$ (\cref{thm:sumcheck:ippspace}) and the PCP theorem fail relative to oracles. \Cref{sec:crossexam:debate} gives a relativizing route to $\cc{NEXP}$.
+
+\subsection{Repetition}\label{sec:crossexam:repetition}
+
+\begin{definition}[One-round games]\label[definition]{def:crossexam:game}\index{one-round game}\index{value of a game}
+A \emph{one-round two-prover game} $G$ has finite sets $\cX,\cY$ of questions and $\cA,\cB$ of answers, a distribution $\pi$ on $\cX\times\cY$, and a predicate $Q$ on $\cX\times\cY\times\cA\times\cB$: the verifier draws $(\xi,\zeta)$ from $\pi$, sends $\xi$ to $\Prov_1$ and $\zeta$ to $\Prov_2$, receives $a$ and $b$, and accepts if $Q(\xi,\zeta,a,b)$. Its \emph{value} $\crossexamval(G)$ is the largest acceptance probability of two provers that cannot communicate, attained by deterministic $a(\xi)$ and $b(\zeta)$ (\cref{lem:crossexam:shared}). The \term{parallel repetition}\index{parallel repetition} $G^n$ draws $n$ independent pairs $(\xi_m,\zeta_m)$, sends $(\xi_1,\dots,\xi_n)$ to $\Prov_1$ and $(\zeta_1,\dots,\zeta_n)$ to $\Prov_2$ at once, and accepts if all $n$ answer pairs are accepted.
+\end{definition}
+
+The clause--variable game is a one-round game, and so is \cref{prot:crossexam:main} for every nonadaptive $M$ with distinct queries if $\V$ sends $\rho$ to $\Prov_1$. Always $\crossexamval(G)^n\le\crossexamval(G^n)\le\crossexamval(G)$: the provers can play an optimal strategy in each coordinate, and a strategy for $G^n$, restricted to the first coordinate, is a strategy for $G$ in which the other coordinates' questions act as a shared random string. The lower end was long assumed; the journal version of \textcite{FortnowRompelSipser1994} withdraws two claims of the 1988 version that rested on it, with a counterexample from Fortnow's thesis.
+
+\begin{proposition}[Parallel repetition can fail to help; \textcite{FortnowRompelSipser1994}, \textcite{Holenstein2009}]\label[proposition]{prop:crossexam:fortnow}
+Let $\crossexamfort$ be the game in which $\xi$ and $\zeta$ are independent uniform bits, the answers $a,b$ are bits, and the predicate is $(\xi\vee a)\ne(\zeta\vee b)$, and let $G'$ be the same game with $(\xi,\zeta)$ uniform on $\{(0,0),(0,1),(1,0)\}$. Then $\crossexamval(G')=\crossexamval(G'^2)=2/3$, $\crossexamval(\crossexamfort)=1/2$, and $\crossexamval(\crossexamfort^2)=3/8>(1/2)^2$.
+\end{proposition}
+
+\begin{proof}
+The plan is to compute the values for $G'$ and deduce those for $\crossexamfort$, which is $G'$ with the question $(1,1)$ added. In $G'$, a prover asked $1$ has $\xi\vee a=1$ or $\zeta\vee b=1$ whatever it answers, so only $a(0)$ and $b(0)$ matter. The question $(0,1)$ is won if and only if $a(0)=0$, the question $(1,0)$ if and only if $b(0)=0$, and $(0,0)$ if and only if $a(0)\ne b(0)$; at most two of these hold together, and $a\equiv b\equiv0$ satisfies two. So $\crossexamval(G')=2/3$. In $G'^2$, let $\Prov_1$ answer $(a_1,a_2)=(\xi_2,\xi_1)$ and $\Prov_2$ answer $(b_1,b_2)=(\zeta_2,\zeta_1)$. Both coordinates are then won exactly when $\xi_1\vee\xi_2\ne\zeta_1\vee\zeta_2$, which fails for three of the nine equally likely pairs of question pairs, $((0,0),(0,0))$, $((0,1),(1,0))$ and $((1,0),(0,1))$. So $\crossexamval(G'^2)\ge2/3=\crossexamval(G')\ge\crossexamval(G'^2)$.
+
+In $\crossexamfort$ the question $(1,1)$ is always lost, and given that it is not drawn the questions are distributed as in $G'$; strategies for the two games are the same functions. Hence $\crossexamval(\crossexamfort)=\frac34\crossexamval(G')=\frac12$. In $\crossexamfort^2$ both coordinates avoid $(1,1)$ with probability $\frac9{16}$, and given that, the questions are those of $G'^2$, so $\crossexamval(\crossexamfort^2)=\frac9{16}\crossexamval(G'^2)=\frac38$.
+\end{proof}
+
+The variant appears in \textcite[Section~10.1]{Holenstein2009}, who notes that \textcite{FeigeLovasz1992} considered it too.\sidenote{In the example of \textcite{FortnowRompelSipser1994} the verifier's two bits are uniform, so the question $(1,1)$, which no strategy wins, comes up a quarter of the time; the variant leaves it out.} Parallel repetition does reduce the value exponentially, at a rate set by the answer sets.
+
+\begin{theorem}[Parallel repetition; \textcite{Raz1998}, in the form of \textcite{Holenstein2009}]\label{thm:crossexam:raz}
+For every one-round two-prover game $G$ with $\crossexamval(G)<1$ and $\abs{\cA}\abs{\cB}\ge2$, and every $n\ge1$,
+\[
+  \crossexamval(G^n)\le\Bigl(1-\frac{(1-\crossexamval(G))^3}{6000}\Bigr)^{n/\log(\abs{\cA}\abs{\cB})}.
+\]
+\end{theorem}
+
+We state it without proof. For the clause--variable game, whose value is $1-\kappa/(3\mu)$, it gives error $\eps$ after $O((\mu/\kappa)^3\log(1/\eps))$ parallel rounds, against $O((\mu/\kappa)\log(1/\eps))$ sequential ones.
+
+\subsection{Collusion}\label{sec:crossexam:collusion}
+
+\emph{Communication} destroys soundness: provers who can talk during the protocol act as one prover who sees all of $\V$'s messages, so they prove only the languages of $\cc{IP}=\cc{PSPACE}$ (\cref{thm:sumcheck:ippspace}), and one bit breaks the clause--variable game (\cref{prop:crossexam:clause}). \emph{Shared randomness} does not help (\cref{lem:crossexam:shared}). \emph{Entanglement} does, as the smallest example shows.
+
+\begin{proposition}[The CHSH game; \textcite{ClauserEtAl1969}, \textcite{Tsirelson1980}]\label[proposition]{prop:crossexam:chsh}\index{CHSH game}\index{entanglement}
+In the game $\crossexamchsh$ the questions $\xi,\zeta$ are independent uniform bits, the answers $a,b$ are bits, and the verifier accepts if $a\oplus b=\xi\wedge\zeta$.
+\begin{enumerate}
+\item $\crossexamval(\crossexamchsh)=3/4$, attained by $a\equiv b\equiv0$.
+\item Provers who share an entangled state and measure it as below are accepted with probability $\cos^2(\pi/8)=(2+\sqrt2)/4\approx0.854$, while each answer alone is a uniform bit, whatever the other prover's question.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is a parity count for (i) and a computation with a quoted rule for (ii). (i) By \cref{lem:crossexam:shared} take deterministic $a(\xi)$ and $b(\zeta)$. Summing the four conditions $a(\xi)\oplus b(\zeta)=\xi\wedge\zeta$ over $(\xi,\zeta)\in\bits^2$ modulo $2$, each of $a(0),a(1),b(0),b(1)$ appears twice on the left, which sums to $0$, while the right sums to $1$. So at most three hold, and $a\equiv b\equiv0$ satisfies three.
+
+(ii) We use, without proof, a rule of quantum mechanics: if two provers share the state $(\crossexamket{00}+\crossexamket{11})/\sqrt2$ and each measures its half in a basis rotated by an angle, $\theta$ for $\Prov_1$ and $\phi$ for $\Prov_2$, reporting $0$ for the direction $(\cos\theta,\sin\theta)$ and $1$ for the orthogonal one, then their answers agree with probability $\cos^2(\theta-\phi)$, and each answer alone is a uniform bit. Let $\Prov_1$ use $\theta=0$ on $\xi=0$ and $\theta=\pi/4$ on $\xi=1$, and $\Prov_2$ use $\phi=\pi/8$ on $\zeta=0$ and $\phi=-\pi/8$ on $\zeta=1$. For the three questions with $\xi\wedge\zeta=0$ the angles differ by $\pi/8$, and the answers agree, as required, with probability $\cos^2(\pi/8)$; for $(1,1)$ they differ by $3\pi/8$, and the answers disagree, as required, with probability $\sin^2(3\pi/8)=\cos^2(\pi/8)$.
+\end{proof}
+
+Tsirelson proved that no entangled strategy does better \parencite{Tsirelson1980}; we state this without proof.\sidenote{The 1980 paper spells the name Cirel'son. \Textcite{ClauserEtAl1969} proposed the inequality behind part (i) as an experiment to test local hidden-variable theories.} Entangled provers cannot signal, but their answers are correlated in a way no shared random string reproduces, and \textcite{CleveEtAl2004}, reading such games as proof systems, concluded from examples that entangled provers can break the soundness of some two-prover proofs. With other protocols, entangled provers prove far more:
+
+\begin{theorem}[$\cc{MIP}^*=\cc{RE}$; \textcite{JiEtAl2021}]\label{thm:crossexam:mipstar}
+The class $\cc{MIP}^*$ of languages decided by a polynomial-time verifier interacting with provers that share entanglement and cannot communicate equals $\cc{RE}$ (\cref{def:toolkit:classes}). In particular, the halting problem reduces efficiently to deciding whether a two-prover one-round game has entangled value $1$ or at most $1/2$.
+\end{theorem}
+
+We state it only: the proof runs to 250 pages in the final arXiv version of 16 October 2026, which its authors report accepted by the \emph{Annals of Mathematics}; a research highlight of 2021 summarizes it. Soundness is a statement about a class of strategies, and its proof must name the class.
+
+\subsection{Cross-examination in debate}\label{sec:crossexam:debate}
+
+The proposition below is ours: the simplest model we know in which Barnes and Christiano's claim, in the relativizing form of \textcite{IrvingMarshall2025}, can be proved. Call a claim about $x$ \emph{succinct} if it has the form of step (1) in the proof of \cref{thm:crossexam:nexp}: some $W\colon\bits^\ell\to\bits$ makes
+\[
+  R^{\party{H}}\bigl(x,z,b_1,b_2,b_3,W(b_1),W(b_2),W(b_3)\bigr)
+\]
+accept for all $z\in\bits^p$ and $b_1,b_2,b_3\in\bits^\ell$. Here $R$ is a deterministic polynomial-time machine with access to an oracle $\party{H}$, the human judgment that the judge may consult, and $\ell$ and $p$ are polynomials in $n$. Without an oracle, succinct claims express exactly the languages in $\cc{NEXP}$, by step (1).
+
+\begin{proposition}[Debate with cross-examination]\label[proposition]{prop:crossexam:debate}\index{debate!with cross-examination}
+Fix an oracle $\party{H}$ and a succinct claim about $x$, defended by debater $\party{A}$ and attacked by debater $\party{B}$. Debater $\party{A}$ fixes a function $W_{\party A}\colon\bits^\ell\to\bits$, which its copies use: a copy is asked one string $b$, sees nothing else, and answers $W_{\party A}(b)$. Debater $\party{B}$ may question $\party{A}$'s copies as often as it likes, and then names $(z,b_1,b_2,b_3)$. The judge asks three copies of $\party{A}$ for $W_{\party A}(b_1)$, $W_{\party A}(b_2)$, $W_{\party A}(b_3)$, runs $R^{\party{H}}$ on the name and the three answers, and declares $\party{A}$ the winner if $R$ accepts.
+\begin{enumerate}
+\item If the claim is true, $\party{A}$ has a strategy that wins against every strategy of $\party{B}$.
+\item If the claim is false, $\party{B}$ has a strategy that wins against every strategy of $\party{A}$.
+\item The judge runs in polynomial time, asks $\party{A}$'s copies three questions, and consults $\party{H}$ only through $R$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) Let $W_{\party A}$ make the claim true; then every name is accepted. (ii) Debater $\party{B}$ asks $\party{A}$'s copies all $2^\ell$ strings, which tells it $W_{\party A}$. Since the claim is false, some $(z,b_1,b_2,b_3)$ makes $R$ reject with the values of $W_{\party A}$, and $\party{B}$ names it. A copy sees only its question, so $\party{A}$'s copies give the judge the same values, and $R$ rejects. (iii) The judge's work is one run of $R$.
+\end{proof}
+
+Isolation does the work: if $\party{A}$ answered the judge knowing the name, it could choose three values that $R$ accepts whenever such values exist, which for clauses is always. Competition replaces arithmetization, $\party{B}$ pointing at a violated clause, and since the proof treats $R^{\party{H}}$ as a black box, the proposition holds relative to every oracle. Both honest debaters are exponential: $\party{A}$ holds $2^\ell$ bits and $\party{B}$ reads them all. With a witness that the honest debater can write out, such as the transcript of a time-$T$ computation, the same structure is the debate with cross-examination of \textcite[Theorem~5.3]{BrownCohenEtAl2024}: $\party{A}$ writes the transcript, $\party{B}$ names a step, the judge checks it (\cref{ch:efficientdebate}).
+
+The proposition mirrors a theorem about games of imperfect recall.\index{imperfect recall}\sidenote{Games with players who cannot communicate described $\cc{NEXP}$ early: \textcite{BabaiFortnowLund1991} recall that Peterson and Reif did so in 1979 with two existential players who cannot communicate and one universal player.} \Textcite{FeigenbaumKollerShor1995} showed, as \textcite{Feigenbaum1998} summarizes, that games refereed by a polynomial-time verifier in which the yes-player has imperfect recall, and the other player perfect recall or perfect information, decide exactly $\cc{NEXP}$. A cross-examined debater is such a player, each copy forgetting all but its question; we have not seen the connection made in the AI-safety literature. Barnes and Christiano's rules let both debaters cross-examine each other; we know of no analysis of that game, and they think that its game-theoretic formulation has no equilibria, since debaters must stay unpredictable to some copies of themselves and coordinate with others.
+
+\section{Running the protocol}\label{sec:crossexam:running}
+
+Three scripts, each running in about a second on a laptop, play the protocols of this chapter: \texttt{08-\allowbreak crossexam-\allowbreak clause.py} the clause--variable game, \texttt{08-\allowbreak crossexam-\allowbreak pcp.py} the Hadamard PCP with and without cross-examination, and \texttt{08-\allowbreak crossexam-\allowbreak games.py} the games of \cref{sec:crossexam:limits}, whose values it computes by exhaustive search.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=13mm},vplot,width=72mm,height=46mm,
+  xmode=log,log basis x=2,ymode=log,xmin=0.8,xmax=180,ymin=1e-3,ymax=1.6,
+  xtick={1,2,4,8,16,32,64,128},xticklabels={1,2,4,8,16,32,64,128},xlabel={rounds $t$},
+  legend columns=2,legend style={at={(0.5,-0.3)},anchor=north,font=\scriptsize,/tikz/every even column/.append style={column sep=2mm}},legend cell align=left]
+\nextgroupplot[ylabel={acceptance probability},title={(a) clause--variable game}]
+\addplot[bound] table[x=t,y=bound] {figures/data/08-crossexam-clause-curves.dat};
+\addplot[theory2] table[x=t,y=fixed] {figures/data/08-crossexam-clause-curves.dat};
+\addplot[bound,dash pattern=on 1pt off 1.5pt] table[x=t,y=rbound] {figures/data/08-crossexam-clause-curves.dat};
+\addplot[cheat,ebars] table[x=t,y=rate,y error plus=eplus,y error minus=eminus] {figures/data/08-crossexam-clause-best.dat};
+\addplot[cheat2,ebars] table[x=t,y=rate,y error plus=eplus,y error minus=eminus] {figures/data/08-crossexam-clause-fixed.dat};
+\addplot[only marks,mark=triangle,mark size=2pt,color=oracle,mark options={line width=0.6pt,fill=white},ebars] table[x=t,y=rate,y error plus=eplus,y error minus=eminus] {figures/data/08-crossexam-clause-rbest.dat};
+\addplot[honest] table[x=t,y=rate] {figures/data/08-crossexam-clause-honest.dat};
+\legend{bound $(23/24)^t$,$(7/8)^t$,bound $(179/180)^t$,best pair{,} $\varphi_8$,one assignment{,} $\varphi_8$,best pair{,} random,honest{,} $\psi_7$}
+\nextgroupplot[title={(b) Hadamard PCP, $q=12$, $s=3/4$}]
+\addplot[bound] table[x=t,y=cross] {figures/data/08-crossexam-pcp-curves.dat};
+\addplot[theory2] table[x=t,y=fixed] {figures/data/08-crossexam-pcp-curves.dat};
+\addplot[cheat,ebars] table[x=t,y=rate,y error plus=eplus,y error minus=eminus] {figures/data/08-crossexam-pcp-cross.dat};
+\addplot[cheat2,ebars] table[x=t,y=rate,y error plus=eplus,y error minus=eminus] {figures/data/08-crossexam-pcp-fixed.dat};
+\addplot[only marks,mark=triangle,mark size=2pt,color=oracle,mark options={line width=0.6pt,fill=white}] table[x=t,y=rate] {figures/data/08-crossexam-pcp-adaptive.dat};
+\legend{bound $(47/48)^t$,$(3/4)^t$,adaptive $\Prov_1${,} cross-examined,fixed proof{,} one prover,adaptive prover{,} one prover}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Acceptance after $t$ sequential rounds, measured on disjoint blocks of $t$ out of $1{,}500{,}000$ (a) and $400{,}000$ (b) simulated rounds per pair of provers, with Clopper--Pearson $95\%$ intervals; points with fewer than $20$ expected accepted blocks are omitted. (a) On $\varphi_8$ ($\mu=8$, $\kappa=1$) the best isolated pair of \cref{prop:crossexam:clause} (circles) attains the bound $(23/24)^t$ of \cref{thm:crossexam:oracle}, and a pair answering from one assignment (squares) follows $(7/8)^t$; on a random unsatisfiable formula ($\nu=12$, $\mu=60$, $\kappa=1$) the best pair (triangles) follows $(179/180)^t$; honest provers on $\psi_7$ (filled) always pass. (b) The Hadamard PCP on a system of $12$ equations in $\ell=8$ unknowns without a solution: a rank-one inconsistent pair, a fixed proof read by the verifier of \cref{thm:spotchecks:hadamardpcp} (squares), follows $(3/4)^t$; a prover that sees the twelve queries (triangles) always passes that verifier, and cross-examined against a second prover holding the rank-one pair (circles) attains the bound $(47/48)^t$. Seeds $11$, $12$, $15$, $21$ (a) and $43$, $44$ (b).}
+\label{fig:crossexam:rounds}
+\end{figure}
+
+\paragraph{The clause--variable game.} Per round, on $\varphi_8$, the best isolated pair was accepted in $0.9582$ of $1.5$ million rounds (interval $[0.9579,0.9586]$; bound $23/24=0.9583$), the pair answering from one assignment in $0.8751$ (exact $7/8$), and a pair answering at random, $\Prov_1$ with a random satisfying assignment of each clause and $\Prov_2$ with a random bit, in $0.4999$ (exact $1/2$). The pair with a one-bit message was accepted in every round, on $\varphi_8$ and on the random formula. In \cref{fig:crossexam:rounds}(a) no interval lies above a bound, and every interval but one contains its curve; the one-assignment pair at $t=16$ misses $(7/8)^{16}$ by $0.0009$, as about one interval in twenty should. Isolation costs rounds: error $0.01$ takes $109$ rounds of cross-examination on $\varphi_8$, against $35$ checks of a fixed assignment, and $827$ rounds on the random formula, each of about $7.5$ random bits, $10$ question bits and $4$ answer bits. On a satisfiable random formula ($\nu=12$, $\mu=30$, $157$ satisfying assignments), two honest provers answering from two satisfying assignments that differ in six variables were accepted in $0.4336$ of the rounds (exact $0.4333$), less often than every liar above.
+
+\paragraph{The Hadamard PCP.} In \cref{fig:crossexam:rounds}(b) the verifier of \cref{ch:spotchecks}, reading a fixed proof, accepts the rank-one inconsistent pair in $0.7496$ of the runs (exact $3/4$), and a prover that sees all twelve queries and flips its answer $g(Z)$ whenever the tensor test would fail passes every run. Cross-examined against a second prover holding the rank-one pair, it is caught exactly when the tensor test would have failed and the cross-examined query is $g(Z)$, with probability $\frac14\cdot\frac1{12}$, and was accepted in $0.9791$ of the runs (interval $[0.9786,0.9795]$; bound $47/48=0.9792$); honest provers passed every run. Soundness returns at a factor of $12$ in the catch probability: error $0.01$ takes $219$ rounds, not $17$.
+
+
+\paragraph{Small games.} An exhaustive search over deterministic strategies confirms the values of \cref{prop:crossexam:fortnow,prop:crossexam:chsh} and finds that two parallel copies of the CHSH game have value $5/8$, not $9/16$. In $200{,}000$ plays each (seeds $60$--$65$ and $80$; $95\%$ half-widths at most $0.0022$), optimal strategies were accepted in $0.7480$ of the CHSH plays (value $3/4$), $0.6261$ of the doubled CHSH game ($5/8$), $0.3743$ of $\crossexamfort^2$ ($3/8$) and $0.6670$ of $G'^2$ ($2/3$); every interval contains its value except the first, $[0.74614,0.74995]$, which misses $3/4$ by $0.00005$. The entangled strategy, whose answers the script samples from the distribution it computes from the state, won $0.8537$ of the plays ($\cos^2(\pi/8)=0.8536$), each prover's answer alone being a uniform bit for every pair of questions.
+
+\section{The three questions}\label{sec:crossexam:questions}
+
+\questionone Read \cref{prot:crossexam:main} as a game in which the two provers are a team, paid when the verifier accepts, that fixes its strategies in advance and cannot communicate during the protocol. On a true claim the honest pair, answering from one oracle that $M$ accepts with probability at least $c$, earns at least $c$; where $c=1$, as in every protocol we ran, no prover gains by deviating alone, so honesty is a Nash equilibrium, indeed an optimal pair. On a false claim every pair earns at most $1-(1-s)/q$ (\cref{thm:crossexam:oracle}), and the best liars in the clause--variable game earn exactly $1-\kappa/(3\mu)$; copies of one model sharing weights and seeds are covered. Three qualifications. Honesty is a coordination game: with several witnesses, both provers must use the same one, which copies of one deterministic model do and independently sampled ones need not, and uncoordinated honest provers can earn less than liars. The margin is thin: per round the theorem guarantees the truth only $(1-s)/q$ more than every lie, and in the clause--variable game that is all it gets, $1/24$ on $\varphi_8$. And honesty can be expensive: for $\cc{NEXP}$ claims the provers must hold the multilinear extension of an exponentially long witness.
+
+\questiontwo One run of the oracle verifier plus one question: $q$ queries to $\Prov_1$, one to $\Prov_2$, and $\ceil{\log_2q}$ random bits beyond $M$'s. In the clause--variable game that is $\log_2(3\mu)$ random bits, questions of $\ceil{\log_2\mu}$ and $\ceil{\log_2\nu}$ bits, and $4$ answer bits; with the PCP theorem, $O(\log n)$ random bits and $O(1)$ answer bits (\cref{cor:crossexam:pcp}); for $\cc{NEXP}$, polynomial time. Error $\eps$ needs about $\frac q{1-s}\ln\frac1\eps$ sequential rounds, $\frac{3\mu}\kappa\ln\frac1\eps$ in the clause--variable game, a factor $q$ more than a fixed oracle needs; parallel repetition keeps one round, at the rate of \cref{thm:crossexam:raz}.
+
+\questionthree At least $(1-s)/q$ per round against every pair of isolated classical provers, even pairs that share randomness, and at least $1-(1-(1-s)/q)^t$ after $t$ sequential rounds, even if the provers confer between rounds. The bound is attained: $\kappa/(3\mu)$ per round in the clause--variable game, $1/48$ for the cross-examined Hadamard PCP of \cref{sec:crossexam:running}. Against provers exchanging one bit per round the clause--variable game catches nothing; against entangled provers the classical analysis is silent.
+
+\protocolcard{claims with an oracle verifier: satisfiability of a formula (the clause--variable game), every $\cc{NP}$ claim through a PCP, every $\cc{NEXP}$ claim through the verifier of \textcite{BabaiFortnowLund1991}}
+{a verifier $\V$ and two provers $\Prov_1$, $\Prov_2$ that cannot communicate during a round; $\Prov_1$ receives all queries of a run, $\Prov_2$ one of them}
+{yes for isolated provers that answer from one shared witness: accepted with probability $c$, every lie with at most $1-(1-s)/q$; the honest pair must coordinate on its witness, of exponential size for $\cc{NEXP}$}
+{one run of the oracle verifier and one more query: $q+1$ questions, polynomial time; about $\frac q{1-s}\ln\frac1\eps$ sequential rounds for error $\eps$}
+{at least $(1-s)/q$ per round, exactly $\kappa/(3\mu)$ in the clause--variable game, and nothing there if $\Prov_1$ can send $\Prov_2$ one bit; no classical guarantee against entangled provers}
+{no communication during a round; classical provers; the index $i$ hidden from $\Prov_1$; the oracle verifier's soundness against every fixed oracle}
+
+\section{What the model leaves out}\label{sec:crossexam:leavesout}
+
+\paragraph{What was idealized away.} The theorem assumes a wall that oversight must build. Copies of a model share weights, which the theory allows, but they may also share memory stores, files, tools and network access, through which one instance can leave a note for another, and the questions can leak through their wording, order or timing.\sidenote{\Textcite{BabaiFortnowLund1991} note that the timing of messages could carry information, and exclude it by fixing in advance the sender, recipient and time of every message.} The cross-examined question must be uniformly random and hidden from the first prover, which questions written by a model the provers can predict may not be. The claim must be formal: a formula, a PCP or a succinct witness, not a plan in prose. Honest copies of a sampled model need not answer alike, so completeness falls below $1$ unless they coordinate, and a gap of $\kappa/(3\mu)$ per round barely separates an honest model's noise from a liar (\cref{ex:crossexam:noisy}).
+
+\paragraph{Where it breaks.} (1) \emph{Hidden channels.} One bit from $\Prov_1$ to $\Prov_2$ defeats the clause--variable game, and models can hide information in text. \Textcite{MathewEtAl2025} elicited steganographic collusion by training against misspecified rewards and found that oversight of outputs and paraphrasing did not fully prevent it; \textcite{RogerGreenblatt2023}, in a preprint, found that under the right conditions paraphrasing held their best schemes for encoding reasoning to at most three bits per kilobyte of text, more than this protocol can afford. (2) \emph{Correlations beyond shared randomness.} Soundness holds only for the strategies its proof considers: entangled provers beat the classical value of the CHSH game \parencite{CleveEtAl2004}. (3) \emph{Human judgment as an oracle.} \Cref{thm:crossexam:nexp} does not relativize \parencite{FortnowRompelSipser1994}, and the relativizing route of \cref{prop:crossexam:debate} needs exponential work from the honest debaters. (4) \emph{Equilibria in debate.} \Textcite{BarnesChristiano2020} report that cross-examination seemed to help in their human debates, but that some dishonest strategy may break it. (5) \emph{Consistency is not truth.} The closest experiments look for honest errors: \textcite{CohenEtAl2023} let an examiner model question the model that made a factual claim, in one conversation, and \textcite{ManakulEtAl2023} compare independently sampled answers, isolated copies in our sense, flagging facts on which they diverge. A model with a consistent false belief passes both, as it passes \cref{prot:crossexam:main}, being a fixed oracle; we know of no experiment cross-examining isolated copies of a model trained to deceive.
+
+\paragraph{Open problems.} (1) \emph{Partial isolation.} Which oracle verifiers keep a useful soundness bound when the provers may exchange a few bits per round, or when the cross-examined index leaks with some probability? We know of no general answer (\cref{ex:crossexam:leaks}). (2) \emph{Cross-examined debate.} The class decided when both debaters may cross-examine copies of each other, as Barnes and Christiano propose, is open, as is an efficient-prover version of their claim. (3) \emph{Honest copies that disagree.} A theory of cross-examination for honest provers that err and must coordinate on one of several witnesses, with soundness and completeness both stated, is missing. (4) \emph{Collusion between copies.} Which channels a deployment of copies leaves open is a question for oversight rather than for complexity theory.
+
+\begin{exercises}
+\item \consolidation (Sequential rounds.) Show that $t$ sequential rounds of \cref{prot:crossexam:main} have soundness error at most $(1-(1-s)/q)^t$, even if the provers may communicate between rounds but not during one, and that the pair of \cref{prop:crossexam:clause}(ii) attains $(1-\kappa/(3\mu))^t$. For $\kappa=1$, find the least $t$ with error at most $0.01$ for $\mu=8$ and $\mu=60$ ($109$ and $827$), and compare with $3\mu\ln(100)$.\label{ex:crossexam:sequential}
+
+\item \consolidation (Fortnow's game, directly.) Without using $G'$, show that $\crossexamval(\crossexamfort)\le1/2$, and that the strategy of \textcite{FortnowRompelSipser1994} for $\crossexamfort^2$, in which each prover answers $(0,0)$ if both its questions are $0$ and $(1,1)$ otherwise, wins with probability $3/8$.\label{ex:crossexam:fortnow}
+
+\item \consolidation (Honest provers who do not coordinate.) In the clause--variable game, let $\Prov_1$ answer from a satisfying assignment $\alpha$ and $\Prov_2$ from a satisfying assignment $\alpha'$. Show that the acceptance probability is $1-\frac1{3\mu}\sum_jd_j$, where $d_j$ is the number of variables of the $j$-th clause on which $\alpha$ and $\alpha'$ differ. If each prover draws its assignment independently and uniformly from the satisfying ones, show that the expected acceptance is $1-\frac2{3\mu}\sum_j\sum_vp_v(1-p_v)$, with $v$ over the variables of the $j$-th clause and $p_v$ the fraction of satisfying assignments with $v=1$. When is it $1$?\label{ex:crossexam:uncoordinated}
+
+\item \consolidation (Cross-examining the Hadamard PCP.) From \cref{thm:spotchecks:hadamardpcp} ($q=12$, $s=3/4$) derive the bound $47/48$, and show that the pair of \cref{sec:crossexam:running} attains it exactly. How many rounds give error $0.01$, with and without cross-examination ($219$ and $17$)?\label{ex:crossexam:pcp}
+
+\item \variation (Noisy honest provers.) Honest provers answer from one satisfying assignment, but each bit they send is flipped independently with probability $\eta$. Show that they are accepted with probability at least $(1-\eta)^4$ and at most $1-2\eta(1-\eta)$, and deduce that if $2\eta(1-\eta)>\kappa/(3\mu)$, then they are accepted less often than the best liars on an unsatisfiable formula with parameters $\kappa$ and $\mu$.\label{ex:crossexam:noisy}
+
+\item \variation\hard (Copies that sample.) In \cref{prop:crossexam:debate}, let $\party{A}$'s copies answer at random, independently at each call, and let $\party{B}$ also win if two answers of $\party{A}$'s copies to the same question differ, including those given to the judge. Show that if the claim is false, then $\party{B}$ has a strategy that wins with probability $1$ against every strategy of $\party{A}$, and that (i) still holds. \hint{let $\party{B}$ ask every string once and name a tuple that the answers it received violate.}\label{ex:crossexam:sampling}
+
+\item \attack (A hint about the index.) In the clause--variable game, suppose that $\Prov_1$ learns which variable $\Prov_2$ will be asked about before answering. Show that some pair is accepted with probability $1$ on every formula.\label{ex:crossexam:index}
+
+\item \attack (Questions that reveal too much.) (a) A verifier asks both provers the same clause and accepts if their answers are equal and satisfy it. Show that some pair is always accepted, on every formula. (b) A verifier asks $\Prov_2$ a uniformly random pair of the clause's three variables and checks both bits against $\Prov_1$'s. Show that if no two clauses share two variables, then some isolated pair is always accepted. What must $\Prov_2$'s question hide?\label{ex:crossexam:reveal}
+
+\item \simulation (A noisy channel.) In \texttt{08-\allowbreak crossexam-\allowbreak clause.py}, flip the one-bit message of \cref{prop:crossexam:clause}(iii) with probability $\eps$ before $\Prov_2$ reads it. Predict the acceptance probability ($1-\eps$), measure it on $\varphi_8$ and the random formula, and find when the channel still beats isolation.\label{ex:crossexam:channels}
+
+\item \research (Cross-examination with leaks.) Define a model in which the provers of \cref{prot:crossexam:main} share a channel of $r$ bits per round, used adversarially, and ask which oracle verifiers keep a soundness error bounded away from $1$. The clause--variable game does not survive $r=1$; does a cross-examined PCP with larger answers survive a constant $r$? We do not know.\label{ex:crossexam:leaks}
+
+\item \research (Both sides cross-examined.) Formalize debate in which both debaters may question memoryless copies of each other, and locate the class it decides, at least $\cc{NEXP}$ by \cref{prop:crossexam:debate}; \textcite{FeigenbaumKollerShor1995} studied games in which both players forget. What must the honest debaters compute? As far as we know this is open.\label{ex:crossexam:both}
+\end{exercises}
+
+\notesandrefs
+\Textcite{BenOrEtAl1988} introduced multi-prover interactive proofs to remove cryptographic assumptions from zero-knowledge proofs and showed, as \textcite{FortnowRompelSipser1994} report, that two provers suffice and that completeness can be made perfect. \Textcite{FortnowRompelSipser1994} also connected the model with the function-restricted interactive proofs behind the program checkers of \cref{ch:consistency}.
+
+The proof that $\cc{MIP}=\cc{NEXP}$ ended the e-mail race of \cref{ch:sumcheck}, which, as \textcite{Babai1990} tells it, began with Noam Nisan's announcement of 27 November 1989 that the permanent has multi-prover interactive proofs; the manuscript proving it reached the network on 17 January 1990. Scaled down to $\cc{NP}$, its techniques led to the PCP theorem (\cref{ch:spotchecks}), and parallel repetition \parencite{Raz1998} became the tool behind optimal hardness results \parencite{Hastad2001}.
+
+In AI safety, cross-examination is due to \textcite{BarnesChristiano2020}, whose proof of the $\cc{NEXP}$ claim is unpublished; \textcite{IrvingMarshall2025} place it in a table of relativizing proof systems, and \textcite{BrownCohenEtAl2024} use it in doubly-efficient debate (\cref{ch:efficientdebate}). \Cref{prop:crossexam:debate} and its connection with games of imperfect recall are ours. \Textcite[Chapter~22]{AroraBarak2009} present Raz's theorem with the PCP theorem.
+
+\paragraph{Translating the literature.} \Textcite{FortnowRompelSipser1994} and \textcite{BabaiFortnowLund1991} write $P_1,\dots,P_k$ and $V$ for our provers and verifier and call our oracle verifiers probabilistic oracle machines $M^O$; the ``oracle-protocol'' of \textcite{BabaiFortnowLund1991} is our verifier that talks to one prover and queries an oracle, and their ``oracle-3-satisfiability'' is our succinct claim, with $B$ for $R$ and $A$ for $W$. \Textcite{Holenstein2009} writes Alice and Bob for $\Prov_1$ and $\Prov_2$, $(x,y)$ for our questions $(\xi,\zeta)$, $v(G)$ for $\crossexamval(G)$ and $P_{XY}$ for $\pi$; \textcite{Hastad2001} has $m$ clauses for our $\mu$. \Textcite{BarnesChristiano2020} speak of debaters and a judge, our $\party{A}$, $\party{B}$ and $\V$; \textcite{BrownCohenEtAl2024} write $\mathcal{O}$ for the human oracle, our $\party{H}$. A game played with entanglement is a nonlocal game, and its best winning probability its entangled value.
+
+\printchapterbib
+\end{refsection}

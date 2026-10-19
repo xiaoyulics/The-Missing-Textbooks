@@ -1,0 +1,525 @@
+%% verifiable.sty -- volume style for "Verifiable Intelligence: Interactive Proofs as a Theory
+%% of AI Oversight" (The Missing Textbooks, volume 5). Loaded after missingbook.cls by main.tex
+%% and by tools/build_chapter.sh. Chapters must not load packages of their own.
+%%
+%% The design has two voices. The prover (the machine) writes in indigo, the book's ink: structure,
+%% links and the rules of theorem boxes. The verifier (the human, or the weaker system that stands
+%% in for one) marks in ochre: the queried bits, the verdicts, the three questions. A second prover
+%% or debater is teal; a human judge consulted as an oracle is sage. The ornaments are transcripts:
+%% two rails under each chapter title, and at the foot of each opening page the message pattern of
+%% the chapter's protocol, drawn between a prover rail and a verifier rail. The title page carries
+%% the Hadamard encoding of 1985, with the three bits that a linearity test reads. The series class
+%% is not modified: its colour names are re-pointed to this palette and its ornament macros are
+%% redefined here.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{verifiable}[2026/10/19 v1.0 volume style for Verifiable Intelligence]
+
+\RequirePackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{fillbetween,groupplots}
+\usetikzlibrary{fadings}
+\RequirePackage[scale=0.86]{sourcecodepro}
+\RequirePackage{siunitx}
+
+%------------------------------------------------------------------------------
+% Palette
+%------------------------------------------------------------------------------
+\definecolor{prover}{RGB}{46,52,118}        % indigo: the prover's ink; structure and links
+\definecolor{proverdeep}{RGB}{27,30,72}     % part titles, imprint
+\definecolor{proverB}{RGB}{0,110,108}       % teal: a second prover or debater
+\definecolor{verifier}{RGB}{176,104,12}     % ochre: the verifier's marks
+\definecolor{oracle}{RGB}{88,116,84}        % sage: a human judge consulted as an oracle; nature's samples
+\definecolor{vellum}{RGB}{250,247,240}      % cream of definition and protocol boxes
+\definecolor{vellumline}{RGB}{216,201,170}  % rules of cream boxes
+\definecolor{indigowash}{RGB}{238,239,248}  % pale tint of theorem boxes
+\definecolor{ochrewash}{RGB}{251,245,232}   % pale tint of the oversight-problem box
+% the series class draws with these names
+\colorlet{sea}{prover}
+\colorlet{seadeep}{proverdeep}
+\colorlet{seafoam}{indigowash}
+\colorlet{seamist}{prover!12}
+\colorlet{sand}{vellum}
+\colorlet{sandline}{vellumline}
+\hypersetup{linkcolor=prover,citecolor=prover,urlcolor=prover}
+
+% the chapter number in the margin, in a light ochre
+\renewcommand*{\mb@chapnumfont}{\normalfont\fontsize{64}{64}\selectfont\color{verifier!48}}
+
+%------------------------------------------------------------------------------
+% Two rails: a prover rail (indigo) above a verifier rail (ochre). They replace the series'
+% wave rule under chapter titles and on part pages.
+%------------------------------------------------------------------------------
+\newlength{\vi@len}
+\newcommand*{\vi@rails}[1]{%
+  \setlength{\vi@len}{#1}%
+  \begin{tikzpicture}
+    \draw[prover!72,line width=0.45pt] (0,1mm) -- (\vi@len,1mm);
+    \draw[verifier!85,line width=0.45pt] (0,0) -- (\vi@len,0);
+  \end{tikzpicture}}
+\renewcommand*{\mb@waverule}[1][]{%
+  \par\noindent\makebox[\linewidth][l]{%
+    \vi@rails{\dimexpr\linewidth+\marginparsep+\marginparwidth\relax}}\par}
+\renewcommand{\casepart}[3]{%
+  \setpartpreamble[c][0.78\textwidth]{%
+    \vspace{2.2\baselineskip}{\centering\vi@rails{\linewidth}\par}\vspace{1.2\baselineskip}%
+    {\normalfont\itshape\color{muted}\setlength{\parindent}{0pt}#2\par}%
+    \risingsea{#3}}%
+  \part{#1}}
+
+%------------------------------------------------------------------------------
+% The transcript band at the foot of an opening page. A prover rail and a verifier rail run
+% across the page; the chapter's protocol is drawn on them as a sequence of tokens, one slot per
+% token, from the left edge of the text block:
+%   P  a message from the prover to the verifier          p  the same, short
+%   A  a message from a second prover or debater (teal)   a  the same, short
+%   V  a message from the verifier to the prover (its random challenge or question)
+%   S  the proof string: a row of cells along the prover rail (put it first)
+%   Q  the verifier reads one cell of the proof string     K  a hidden cell that no query reads
+%   C  a commitment: a sealed message from the prover
+%   H  the verifier consults the human judge (an oracle below the verifier rail)
+%   X  the verifier draws samples from the world (dots below the verifier rail)
+%   R  the verifier pays the prover (a reward)
+%   D  the verdict                                          o  an empty slot
+% Example: \vi@band{P,V,P,V,P,V,D} (the sumcheck protocol with three variables).
+%------------------------------------------------------------------------------
+\newcommand*{\vi@railP}{19}   % mm above the bottom edge of the page
+\newcommand*{\vi@railV}{8}
+\newcommand*{\vi@xstart}{24}  % the left edge of the text block, in mm
+\newcount\vi@ntok
+% the first 86 bits of the title page's codeword fill the cells of the proof string
+\newcommand*{\vi@stripbits}{00110110011101001110010100000100110101100010100101001100011111000011110000010110111010}
+\newcommand*{\vi@arrow}{-{Stealth[length=1.5mm,width=1.15mm]}}
+% a message between rails: #1 colour, #2 line width, #3 start height, #4 end height
+\newcommand*{\vi@message}[4]{%
+  \fill[#1] (\vi@x,#3) circle (0.42);
+  \draw[#1,line width=#2,\vi@arrow] (\vi@x,#3) -- (\vi@x+0.58*\vi@w,#4);}
+\newcommand*{\vi@cellx}{0}
+% the centre of the strip cell nearest to the middle of the current slot
+\newcommand*{\vi@setcell}{\pgfmathsetmacro{\vi@cellx}{25+2*round((\vi@x+0.29*\vi@w-25)/2)}}
+\newcommand*{\vi@tok@P}{\vi@message{prover}{1.05pt}{\vi@railP}{\vi@railV+0.25}}
+\newcommand*{\vi@tok@p}{\vi@message{prover}{0.5pt}{\vi@railP}{\vi@railV+0.25}}
+\newcommand*{\vi@tok@A}{\vi@message{proverB}{1.05pt}{\vi@railP}{\vi@railV+0.25}}
+\newcommand*{\vi@tok@a}{\vi@message{proverB}{0.5pt}{\vi@railP}{\vi@railV+0.25}}
+\newcommand*{\vi@tok@V}{\vi@message{verifier}{0.55pt}{\vi@railV}{\vi@railP-0.25}}
+\newcommand*{\vi@tok@C}{%
+  \vi@message{prover}{1.05pt}{\vi@railP}{\vi@railV+0.25}%
+  \fill[prover,draw=white,line width=0.3pt] (\vi@x+0.29*\vi@w,{(\vi@railP+\vi@railV)/2}) +(-0.95,-0.75) rectangle +(0.95,0.75);}
+\newcommand*{\vi@tok@R}{%
+  \vi@message{verifier}{0.55pt}{\vi@railV}{\vi@railP-0.25}%
+  \draw[verifier,fill=white,line width=0.55pt] (\vi@x+0.29*\vi@w,{(\vi@railP+\vi@railV)/2}) circle (1.05);
+  \fill[verifier] (\vi@x+0.29*\vi@w,{(\vi@railP+\vi@railV)/2}) circle (0.45);}
+\tikzset{vi@cell0/.style={fill=white},vi@cell1/.style={fill=prover!26}}
+\newcount\vi@k
+\def\vi@stripcell#1{%
+  \ifx#1\relax\else
+    \pgfmathparse{(24.2+2*\the\vi@k+1.6<=\vi@railxb)?1:0}%
+    \ifnum\pgfmathresult=1\relax
+      \path[draw=prover!45,line width=0.25pt,vi@cell#1] (24.2+2*\the\vi@k,\vi@railP-0.8) rectangle ++(1.6,1.6);
+    \fi
+    \advance\vi@k by 1\relax
+    \expandafter\vi@stripcell\fi}
+\newcommand*{\vi@tok@S}{\vi@k=0\relax\expandafter\vi@stripcell\vi@stripbits\relax}
+\newcommand*{\vi@tok@Q}{%
+  \vi@setcell
+  \fill[verifier] (\vi@cellx,\vi@railV) circle (0.42);
+  \draw[verifier,line width=0.55pt] (\vi@cellx,\vi@railV) -- (\vi@cellx,\vi@railP-1.15);
+  \fill[verifier,draw=verifier,line width=0.25pt] (\vi@cellx-0.8,\vi@railP-0.8) rectangle ++(1.6,1.6);}
+\newcommand*{\vi@tok@K}{%
+  \vi@setcell
+  \fill[proverdeep,draw=proverdeep,line width=0.25pt] (\vi@cellx-0.8,\vi@railP-0.8) rectangle ++(1.6,1.6);}
+\newcommand*{\vi@tok@H}{%
+  \fill[verifier] (\vi@x+0.29*\vi@w,\vi@railV) circle (0.42);
+  \draw[oracle,line width=0.55pt] (\vi@x+0.29*\vi@w,\vi@railV) -- (\vi@x+0.29*\vi@w,3.6);
+  \fill[oracle] (\vi@x+0.29*\vi@w,3.1) +(0,-1.15) -- +(1.15,0) -- +(0,1.15) -- +(-1.15,0) -- cycle;}
+\newcommand*{\vi@tok@X}{%
+  \foreach \vi@dx/\vi@dy in {0.0/3.4,0.9/5.0,1.9/3.0,2.8/4.6,3.7/3.3}{%
+    \fill[oracle] (\vi@x+\vi@dx,\vi@dy) circle (0.42);}}
+\newcommand*{\vi@tok@D}{%
+  \fill[verifier] (\vi@x+0.29*\vi@w,\vi@railV) circle (1.55);
+  \draw[white,line width=0.6pt,line cap=round,line join=round]
+    (\vi@x+0.29*\vi@w-0.75,\vi@railV+0.02) -- (\vi@x+0.29*\vi@w-0.2,\vi@railV-0.6) -- (\vi@x+0.29*\vi@w+0.8,\vi@railV+0.7);}
+\newcommand*{\vi@tok@o}{}
+% \vi@banddraw{tokens}: rails and tokens in page coordinates (mm); the rails run from \vi@railx0
+% to \vi@railx1
+\newcommand*{\vi@railxa}{0}
+\newcommand*{\vi@railxb}{210}
+\newcommand*{\vi@bandwidth}{171}  % mm available to the slots
+\newcommand{\vi@banddraw}[1]{%
+  \global\vi@ntok=0\relax
+  \foreach \vi@t in {#1}{\global\advance\vi@ntok by 1\relax}%
+  \pgfmathsetmacro{\vi@w}{min(15,\vi@bandwidth/max(\the\vi@ntok,1))}%
+  \draw[prover!30,line width=0.35pt] (\vi@railxa,\vi@railP) -- (\vi@railxb,\vi@railP);
+  \draw[verifier!50,line width=0.35pt] (\vi@railxa,\vi@railV) -- (\vi@railxb,\vi@railV);
+  \node[font=\sffamily\scriptsize,text=prover!75,anchor=east,inner sep=0pt] at (20.5,\vi@railP) {P};
+  \node[font=\sffamily\scriptsize,text=verifier,anchor=east,inner sep=0pt] at (20.5,\vi@railV) {V};
+  \foreach \vi@t [count=\vi@i] in {#1}{%
+    \pgfmathsetmacro{\vi@x}{\vi@xstart+(\vi@i-1)*\vi@w}%
+    \ifcsname vi@tok@\vi@t\endcsname\csname vi@tok@\vi@t\endcsname
+    \else\PackageWarning{verifiable}{Unknown band token `\vi@t'}\fi}}
+\newcommand{\vi@band}[1]{%
+  \begin{tikzpicture}[remember picture,overlay,x=1mm,y=1mm]
+    \begin{scope}[shift={(current page.south west)}]\vi@banddraw{#1}\end{scope}
+  \end{tikzpicture}}
+% \inlineband{tokens}: the same band as a picture in the text, spanning text block and margin
+% (use it inside fullwidth); the rails start at the labels
+\newcommand{\inlineband}[1]{%
+  \begin{tikzpicture}[x=1mm,y=1mm]
+    \begin{scope}[shift={(-14,-2.5)}]%
+      \def\vi@railxa{14}\def\vi@railxb{184.5}\def\vi@bandwidth{158}%
+      \useasboundingbox (14,2.5) rectangle (184.5,22);
+      \vi@banddraw{#1}%
+    \end{scope}
+  \end{tikzpicture}}
+% the class calls \risingsea on part pages and special chapters; here its argument is a band
+\renewcommand*{\risingsea}[1]{\vi@band{#1}}
+
+%------------------------------------------------------------------------------
+% Chapter openings
+%   \protocolchapter{Title}{Subtitle}{Protocol}{band}{label}
+% prints the title, the subtitle, "the protocol -- <name>", the two rails, and the band at the
+% foot of the page. The protocol's name is also printed in the table of contents and heads the
+% chapter's protocol card.
+%------------------------------------------------------------------------------
+\newcommand*{\vi@chapprotocol}{}
+% the protocol's name goes at the right end of the subtitle's line if it fits, and flush right on
+% a line of its own otherwise (the TeXbook's trick for a right-aligned final item)
+\newcommand*{\vi@tocsubtitle}[2]{%
+  \par\nopagebreak\vspace{-0.15ex}{\leftskip=2.3em\small\itshape\color{muted}#1%
+    \Ifstr{#2}{}{}{\unskip\nobreak\hfil\penalty50\hskip1.5em\hbox{}\nobreak\hfil
+      \mbox{\upshape\scshape\color{verifier}#2}{\parfillskip=0pt\finalhyphendemerits=0\par}}\par}\vspace{0.35ex}}
+\newcommand{\vi@openerblock}[2]{%
+  \vspace*{-0.2\baselineskip}%
+  {\raggedright\large\itshape\color{muted}#1\par}%
+  \Ifstr{#2}{}{}{%
+    \vspace{0.55\baselineskip}%
+    {\raggedright\small\textsc{\color{verifier}the protocol}\enspace{\color{verifier}\rule[0.32ex]{1.6em}{0.4pt}}\enspace\textsc{#2}\par}}%
+  \vspace{0.5\baselineskip}%
+  \mb@waverule
+  \vspace{0.9\baselineskip}}
+\newcommand{\protocolchapter}[5]{%
+  \chapter[head={#1},tocentry={#1}]{#1}\label{#5}%
+  \addtocontents{toc}{\protect\vi@tocsubtitle{#2}{#3}}%
+  \gdef\vi@chapprotocol{#3}%
+  \vi@band{#4}%
+  \vi@openerblock{#2}{#3}%
+  \@afterindentfalse\@afterheading}
+% an appendix chapter: \appendixchapter{Title}{Subtitle}{label}; its band is empty rails
+\newcommand{\appendixchapter}[3]{%
+  \chapter[head={#1},tocentry={#1}]{#1}\label{#3}%
+  \addtocontents{toc}{\protect\mbtocsubtitle{#2}}%
+  \gdef\vi@chapprotocol{}%
+  \vi@band{o}%
+  \vi@openerblock{#2}{}%
+  \@afterindentfalse\@afterheading}
+\renewcommand{\casechapter}[4]{%
+  \chapter[head={#1},tocentry={#1}]{#1}\label{#4}%
+  \addtocontents{toc}{\protect\mbtocsubtitle{#2}}%
+  \gdef\vi@chapprotocol{#3}%
+  \vi@band{o}%
+  \vi@openerblock{#2}{#3}%
+  \@afterindentfalse\@afterheading}
+\renewcommand{\specialchapter}[3]{%
+  \addchap[head={#1},tocentry={#1}]{#1}%
+  \addtocontents{toc}{\protect\mbtocsubtitle{#2}}%
+  \gdef\vi@chapprotocol{}%
+  \vi@band{#3}%
+  \vi@openerblock{#2}{}%
+  \@afterindentfalse\@afterheading}
+
+% Figures and tables of an unnumbered chapter (the prologue, the epilogue) are numbered with a
+% letter: \vifloatprefix{P} after its heading, \vifloatrestore at its end.
+\newcommand*{\vifloatprefix}[1]{%
+  \global\let\vi@origthefigure\thefigure\global\let\vi@origthetable\thetable
+  \global\let\vi@origtheHfigure\theHfigure\global\let\vi@origtheHtable\theHtable
+  \setcounter{figure}{0}\setcounter{table}{0}%
+  \gdef\thefigure{#1.\arabic{figure}}\gdef\thetable{#1.\arabic{table}}%
+  \gdef\theHfigure{#1.\arabic{figure}}\gdef\theHtable{#1.\arabic{table}}}
+\newcommand*{\vifloatrestore}{%
+  \global\let\thefigure\vi@origthefigure\global\let\thetable\vi@origthetable
+  \global\let\theHfigure\vi@origtheHfigure\global\let\theHtable\vi@origtheHtable
+  \setcounter{figure}{0}\setcounter{table}{0}}
+
+%------------------------------------------------------------------------------
+% Title page: the Hadamard codeword of 1985 (2048 bits, shown in 32 rows of 64 in an order fixed
+% by a pseudo-random permutation) fills the foot of the page and fades upwards. Three bits are
+% ringed, at codeword positions x = 45, y = 673 and x XOR y = 652; they read 1, 1, 0, and the
+% linearity test accepts. All of it comes from figures/scripts/00-emblem.py.
+%------------------------------------------------------------------------------
+\tikzfading[name=vi@coverfade,top color=transparent!0,bottom color=transparent!100]
+\newcommand*{\vi@coderows}{%
+0011011001110100111001010000010011010110001010010100110001111100,%
+0011110000010110111010000100100110111000000001011101100111000101,%
+1111010110011000001110010011001110111101101100010011010100000011,%
+0101011100001111011101010000000101111001111111010001010010011011,%
+0110001011111100000011011011100000001011110000000111000111010101,%
+1010101101010101010011110110010001011010010100010000110101110111,%
+0011000000101110101000000000000001010010000110011100011110011010,%
+0011101000100001110111000011101100001000101111010001011101000010,%
+0101001010000101100111001111111000010001011001010111010111001111,%
+0101101000100100111010001011111001111111111111010010101111000101,%
+1000001110110110110011110110000100010110111111101010001110010010,%
+0010110100011000111100011001011101100100011001001100101000011111,%
+1011101101011000111010010101001101001010011111111010101101110111,%
+1010101110000010110111011000000010010101110000000110000100001110,%
+1000000011110010001001001111111011111001111001010000101011011010,%
+0100110101111100101110101100101111011000010111010100000110011110,%
+1001000000110101011010000000101110000000011001011011000011100010,%
+1001000111011101011011011111001011010011100010111101010011100010,%
+1110110011001011100000100110010101101011011011011010000011101110,%
+1010011010111010011010011011111000101111000001101101001010110101,%
+1110010011011011100111010110011011010111110001010000011100010111,%
+0010001111101111010001000100000110011000011100101100010101101101,%
+0000001111110111000001100110100011110101100101000000110000110100,%
+1000001001000010100110100111000110001100001110110000000010101010,%
+1110010000011101001010001110010111101100110011101101010011001100,%
+0101100111100111111110011010111001001111001100001101110101011100,%
+0111011001101011100110101101000010001010101011001111011011101100,%
+1111000100101101001011010000110101001111011001100001111111111101,%
+0010101010000011010000010001011011000010011111111111000110101111,%
+0000010111000100111100111100110111110101101001110011101111111000,%
+0000111001001000001001100100011000110001100010001111011001000011,%
+0101011001011011101101101001100010110010010001001100010101000001}
+\newcommand*{\vi@pitch}{3.1}     % mm between bits
+\newcommand*{\vi@fieldx}{7.35}   % mm: centre of column 0
+\newcommand*{\vi@fieldy}{5.0}    % mm: centre of row 31 (the bottom row)
+\newcount\vi@col
+\newcount\vi@row
+\def\vi@eachbit#1{%
+  \ifx#1\relax\else
+    \node[inner sep=0pt,text=prover!58] at ({\vi@fieldx+\vi@pitch*\the\vi@col},{\vi@fieldy+\vi@pitch*(31-\the\vi@row)}) {#1};%
+    \global\advance\vi@col by 1\relax
+    \expandafter\vi@eachbit\fi}
+\newcommand*{\vi@codefield}{%
+  \global\vi@row=0\relax
+  \begin{scope}[font=\fontsize{6.4}{6.4}\ttfamily]
+  \foreach \vi@r in \vi@coderows {%
+    \global\vi@col=0\relax
+    \expandafter\vi@eachbit\vi@r\relax
+    \global\advance\vi@row by 1\relax}%
+  \end{scope}}
+\renewcommand{\mbtitlepage}[4]{%
+  \begin{titlepage}
+  \begin{tikzpicture}[remember picture,overlay,x=1mm,y=1mm]
+    \begin{scope}[shift={(current page.south west)}]
+      \vi@codefield
+      \fill[white,path fading=vi@coverfade] (0,46) rectangle (210,104);
+      % rows 11, 17, 24 and columns 52, 12, 58: x = 7.35 + 3.1 col, y = 5 + 3.1 (31 - row)
+      \foreach \vi@ax/\vi@ay/\vi@bx/\vi@by in {168.55/67.0/44.55/48.4,44.55/48.4/187.15/26.7,187.15/26.7/168.55/67.0}{%
+        \draw[verifier!80,line width=0.35pt,shorten <=2.05mm,shorten >=2.05mm] (\vi@ax,\vi@ay) -- (\vi@bx,\vi@by);}
+      \foreach \vi@ax/\vi@ay/\vi@bit in {168.55/67.0/1,44.55/48.4/1,187.15/26.7/0}{%
+        \fill[white] (\vi@ax,\vi@ay) circle (1.95);
+        \draw[verifier,line width=0.7pt] (\vi@ax,\vi@ay) circle (1.95);
+        \node[inner sep=0pt,text=verifier,font=\fontsize{7.4}{7.4}\ttfamily\bfseries] at (\vi@ax,\vi@ay) {\vi@bit};}
+    \end{scope}
+  \end{tikzpicture}%
+  \setlength{\parindent}{0pt}%
+  \vspace*{18mm}
+  {\large\scshape\color{prover}the missing textbooks\par}
+  \vspace{14mm}
+  \makebox[\textwidth][l]{\parbox{\dimexpr\textwidth+\marginparsep+\marginparwidth\relax}{\raggedright\hyphenpenalty=10000\exhyphenpenalty=10000
+    \fontsize{44}{50}\selectfont\color{ink}#1}}\par
+  \vspace{7mm}
+  {\LARGE\itshape\color{muted}#2\par}
+  \vspace{20mm}
+  {\Large #3\par}
+  \vfill
+  {\small\color{proverdeep}#4\par}
+  \vspace*{68mm}
+  \end{titlepage}}
+
+%------------------------------------------------------------------------------
+% Theorem-like environments of this volume (sharing the chapter's theorem counter)
+%------------------------------------------------------------------------------
+\theoremstyle{mbdefinition}
+\mb@newsharedtheorem{assumption}{Assumption}
+\tcolorboxenvironment{assumption}{mbdef}
+\theoremstyle{mbremark}
+\mb@newsharedtheorem{observation}{Observation}
+\tcbset{vi@observation/.style={enhanced,breakable,colback=white,frame hidden,boxrule=0pt,arc=0pt,
+    borderline west={0.6pt}{0pt}{prover!60},left=3.2mm,right=0mm,top=0.6mm,bottom=0.6mm,
+    before skip=1.1ex plus 0.4ex,after skip=1.1ex plus 0.4ex}}
+\tcolorboxenvironment{observation}{vi@observation}
+\crefname{assumption}{Assumption}{Assumptions}
+\crefname{observation}{Observation}{Observations}
+\theoremstyle{mbplain}
+
+% A heuristic derivation is an argument that is not a proof. It ends with a diamond instead of
+% the tombstone, and \qedhere works inside it as in a proof.
+\newcommand*{\vi@diamond}{\leavevmode\unskip\penalty9999 \hbox{}\nobreak\hfill\quad\hbox{$\Diamond$}}
+\newenvironment{heuristic}[1][Heuristic derivation]{\par\pushQED{\vi@diamond}\normalfont
+  \topsep5\p@\@plus5\p@\relax\trivlist\item[\hskip\labelsep\scshape #1.]\ignorespaces}
+  {\popQED\endtrivlist\@endpefalse}
+
+%------------------------------------------------------------------------------
+% Parties. A party's name is a sans-serif letter, coloured by its role in protocol boxes:
+% V (verifier, judge) ochre; P, P_1, A (prover, first debater) indigo; B (second debater) teal;
+% P_2 (a second prover) teal; H, O (a human judge consulted as an oracle) sage. Inside \item[...]
+% an optional colour must be braced: \item[{\msg[oracle]{X}{V}}].
+%------------------------------------------------------------------------------
+\newcommand*{\V}{\mathsf{V}}
+\newcommand*{\Prov}{\mathsf{P}}
+\newcommand*{\party}[1]{\mathsf{#1}}
+\def\vi@first#1#2\@nil{#1}
+\newcommand*{\vi@pc@V}{verifier}
+\newcommand*{\vi@pc@J}{verifier}
+\newcommand*{\vi@pc@P}{prover}
+\newcommand*{\vi@pc@A}{prover}
+\newcommand*{\vi@pc@B}{proverB}
+\newcommand*{\vi@pc@H}{oracle}
+\newcommand*{\vi@pc@O}{oracle}
+\expandafter\def\csname vi@pc@P_2\endcsname{proverB}
+\expandafter\def\csname vi@pc@P_{2}\endcsname{proverB}
+% the colour of a party: by its full name if listed (P_2), else by its first letter, else indigo
+\newcommand*{\vi@partycolor}[1]{%
+  \ifcsname vi@pc@\detokenize{#1}\endcsname\csname vi@pc@\detokenize{#1}\endcsname
+  \else\ifcsname vi@pc@\vi@first#1\@nil\endcsname\csname vi@pc@\vi@first#1\@nil\endcsname\else prover\fi\fi}
+\newcommand*{\vi@partyname}[2]{{\color{#1}\ensuremath{\mathsf{#2}}}}
+% labels of protocol steps: \msg{P}{V} prints "P -> V" in the sender's colour; \act{V} prints "V"
+\NewDocumentCommand{\msg}{o m m}{%
+  \IfNoValueTF{#1}{\edef\vi@c{\vi@partycolor{#2}}}{\def\vi@c{#1}}%
+  {\small\vi@partyname{\vi@c}{#2}\,{\color{muted}$\to$}\,\vi@partyname{\vi@partycolor{#3}}{#3}}}
+\NewDocumentCommand{\act}{o m}{%
+  \IfNoValueTF{#1}{\edef\vi@c{\vi@partycolor{#2}}}{\def\vi@c{#1}}%
+  {\small\vi@partyname{\vi@c}{#2}}}
+
+%------------------------------------------------------------------------------
+% Signature boxes of this volume
+%------------------------------------------------------------------------------
+% \begin{oversight}[short title] ... \end{oversight}: the oversight problem that opens a chapter
+\newtcolorbox{oversight}[1][]{enhanced,breakable,colback=ochrewash,frame hidden,boxrule=0pt,arc=0pt,
+  borderline west={1.3pt}{0pt}{verifier},left=3.2mm,right=3mm,top=1.8mm,bottom=1.8mm,
+  before skip=1.5ex plus 0.5ex,after skip=1.5ex plus 0.5ex,
+  before upper={\textsc{\color{verifier}the oversight problem}\Ifstr{#1}{}{}{\enspace{\color{verifier}\textperiodcentered}\enspace#1}%
+    {\color{verifier}.}\enspace}}
+
+% \begin{protocol}{Name} \item[\msg{P}{V}] ... \item[\act{V}] ... \end{protocol}
+% A protocol as a transcript: each step is labelled by who sends to whom, or who computes.
+% \phase{Round $j=1,\dots,\ell$} starts a group of steps. Numbered "Protocol N.k"; label prot:key:name.
+\newcounter{protocol}[chapter]
+\renewcommand*{\theprotocol}{\thechapter.\arabic{protocol}}
+\crefname{protocol}{Protocol}{Protocols}
+\newlength{\vi@protlabel}
+\setlength{\vi@protlabel}{4.3em}
+\newcommand{\phase}[1]{\item[]\hspace*{-\leftmargin}{\textsc{\color{prover}#1}}}
+\newenvironment{protocol}[1]{%
+  \refstepcounter{protocol}\def\@currentlabelname{#1}%
+  \begin{tcolorbox}[enhanced,breakable,colback=vellum,frame hidden,boxrule=0pt,arc=0pt,
+    borderline north={0.5pt}{0pt}{prover!75},borderline south={0.5pt}{0pt}{verifier!85},
+    left=3.4mm,right=3.4mm,top=1.2mm,bottom=1.8mm,
+    title={\textsc{protocol \theprotocol}\enspace\textperiodcentered\enspace\textsc{#1}},
+    fonttitle=\normalfont,coltitle=prover,colbacktitle=vellum,toptitle=1.4mm,bottomtitle=0.2mm,
+    before skip=1.8ex,after skip=1.8ex]
+  \begin{list}{}{\setlength{\labelwidth}{\vi@protlabel}\setlength{\labelsep}{0.7em}%
+      \setlength{\leftmargin}{\dimexpr\vi@protlabel+0.7em\relax}\setlength{\itemsep}{0.5ex}%
+      \setlength{\topsep}{0.4ex}\setlength{\parsep}{0.3ex}\setlength{\itemindent}{0pt}%
+      \renewcommand{\makelabel}[1]{##1\hfil}}}
+  {\end{list}\end{tcolorbox}}
+
+% \protocolcard{checks}{parties}{honesty}{verifier's cost}{catching a lie}{rests on}
+% The end-of-chapter card: what the protocol checks, who takes part, the answers to the book's
+% three questions, and the assumptions the answers rest on.
+\DeclareRobustCommand*{\vi@qmark}[1]{\tikz[baseline=(q.base)]\node[circle,fill=verifier,text=white,inner sep=0pt,
+  minimum size=1.15em,font=\sffamily\scriptsize\bfseries] (q) {#1};}
+\newcommand{\vi@cardrow}[2]{\par\noindent\hangindent=9.2em\hangafter=1
+  \makebox[9.2em][l]{#1}\ignorespaces#2\par\vspace{0.55ex}}
+\newcommand{\protocolcard}[6]{%
+  \begin{tcolorbox}[enhanced,breakable,colback=white,colframe=prover!50,boxrule=0.5pt,arc=0pt,
+    left=3mm,right=3mm,top=1.9mm,bottom=1.2mm,
+    title={\textsc{protocol card}\Ifstr{\vi@chapprotocol}{}{}{\enspace\textperiodcentered\enspace\textsc{\vi@chapprotocol}}},
+    fonttitle=\normalfont,coltitle=white,colbacktitle=prover,toptitle=1mm,bottomtitle=1mm,
+    before skip=1.8ex,after skip=1.8ex,fontupper=\small]
+  \vi@cardrow{\textsc{\color{prover}checks}}{#1}%
+  \vi@cardrow{\textsc{\color{prover}parties}}{#2}%
+  \vi@cardrow{\vi@qmark{1}\enspace\textsc{\color{verifier}honesty}}{#3}%
+  \vi@cardrow{\vi@qmark{2}\enspace\textsc{\color{verifier}verifier's cost}}{#4}%
+  \vi@cardrow{\vi@qmark{3}\enspace\textsc{\color{verifier}catching a lie}}{#5}%
+  \vi@cardrow{\textsc{\color{prover}rests on}}{#6}%
+  \end{tcolorbox}}
+% the three questions as paragraph heads in "The three questions" section
+\newcommand{\questionone}{\paragraph{\texorpdfstring{\vi@qmark{1}\enspace}{1. }Is honesty an equilibrium?}}
+\newcommand{\questiontwo}{\paragraph{\texorpdfstring{\vi@qmark{2}\enspace}{2. }What does the verifier spend?}}
+\newcommand{\questionthree}{\paragraph{\texorpdfstring{\vi@qmark{3}\enspace}{3. }How often is a lie caught?}}
+
+% \begin{dictionary} protocol side & oversight side \\ ... \end{dictionary}
+\newenvironment{dictionary}[1][Dictionary]{%
+  \begin{tcolorbox}[enhanced,breakable,colback=white,colframe=prover!45,boxrule=0.5pt,arc=0pt,
+    left=3mm,right=3mm,top=1.4mm,bottom=1.2mm,title={\textsc{\MakeLowercase{#1}}},
+    fonttitle=\normalfont,coltitle=prover,colbacktitle=indigowash,toptitle=0.8mm,bottomtitle=0.8mm,
+    before skip=1.6ex,after skip=1.6ex,fontupper=\small]%
+  \renewcommand{\arraystretch}{1.12}%
+  \begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.44\linewidth}@{\hspace{0.04\linewidth}}>{\raggedright\arraybackslash}p{0.52\linewidth}@{}}%
+  \textsc{\color{prover}in the protocol} & \textsc{\color{verifier}in oversight}\\[0.2ex]}
+  {\end{tabular}\end{tcolorbox}}
+
+%------------------------------------------------------------------------------
+% Plots: honest and cheating provers against the bounds of the theory
+%------------------------------------------------------------------------------
+\pgfplotscreateplotcyclelist{vicycle}{%
+  {prover,line width=1.0pt},%
+  {verifier,line width=1.0pt,dashed},%
+  {proverB,line width=1.0pt,densely dotted},%
+  {muted,line width=0.9pt,dashdotted}}
+\pgfplotsset{
+  vplot/.style={width=0.92\linewidth,height=0.58\linewidth,
+    axis line style={muted!80},tick style={muted!80},major tick length=2.5pt,
+    every tick label/.append style={font=\footnotesize,text=ink},
+    label style={font=\small,text=ink},title style={font=\small},
+    legend style={draw=none,fill=white,fill opacity=0.85,text opacity=1,font=\footnotesize},
+    legend cell align=left,cycle list name=vicycle,scaled ticks=false,
+    tick label style={/pgf/number format/fixed}},
+  % exact predictions and bounds of the theory
+  theory/.style={prover,line width=1.0pt,no marks},
+  theory2/.style={proverB,line width=1.0pt,dashed,no marks},
+  bound/.style={prover!70,line width=0.8pt,dash pattern=on 3pt off 2pt,no marks},
+  % measured acceptance rates of provers: honest (filled indigo), cheating (ochre, hollow)
+  honest/.style={only marks,mark=*,mark size=1.6pt,color=prover,
+    mark options={fill=prover,draw=white,line width=0.2pt}},
+  cheat/.style={only marks,mark=o,mark size=1.7pt,color=verifier,
+    mark options={line width=0.6pt,fill=white}},
+  cheat2/.style={only marks,mark=square,mark size=1.5pt,color=proverB,
+    mark options={line width=0.6pt,fill=white}},
+  ebars/.style={error bars/y dir=both,error bars/y explicit,
+    error bars/error bar style={line width=0.5pt},
+    error bars/error mark options={rotate=90,mark size=1.6pt,line width=0.5pt}},
+  guide/.style={muted,line width=0.5pt,densely dashed,no marks},
+  band/.style={fill=prover!10,draw=none},
+}
+
+%------------------------------------------------------------------------------
+% References: many sources are arXiv preprints, so arXiv identifiers are printed. Give them as
+% eprint = {NNNN.NNNNN}, eprinttype = {arxiv} (never in note).
+%------------------------------------------------------------------------------
+\ExecuteBibliographyOptions{eprint=true}
+
+%------------------------------------------------------------------------------
+% Exercise tags of this volume (in addition to \consolidation and \research)
+%------------------------------------------------------------------------------
+\newcommand{\variation}{{\scshape\color{sea}variation.}\enspace}
+\newcommand{\attack}{{\scshape\color{verifier}attack.}\enspace}
+\newcommand{\simulation}{{\scshape\color{sea}simulation.}\enspace}
+
+%------------------------------------------------------------------------------
+% Notation shared by all chapters (see frontmatter/notation.tex)
+%------------------------------------------------------------------------------
+% complexity classes in bold roman: \cc{NP}, \cc{IP}, \cc{PSPACE}, \cc{coNP}, \cc{\#P}
+\newcommand*{\cc}[1]{\ensuremath{\mathbf{#1}}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\bits}{\{0,1\}}
+\newcommand{\iid}{\overset{\mathrm{iid}}{\sim}}
+\newcommand*{\acc}{\textsf{accept}}
+\newcommand*{\rej}{\textsf{reject}}
+% the verifier's output after interacting with a prover: \interact{\Prov}{\V}(x)
+\newcommand*{\interact}[2]{\langle #1,#2\rangle}
+\DeclareMathOperator{\negl}{negl}
+\DeclareMathOperator{\Unif}{Unif}
+\DeclareMathOperator{\Bern}{Bern}
+\DeclareMathOperator{\diag}{diag}
+\DeclareMathOperator{\polylog}{polylog}
+\DeclareMathOperator{\maj}{maj}
+\providecommand{\cK}{\mathcal{K}}
+\providecommand{\cO}{\mathcal{O}}
+\providecommand{\cQ}{\mathcal{Q}}
+\providecommand{\cR}{\mathcal{R}}
+\providecommand{\cV}{\mathcal{V}}
+
+\endinput

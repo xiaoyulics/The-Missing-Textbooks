@@ -1,0 +1,391 @@
+% Chapter 12 of Verifiable Intelligence: PAC verification; query delegation with hidden checks.
+\newcommand{\pacverifyuc}{m^{\mathrm{UC}}_{\cH}}
+\newcommand{\pacverifyfam}{\mathbb{D}}
+
+\protocolchapter{Verifying Learning}{Checking a model without learning it}{PAC verification}{X,V,P,D}{ch:pacverify}
+\begin{refsection}[chapters/12-pacverify.bib]
+
+\begin{chaptersummary}
+A developer claims that its model is nearly as accurate as the best model in a reference class; an auditor who can pay for few trusted labels must check a claim about the best error in the class, which no small sample reveals. When labels are a function the developer can evaluate, the auditor can have the developer label many inputs, hide among them a few it has labeled itself, and fit a reference model to the returned labels. We prove, after Goldwasser, Rothblum, Shafer and Yehudayoff, that this query delegation certifies a model within $\eps$ of the best with $\lceil4\ln(2/\delta)/\eps\rceil$ trusted labels whatever the class, while learning needs labels in proportion to the VC dimension $d$; with noisy labels, Mutreja and Shafer show, every verifier needs $\Omega(\sqrt d/\eps^2)$. The truth is always accepted and so are small lies, since the guarantee concerns the output; the verifier spends its trusted labels, $O((d+\ln(1/\delta))/\eps^2)$ unlabeled inputs and one empirical risk minimization; a harmful lie survives with probability at most $\delta$. Left out: noisy human labels, checks that look different from the work, and models outside a fixed class.
+\end{chaptersummary}
+
+\section{The oversight problem: a claim about the best model in a class}\label{sec:pacverify:problem}
+
+Most claims in this book concern an input that the verifier holds. A claim about a learned model concerns a distribution that both parties can only sample, and its strongest form is comparative: ``our model errs on $7\%$ of reports'' is a claim about one model, ``no model you would accept does much better'' a claim about a whole class.
+
+\begin{oversight}[a routing model and the best transparent rule]
+A developer deploys a model that decides which user reports of harmful content are escalated to specialists. A regulator requires that, on the reports the platform receives, the model's error rate be within two percentage points of the best rule in a transparent reference class: the rules that place each report in one of $500$ fixed topic clusters and escalate all or none of each cluster. Whether a report should be escalated is decided by moderators applying a written policy. The developer employs thousands of moderators and claims compliance. The auditor can collect as many reports as it wants but can pay for only $1{,}500$ decisions by moderators it trusts. Nobody knows how well the best rule does.
+\end{oversight}
+
+The scenario is invented, with numbers chosen to make the difficulty visible. The auditor's budget does not even suffice to estimate the developer's error rate to within two points at confidence $0.99$ whatever that rate is: Hoeffding's inequality (\cref{thm:toolkit:chernoff}) asks for $\lceil\ln(2/0.01)/(2\cdot0.02^2)\rceil=6{,}623$ labeled reports, and the empirical rate needs about $4{,}100$ when the true one is near one half. And the claim is harder than an estimate, because it compares the model with the best of $2^{500}$ rules. Finding a nearly best rule is learning, which in the worst case needs on the order of $(d+\ln(1/\delta))/\eps^2$ labeled examples for a class of VC dimension $d$ (\cref{thm:pacverify:fundamental}): about $1.3$ million here, up to a constant factor. Even deciding whether the best error is small or large can take $\Omega(d/\log d)$ examples (\cref{thm:pacverify:multithreshold}). That no rule does much better is a negative claim about a large class, the kind that resisted short certificates in \cref{ch:certificates}.
+
+\textcite{GoldwasserEtAl2021} posed this problem in 2020 and defined \term{PAC verification}\index{PAC verification}: a verifier with samples interacts with a prover and must output a hypothesis within $\eps$ of the best in a class, or reject, whatever the prover does. They had in mind delegated learning and the checking of scientific studies without repeating them.\sidenote{The full version opens with the epigraph ``trust, but verify'', taken from \emph{The Economist}, and lists in an appendix kinds of studies that fit the model.} The theory descends from Valiant's probably approximately correct (PAC) learning \parencite{Valiant1984}, in its agnostic form, which assumes nothing about how well the best hypothesis does \parencite{Haussler1992,KearnsSchapireSellie1994},\index{agnostic learning} and from interactive proofs \parencite{GoldwasserMicaliRackoff1989}, in the doubly-efficient form of \cref{ch:delegation}, in which the honest prover must be efficient too \parencite{GoldwasserKalaiRothblum2015}. What is new is that the verifier holds no input, only access to a distribution, and that soundness concerns the loss of what it outputs. Can an auditor with a few trusted labels certify that a model is nearly optimal in a class, against a developer that may lie about everything it reports, and what must the developer do for the truth to pass?
+
+\section{The protocol: hidden checks among delegated labels}\label{sec:pacverify:protocol}
+
+A task is a distribution $\cD$ on $\cX\times\bits$, pairs of a point and a label, with marginal $\cD_\cX$ on the domain $\cX$; in this chapter $x$ denotes a point and $d$ a VC dimension, not a degree. The \term{loss}\index{loss} of a hypothesis $h\colon\cX\to\bits$ is $L_\cD(h)=\Prob_{(x,y)\sim\cD}[h(x)\ne y]$, that of a class $\cH$ is $L_\cD(\cH)=\inf_{h\in\cH}L_\cD(h)$, and $h$ is \term{$\eps$-good} if $L_\cD(h)\le L_\cD(\cH)+\eps$. On a sample $S$ of $m$ examples the empirical loss $L_S(h)$ is the fraction that $h$ labels wrongly, and an \term{empirical risk minimizer}\index{empirical risk minimization} is a member of $\argmin_{h\in\cH}L_S(h)$, which exists because $L_S$ takes at most $m+1$ values.
+
+\begin{definition}[Uniform convergence; \textcite{ShalevShwartzBenDavid2014}]\label[definition]{def:pacverify:uc}
+A sample $S$ is \term{$\eta$-representative} for $\cH$ and $\cD$ if $\abs{L_S(h)-L_\cD(h)}\le\eta$ for every $h\in\cH$. The class $\cH$ has the \term{uniform convergence}\index{uniform convergence} property if for all $\eta,\delta\in(0,1)$ some $m$ is such that, for every $\cD$ and every $m'\ge m$, a sample of $m'$ independent examples from $\cD$ is $\eta$-representative with probability at least $1-\delta$; the least such $m$ is $\pacverifyuc(\eta,\delta)$. The class \term{shatters} a set $C\subseteq\cX$ if it realizes all $2^{\abs C}$ labelings of $C$, and its \term{VC dimension}\index{VC dimension} is the largest size of a set it shatters.
+\end{definition}
+
+\begin{theorem}[The fundamental theorem; \textcite{ShalevShwartzBenDavid2014}]\label{thm:pacverify:fundamental}
+Let $\cH$ be a class of hypotheses on $\cX$.
+\begin{enumerate}
+\item If $\cH$ is finite, then $\pacverifyuc(\eta,\delta)\le\lceil\ln(2\abs\cH/\delta)/(2\eta^2)\rceil$.
+\item If $\cH$ has VC dimension $d<\infty$, then for absolute constants $C_1,C_2>0$,
+\[C_1\,\frac{d+\ln(1/\delta)}{\eta^2}\le\pacverifyuc(\eta,\delta)\le C_2\,\frac{d+\ln(1/\delta)}{\eta^2},\]
+the second inequality for all $\eta,\delta\in(0,1)$ and the first for $\eta$ and $\delta$ below absolute constants; an empirical risk minimizer is $\eps$-good with probability at least $1-\delta$ given $O((d+\ln(1/\delta))/\eps^2)$ examples, and for $\eps$ and $\delta$ below absolute constants every learner that achieves this for every $\cD$ needs at least $C_1(d+\ln(1/\delta))/\eps^2$.
+\end{enumerate}
+\end{theorem}
+
+Part (i) is Hoeffding's inequality for each hypothesis and a union bound \parencite[Corollary~4.6]{ShalevShwartzBenDavid2014}; part (ii) is their Theorem~6.8, the fundamental theorem of statistical learning, proved in their Chapter~28.\sidenote{As is customary, we ignore questions of measurability for infinite classes.} The VC dimension settles what learning costs. Verification needs a definition.
+
+\begin{definition}[PAC verification; \textcite{GoldwasserEtAl2021}]\label[definition]{def:pacverify:pacv}
+Let $\pacverifyfam$ be a family of distributions on $\cX\times\bits$ and $\alpha\ge1$. A verifier $\V$ and an honest prover $\Prov$ \term{$\alpha$-PAC verify} a class $\cH$ with respect to $\pacverifyfam$ if for all $\eps,\delta\in(0,1)$ and every $\cD\in\pacverifyfam$ the output of $\V$, a hypothesis $h$ or \rej, satisfies:
+\begin{enumerate}
+\item (completeness) after an interaction with $\Prov$, the output is a hypothesis with $L_\cD(h)\le\alpha L_\cD(\cH)+\eps$ with probability at least $1-\delta$;
+\item (soundness) for every prover $\Prov^*$, however powerful, the output is a hypothesis with $L_\cD(h)>\alpha L_\cD(\cH)+\eps$ with probability at most $\delta$;
+\end{enumerate}
+the probabilities being over both parties' samples and coins. The verification is \term{proper} if $\V$ outputs only members of $\cH$ or \rej. Each party's access to $\cD$ is part of the definition, and the verifier's labeled examples are counted separately.
+\end{definition}
+
+The authors also ask that both parties use samples and time polynomial in $1/\eps$, $\log(1/\delta)$ and parameters of $\cH$. A learner is a verifier that ignores its prover, so learning bounds the cost of verification from above; testing asks something else, whether $L_\cD(\cH)$ is small or large, without a prover and without outputting a hypothesis \parencite{GoldreichGoldwasserRon1998}. If $L_\cD(\cH)=0$ is promised, then verification is easy, as \textcite{GoldwasserEtAl2021} observe: the verifier estimates the loss of the prover's hypothesis from $O(\log(1/\delta)/\eps^2)$ labeled examples and accepts it if the estimate is below $9\eps/10$. Without the promise, an error rate says nothing by itself: it may be the best in the class or far from it. The protocol of this chapter needs three conditions.
+
+\begin{assumption}[Delegable labels; \textcite{GoldwasserEtAl2021}, Conditions~5.1]\label[assumption]{ass:pacverify:conditions}
+The class $\cH$, the distribution $\cD$ and the parties' access satisfy the following.
+\begin{enumerate}
+\item The labels are a function: some $f\colon\cX\to\bits$ satisfies $\Prob_{(x,y)\sim\cD}[y=f(x)]=1$.
+\item The verifier can draw labeled examples from $\cD$, at a cost, and unlabeled points from $\cD_\cX$, cheaply; the prover can evaluate $f$ at points of its choice.
+\item The class $\cH$ has finite VC dimension $d$, and the verifier can compute an empirical risk minimizer on every sample.
+\end{enumerate}
+\end{assumption}
+
+The source states (ii) for a family of distributions with a common marginal; what matters is that the verifier's labeled and unlabeled points have the same law. By (i), the prover can supply every label it is asked for; the question is whether it does.
+
+\begin{protocol}{Query delegation with hidden checks}\label{prot:pacverify:delegation}
+\item[\act{V}] Draw $q$ labeled examples $(x_1,y_1),\dots,(x_q,y_q)$ from $\cD$ and $m-q$ unlabeled points $x_{q+1},\dots,x_m$ from $\cD_\cX$. Pick a uniformly random permutation $\pi$ of $\{1,\dots,m\}$.
+\item[\msg{V}{P}] Send the points in shuffled order: $z_p=x_{\pi(p)}$ for $p=1,\dots,m$.
+\item[\msg{P}{V}] Send labels $\tilde y_1,\dots,\tilde y_m\in\bits$. The honest prover sends $\tilde y_p=f(z_p)$.
+\item[\act{V}] At each check position, a $p$ with $\pi(p)\le q$, compare $\tilde y_p$ with $y_{\pi(p)}$; if some pair differs, \rej.
+\item[\act{V}] Otherwise output an empirical risk minimizer $\hat h$ on $\tilde S=((z_1,\tilde y_1),\dots,(z_m,\tilde y_m))$.
+\end{protocol}
+
+The theory uses $q=\lceil4\ln(2/\delta)/\eps\rceil$ checks and $m\ge\max\{q,\pacverifyuc(\eps/4,\delta/2)\}$ points.\index{query delegation} For a worked run take $\cX=[0,1)$, the thresholds $h_t$, $0\le t\le1$, which label $1$ exactly the points $x\ge t$, and $m=8$, $q=2$ (\cref{tab:pacverify:run}). Every threshold labels the eight points as one placed at a point or at $1$ does, so the verifier compares only these. On the honest labels $h_{0.29}$ and $h_{0.52}$ make two errors each and every other one at least three; breaking ties toward the smaller threshold, the verifier outputs $h_{0.29}$. A prover that wants $h_{0.90}$ output needs one false label: labeling $0.61$ with $0$ gives $h_{0.90}$ two errors and every other one at least three. That point is a check, and the verifier rejects. A prover that falsifies $b$ labels escapes exactly when none of them is a check, with probability $\binom{8-b}{2}/\binom82$, which is $\frac34$ for $b=1$: eight points and two checks make a weak audit. \Cref{thm:pacverify:main} chooses $m$ and $q$ so that every lie large enough to matter is caught with probability at least $1-\delta/2$.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}l *{8}{c}@{}}
+\toprule
+position $p$ & $1$ & $2$ & $3$ & $4$ & $5$ & $6$ & $7$ & $8$\\
+point $z_p$ & $0.61$ & $0.08$ & $0.90$ & $0.29$ & $0.74$ & $0.36$ & $0.52$ & $0.17$\\
+check label $y_{\pi(p)}$ & $1$ & & & & & $0$ & & \\
+\midrule
+honest label $f(z_p)$ & $1$ & $0$ & $1$ & $1$ & $0$ & $0$ & $1$ & $0$\\
+liar's label & $\mathbf{0}$ & $0$ & $1$ & $1$ & $0$ & $0$ & $1$ & $0$\\
+\bottomrule
+\end{tabular}
+\caption{A run of \cref{prot:pacverify:delegation} for thresholds on $[0,1)$, $m=8$, $q=2$. The verifier labeled $0.61$ and $0.36$ itself; the prover sees only the second row. The honest labels pass, and the verifier outputs $h_{0.29}$, which errs on $0.36$ and $0.74$. The liar's false label (bold) would make $h_{0.90}$ the unique minimizer, but it falls on a check.}\label{tab:pacverify:run}
+\end{table}
+
+\begin{dictionary}
+distribution $\cD$ on $\cX\times\bits$ & the reports the platform receives, with the decisions the policy prescribes\\
+labeling function $f$ & the policy as moderators apply it, which the developer can consult at scale\\
+class $\cH$, loss $L_\cD(\cH)$ & the transparent rules, and the best error among them, which nobody knows\\
+$q$ labeled examples; unlabeled points & decisions bought from trusted moderators; reports collected for free\\
+delegated labels $\tilde y_p$ & the decisions the developer reports for the auditor's sample\\
+hidden checks & audit items mixed into the work, indistinguishable from it\\
+empirical risk minimizer $\hat h$ & the reference rule the auditor fits to the developer's decisions\\
+soundness error $\delta$ & the chance of certifying a rule more than $\eps$ worse than the best
+\end{dictionary}
+
+Two things had to be noticed. What the auditor lacks is labels, not computation, and labels, unlike conclusions, can be spot-checked one at a time. And the auditor need not catch every lie: empirical risk minimization is stable under a small fraction of wrong labels, so it suffices to catch the lies large enough to move the minimizer, which are large enough to land on a hidden check. The checks play the part of the private coins of \cref{ch:interaction}: their positions are the verifier's secret.
+
+\section{The theory: lies that matter are caught}\label{sec:pacverify:theory}
+
+A large lie, a large fraction of false labels, must survive $q$ hidden checks (\cref{lem:pacverify:hidden}); a small lie survives easily but cannot move the minimizer far (\cref{lem:pacverify:robust}).
+
+\begin{lemma}[Hidden checks]\label[lemma]{lem:pacverify:hidden}\index{hidden checks}
+In \cref{prot:pacverify:delegation}, let $Q=\{p:\pi(p)\le q\}$ be the set of check positions.
+\begin{enumerate}
+\item The set $Q$ is uniform over the $q$-element subsets of $\{1,\dots,m\}$ and independent of the points $z_1,\dots,z_m$ that the prover sees.
+\item Under \cref{ass:pacverify:conditions}(i), call position $p$ wrong if $\tilde y_p\ne f(z_p)$. For every prover and every integer $b$ with $0\le b\le m$, the probability that the verifier does not reject while at least $b$ positions are wrong is at most
+\begin{equation}\label{eq:pacverify:hyper}
+\binom{m-b}{q}\Big/\binom mq\le\Bigl(1-\frac bm\Bigr)^q\le e^{-qb/m},
+\end{equation}
+with equality in the first bound for a prover that always makes exactly $b$ positions wrong. The probability is over the verifier's samples and permutation and the prover's coins.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to show that the points the prover sees carry no information about the permutation, and then to count the sets of checks that miss the false labels. For (i), fix a permutation $\sigma$. The points $x_1,\dots,x_m$ are independent with law $\cD_\cX$, the first $q$ as the inputs of labeled examples, and independent of $\pi$; so $(x_{\sigma(1)},\dots,x_{\sigma(m)})$ consists of $m$ independent points with law $\cD_\cX$. The conditional law of $(z_1,\dots,z_m)$ given $\pi=\sigma$ is therefore the same for every $\sigma$, and the points are independent of $\pi$, hence of $Q$. Each $q$-element set equals $Q$ for exactly $q!(m-q)!$ permutations, so $Q$ is uniform.
+
+For (ii), the prover's labels are a function of the points, its coins and $f$, so the set $W$ of wrong positions is independent of $Q$ by (i). Since $y_i=f(x_i)$ with probability $1$ and $x_{\pi(p)}=z_p$, a check at position $p$ fails exactly when $p\in W$, and the verifier does not reject exactly when $Q\cap W=\emptyset$. Given $W$ with $w$ elements, $Q$ avoids it with probability $\binom{m-w}{q}/\binom mq$, the fraction of $q$-element sets outside $W$, which does not increase with $w$ and is $0$ when $w>m-q$. Averaging over $W$ on the event $w\ge b$ gives the first bound, with equality if always $w=b$. For the second, write the ratio as $\prod_{i=0}^{q-1}(m-b-i)/(m-i)$; when $b\le m-q$, each factor is $1-b/(m-i)\le1-b/m$. The third is $1-u\le e^{-u}$.
+\end{proof}
+
+The prover cannot steer its lies away from the checks, whose positions it cannot see: the number of lies that land on checks is hypergeometric, whatever lies it tells.\sidenote{The same count governs naive spot checks of a long proof (\cref{ch:spotchecks}), a checker that reads $q$ of the $\abs F$ clauses of a formula (\cref{ch:certificates}), and spot checks of a training log (\cref{ch:training}).}
+
+\begin{lemma}[A sample with a few wrong labels is still representative]\label[lemma]{lem:pacverify:robust}\index{empirical risk minimization!robustness}
+Let $S=((z_p,f(z_p)))_{p\le m}$ and $\tilde S=((z_p,\tilde y_p))_{p\le m}$ differ in at most $\tau m$ labels.
+\begin{enumerate}
+\item For every function $g\colon\cX\to\bits$, $\abs{L_{\tilde S}(g)-L_S(g)}\le\tau$.
+\item If $S$ is $\eta$-representative for $\cH$ and $\cD$, then $\tilde S$ is $(\eta+\tau)$-representative, and every empirical risk minimizer $\hat h$ on $\tilde S$ satisfies $L_\cD(\hat h)\le L_\cD(\cH)+2\eta+2\tau$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+For (i), changing one label changes whether $g$ errs at that position and nowhere else, so the error counts of $g$ on $S$ and $\tilde S$ differ by at most $\tau m$. For (ii), the triangle inequality and (i) give $\abs{L_{\tilde S}(h)-L_\cD(h)}\le\tau+\eta$ for every $h\in\cH$. Then for every $h^*\in\cH$, representativeness of $\tilde S$ for $\hat h$, minimality of $\hat h$, and representativeness for $h^*$ give
+\[L_\cD(\hat h)\le L_{\tilde S}(\hat h)+\eta+\tau\le L_{\tilde S}(h^*)+\eta+\tau\le L_\cD(h^*)+2\eta+2\tau,\]
+and the infimum over $h^*$ gives the claim.
+\end{proof}
+
+No probability enters: once the clean sample is representative, the adversary's $\tau m$ labels are absorbed by the triangle inequality, wherever they are. The factor $2$ cannot be improved, because a label on which two hypotheses disagree moves the difference of their empirical losses by $2/m$ (\cref{ex:pacverify:tight}).
+
+\begin{theorem}[Query delegation; \textcite{GoldwasserEtAl2021}, Claim~5.2]\label{thm:pacverify:main}
+Assume \cref{ass:pacverify:conditions}, let $\eps,\delta\in(0,1)$, and run \cref{prot:pacverify:delegation} with $q\ge1$ checks and $m\ge\max\{q,\pacverifyuc(\eps/4,\delta/2)\}$ points.
+\begin{enumerate}
+\item \emph{Completeness.} With the honest prover the verifier never rejects, and with probability at least $1-\delta/2$ its output satisfies $L_\cD(\hat h)\le L_\cD(\cH)+\eps/2$.
+\item \emph{Soundness.} For every prover $\Prov^*$, the probability, over the verifier's samples and permutation and the prover's coins, that the verifier outputs a hypothesis $\hat h$ with $L_\cD(\hat h)>L_\cD(\cH)+\eps$ is at most
+\begin{equation}\label{eq:pacverify:sound}
+\Bigl(1-\frac\eps4\Bigr)^q+\frac\delta2\le e^{-\eps q/4}+\frac\delta2.
+\end{equation}
+With $q=\lceil4\ln(2/\delta)/\eps\rceil$ this is at most $\delta$, and the protocol properly $1$-PAC verifies $\cH$ with respect to all distributions whose labels are a function.
+\item \emph{Costs.} The verifier uses $q$ labeled examples, $m-q$ unlabeled points and one uniform permutation; it sends $m$ points, receives $m$ bits, and computes one empirical risk minimizer on $m$ examples. The honest prover evaluates $f$ at $m$ points. For VC dimension $d$, $m$ can be taken $O((d+\ln(1/\delta))/\eps^2)$, while $q$ does not depend on $\cH$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to show that the verifier is fooled only by a large lie that survives the checks or by an unrepresentative sample, and to bound the probability of each. Let $S=((z_p,f(z_p)))_{p\le m}$ be the clean sample. By \cref{lem:pacverify:hidden}(i) the points $z_p$ are $m$ independent draws from $\cD_\cX$, and by \cref{ass:pacverify:conditions}(i) the pair $(x,f(x))$ with $x\sim\cD_\cX$ has law $\cD$; so $S$ consists of $m$ independent examples from $\cD$, whatever the prover does. Since $m\ge\pacverifyuc(\eps/4,\delta/2)$, the event $E_{\mathrm{rep}}$ that $S$ is $\eps/4$-representative has probability at least $1-\delta/2$.
+
+For (i), the honest labels are $f(z_p)$, so every check passes, because $y_i=f(x_i)$ with probability $1$, and $\tilde S=S$. On $E_{\mathrm{rep}}$, \cref{lem:pacverify:robust}(ii) with $\tau=0$ gives $L_\cD(\hat h)\le L_\cD(\cH)+\eps/2$.
+
+For (ii), let $E_{\mathrm{lie}}$ be the event that the verifier does not reject while more than $\eps m/4$ positions are wrong. More than $\eps m/4$ means at least $b=\lfloor\eps m/4\rfloor+1$, and $b/m>\eps/4$, so \cref{lem:pacverify:hidden}(ii) gives $\Prob[E_{\mathrm{lie}}]\le(1-b/m)^q\le(1-\eps/4)^q$. If neither $E_{\mathrm{lie}}$ nor the complement of $E_{\mathrm{rep}}$ occurs and the verifier outputs $\hat h$, then at most $\eps m/4$ labels are wrong and $S$ is $\eps/4$-representative, so \cref{lem:pacverify:robust}(ii) with $\eta=\tau=\eps/4$ gives $L_\cD(\hat h)\le L_\cD(\cH)+\eps$. The bad event is therefore contained in $E_{\mathrm{lie}}$ or in the complement of $E_{\mathrm{rep}}$, which proves the first bound in \eqref{eq:pacverify:sound}; the second is $1-u\le e^{-u}$. When $q\ge4\ln(2/\delta)/\eps$, $e^{-\eps q/4}\le\delta/2$. Completeness in the sense of \cref{def:pacverify:pacv} follows from (i) since $1-\delta/2\ge1-\delta$, and the verification is proper because $\hat h\in\cH$.
+
+For (iii), the resources are read off the protocol; \cref{thm:pacverify:fundamental}(ii) gives $\pacverifyuc(\eps/4,\delta/2)\le16C_2(d+\ln(2/\delta))/\eps^2$, and $q=O(\ln(1/\delta)/\eps)$ is of smaller order.
+\end{proof}
+
+The source writes the number of checks as $\lceil4\log(2/\delta)/\eps\rceil$ without fixing the base. Its proof needs $e^{-\eps q/4}\le\delta/2$, that is $q\ge4\ln(2/\delta)/\eps$, so the natural logarithm gives the fewest checks the argument allows: base $2$ also works but asks for $173$ checks instead of $120$ at $\eps=\delta=0.1$, base $10$ would give $53$, too few for the proof, and the sharper $(1-\eps/4)^q$ of \eqref{eq:pacverify:sound} allows $119$ (\cref{ex:pacverify:log}). The source's soundness argument is a six-step chain through an empirical risk minimizer on the clean sample; \cref{lem:pacverify:robust} shortens it to three.
+
+The verifier's labeled examples do not depend on the class. That a learner's grow with the VC dimension even when labels are a function takes an argument, since the lower bound of \cref{thm:pacverify:fundamental} uses noisy labels; a random labeling function looks like noise.
+
+\begin{corollary}[Verifying needs fewer labels than learning]\label[corollary]{cor:pacverify:separation}
+For every $d\ge1$ there are a domain and a class $\cH_d$ of VC dimension $d$ such that, with respect to the distributions whose labels are a function, and for $\eps$ and $\delta$ below absolute constants:
+\begin{enumerate}
+\item with the access of \cref{ass:pacverify:conditions}(ii), $\cH_d$ is properly $1$-PAC verifiable by a verifier that uses $\lceil4\ln(2/\delta)/\eps\rceil$ labeled examples;
+\item every learner that outputs members of $\cH_d$, and an $\eps$-good one with probability at least $1-\delta$ for every such distribution, uses at least $c(d+\ln(1/\delta))/\eps^2$ labeled examples, for an absolute constant $c>0$, even if it also draws unlabeled points.
+\end{enumerate}
+\end{corollary}
+
+\begin{proofsketch}
+Part (i) is \cref{thm:pacverify:main}. For (ii), let the domain be $d$ disjoint infinite cells and $\cH_d$ the functions constant on every cell. The lower bound of \cref{thm:pacverify:fundamental}(ii) is proved with distributions on one point per cell whose label at the point of cell $i$ is $1$ with some probability $p_i$ \parencite[Section~28.2]{ShalevShwartzBenDavid2014}. Spread the mass of each point uniformly over $N$ points of its cell, which changes no loss in $\cH_d$, and replace the noise by a random function $f$ that labels each point of cell $i$ with $1$ independently with probability $p_i$. As long as no point is drawn twice, an event of probability at least $1-m^2/(2N)$, a learner sees labels distributed exactly as noisy ones; and by Hoeffding's inequality and a union bound over the $2^d$ hypotheses, every hypothesis has, with probability $1-o(1)$, nearly the same loss under $f$ as under the noise, as $N$ grows. A proper learner that succeeds for every labeling function thus succeeds for the noisy distributions, up to vanishing changes of $\eps$ and $\delta$, whose computation we omit. Within each family of the construction the marginal is fixed, so unlabeled points tell the learner nothing.
+\end{proofsketch}
+
+The gap is in labeled examples only; the honest prover labels all $m$ points. The protocol also answers the oversight question directly, by comparing the developer's model with the reference rule.
+
+\begin{proposition}[Auditing a submitted model]\label[proposition]{prop:pacverify:audit}
+Assume \cref{ass:pacverify:conditions}; let $\eps,\delta\in(0,1)$ and $\theta\ge0$. Before the verifier draws its sample, the prover sends a classifier $\tilde h\colon\cX\to\bits$, not necessarily in $\cH$; the verifier runs \cref{prot:pacverify:delegation} with $q=\lceil4\ln(3/\delta)/\eps\rceil$ and $m\ge\max\{q,\pacverifyuc(\eps/4,\delta/3),8\ln(6/\delta)/\eps^2\}$, and if the checks pass, it accepts $\tilde h$ when $L_{\tilde S}(\tilde h)\le L_{\tilde S}(\hat h)+\theta$ for an empirical risk minimizer $\hat h$ on $\tilde S$.
+\begin{enumerate}
+\item If $L_\cD(\tilde h)\le L_\cD(\cH)+\theta-\eps/2$ and the prover labels honestly, then the verifier accepts with probability at least $1-2\delta/3$.
+\item For every prover, the verifier accepts a classifier with $L_\cD(\tilde h)>L_\cD(\cH)+\theta+\eps$ with probability at most $\delta$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to add one event to the proof of \cref{thm:pacverify:main}: that the empirical loss of the submitted classifier is far from its loss. Let $S$, $E_{\mathrm{rep}}$ and $E_{\mathrm{lie}}$ be as in that proof, with $\delta/3$ for $\delta/2$, so that $\Prob[E_{\mathrm{lie}}]\le e^{-\eps q/4}\le\delta/3$ and $\Prob[E_{\mathrm{rep}}]\ge1-\delta/3$. Let $E_{\tilde h}$ be the event $\abs{L_S(\tilde h)-L_\cD(\tilde h)}>\eps/4$. The classifier is sent before the verifier samples, so it is independent of $S$, and Hoeffding's inequality for the $m$ independent indicators of its errors gives $\Prob[E_{\tilde h}]\le2e^{-m\eps^2/8}\le\delta/3$ by the choice of $m$.
+
+For (ii), suppose that none of $E_{\mathrm{lie}}$, $E_{\tilde h}$ and the complement of $E_{\mathrm{rep}}$ occurs and that the verifier accepts. At most $\eps m/4$ labels are wrong, so by \cref{lem:pacverify:robust} the sample $\tilde S$ is $\eps/2$-representative for $\cH$, and $\abs{L_{\tilde S}(\tilde h)-L_\cD(\tilde h)}\le\abs{L_{\tilde S}(\tilde h)-L_S(\tilde h)}+\abs{L_S(\tilde h)-L_\cD(\tilde h)}\le\eps/2$. For every $h^*\in\cH$, the latter, the acceptance rule, the minimality of $\hat h$ and the former give, in turn,
+\[L_\cD(\tilde h)\le L_{\tilde S}(\tilde h)+\frac\eps2\le L_{\tilde S}(\hat h)+\theta+\frac\eps2\le L_{\tilde S}(h^*)+\theta+\frac\eps2\le L_\cD(h^*)+\theta+\eps.\]
+So accepting a classifier with $L_\cD(\tilde h)>L_\cD(\cH)+\theta+\eps$ requires one of the three events, of total probability at most $\delta$. For (i), the honest prover passes the checks and $\tilde S=S$. Outside $E_{\tilde h}$ and the complement of $E_{\mathrm{rep}}$, an event of probability at least $1-2\delta/3$, the hypothesis gives $L_S(\tilde h)\le L_\cD(\tilde h)+\eps/4\le L_\cD(\cH)+\theta-\eps/4$, while $L_\cD(\cH)\le L_\cD(\hat h)\le L_S(\hat h)+\eps/4$; so $L_S(\tilde h)\le L_S(\hat h)+\theta$, and the verifier accepts.
+\end{proof}
+
+The classifier must come first: one chosen after the points are seen can fit the returned labels and be arbitrary elsewhere (\cref{ex:pacverify:commit}). In the oversight box take $\eps=0.02$ and $\delta=0.01$. A reference rule within two points of the best costs the auditor $q=1{,}060$ trusted decisions (\cref{thm:pacverify:main}). Auditing the developer's model with $\theta=0$ costs $q=1{,}141$; a model more than two points worse than the best rule then passes with probability at most $\delta$, but completeness covers only models a point better than that rule. Both fit the budget, and the developer's moderators label about seven million reports, by \cref{thm:pacverify:fundamental}(i) for $2^{500}$ rules. Delegation saves the auditor's labels, not the developer's work or the auditor's computation, which \textcite[Remark~5.5]{GoldwasserEtAl2021} suggest delegating too.
+
+\section{The theory: noisy labels, certificates, and stronger access}\label{sec:pacverify:noisy}
+
+\subsection{When labels are noisy}
+
+Without labels that are a function of the input, no verifier makes do with a number of labels independent of the class.
+
+\begin{theorem}[{A lower bound for noisy labels; \textcite[Theorem~8]{MutrejaShafer2023}}]\label{thm:pacverify:sqrtd}
+There are absolute constants $C,c>0$ such that the following holds. Let $\eps\in(0,\frac14)$ and let $\cH$ have VC dimension $d$. If a verifier that uses $m_{\V}$ independent labeled examples and an honest prover that draws its own examples meet the conditions of \cref{def:pacverify:pacv}, with $\alpha=1$, for this $\eps$, for $\delta=1/3$ and for every distribution on $\cX\times\bits$, then $m_{\V}\ge(C\sqrt d-c)/\eps^2$.
+\end{theorem}
+
+\begin{proofsketch}
+The plan is to turn a verifier into a tester for a problem known to need many samples. Let $X_0$ be a set of $d$ points shattered by $\cH$. Under $\cD_U$, uniform on $X_0\times\bits$, every hypothesis has loss $\frac12$. Under $\cD_h$, for a labeling $h$ of $X_0$, the marginal is uniform on $X_0$ and the label agrees with $h$ with probability $\frac12+2\eps$, so the best loss is $\frac12-2\eps$. By Paninski's lower bound for testing uniformity \parencite{Paninski2008}, telling $t$ samples of $\cD_U$ from $t$ samples of $\cD_h$, with $h$ uniformly random, with success probability bounded away from $\frac12$ needs $t=\Omega(\sqrt d/\eps^2)$. A tester runs the verifier on its samples and plays the honest prover itself, feeding it samples of $\cD_U$, which it can generate. Under $\cD_U$ this is an honest run, and completeness makes the verifier accept with probability at least $\frac23$, with an output of loss $\frac12$. Under $\cD_h$ the simulated prover is some prover, and soundness makes the verifier reject or output loss at most $\frac12-\eps$, with probability at least $\frac23$. A fresh sample of $O(1/\eps^2)$ examples tells these outcomes apart, so $m_{\V}+O(1/\eps^2)=\Omega(\sqrt d/\eps^2)$. Properness, which the source assumes, is not used. Omitted: Paninski's bound and the constants; see \textcite{MutrejaShafer2023}, Section~3.
+\end{proofsketch}
+
+The hard distributions have random labels, so no function exists for a prover to evaluate, and their marginal is the same under every hypothesis, so unlabeled points would not help; \cref{thm:pacverify:main} rests on labels that are a function of the point, as \textcite{GurEtAl2024} also observe.\sidenote{Theorems~8 and~9 of the proceedings version of \textcite{MutrejaShafer2023} are Theorems~2.1 and~2.2 of its arXiv version. Theorem~8 is stated for every $\eps\in(0,1)$, but labels biased by $4\eps$ need $\eps<\frac14$; its proof also writes $\frac12-4\eps$ for the best loss under $\cD_h$ and drops a factor $16$ in applying Paninski's bound, so its constants $C=0.3$, $c=3$ need repair. The form of the bound does not change.} For unions of $d$ intervals on $[0,1]$ and all distributions, \textcite[Theorem~9]{MutrejaShafer2023} attain the dependence on $d$, with $O(\sqrt d\log(1/\delta)\eps^{-2.5})$ examples for the verifier and $O((d^2\log(d/\eps)+\log(1/\delta))\eps^{-4})$ for the honest prover.
+
+\subsection{Certificates of loss}
+
+What makes an agnostic claim hard is the lower bound on $L_\cD(\cH)$. \Textcite{GoldwasserEtAl2021} certify it for thresholds.
+
+\begin{definition}[Certificates of loss; \textcite{GoldwasserEtAl2021}]\label[definition]{def:pacverify:certificate}
+Let $\cT=\{h_t:0\le t\le1\}$ be the thresholds on $[0,1]$ and $\cD$ a distribution on $[0,1]\times\bits$. A \term{certificate of loss}\index{certificate of loss} is a pair $0\le a\le b\le1$; it names the events $A_a=[0,a)\times\{1\}$, ones to the left of $a$, and $B_b=[b,1]\times\{0\}$, zeros from $b$ on, and certifies the value $\min\{\cD(A_a),\cD(B_b)\}$.
+\end{definition}
+
+\begin{proposition}[Certificates are sound; \textcite{GoldwasserEtAl2021}, Claim~3.4]\label[proposition]{prop:pacverify:certsound}
+For every $\cD$ and every certificate $(a,b)$, $L_\cD(\cT)\ge\min\{\cD(A_a),\cD(B_b)\}$.
+\end{proposition}
+
+\begin{proof}
+A threshold that labels a point of $A_a$ correctly labels all of $B_b$ wrongly. Precisely, let $0\le t\le1$. If $t<a$, then $h_t=1$ on $[b,1]$ because $b\ge a>t$, so $h_t$ errs on all of $B_b$ and $L_\cD(h_t)\ge\cD(B_b)$. If $t\ge a$, then $h_t=0$ on $[0,a)$, so $h_t$ errs on all of $A_a$ and $L_\cD(h_t)\ge\cD(A_a)$. The infimum over $t$ proves the claim.
+\end{proof}
+
+\begin{proposition}[Half the loss is certified; \textcite{GoldwasserEtAl2021}, Claim~3.5]\label[proposition]{prop:pacverify:certhalf}
+If the marginal of $\cD$ on $[0,1]$ has no atoms, some certificate has $\cD(A_a)=\cD(B_b)=L_\cD(\cT)/2$.
+\end{proposition}
+
+\begin{proof}
+The plan is to start from an optimal threshold, whose errors are ones to its left and zeros to its right, and to move the ends of a certificate inward until each event carries half the loss. Without atoms, $t\mapsto L_\cD(h_t)=\cD([0,t)\times\{1\})+\cD([t,1]\times\{0\})$ is continuous on $[0,1]$, so it attains its minimum $\ell=L_\cD(\cT)$ at some $t$. Let $\ell_1=\cD([0,t)\times\{1\})$ and $\ell_0=\cD([t,1]\times\{0\})$, so that $\ell_1+\ell_0=\ell$.
+
+Suppose first that $\ell_1\ge\ell/2\ge\ell_0$. The function $u\mapsto\cD([0,u)\times\{1\})$ is continuous and increases from $0$ at $u=0$ to $\ell_1$ at $u=t$, so some $a\le t$ has $\cD(A_a)=\ell/2$. The thresholds $h_a$ and $h_t$ differ exactly on $[a,t)$, where $h_a$ says $1$ and $h_t$ says $0$, so the optimality of $h_t$ gives
+\[0\le L_\cD(h_a)-L_\cD(h_t)=\cD([a,t)\times\{0\})-\cD([a,t)\times\{1\}),\]
+and $\cD([a,t)\times\{1\})=\ell_1-\ell/2=\ell/2-\ell_0$. Hence $\cD([a,t)\times\{0\})\ge\ell/2-\ell_0$, and by continuity some $b$ with $a\le b\le t$ has $\cD([b,t)\times\{0\})=\ell/2-\ell_0$. Then $\cD(B_b)=\cD([b,t)\times\{0\})+\ell_0=\ell/2$.
+
+If instead $\ell_0\ge\ell/2\ge\ell_1$, then the same argument applies to the law of $(1-x,1-y)$: the reflection maps thresholds to thresholds, up to a single point of probability $0$, exchanges $\ell_0$ and $\ell_1$, and maps a certificate $(a,b)$ for the reflected law to the certificate $(1-b,1-a)$ for $\cD$, with the two events exchanged.
+\end{proof}
+
+The factor $\frac12$ is attained (\cref{ex:pacverify:half}). On one interval a certificate saves nothing, since thresholds are learned from $O(\log(1/\delta)/\eps^2)$ examples;\sidenote{The source checks a single certificate by estimating its two weights with Hoeffding's inequality, from $O(\log(1/\delta)/\eta^2)$ examples for accuracy $\eta$ (its Claim~3.6).} the saving comes from many intervals checked at once.
+
+\begin{theorem}[Multi-thresholds; \textcite{GoldwasserEtAl2021}, Lemma~3.8]\label{thm:pacverify:multithreshold}
+Let $\cT_d$ be the functions on $\R$ that vanish outside $[0,d]$ and are a threshold on each interval $(i-1,i]$. For every fixed $\eps,\delta\in(0,\frac12)$:
+\begin{enumerate}
+\item $\cT_d$ is properly $2$-PAC verifiable in one round, with respect to distributions with an absolutely continuous marginal, by a verifier that uses $O(\sqrt d\log d\log(1/\delta)/\eps^6)$ random examples and an honest prover that uses $O((d^3\log^2d/\eps^4)\log(d/\eps)+(d\sqrt d\log d/\eps^2)\log(1/\delta))$, each in time polynomial in its examples;
+\item agnostic learning of $\cT_d$ needs $\Omega((d+\log(1/\delta))/\eps^2)$ examples, and if $\eps\le1/32$, then even $2$-PAC learning needs $\Omega(d/\log d)$;
+\item deciding without a prover, with success probability at least $1-\delta$, whether $L_\cD(\cT_d)\le\alpha$ or $L_\cD(\cT_d)\ge\beta$, for $0<\alpha<\beta<\frac12$, needs $\Omega(d/\log d)$ examples.
+\end{enumerate}
+\end{theorem}
+
+In the protocol of (i) the prover sends a hypothesis $\tilde h$ and, for each interval, a certificate whose two events it claims to weigh $\ell_i$ each, worth half the loss there by \cref{prop:pacverify:certhalf}; the weights sum to $\tilde\ell$. The verifier estimates $L_\cD(\tilde h)$, checks all weights at once with an identity tester on the $2d+1$ cells formed by the events and the rest, from about $\sqrt d$ examples, and accepts if the estimated loss is at most $2\tilde\ell+\eps/3$. By \cref{prop:pacverify:certsound} on each interval, weights correct within $\eps/4$ in total give $L_\cD(\cT_d)\ge\tilde\ell-\eps/4$, and acceptance gives $L_\cD(\tilde h)\le2\tilde\ell+\eps/2\le2L_\cD(\cT_d)+\eps$. The factor $\alpha=2$ is the price of certifying half the loss, and (ii) and (iii) show that the saving is not an artifact of it. The source discretizes the continuous marginals in its Appendix~C.
+
+\subsection{A prover with stronger access}
+
+Hidden checks also let a verifier use access that only the prover has. In the interactive Goldreich--Levin protocol\index{Goldreich--Levin algorithm!interactive} \parencite[Lemma~2.3]{GoldwasserEtAl2021}, the prover may query $f\colon\bits^n\to\bits$, the verifier sees only uniformly random labeled examples, and the verifier runs the algorithm of \textcite{GoldreichLevin1989} with its queries delegated, a random subset of them being points of its own sample. Against every prover it rejects or outputs a list containing every $T$ with $\abs{\hat f(T)}\ge\tau$, for $\tau\ge2^{-n/10}$, except with probability $\delta$, and with the honest prover it outputs such a list with probability at least $1-\delta$; it uses $O((n/\tau)\log(n/\tau)\log(1/\delta))$ examples, the honest prover $O((n^3/\tau^5)\log(1/\delta))$ queries. This verifies Fourier-sparse functions under the uniform distribution from random examples alone, although, as the source notes, learning them efficiently from random examples would contradict the hardness of learning parity with noise. \Textcite{GurEtAl2024} make the examples for the $t$ heaviest coefficients, to accuracy $\eps$, polynomial in $t/\eps$ and independent of $n$, and treat $\cc{AC}^0[2]$ and $k$-juntas. They also combine the delegated labels of this chapter with delegating the minimization itself through the GKR protocol (\cref{ch:delegation}): with a labeling function and unlabeled points, every finite class of circuits on $n$ inputs is then verifiable from $O(\log(1/\delta)/\eps)$ labeled examples by a verifier running in time polynomial in $n$, $\log\abs\cH$, $1/\eps$ and $\log(1/\delta)$, while the honest prover's time is polynomial in $\abs\cH$. Without double efficiency, they conclude, the model becomes trivial.\sidenote{Without unlabeled points, their Protocol~8 delegates only the minimization and uses $O((d+\log(1/\delta))/\eps^2)$ labeled examples.}
+
+\subsection{Claims about data}
+
+A developer may also claim a property of its data.\index{distribution testing} \Textcite{ChiesaGur2018} showed that a proof string helps a distribution tester at most quadratically, and interaction with private coins exponentially. Support size, entropy and distance from uniformity over $N$ elements need $\Theta(N/\log N)$ samples without help \parencite{ValiantValiant2011}; \textcite{HermanRothblum2022,HermanRothblum2023} give interactive proofs for them with about $\sqrt N$, the second with an honest prover in quasi-linear time, \textcite{HermanRothblum2024} give sublinear ones for every property whose distance can be computed by uniform circuits of small depth, and \textcite{HermanRothblum2025} show that for some natural properties every helpful prover must draw linearly many samples (we rely on the four abstracts). In a preprint, \textcite{CanettiLinderWagaman2025} let a learner choose the better of two black-box models with two provers, one honest, and one query to the ground truth.
+
+\section{Running the protocol}\label{sec:pacverify:running}
+
+The script \texttt{12-pacverify-delegation.py} runs \cref{prot:pacverify:delegation} for the histogram classifiers $\cH_{10}$ on $[0,1)$, which decide by which of ten equal bins a point falls in: $2^{10}$ rules, VC dimension $10$, and an empirical risk minimizer that takes a majority vote in each bin, ties going to $0$. Inputs are uniform; a deterministic fine pattern labels $1$ a fraction $0.6$ or $0.4$ of each bin,\sidenote{In bin $j$ the label is $1$ when the fractional part of $10^4x$ is below $q_j\in\{0.4,0.6\}$ (fixed by seed $12$); for $x$ uniform in the bin this has probability exactly $q_j$.} so the best rule has loss $0.4$ and a rule wrong on $j$ bins has excess loss $0.02j$. With $\eps=\delta=0.1$ the verifier uses $q=120$ checks and, by \cref{thm:pacverify:fundamental}(i), $m=8{,}497$ points. Besides the honest prover, a \emph{random} liar falsifies $b$ uniformly chosen labels; a \emph{targeted} liar falsifies $b$ labels toward the worse label, cheapest bins first; and the \emph{harm-optimal} liar falsifies the fewest labels that push the excess loss above $\eps$, reversing the six cheapest bins at about $77$ labels each.\sidenote{On one laptop core \texttt{12-pacverify-delegation.py} takes about $65$ seconds and \texttt{12-pacverify-labels.py} about $27$.}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=17mm},vplot,
+    width=0.33\linewidth,height=0.3\linewidth,
+    legend style={font=\scriptsize}]
+\nextgroupplot[ymode=log,xmin=-0.002,xmax=0.064,ymin=1e-4,ymax=1.8,
+    xlabel={fraction mislabeled $b/m$},ylabel={acceptance rate},title={(a) every lie},
+    xtick={0,0.02,0.04,0.06},legend style={at={(0.97,0.97)},anchor=north east}]
+\addplot[bound,forget plot] table[x=tau,y=bound]{figures/data/12-pacverify-delegation-theory.dat};
+\addplot[theory,forget plot] table[x=tau,y=exact]{figures/data/12-pacverify-delegation-theory.dat};
+\addplot[cheat,ebars] table[x=tau,y=rnd,y error plus=rndep,y error minus=rndem]{figures/data/12-pacverify-delegation-rates.dat};
+\addplot[cheat2,ebars] table[x=tau,y=tgt,y error plus=tgtep,y error minus=tgtem]{figures/data/12-pacverify-delegation-rates.dat};
+\addplot[honest,forget plot] coordinates {(0,1)};
+\legend{random liar,targeted liar}
+\nextgroupplot[xmin=-0.002,xmax=0.064,ymin=-0.006,ymax=0.19,
+    xlabel={fraction mislabeled $b/m$},ylabel={excess loss of output},title={(b) what a lie can do},
+    xtick={0,0.02,0.04,0.06},legend style={at={(0.03,0.97)},anchor=north west}]
+\addplot[bound,forget plot] table[x=tau,y=harmbound]{figures/data/12-pacverify-delegation-theory.dat};
+\addplot[guide,forget plot] table[x=tau,y=harmline]{figures/data/12-pacverify-delegation-theory.dat};
+\addplot[guide,forget plot] coordinates {(-0.002,0.1) (0.064,0.1)};
+\addplot[cheat2,ebars] table[x=tau,y=harmt,y error plus=harmtep,y error minus=harmtem]{figures/data/12-pacverify-delegation-rates.dat};
+\addplot[cheat] table[x=tau,y=harmr]{figures/data/12-pacverify-delegation-rates.dat};
+\legend{targeted liar,random liar}
+\nextgroupplot[ymode=log,xmin=-4,xmax=144,ymin=1e-4,ymax=1.8,
+    xlabel={hidden checks $q$},ylabel={harmful lie accepted},title={(c) soundness error},
+    legend style={at={(0.03,0.03)},anchor=south west}]
+\addplot[bound,forget plot] table[x=q,y=bound]{figures/data/12-pacverify-delegation-checktheory.dat};
+\addplot[theory,forget plot] table[x=q,y=exact]{figures/data/12-pacverify-delegation-checktheory.dat};
+\addplot[cheat2,ebars] table[x=q,y=succ,y error plus=ep,y error minus=em]{figures/data/12-pacverify-delegation-checks.dat};
+\addplot[guide,forget plot] coordinates {(120,1e-4) (120,1.8)};
+\legend{harm-optimal liar}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{\Cref{prot:pacverify:delegation} for histogram classifiers with ten bins, $\eps=\delta=0.1$, $m=8{,}497$. Solid lines are exact values, dashed lines proved bounds. (a) Acceptance against the fraction of false labels, $q=120$, $6{,}000$ runs per point (seed $1201$), with Clopper--Pearson $95\%$ intervals; exact, $\binom{m-b}{q}/\binom mq$; bound, $(1-b/m)^q$ (\cref{lem:pacverify:hidden}); the filled point is the honest prover. (b) Excess loss of the minimizer on the returned labels, accepted or not, same runs: means, with bars from the $2.5$th to the $97.5$th percentile; bound, \cref{lem:pacverify:robust} on $\eps/4$-representative samples; the thin lines mark $\eps$ and $2b/m$. (c) Probability that the harm-optimal liar is accepted with an output more than $\eps$ worse than the best, $40{,}000$ runs (seed $1202$); exact, averaged over the sampled lies; bound, \eqref{eq:pacverify:sound}; the thin line marks $q=120$. Script \texttt{12-pacverify-delegation.py}.}\label{fig:pacverify:runs}
+\end{figure}
+
+\begin{table}[b]
+\centering\small
+\begin{tabular}{@{}r r r r@{}}
+\toprule
+& \multicolumn{2}{c}{query delegation} & learner alone\\
+\cmidrule(lr){2-3}\cmidrule(lr){4-4}
+VC dimension $d$ & verifier's labels $q$ & prover's labels $m$ & labels ERM needs\\
+\midrule
+$4$ & $120$ & \num{5170} & $74$\\
+$16$ & $120$ & \num{11824} & $131$\\
+$64$ & $120$ & \num{38441} & $324$\\
+$256$ & $120$ & \num{144908} & \num{1126}\\
+\num{1024} & $120$ & \num{570778} & \num{3917}\\
+\bottomrule
+\end{tabular}
+\caption{Labels for histogram classifiers with $d$ bins at $\eps=\delta=0.1$. Delegation: $q=\lceil4\ln(2/\delta)/\eps\rceil$, and $m$ from \cref{thm:pacverify:fundamental}(i). Learner: the least $m$ on a grid of ratio $1.12$ at which empirical risk minimization was $\eps$-good in at least $90\%$ of $2{,}000$ trials, there and at the next three grid points, maximized over label biases $\frac12\pm\gamma$, $\gamma\in\{0.12,0.16,0.2,0.25,0.3,0.4\}$. Script \texttt{12-pacverify-labels.py}, seed $1210$.}\label{tab:pacverify:labels}
+\end{table}
+
+The honest prover was accepted in all $4{,}000$ of its runs (seed $1203$), and its output was the best rule every time. In \cref{fig:pacverify:runs}(a) both liars follow the exact curve, which depends on how many labels are false, not on which: every interval of the liars contains it, none lies above the bound $(1-b/m)^q$, and a lie on $1\%$ of the labels passed in $30\%$ of the runs, one on $5\%$ in $0.2\%$. Panel (b) shows why the first kind may pass. The random liar did no harm: random changes shrink each bin's majority without reversing it. The targeted liar's harm climbs a staircase along the line $2b/m$, each reversed bin costing about $85$ false labels, half its majority of about $170$ votes, and gaining $0.02$ of excess loss, as much as \cref{lem:pacverify:robust} allows. The bound's further $\eps/2$ pays for an unrepresentative clean sample: the deviation $\sup_h\abs{L_S(h)-L_\cD(h)}$ averaged $0.014$ and exceeded $\eps/4$ in $0.11\%$ of $40{,}000$ samples, against the $5\%$ allowed.
+
+Panel (c) measures what \cref{thm:pacverify:main} bounds. To do harm above $\eps$ the liar had to falsify $5.4\%$ of the labels on average (from $3.9\%$ to $6.9\%$); with $120$ checks it succeeded in $0.13\%$ of its runs, interval $[0.10\%,0.17\%]$, against the exact $0.130\%$ and the bound $0.098$, and every interval contains the exact value. The bound is loose in two visible ways: the proof lets a lie on just over $\eps/4=2.5\%$ of the labels do harm $\eps$, where here it took twice that, so the bound decays half as fast as the truth; and its term $\delta/2$, which dominates beyond about $120$ checks, never mattered.
+
+In \cref{tab:pacverify:labels} the verifier's $120$ labels do not depend on $d$, while a learner alone needed $74$ at $d=4$ and $3{,}917$ at $d=1{,}024$, about four per dimension at large $d$, so delegation already pays at $d=16$. The prover labels up to $570{,}778$ points, about $150$ times what the learner needed: the price of uniform convergence at accuracy $\eps/4$ for every distribution, where the learner faced particular ones. A last run tests the hypothesis that checks look like the rest: with labeled examples only from $[0,0.3)$, a prover that lied only on $[0.3,1)$ was accepted in all $4{,}000$ runs, the minimizer wrong on seven bins, excess loss $0.14>\eps$.
+
+\section{The three questions}\label{sec:pacverify:questions}
+
+\questionone Read \cref{prot:pacverify:delegation} as a game in which the prover is paid $1$ when the verifier accepts. Truthful labels earn $1$ (\cref{thm:pacverify:main}(i)), so honesty is a best response, but not a strict one: a prover that falsifies $b$ of $m$ labels earns exactly $\binom{m-b}{q}/\binom mq$ (\cref{lem:pacverify:hidden}), close to $1$ for small $b$. The protocol does not make lying unprofitable; it makes it useless. If the prover is paid instead for an output more than $\eps$ worse than the best, then every strategy earns at most $(1-\eps/4)^q+\delta/2\le\delta$ (\cref{thm:pacverify:main}(ii)); a model more than $\theta+\eps$ worse than the best is certified with probability at most $\delta$ (\cref{prop:pacverify:audit}). Honesty is affordable when $f$ is cheap for the prover, which labels at least $\pacverifyuc(\eps/4,\delta/2)$ points, up to $150$ times what a learner needed in \cref{tab:pacverify:labels}, and computes nothing else.
+
+\questiontwo The verifier spends $q=\lceil4\ln(2/\delta)/\eps\rceil$ labeled examples, whatever the class (in the oversight box $1{,}060$, against a learner's million or so), and $m-q=O((d+\ln(1/\delta))/\eps^2)$ unlabeled points; about $m\log_2m$ random bits for the permutation; two messages, $m$ points out and $m$ bits back; and one empirical risk minimization: it still learns, from labels it did not pay for.
+
+\questionthree Against every prover, however powerful, $b$ false labels among $m$ are caught with probability exactly $1-\binom{m-b}{q}/\binom mq\ge1-(1-b/m)^q$, wherever they are placed, and a lie on more than an $\eps/4$ fraction of the labels with probability above $1-\delta/2$. Smaller lies often pass, harmlessly: the guarantee concerns the output, which is more than $\eps$ worse than the best with probability at most $\delta$. Each $\lceil4/\eps\rceil$ more checks divide a large lie's chance by $e$ or more; in \cref{fig:pacverify:runs}(c) the harm-optimal liar was caught in $99.87\%$ of its runs. A prover that tells checks apart is never caught.
+
+\Needspace{16\baselineskip}
+\protocolcard{that the hypothesis fitted to delegated labels, or a submitted model, is nearly the best in a fixed class $\cH$}{a verifier $\V$ with $q$ trusted labels and cheap unlabeled points; a prover $\Prov$ that can evaluate the labeling function}{a best response, not strict: small lies pass but move the output by less than $\eps$; the honest prover labels at least $\pacverifyuc(\eps/4,\delta/2)$ points}{$\lceil4\ln(2/\delta)/\eps\rceil$ labels whatever the class, $O((d+\ln\frac1\delta)/\eps^2)$ unlabeled points, one empirical risk minimization}{$b$ false labels are caught with probability $1-\binom{m-b}q/\binom mq$; a harmful output passes with probability at most $\delta$}{labels that are a function of the input; checks that look like the work; a fixed class of finite VC dimension}
+
+\section{What the model leaves out}\label{sec:pacverify:leaves}
+
+\paragraph{What was idealized away.} The labeling function is the largest idealization.\index{label noise} Moderators disagree, and even curated test sets carry wrong labels: \textcite{NorthcuttAthalyeMueller2021} estimate that at least $3.3\%$ of the labels in ten widely used test sets are wrong on average, and at least $6\%$ in the ImageNet validation set.\sidenote{Candidates were flagged by an algorithm and shown to crowd workers, who confirmed about half of them as errors.} A one-sided check does not forgive such errors: if each of the auditor's labels is wrong with probability $\nu$, the honest prover passes $q$ checks with probability $(1-\nu)^q$, below $10^{-15}$ for the oversight box's $q=1{,}060$ and $\nu=0.033$. A threshold on the number of mismatches restores completeness at the price of order $1/\eps^2$ checks instead of $1/\eps$ (\cref{ex:pacverify:noisy}). The reference class is fixed in advance and must be simple enough for uniform convergence and for the verifier's minimization; a deployed network is not, and \cref{prop:pacverify:audit} only compares it with the class. ``Nearly as accurate as the best rule'' is an average over $\cD$, silent about rare costly errors and about inputs from another distribution. Delegation saves one resource, the trusted labels; the honest prover's work is large and the verifier's computation is not reduced. And the verifier must sample $\cD_\cX$ itself: reports chosen by the developer are not a sample of the platform's traffic.
+
+\paragraph{Where it breaks.} (1) \emph{Noisy labels.} Without a labeling function, every verifier for a class of VC dimension $d$ needs $\Omega(\sqrt d/\eps^2)$ labeled examples (\cref{thm:pacverify:sqrtd}): the dependence on the class returns, and so does the $1/\eps^2$. (2) \emph{Verifying is not always cheaper than learning.} \Textcite[Lemma~4.1]{GoldwasserEtAl2021} construct classes of VC dimension $O(d\log d)$, learnable from $\tilde O(d)$ examples, for which every proper $1$-PAC verifier using random examples needs $\Omega(d)$ of them, whatever the prover; \textcite{MutrejaShafer2023} consider it likely that some classes need $\tilde\Omega(d)$ even without properness. (3) \emph{Checks that can be recognized.} Soundness rests entirely on \cref{lem:pacverify:hidden}(i), and our liar that knew where checks could not be was accepted in every run while doing harm $0.14$. As with the private coins of \cref{ch:interaction}, audit items must come from the same distribution as the work, stay secret, and not be reused (\cref{ex:pacverify:reuse}). When the labeling pipeline is itself a model, recognizing audit items is a measured ability:\index{evaluation awareness} in a preprint, \textcite{NeedhamEtAl2025} report that frontier models tell evaluation transcripts from deployment ones with an area under the ROC curve of up to $0.83$, against $0.92$ for a human baseline.
+
+\paragraph{Open problems.} (1) \emph{A dimension for verification.} \Textcite{MutrejaShafer2023} argue that the VC dimension probably does not characterize the samples PAC verification needs, and ask for a combinatorial quantity that does, as \textcite{GoldwasserEtAl2021} also do; whether some class of VC dimension $d$ needs $\tilde\Omega(d)$ labeled examples for every verifier is open. (2) \emph{Noisy trusted labels.} When the auditor's labels err at rate $\nu$ and the prover's are a function, we know of no analysis of the least number of trusted labels as a function of $\eps$, $\delta$ and $\nu$, nor of the right model when the two labelings differ systematically on a small set; \textcite{GoldwasserEtAl2021} ask more generally how a prover with cleaner data can help a verifier with noisier data. (3) \emph{Hard learning problems}: doubly efficient protocols in which the verifier neither labels much nor minimizes, for classes whose empirical risk minimization is intractable; \textcite{GurEtAl2024} treat structured classes under the uniform distribution. (4) \emph{Models outside a class.} \Textcite{MutrejaShafer2023} define verification for general statistical algorithms; turning it into checks of claims about trained networks is open.
+
+\begin{exercises}
+\item \consolidation (The worked run.) Check \cref{tab:pacverify:run} by listing the errors of every threshold on both rows of labels; show that no other single false label makes $h_{0.90}$ the unique minimizer; and compare the escape probability with $(1-b/m)^q$ for $b=1,2,3$.\label{ex:pacverify:run}
+
+\item \consolidation (Which logarithm.) Show that $q=\lceil4\ln(2/\delta)/\eps\rceil$ is the least $q$ with $e^{-\eps q/4}\le\delta/2$. For $(\eps,\delta)=(0.1,0.1)$ and $(0.02,0.01)$, compare it with the same formula in base $2$ and with the least $q$ such that $(1-\eps/4)^q\le\delta/2$ ($120$, $173$, $119$; $1{,}060$, $1{,}529$, $1{,}058$).\label{ex:pacverify:log}
+
+\item \consolidation (The factor $2$ is necessary.) Let $\cD$ be uniform on $m$ points labeled by $f$, and let $S$ list each point once, so that it is $0$-representative for every class. Let $\cH=\{f,g\}$, with $g$ disagreeing with $f$ on $2j-1$ points. Show that changing $j$ labels makes $g$ the unique minimizer, with excess loss $2\tau-1/m$ for $\tau=j/m$.\label{ex:pacverify:tight}
+
+\item \consolidation (Half is all a certificate gives.) Let the marginal be uniform on $[0,1]$ and the label be $1$ on $[0,\frac14)\cup[\frac12,\frac34)$ and $0$ elsewhere. Show that $L_\cD(\cT)=\frac12$ and that every certificate certifies at most $\frac14$.\label{ex:pacverify:half}
+
+\item \consolidation (A short program.) Under \cref{ass:pacverify:conditions}(i), suppose that the verifier can evaluate $f$ and that the honest prover sends it. Show that outputting the classifier the prover sends if it agrees with $\lceil\ln(1/\delta)/\eps\rceil$ labeled examples drawn after it arrives, and rejecting otherwise, $1$-PAC verifies every class improperly (\textcite[Remark~4.2]{GoldwasserEtAl2021} use $O(\log(1/\delta)/\eps^2)$ examples). Why does \cref{thm:pacverify:main} remain useful?\label{ex:pacverify:improper}
+
+\item \variation (Trading checks for points.) For $\eta,\kappa>0$ with $2\eta+2\kappa=\eps$, show that the soundness error is still at most $\delta$ (\cref{thm:pacverify:main}(ii)) with $q\ge\ln(2/\delta)/\kappa$ checks and $m=\max\{q,\pacverifyuc(\eta,\delta/2)\}$ points. How few checks can the verifier use, and what does the honest prover pay?\label{ex:pacverify:trade}
+
+\item \variation\hard (Noisy trusted labels.) Each trusted label is wrong with probability $\nu<\frac12$, independently; let $\gamma=(1-2\nu)\eps/8$, $m\ge8q/\eps$, and let the verifier accept if at most $(\nu+\gamma/2)q$ checks fail. Show that the honest prover is rejected, and a prover with more than $\eps m/4$ false labels accepted, with probability at most $e^{-q\gamma^2/2}$ each, so that $O(\ln(1/\delta)/((1-2\nu)\eps)^2)$ checks suffice. \hint{draw the checks one at a time; for such a prover each fails, given the past, with probability at least $\nu+\gamma$; use \cref{thm:toolkit:chernoff}(iii).}\label{ex:pacverify:noisy}
+
+\item \attack (A model chosen after the points.) In \cref{prop:pacverify:audit}, let the prover send $\tilde h$ after seeing the points. Assuming that $\cD_\cX$ has no atoms, show that it can make the verifier accept, with probability $1$, a classifier with $L_\cD(\tilde h)=1$. Which step of the proof fails?\label{ex:pacverify:commit}
+
+\item \attack (Checks from an archive.) The verifier's labeled examples come from an archive whose points lie in a set $A$ with $\cD_\cX(A)<1$, its unlabeled points from $\cD_\cX$. Show that a prover that lies only outside $A$ is always accepted, and that for $\cH_{10}$ of \cref{sec:pacverify:running} with $A=[0,0.3)$ it can raise the excess loss to $0.14$. Which step of \cref{lem:pacverify:hidden} fails?\label{ex:pacverify:archive}
+
+\item \attack (Reused checks.) To save labels, an auditor audits a developer twice with the same labeled examples and fresh unlabeled points. Assuming that $\cD_\cX$ has no atoms, show that a developer that remembers the first audit finds the checks of the second and is accepted with probability $1$ whatever it returns elsewhere.\label{ex:pacverify:reuse}
+
+\item \simulation (Too few points.) Run \texttt{12-pacverify-delegation.py} with the argument \texttt{1000}, which keeps $q=120$ and takes $m=1{,}000$ points. How often is the clean sample $\eps/4$-representative, and how often does the harm-optimal liar succeed? Which hypothesis of \cref{thm:pacverify:main} fails, and does the measured soundness error exceed $\delta$?\label{ex:pacverify:fewpoints}
+
+\item \research (A dimension for verification.) Find a combinatorial parameter of a class that determines, up to logarithmic factors, the labeled examples that PAC verification with respect to all distributions needs, or show that some class of VC dimension $d$ needs $\tilde\Omega(d)$ for every verifier. \Textcite{MutrejaShafer2023} pose the question; it is open.\label{ex:pacverify:dimension}
+
+\end{exercises}
+
+\notesandrefs
+PAC learning is due to \textcite{Valiant1984}, uniform convergence over classes of finite VC dimension to \textcite{VapnikChervonenkis1971}, its role in learnability to \textcite{BlumerEtAl1989}, and the agnostic setting to \textcite{Haussler1992} and \textcite{KearnsSchapireSellie1994}; we follow \textcite{ShalevShwartzBenDavid2014}, whose $\log$ is natural.
+
+\Textcite{GoldwasserEtAl2021} posted their paper in April 2020 and presented it at ITCS 2021; we cite the full version's numbering. It also shortens the verifier's message with a pseudorandom generator (Claim~5.3) and removes interaction in the common-random-string model (Claim~5.4). \Cref{lem:pacverify:robust} replaces the chain of their proof of Claim~5.2; \cref{prop:pacverify:audit} and the sketch of \cref{cor:pacverify:separation} are ours. \Textcite{MutrejaShafer2023} also verify statistical query algorithms. In a preprint whose abstract we rely on, \textcite{CouteauMelissarisParis2026} study interactive proofs with which a model's owner certifies accuracy or fairness to a verifier that can afford few samples and evaluations. Learned verifiers are the subject of \cref{ch:pvg}, proofs that reveal nothing about the model of \cref{ch:zeroknowledge}, and claims about training of \cref{ch:training}.
+
+\paragraph{Translating the literature.} \Textcite{GoldwasserEtAl2021} write $k$ for our number of checks $q$, $m'$ for our $m$ (their $m$ is the learner's sample size), $t$ for our number $b$ of false labels, $f_D$ for $f$ and $D_X$ for $\cD_\cX$. \Textcite{MutrejaShafer2023} write $m_V$ and $m_P$ for the examples of verifier and prover and $\mathbb D$ for the family, as we do. \Textcite{GurEtAl2024} write $\mathrm{dist}_D(h,f)$ for our $L_\cD(h)$, and \textcite{ShalevShwartzBenDavid2014} write $\eps$ for our $\eta$ in $m^{\mathrm{UC}}_{\cH}$.
+
+\printchapterbib
+\end{refsection}

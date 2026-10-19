@@ -1,0 +1,260 @@
+% Appendix of Verifiable Intelligence: the shared toolkit.
+\appendixchapter{A Toolkit for Verifiers}{Classes, probability, polynomials, games, and cryptography}{ch:toolkit}
+\begin{refsection}[chapters/17-toolkit.bib]
+
+This appendix collects the definitions and facts that several chapters use. Short proofs are given in full; longer ones are cited. The appendix is a reference, not a course: each section can be read when a chapter points to it. Standard treatments are \textcite{AroraBarak2009} and \textcite{Goldreich2008} for complexity, \textcite{MitzenmacherUpfal2017} for probability, \textcite{ODonnell2014} for Fourier analysis, \textcite{OsborneRubinstein1994} for games, and \textcite{Goldreich2001} and \textcite{KatzLindell2020} for cryptography.
+
+\section{Machines and classes}\label{sec:toolkit:machines}
+
+A \term{Turing machine} has a finite control and a constant number of tapes; its \emph{running time} on an input $x$ is the number of steps it takes, and its \emph{space} the number of work-tape cells it visits. A machine runs in time $T(n)$ if it halts within $T(\abs{x})$ steps on every input $x$; space bounds are defined in the same way and do not count the read-only input tape. A \emph{probabilistic} machine also reads a tape of independent uniformly random bits, its \term{coins}. An \term{oracle machine} $M^{\cO}$ has a query tape and a special state: when it enters that state with a string $z$ on the query tape, the string is replaced in one step by the answer $\cO(z)$ of an \emph{oracle} $\cO$, a function fixed in advance. Oracle machines model a verifier that consults a proof it reads in pieces (\cref{ch:spotchecks}), a program it may only run (\cref{ch:consistency}), or a human judgment (\cref{ch:efficientdebate}).\index{oracle machine}
+
+A \term{Boolean circuit} is a directed acyclic graph whose sources are inputs and constants and whose other nodes are gates computing AND, OR and NOT; its \emph{size} is its number of gates and its \emph{depth} the length of its longest path. An \emph{arithmetic circuit} over a field $\F$ has addition and multiplication gates instead. A family of circuits $(C_n)$, one for each input length, is \emph{log-space uniform} if a machine using $O(\log n)$ space can print a description of $C_n$ given $n$ in unary; uniformity lets a verifier compute what it needs to know about a circuit without storing it (\cref{ch:delegation}).
+
+\begin{definition}[Complexity classes]\label{def:toolkit:classes}
+A \term{language} is a set $L\subseteq\bits^*$; a machine \emph{decides} $L$ if it accepts exactly the inputs in $L$.
+\begin{enumerate}
+\item The class $\cc{P}$ consists of the languages decided in polynomial time, and $\cc{PSPACE}$ those decided in polynomial space; $\cc{EXP}$ those decided in time $2^{\poly(n)}$.
+\item The class $\cc{NP}$ consists of the languages $L$ for which there is a polynomial $p$ and a polynomial-time machine $R$ with $x\in L$ if and only if $R(x,w)$ accepts for some $w$ with $\abs{w}\le p(\abs{x})$; such a $w$ is a \emph{certificate} or \emph{witness}. The class $\cc{NEXP}$ is defined in the same way with certificates of length $2^{\poly(n)}$ and a checker running in time $2^{\poly(n)}$. The class $\cc{coNP}$ consists of the complements of languages in $\cc{NP}$.
+\item The class $\cc{BPP}$ consists of the languages $L$ decided by a probabilistic polynomial-time machine that answers correctly with probability at least $2/3$ on every input; the class $\cc{PP}$ is defined in the same way with the threshold $2/3$ replaced by ``more than $1/2$''.
+\item The class $\cc{\#P}$ consists of the functions $f\colon\bits^*\to\N$ of the form $f(x)=\abs{\{w\in\bits^{p(\abs{x})}:R(x,w)\text{ accepts}\}}$ for a polynomial $p$ and a polynomial-time machine $R$.
+\item The \emph{polynomial hierarchy} $\cc{PH}$ is the union over $k$ of the classes $\Sigma_k^p$ of languages of the form $\{x: \exists w_1\forall w_2\cdots Q_kw_k\; R(x,w_1,\dots,w_k)\}$, with alternating quantifiers over strings of polynomial length and $R$ polynomial-time.
+\item The class $\cc{RE}$ consists of the languages $L$ for which some machine halts and accepts exactly on the inputs in $L$ (on inputs not in $L$ it may run forever).
+\end{enumerate}
+\end{definition}
+
+The known inclusions are $\cc{P}\subseteq\cc{NP}\subseteq\cc{PH}\subseteq\cc{PSPACE}\subseteq\cc{EXP}\subseteq\cc{NEXP}$, and $\cc{P}\subseteq\cc{BPP}\subseteq\Sigma_2^p\cap\Pi_2^p$ (Sipser, Gács, Lautemann), where $\Pi_2^p$ is the class of complements of languages in $\Sigma_2^p$. None of the inclusions in the first chain is known to be strict. The hierarchy theorems show only that $\cc{P}\neq\cc{EXP}$ and $\cc{NP}\neq\cc{NEXP}$, so at least one inclusion between $\cc{P}$ and $\cc{EXP}$, and one between $\cc{NP}$ and $\cc{NEXP}$, is strict.\sidenote{Whether $\cc{P}=\cc{NP}$, $\cc{NP}=\cc{coNP}$, $\cc{P}=\cc{PSPACE}$ or $\cc{BPP}=\cc{P}$ is open. Most researchers expect the first three to be false and the last to be true.} A language $L$ is \emph{complete} for a class if it belongs to the class and every language in the class reduces to it by a polynomial-time many-one reduction (a polynomial-time map $g$ with $x\in L'$ if and only if $g(x)\in L$). The complete problems the book uses are SAT and 3SAT (satisfiability of formulas in conjunctive normal form, with clauses of three literals for 3SAT) for $\cc{NP}$; TQBF (truth of fully quantified Boolean formulas $\exists x_1\forall x_2\cdots\varphi$) for $\cc{PSPACE}$; and \#SAT (the number of satisfying assignments) for $\cc{\#P}$ under reductions that preserve counts. Graph isomorphism is in $\cc{NP}$ and is not known to be in $\cc{P}$ or to be $\cc{NP}$-complete \parencite{Babai2016}.\index{complete problem}
+
+\section{Interactive proofs}\label{sec:toolkit:ip}
+
+An interactive protocol is a pair of strategies. The \emph{verifier} $\V$ is a probabilistic polynomial-time machine; the \emph{prover} is a function of the common input and the messages so far, with no bound on its computation unless one is stated. On a common input $x$, the two exchange messages in turn, and after the last message $\V$ outputs \acc{} or \rej. The sequence of messages is the \emph{transcript}; a \emph{round} is a pair of messages, one from each party, so that $k$ rounds consist of $2k$ messages.
+
+\begin{definition}[Interactive proof]\label{def:toolkit:ip}
+Let $c,s\colon\N\to[0,1]$ with $c(n)>s(n)$. A verifier $\V$ and a prover strategy $\Prov$ form an \term{interactive proof system} for a language $L$ with \term{completeness} $c$ and \term{soundness error} $s$ if
+\begin{enumerate}
+\item for every $x\in L$, $\Prob[\interact{\Prov}{\V}(x)=\acc]\ge c(\abs{x})$, and
+\item for every $x\notin L$ and every prover strategy $\Prov^*$, $\Prob[\interact{\Prov^*}{\V}(x)=\acc]\le s(\abs{x})$,
+\end{enumerate}
+where both probabilities are over $\V$'s coins (and the prover's coins, if it uses coins). The class $\cc{IP}$ consists of the languages with interactive proofs with $c=2/3$, $s=1/3$, and a polynomial number of rounds; $\cc{IP}[k]$ restricts the number of rounds to $k$. The protocol has \emph{perfect completeness} if $c=1$. It has \emph{public coins} if every message of $\V$ is a fresh string of its random bits, sent in the clear, and its verdict is a deterministic function of the input and the messages. By a tradition that goes back to Babai, Arthur--Merlin classes count \emph{messages} rather than rounds: $\cc{AM}[k]$ is the class of languages with public-coin interactive proofs of $k$ messages beginning with $\V$'s, $\cc{AM}=\cc{AM}[2]$ (the verifier's coins, then one message from the prover), and $\cc{MA}$ the class with one message from the prover followed by $\V$'s coins. So $\cc{IP}[k]$ allows $2k$ messages, and $\cc{AM}[k]$ allows $k$.
+\end{definition}
+
+Three variations recur. In a \emph{multi-prover} interactive proof the verifier exchanges messages with several provers, each of which sees only its own messages; soundness quantifies over all tuples of prover strategies (\cref{ch:crossexam}). In an \emph{argument} soundness is required only against provers that run in polynomial time, and is called \emph{computational} (\cref{ch:training}). In a \emph{probabilistically checkable proof} the prover writes one string and the verifier reads a few positions of it (\cref{ch:spotchecks}). The order of the quantifiers in soundness is the important point of the definition: the prover may be chosen with knowledge of $x$, $L$ and $\V$'s program, but not of $\V$'s coins.
+
+\begin{proposition}[Amplification by repetition]\label{prop:toolkit:amplification}
+Let $(\V,\Prov)$ be an interactive proof for $L$ with completeness $c$ and soundness error $s$, and let $t\ge1$.
+\begin{enumerate}
+\item If $c=1$, the protocol that runs $(\V,\Prov)$ $t$ times in sequence, with fresh coins each time, and accepts if every run accepts, has completeness $1$ and soundness error $s^t$.
+\item If $c-s\ge\gamma>0$, the protocol that runs it $t$ times in sequence and accepts if more than $\frac{c+s}{2}t$ runs accept has completeness at least $1-e^{-t\gamma^2/2}$ and soundness error at most $e^{-t\gamma^2/2}$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to show that, whatever a cheating prover does, each run accepts with probability at most $s$ given everything that happened before it, and then to multiply (for (i)) or to apply a tail bound (for (ii)).
+
+Fix $x\notin L$ and a prover strategy $\Prov^*$ for the repeated protocol; it may choose its messages in run $j$ as a function of the transcripts of runs $1,\dots,j-1$. Condition on those transcripts. The verifier's coins in run $j$ are independent of them, and the prover's behavior in run $j$, with the earlier transcripts fixed, is a prover strategy for a single run. By soundness (applied to that strategy), run $j$ accepts with conditional probability at most $s$. Writing $A_j$ for the event that run $j$ accepts,
+\[
+\Prob[A_1\cap\dots\cap A_t]=\prod_{j=1}^t\Prob[A_j\mid A_1\cap\dots\cap A_{j-1}]\le s^t,
+\]
+which proves the soundness claim of (i); completeness $1$ is preserved because each run of the honest prover accepts with probability $1$.
+
+For (ii), let $Y_j=\ind[A_j]\in[0,1]$. When $x\notin L$, the argument above shows that the conditional mean of $Y_j$ given $Y_1,\dots,Y_{j-1}$ is at most $s$. Since $\frac{c+s}{2}-s=\frac{c-s}{2}\ge\frac{\gamma}{2}$, more than $\frac{c+s}{2}t$ acceptances make the mean of the $Y_j$ exceed $s$ by at least $\gamma/2$, and part (iii) of \cref{thm:toolkit:chernoff} with $\eps=\gamma/2$ bounds the probability of that:
+\[
+\Prob\Bigl[\sum_jY_j>\tfrac{c+s}{2}t\Bigr]\le\Prob\Bigl[\tfrac1t\sum_jY_j-s\ge\tfrac{\gamma}{2}\Bigr]\le e^{-2t(\gamma/2)^2}=e^{-t\gamma^2/2}.
+\]
+When $x\in L$ and the prover is honest, the runs are independent and each accepts with probability at least $c$, and the lower tail of the same theorem bounds the probability that at most $\frac{c+s}{2}t$ runs accept by $e^{-t\gamma^2/2}$.
+\end{proof}
+
+Parallel repetition (running the $t$ copies at once, so that the prover sees all of the verifier's messages of a round together) also reduces the error of single-prover interactive proofs exponentially \parencite{Goldreich2008}; for two-prover games it is more delicate (\cref{ch:crossexam}).
+
+\section{Probability}\label{sec:toolkit:probability}
+
+All random variables are on finite probability spaces unless stated otherwise. The \emph{union bound} says that $\Prob[\bigcup_iE_i]\le\sum_i\Prob[E_i]$. \emph{Markov's inequality} says that a nonnegative random variable $Y$ satisfies $\Prob[Y\ge a]\le\E[Y]/a$ for $a>0$, because $a\ind[Y\ge a]\le Y$; applied to $(Y-\E Y)^2$ it gives \emph{Chebyshev's inequality} $\Prob[\abs{Y-\E Y}\ge a]\le\Var(Y)/a^2$.
+
+\begin{theorem}[Hoeffding]\label{thm:toolkit:chernoff}
+\begin{enumerate}
+\item (Hoeffding's lemma.) If a random variable $Z$ takes values in $[a,b]$ and $\E Z=q$, then $\E e^{\lambda Z}\le e^{\lambda q+\lambda^2(b-a)^2/8}$ for every real $\lambda$.
+\item (Hoeffding's inequality.) Let $Y_1,\dots,Y_t$ be independent random variables with $Y_j\in[a_j,b_j]$, and $\bar Y=\frac1t\sum_jY_j$. For every $\eps>0$,
+\[
+\Prob\bigl[\bar Y-\E\bar Y\ge\eps\bigr]\le\exp\Bigl(-\frac{2t^2\eps^2}{\sum_j(b_j-a_j)^2}\Bigr),
+\]
+and the same bound holds for $\Prob[\bar Y-\E\bar Y\le-\eps]$; so the two-sided probability $\Prob[\abs{\bar Y-\E\bar Y}\ge\eps]$ is at most twice the bound. In particular, if every $Y_j\in[0,1]$ then each tail is at most $e^{-2t\eps^2}$.
+\item (Martingale form.) The upper-tail bound of (ii) also holds when, instead of independence, each $Y_j$ has conditional mean at most a constant $\mu_j$ given $Y_1,\dots,Y_{j-1}$, with $\E\bar Y$ replaced by $\frac1t\sum_j\mu_j$; the lower-tail bound holds in the same way when each conditional mean is at least $\mu_j$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to bound the moment generating function of one bounded variable, which is part (i), and then to use Markov's inequality on $e^{\lambda t(\bar Y-\E\bar Y)}$.
+
+For (i), first let $q=0$. Then $a\le0\le b$; the case $a=b$ is trivial, so let $a<b$, and put $u=\lambda(b-a)$, $\theta=-a/(b-a)\in[0,1]$, and $\phi(u)=-\theta u+\ln(1-\theta+\theta e^u)$. Since $z\mapsto e^{\lambda z}$ is convex, for $z\in[a,b]$ we have $e^{\lambda z}\le\frac{b-z}{b-a}e^{\lambda a}+\frac{z-a}{b-a}e^{\lambda b}$; taking expectations and using $\E Z=0$,
+\[
+\E e^{\lambda Z}\le\frac{b}{b-a}e^{\lambda a}-\frac{a}{b-a}e^{\lambda b}=(1-\theta)e^{-\theta u}+\theta e^{(1-\theta)u}=e^{\phi(u)}.
+\]
+A direct computation gives $\phi(0)=\phi'(0)=0$ and $\phi''(u)=\pi(1-\pi)\le\frac14$ with $\pi=\theta e^u/(1-\theta+\theta e^u)$, so Taylor's theorem gives $\phi(u)\le u^2/8$, which is (i) for $q=0$. For general $q$, apply this to $Z-q$, which has mean zero and takes values in an interval of length $b-a$, and multiply by $e^{\lambda q}$.
+
+For (ii), let $Z_j=Y_j-\E Y_j$, which has mean zero and takes values in an interval of length $b_j-a_j$. For $\lambda>0$, Markov's inequality, independence and part (i) give
+\[
+\Prob\Bigl[\sum_jZ_j\ge t\eps\Bigr]\le e^{-\lambda t\eps}\prod_j\E e^{\lambda Z_j}\le\exp\Bigl(-\lambda t\eps+\frac{\lambda^2}{8}\sum_j(b_j-a_j)^2\Bigr),
+\]
+and the choice $\lambda=4t\eps/\sum_j(b_j-a_j)^2$ gives the bound. The lower tail follows by applying this to $-Y_j$.
+
+For (iii), the same computation conditions on $Y_1,\dots,Y_{j-1}$ one summand at a time, from the last to the first. By part (i) applied to the conditional distribution of $Y_j$, whose conditional mean $m_j$ is at most $\mu_j$, the conditional moment generating function of $Y_j-\mu_j$ is at most $e^{\lambda(m_j-\mu_j)+\lambda^2(b_j-a_j)^2/8}\le e^{\lambda^2(b_j-a_j)^2/8}$ for $\lambda>0$; the rest is as in (ii).
+\end{proof}
+
+In the second part of the proof of \cref{prop:toolkit:amplification}, the summands are $Y_j\in[0,1]$ with conditional means at most $s$, so part (iii) applies with $\eps=\gamma/2$.
+
+\begin{definition}[Pairwise independence]\label{def:toolkit:pairwise}
+A family $\cH$ of functions $h\colon\cX\to\cY$ is \term{pairwise independent} if, for $h$ drawn uniformly from $\cH$, every two distinct $x\ne x'$ in $\cX$ and every $y,y'\in\cY$ satisfy $\Prob[h(x)=y\text{ and }h(x')=y']=1/\abs{\cY}^2$.
+\end{definition}
+
+\begin{lemma}\label{lem:toolkit:pairwisehash}
+For integers $m,k\ge1$, the family of maps $h_{A,b}(x)=Ax+b$ from $\F_2^m$ to $\F_2^k$, with $A$ a uniformly random $k\times m$ matrix over $\F_2$ and $b$ a uniformly random vector in $\F_2^k$, is pairwise independent.
+\end{lemma}
+
+\begin{proof}
+Fix $x\ne x'$ and $y,y'$. The event is $Ax+b=y$ and $A(x-x')=y-y'$. Since $x-x'\ne0$, some coordinate $i$ of $x-x'$ is $1$; conditioned on all columns of $A$ except column $i$, the vector $A(x-x')$ is column $i$ plus a fixed vector, so it is uniform on $\F_2^k$, and the second equation holds with probability $2^{-k}$. Given $A$, the first equation fixes $b=y-Ax$, which has probability $2^{-k}$ because $b$ is uniform and independent of $A$. The product is $2^{-2k}$.
+\end{proof}
+
+\subsection{Intervals for measured acceptance rates}\label{sec:toolkit:intervals}
+
+The scripts of the book estimate acceptance probabilities by running a protocol $N$ times and counting the $K$ acceptances. They report the \emph{Clopper--Pearson} interval \parencite{ClopperPearson1934}: the $95$ percent interval for the success probability $\pi$ of $N$ independent trials with $K$ successes is $[\pi_-,\pi_+]$, where $\pi_-$ is the $0.025$ quantile of the Beta distribution with parameters $(K,N-K+1)$ (and $0$ if $K=0$) and $\pi_+$ the $0.975$ quantile of the Beta distribution with parameters $(K+1,N-K)$ (and $1$ if $K=N$). It is obtained by inverting two one-sided binomial tests, and its coverage is at least $95$ percent for every $\pi$, at the price of being conservative. A measured rate whose interval lies above a proved soundness bound is evidence of a bug, in the script or in the proof.
+
+\section{Polynomials over finite fields}\label{sec:toolkit:polynomials}
+
+For a prime $p$, the integers modulo $p$ form a field $\F_p$; for every prime power $p^k$ there is a field with $p^k$ elements, unique up to isomorphism, and no other finite fields exist. The book's protocols need only that $\F$ is a field and that $\abs{\F}$ is large; its scripts use $\F_p$ with $p<2^{31}$.
+
+\begin{lemma}[Roots and interpolation]\label{lem:toolkit:lagrange}
+A nonzero polynomial $g\in\F[X]$ of degree at most $d$ has at most $d$ roots in $\F$. For distinct $a_0,\dots,a_d\in\F$ and every $y_0,\dots,y_d\in\F$ there is exactly one polynomial of degree at most $d$ with $g(a_i)=y_i$ for every $i$, namely
+\[
+g(X)=\sum_{i=0}^dy_i\prod_{j\ne i}\frac{X-a_j}{a_i-a_j}.
+\]
+\end{lemma}
+
+\begin{proof}
+If $g(a)=0$, then division gives $g(X)=(X-a)q(X)$ with $\deg q=\deg g-1$, and every other root of $g$ is a root of $q$ because a field has no zero divisors; induction on the degree gives at most $d$ roots. The displayed polynomial has degree at most $d$ and takes the value $y_i$ at $a_i$, because the product is $1$ at $X=a_i$ and $0$ at $X=a_k$ for $k\ne i$. If two polynomials of degree at most $d$ agree at $d+1$ points, then their difference has degree at most $d$ and $d+1$ roots, so it is zero.
+\end{proof}
+
+\begin{lemma}[Schwartz--Zippel]\label{lem:toolkit:schwartzzippel}
+Let $g\in\F[X_1,\dots,X_\ell]$ be a nonzero polynomial of total degree at most $d$, and let $S\subseteq\F$ be finite. If $r_1,\dots,r_\ell$ are drawn independently and uniformly from $S$, then
+\[
+\Prob[g(r_1,\dots,r_\ell)=0]\le\frac{d}{\abs{S}}.
+\]
+In particular, if $g$ has degree at most $d$ in each variable, the probability is at most $\ell d/\abs{S}$.
+\end{lemma}
+
+\begin{proof}
+The plan is induction on the number of variables, peeling off the last one. For $\ell=1$ this is the root bound of \cref{lem:toolkit:lagrange}. For $\ell>1$, write $g=\sum_{i=0}^kX_\ell^i\,g_i(X_1,\dots,X_{\ell-1})$ with $g_k\ne0$ and $k$ the largest power of $X_\ell$ that occurs; then $g_k$ has total degree at most $d-k$. Let $E$ be the event that $g_k(r_1,\dots,r_{\ell-1})=0$. By induction, $\Prob[E]\le(d-k)/\abs{S}$. If $E$ does not occur, then the univariate polynomial $X_\ell\mapsto g(r_1,\dots,r_{\ell-1},X_\ell)$ is nonzero of degree $k$, so, since $r_\ell$ is independent of $r_1,\dots,r_{\ell-1}$, it vanishes at $r_\ell$ with conditional probability at most $k/\abs{S}$. Hence $\Prob[g(r)=0]\le\Prob[E]+\Prob[g(r)=0\mid\text{not }E]\le(d-k)/\abs{S}+k/\abs{S}=d/\abs{S}$. A polynomial of degree at most $d$ in each of $\ell$ variables has total degree at most $\ell d$.
+\end{proof}
+
+A polynomial is \emph{multilinear} if it has degree at most $1$ in each variable. For $b,r\in\F^\ell$ let
+\begin{equation}\label{eq:toolkit:eq}
+\chi_b(r)=\prod_{i=1}^\ell\bigl(r_ib_i+(1-r_i)(1-b_i)\bigr).
+\end{equation}
+For $b,r\in\bits^\ell$, $\chi_b(r)=1$ if $r=b$ and $0$ otherwise. (These polynomials are not the characters $\chi_S$ of \cref{sec:toolkit:fourier}; the chapters that use either say which they mean.)
+
+\begin{lemma}[Multilinear extension]\label{lem:toolkit:mle}
+For every $f\colon\bits^\ell\to\F$ there is exactly one multilinear polynomial $\tilde f\in\F[X_1,\dots,X_\ell]$ with $\tilde f(b)=f(b)$ for every $b\in\bits^\ell$, namely $\tilde f(r)=\sum_{b\in\bits^\ell}f(b)\chi_b(r)$. Given the table of $f$, the value $\tilde f(r)$ at a point $r\in\F^\ell$ can be computed with $O(2^\ell)$ field operations.
+\end{lemma}
+
+\begin{proof}
+The plan is to check the formula on the cube, to prove uniqueness by induction on $\ell$, and to evaluate by folding one variable at a time. The displayed polynomial is multilinear, since each $\chi_b$ is a product of factors that are affine in distinct variables, and it agrees with $f$ on the cube by the remark before the lemma. For uniqueness, it suffices to show that a multilinear polynomial $q$ vanishing on $\bits^\ell$ is zero. Write $q=X_\ell q_1+q_0$ with $q_0,q_1$ multilinear in the first $\ell-1$ variables. Setting $X_\ell=0$ shows that $q_0$ vanishes on $\bits^{\ell-1}$, and setting $X_\ell=1$ that $q_0+q_1$ does; by induction on $\ell$ (the case $\ell=0$ being a constant), $q_0=0$ and $q_1=0$.
+
+For the cost, fold one variable at a time. For $c\in\bits$ let $f_c(b_2,\dots,b_\ell)=f(c,b_2,\dots,b_\ell)$. Then
+\[
+\tilde f(r_1,\dots,r_\ell)=(1-r_1)\,\tilde f_0(r_2,\dots,r_\ell)+r_1\,\tilde f_1(r_2,\dots,r_\ell),
+\]
+by uniqueness, since both sides are multilinear and agree on the cube. Replacing the table of size $2^j$ by the table of size $2^{j-1}$ of the partially evaluated function costs $O(2^j)$ operations, and $\sum_j2^j=O(2^\ell)$.
+\end{proof}
+
+\section{Fourier analysis on the Boolean cube}\label{sec:toolkit:fourier}
+
+Identify $\bits^n$ with the vector space $\F_2^n$. For $S\subseteq[n]=\{1,\dots,n\}$ the \emph{character} $\chi_S\colon\F_2^n\to\{-1,1\}$ is $\chi_S(x)=(-1)^{\sum_{i\in S}x_i}$; equivalently, writing $a\in\F_2^n$ for the indicator vector of $S$, $\chi_S(x)=(-1)^{\ip{a}{x}}$, where $\ip{a}{x}=\sum_ia_ix_i$ is computed in $\F_2$. For real functions $F,G$ on $\F_2^n$ let $\ip{F}{G}=\E_x[F(x)G(x)]$, with $x$ uniform.
+
+\begin{theorem}[Fourier expansion, Plancherel, Parseval]\label{thm:toolkit:parseval}
+The $2^n$ characters form an orthonormal basis of the real functions on $\F_2^n$. Hence every $F$ has the expansion $F=\sum_S\hat F(S)\chi_S$ with $\hat F(S)=\ip{F}{\chi_S}$; for all $F,G$, $\ip{F}{G}=\sum_S\hat F(S)\hat G(S)$ (Plancherel); and $\E[F^2]=\sum_S\hat F(S)^2$ (Parseval), which equals $1$ when $F$ takes values in $\{-1,1\}$. If $f\colon\F_2^n\to\F_2$ and $F=(-1)^f$, then for each $a$, $\Prob_x[f(x)=\ip{a}{x}]=\frac12+\frac12\hat F(S_a)$, where $S_a$ is the set of coordinates where $a$ is $1$.
+\end{theorem}
+
+\begin{proof}
+The plan is to check orthonormality directly and then count dimensions. For $S\ne T$, $\chi_S\chi_T=\chi_{S\triangle T}$ with $S\triangle T\ne\emptyset$; pick $i\in S\triangle T$ and pair each $x$ with $x+e_i$ to see that $\E[\chi_{S\triangle T}]=0$. Also $\ip{\chi_S}{\chi_S}=1$. So the $2^n$ characters are orthonormal, hence linearly independent, in a space of dimension $2^n$, so they form a basis. Plancherel and Parseval follow by expanding $F$ and $G$ in this basis. For the last claim, $F(x)\chi_{S_a}(x)$ is $1$ when $f(x)=\ip{a}{x}$ and $-1$ otherwise, so its expectation $\hat F(S_a)$ equals $2\Prob[f(x)=\ip{a}{x}]-1$.
+\end{proof}
+
+\section{Games}\label{sec:toolkit:games}
+
+A \emph{game in normal form} has players $i=1,\dots,N$, a set of strategies $\Sigma_i$ for each, and payoffs $u_i(\sigma_1,\dots,\sigma_N)$. A \emph{mixed} strategy is a probability distribution over $\Sigma_i$, and payoffs extend to mixed strategies by expectation.
+
+\begin{definition}[Equilibria]\label{def:toolkit:nash}
+A profile $(\sigma_1,\dots,\sigma_N)$ is a \term{Nash equilibrium} if no player can raise its payoff by changing its own strategy alone: $u_i(\sigma_i',\sigma_{-i})\le u_i(\sigma_i,\sigma_{-i})$ for every $i$ and every $\sigma_i'$, where $\sigma_{-i}$ denotes the other players' strategies. It is an $\eps$-equilibrium if each such gain is at most $\eps$. A strategy $\sigma_i$ is \emph{dominant} if it is a best response to every profile of the others, and \emph{strictly dominant} if it is the unique best response to every profile.
+\end{definition}
+
+In a two-player \emph{zero-sum} game, $u_2=-u_1$. Of the two quantities
+\[
+\max_{\sigma_1}\min_{\sigma_2}u_1(\sigma_1,\sigma_2)\quad\text{and}\quad\min_{\sigma_2}\max_{\sigma_1}u_1(\sigma_1,\sigma_2),
+\]
+the first is the payoff that player~$1$ can guarantee itself, and the second the payoff to which player~$2$ can hold player~$1$.
+
+\begin{theorem}[von Neumann's minimax theorem]\label{thm:toolkit:minimax}
+In every finite two-player zero-sum game, with mixed strategies,
+\[
+\max_{\sigma_1}\min_{\sigma_2}u_1(\sigma_1,\sigma_2)=\min_{\sigma_2}\max_{\sigma_1}u_1(\sigma_1,\sigma_2).
+\]
+This common number is the \emph{value} of the game; a pair of strategies attaining the outer optima is a Nash equilibrium, and every Nash equilibrium attains them.
+\end{theorem}
+
+The theorem can be proved with linear-programming duality, or obtained from two facts that \textcite{OsborneRubinstein1994} prove: every finite game has a Nash equilibrium in mixed strategies, and in a zero-sum game the strategies of a Nash equilibrium attain the two optima, which are then equal. A game in \emph{extensive form} is played on a finite tree: each internal node belongs to a player, who chooses a child; leaves carry payoffs. It has \emph{perfect information} if every player knows the node it is at. Debate (\cref{ch:debate}) is a game of this kind.
+
+\begin{theorem}[Backward induction]\label{thm:toolkit:backward}
+In a finite two-player zero-sum game of perfect information whose leaves are labeled ``player $1$ wins'' or ``player $2$ wins'', exactly one of the players has a strategy that wins against every strategy of the other. If the tree has depth $D$, each node has at most $B$ children, and the label of a leaf and the children of a node can be computed in space $s$, then the winner can be computed in space $O(D(\log B+1)+s)$.
+\end{theorem}
+
+\begin{proof}
+Label the nodes from the leaves up: an internal node of player $i$ is labeled ``$i$ wins'' if some child is labeled ``$i$ wins'', and ``the other player wins'' otherwise. By induction on the height of a node, the player named by its label has a strategy that wins from that node: at a node of that player, move to a child with the same label; at a node of the other player, every child carries the label. The winner is unique, because two strategies that each win against every strategy of the other would, played against each other, reach a single leaf with two different labels. To compute the label of the root, evaluate the tree depth first, keeping on a stack, for each level, the index of the child being examined and whether a winning child has been found; this uses $O(\log B+1)$ bits per level, plus the space to compute labels and children, which is reused.
+\end{proof}
+
+When a game is played in two stages, a \emph{leader} first commits to a strategy, and a \emph{follower}, who sees it, then responds; this is the right model for a verifier that is designed, or trained, before the prover adapts to it.
+
+\begin{definition}[Stackelberg equilibrium]\label{def:toolkit:stackelberg}
+In a two-player game with leader $1$ and follower $2$, let $\mathrm{BR}(\sigma_1)$ be the set of best responses of the follower to $\sigma_1$, and fix a rule $\beta$ that picks one of them, $\beta(\sigma_1)\in\mathrm{BR}(\sigma_1)$ (the usual convention breaks ties in the leader's favor). A pair $(\sigma_1,\sigma_2)$ is a \term{Stackelberg equilibrium} if $\sigma_1$ maximizes $u_1(\sigma_1',\beta(\sigma_1'))$ over $\sigma_1'$ and $\sigma_2=\beta(\sigma_1)$. In a game in extensive form, a strategy profile is \emph{subgame perfect} if it induces a Nash equilibrium in every subgame; a Stackelberg equilibrium is the outcome of a subgame-perfect equilibrium of the two-stage game in which the leader moves first and the follower, seeing the leader's strategy, responds by the rule $\beta$.
+\end{definition}
+
+In general a Stackelberg pair need not be a Nash equilibrium of the game played simultaneously, since the leader's commitment need not be a best response to the follower's reply, and a Nash equilibrium need not be a Stackelberg pair. Which of the two a training procedure finds matters for prover--verifier games (\cref{ch:pvg}).
+
+\section{Cryptographic primitives}\label{sec:toolkit:crypto}
+
+Cryptography gives protocols soundness or secrecy against adversaries that are bounded in computation. Its definitions are asymptotic in a \emph{security parameter} $\lambda$, given to all algorithms in unary, and an \emph{efficient} algorithm is a probabilistic algorithm running in time polynomial in $\lambda$.
+
+\begin{definition}[Negligible functions and indistinguishability]\label{def:toolkit:negl}
+A function $\nu\colon\N\to[0,1]$ is \term{negligible} if $\nu(\lambda)\le\lambda^{-c}$ for every constant $c$ and all large $\lambda$; we write $\negl(\lambda)$ for an unspecified negligible function. Two families of distributions $(X_\lambda)$ and $(Y_\lambda)$ are \emph{computationally indistinguishable} if every efficient algorithm $D$ satisfies $\abs{\Prob[D(X_\lambda)=1]-\Prob[D(Y_\lambda)=1]}\le\negl(\lambda)$; they are \emph{statistically} close if the statistical (total variation) distance between them is negligible.
+\end{definition}
+
+\begin{definition}[One-way functions, pseudorandom generators and functions]\label{def:toolkit:owf}
+An efficiently computable $f$ is \term{one-way} if every efficient algorithm, given $f(x)$ for uniformly random $x\in\bits^\lambda$, outputs a preimage of $f(x)$ with negligible probability. An efficiently computable $G\colon\bits^\lambda\to\bits^{\ell(\lambda)}$ with $\ell(\lambda)>\lambda$ is a \emph{pseudorandom generator} if $G(x)$ for uniform $x$ is computationally indistinguishable from a uniform string of length $\ell(\lambda)$. A family of efficiently computable functions $F_k$, with keys $k\in\bits^\lambda$ and inputs and outputs whose lengths are polynomial in $\lambda$, is a \emph{pseudorandom function} if no efficient algorithm with oracle access can distinguish $F_k$, for a uniformly random key $k$, from a uniformly random function with the same inputs and outputs, except with negligible advantage.
+\end{definition}
+
+One-way functions exist if and only if pseudorandom generators do, and pseudorandom generators give pseudorandom functions \parencite{Goldreich2001}. None of these is known to exist unconditionally: their existence implies $\cc{P}\ne\cc{NP}$.
+
+\begin{definition}[Commitment scheme]\label{def:toolkit:commitment}
+A commitment scheme is an efficient algorithm $\mathrm{Com}$ that, on a message $m$ and random coins $\rho$, outputs a commitment $c=\mathrm{Com}(m;\rho)$; to \emph{open} $c$, the committer reveals $(m,\rho)$ and the receiver recomputes $c$. It is \term{hiding} if commitments to two messages of the same length, chosen arbitrarily, are indistinguishable (perfectly, statistically, or computationally), and \term{binding} if no committer can open one commitment to two different messages (perfectly: no such pair $(m,\rho)\ne(m',\rho')$ with $m\ne m'$ exists; computationally: no efficient committer finds one except with negligible probability).
+\end{definition}
+
+No scheme is both perfectly hiding and perfectly binding. Statistically binding, computationally hiding commitments can be built from one-way functions \parencite{Naor1991} (binding holds except with negligible probability over a random string chosen by the receiver); a common practical commitment is $\mathrm{Com}(m;\rho)=H(m\,\|\,\rho)$ for a hash function $H$, analyzed in the random-oracle model below.
+
+\begin{definition}[Collision-resistant hashing]\label{def:toolkit:crhf}
+A family of efficiently computable functions $H_k\colon\bits^*\to\bits^\lambda$, indexed by a key $k$ chosen at random, is \term{collision resistant} if every efficient algorithm, given $k$, finds $x\ne x'$ with $H_k(x)=H_k(x')$ with negligible probability. A \term{Merkle tree} over a list of $N=2^h$ strings $v_0,\dots,v_{N-1}$ is the binary tree whose leaves are $H_k(v_i)$ and whose every internal node is $H_k$ applied to the concatenation of its two children; the \emph{root} commits to the list, and the \emph{opening} of position $i$ is $v_i$ together with the $h$ siblings of the nodes on the path from leaf $i$ to the root.
+\end{definition}
+
+\begin{definition}[Digital signatures]\label{def:toolkit:signature}
+A signature scheme is a triple of efficient algorithms: $\mathrm{Gen}(1^\lambda)$ outputs a signing key $sk$ and a verification key $vk$; $\mathrm{Sign}(sk,m)$ outputs a signature $\sigma$; $\mathrm{Verify}(vk,m,\sigma)$ outputs \acc{} or \rej, and accepts every honestly produced signature. The scheme is \term{existentially unforgeable under chosen-message attack} if every efficient adversary that receives $vk$ and may ask for signatures on messages of its choice outputs, with negligible probability, a pair $(m,\sigma)$ that verifies with $m$ never asked. It is \emph{strongly unforgeable} if the adversary also cannot output a new valid signature on a message it asked about, and it is unforgeable \emph{under a no-message attack} if the requirement holds for adversaries that receive only $vk$ and ask for no signatures.
+\end{definition}
+
+Signature schemes secure under chosen-message attack exist if one-way functions do \parencite{Rompel1990}. Strong unforgeability implies existential unforgeability under chosen-message attack, which implies unforgeability under a no-message attack.
+
+\begin{definition}[The random-oracle model]\label{def:toolkit:rom}
+In the \term{random-oracle model}, all parties, honest and adversarial, have oracle access to a single uniformly random function $\cO\colon\bits^*\to\bits^\lambda$, and the adversary's power is measured by its number of queries as well as its running time. A protocol proved secure in this model is used in practice with $\cO$ replaced by a concrete hash function, a step that is a heuristic: there are protocols secure in the model that are insecure under every replacement \parencite{CanettiGoldreichHalevi2004}.
+\end{definition}
+
+The Fiat--Shamir transform \parencite{FiatShamir1986} turns a public-coin interactive protocol into a non-interactive one by computing each of the verifier's random messages as the oracle's value on the transcript so far; its soundness for the protocols of this book is discussed where it is used (\cref{ch:delegation,ch:zeroknowledge,ch:training}).
+
+\notesandrefs
+
+\Textcite{AroraBarak2009} cover the complexity classes, interactive proofs and PCPs at the level of this book, and \textcite{Goldreich2008} gives a more conceptual treatment with an emphasis on the role of randomness and proofs. \Textcite{Sipser2013} is a gentler introduction to machines and classes. \Textcite{MitzenmacherUpfal2017} treat tail bounds and hashing; Hoeffding's inequality is from \textcite{Hoeffding1963}, and the use of pairwise-independent hashing in interactive proofs from \textcite{GoldwasserSipser1986}. The polynomial lemmas are classical; the form of the Schwartz--Zippel lemma above is from \textcite{Schwartz1980}, with \textcite{Zippel1979} and \textcite{DeMilloLipton1978}, and \textcite{Thaler2022} gives the multilinear extension and its fast evaluation in the form used by the sumcheck and GKR protocols. \Textcite{ODonnell2014} is the standard text on Fourier analysis of Boolean functions. \Textcite{OsborneRubinstein1994} cover equilibria, extensive games and backward induction; the minimax theorem is from \textcite{vonNeumann1928}. \Textcite{KatzLindell2020} cover one-way functions, commitments, signatures, hashing and the random-oracle model, and \textcite{Goldreich2001} treats one-way functions, pseudorandom generators and functions, commitments and zero knowledge with full proofs; Merkle trees are from \textcite{Merkle1987}.
+
+\printchapterbib
+\end{refsection}

@@ -1,0 +1,390 @@
+% Chapter 3 of Verifiable Intelligence: program checking, self-correction, and consistency checks.
+\newcommand{\consistencyyes}{\textsf{yes}}
+\newcommand{\consistencyno}{\textsf{no}}
+\newcommand{\consistencySol}{\operatorname{Sol}}
+
+\protocolchapter{Consistency}{Checking a program on the input that matters}{the program checker}{S,Q,Q,Q,Q,Q,D}{ch:consistency}
+\begin{refsection}[chapters/03-consistency.bib]
+
+\begin{chaptersummary}
+An overseer who cannot compute a model's answer can still ask related questions and check that the answers fit together. Program checking makes this precise: a checker queries the program, a fixed function, at inputs related to the one that matters, and certifies the answer there or declares the program buggy. We prove Freivalds's check of a matrix product, self-correction, the Blum--Kannan checker for graph isomorphism, their theorem that a problem is checkable exactly when it and its complement have interactive proofs whose prover is the problem itself, and that relations which do not pin the function down, such as the coherence of probabilities, accept every consistent liar. Honesty costs the correct program nothing, the checker makes a few calls, and a wrong answer is caught with probability exponentially close to $1$ in the number of rounds against every fixed program, but never against a consistent liar. The model leaves out that a deployed model is not a fixed function and may recognize the input that matters.
+\end{chaptersummary}
+
+\section{The oversight problem: answers no one can check}\label{sec:consistency:problem}
+
+Some answers can be checked only by producing them. Nobody can confirm a superhuman engine's evaluation of a chess position without playing at its level, a forecast for 2035 without waiting until 2035, or a bail recommendation against an outcome that may never be observed. What the overseer can still do is ask more questions.
+
+\begin{oversight}[an answer no one can check]
+A model evaluates chess positions better than every person, forecasts events years ahead, and recommends bail decisions. For the one position, question or case that the overseer must act on, the overseer cannot produce the right answer and cannot wait for the outcome. It can ask the model other questions: the same position rotated or mirrored, the question negated or paraphrased, the case with one more prior offense. If all the answers fit together, should the overseer then believe the one that matters?
+\end{oversight}
+
+This is the setting of \textcite{FluriEtAl2024}, who proposed to evaluate superhuman models by \term{consistency checks}\index{consistency check}: if inputs $x_1,\dots,x_m$ satisfy a relation that forces a relation among the correct outputs, then a model whose outputs violate it is wrong on at least one input, although nobody may know which.\sidenote{The numbers below are from the arXiv version of the paper (v3, October 2023); it appeared at IEEE SaTML in April 2024.}
+
+\begin{observation}[\textcite{FluriEtAl2024}]\label[observation]{obs:consistency:fluri}
+\emph{Chess.} Leela Chess Zero, a superhuman engine, predicts game outcomes in $[-1,1]$. On $200{,}000$ synthetic positions without pawns, the largest change of its evaluation under rotations and reflections of the board exceeded $0.5$ in $0.09\%$ of the cases; on $400{,}000$ positions from a database of games, playing the only legal move changed it by more than $0.25$ in $0.05\%$. A genetic search found up to nine times more failures than random sampling. \emph{Forecasting.} On $380$ questions in $1{,}220$ variants, GPT-4's violation scores, scaled to $[0,1]$, exceeded $0.2$ in $11\%$ to $16\%$ of the negation, paraphrase and monotonicity tests and in $59\%$ of the Bayes's-rule tests (GPT-3.5-turbo: $31\%$ to $69\%$). \emph{Bail.} Of $1{,}560$ defendants, GPT-3.5-turbo at temperature $0$ denied bail to $78$ whom it would have released with a worse criminal record.
+\end{observation}
+
+The authors state the premise with care: a violation shows that some answer is wrong, and finding none does not show that the answers are right. \Textcite{PalekaEtAl2025} built such checks for forecasters, scored by what an arbitrageur could earn from the forecasts; among the forecasters they tested, consistency correlated with the Brier score revealed when the questions resolved, most strongly for checks on conditional probabilities, and they caution that better models may simply be both more consistent and more accurate. Fluri et al.\ present consistency checks as an instance of metamorphic testing,\index{metamorphic testing} which tests whether a relation holds over several runs of a program \parencite{ChenEtAl2018}. Their counterpart in complexity theory, with theorems, is \term{program checking}\index{program checker}, introduced by Manuel Blum and Sampath Kannan in 1989 \parencite{BlumKannan1995} and extended to self-testing and self-correcting programs by \textcite{BlumLubyRubinfeld1993}; Blum and Kannan found an early instance in Freivalds's randomized verification of products \parencite{Freivalds1977,Freivalds1979}.
+
+The difficulty has three parts. Consistency is necessary for correctness but not sufficient: a forecaster whose probabilities form a coherent but wrong distribution satisfies every law of probability. Errors may be rare and sit where they hurt: a spot check almost never hits an inconsistency that occurs in $0.09\%$ of positions, and a planted error (\cref{ch:backdoors}) sits at the input that matters on purpose. And the related questions are transformations of the question that matters, which a model can recognize and answer consistently and wrongly. The question of this chapter is: \emph{when do a program's answers at other inputs certify its answer at the input that matters, and what must the overseer assume about the program?}
+
+\section{The protocol: a checker that uses the program}\label{sec:consistency:protocol}
+
+A \emph{problem} is a function $f\colon X\to Y$ from instances (strings) to answers; a decision problem is the characteristic function of a language $L$, with answers \consistencyyes{} and \consistencyno. A \emph{program} for $f$ is a function $\Prov^*\colon X\to Y$; it is correct if $\Prov^*=f$. The program plays the prover: the honest prover is $\Prov=f$, and a cheating prover is a program that is wrong at the input that matters.
+
+\begin{definition}[Program checker; \textcite{BlumKannan1995}]\label[definition]{def:consistency:checker}
+Let $f\colon X\to Y$ be a problem. A \term{program checker} for $f$ with completeness $c$ and soundness error $s$ is a probabilistic oracle algorithm $\V$ that receives $x\in X$, may query a program $\Prov^*\colon X\to Y$, outputs \acc{} or \rej, and satisfies, for every program $\Prov^*$ and every $x$, with probabilities over $\V$'s coins:
+\begin{enumerate}
+\item (completeness) if $\Prov^*(z)=f(z)$ for every $z\in X$, then $\Prob[\V^{\Prov^*}(x)=\acc]\ge c$;
+\item (soundness) if $\Prov^*(x)\ne f(x)$, then $\Prob[\V^{\Prov^*}(x)=\acc]\le s$.
+\end{enumerate}
+It is \emph{efficient} if its running time, in which writing queries and reading answers count but the program's computation does not, is polynomial in the length of $x$.
+\end{definition}
+
+Blum and Kannan's checkers output \textsc{correct} or \textsc{buggy}, with errors at most $2^{-k}$ for a security parameter $k$ given in unary; when the program is right at $x$ but wrong elsewhere, either verdict is allowed. A checker could simply compute $f(x)$ itself, so Blum and Kannan asked for the \term{little-oh property}\index{little-oh property}: the checker's running time is $o$ of the program's, so that a programmer cannot rerun the program and call that a check.\sidenote{\textcite[Section~2]{BlumKannan1995} ``generally require'' the little-oh property; their characterization theorem (\cref{thm:consistency:blumkannan} here) is stated for polynomial-time checkers without it.} Against a fixed program, independent runs use independent coins and the same oracle, so their verdicts are independent: with $c=1$, accepting only when $t$ runs accept gives soundness error $s^t$, and in general a majority of $O(t)$ runs gives errors $2^{-t}$ (\cref{prop:toolkit:amplification}).
+
+\begin{protocol}{The program checker}\label{prot:consistency:checker}
+\item[\act{V}] Receive the input $x$ and the number of rounds $t$. The program $\Prov^*$ is fixed before $\V$ draws its coins and answers each query $q$ with $\Prov^*(q)$, whatever else it has been asked.
+\item[\msg{V}{P}] Ask for the answer that matters, $\Prov^*(x)$.
+\item[\msg{P}{V}] Return $y=\Prov^*(x)$.
+\phase{Round $j=1,\dots,t$}
+\item[\act{V}] Draw related inputs $q_{j1},\dots,q_{jm}$ from a distribution that depends on $x$; each of them alone may look unrelated to $x$.
+\item[\msg{V}{P}] Ask for $\Prov^*(q_{j1}),\dots,\Prov^*(q_{jm})$, each in a fresh context.
+\item[\msg{P}{V}] Return the answers.
+\phase{Verdict}
+\item[\act{V}] Apply a test to $x$, $y$, the queries and the answers: \acc{} certifies $y$ as $f(x)$, \rej{} declares the program buggy.
+\end{protocol}
+
+\paragraph{A worked run: a product of matrices.} A program claims that $C=\bigl(\begin{smallmatrix}19&22\\43&51\end{smallmatrix}\bigr)$ is the product of $A=\bigl(\begin{smallmatrix}1&2\\3&4\end{smallmatrix}\bigr)$ and $B=\bigl(\begin{smallmatrix}5&6\\7&8\end{smallmatrix}\bigr)$, whose true product has $50$ in the corner. Freivalds's checker makes no further call: it draws $r\in\bits^2$ and compares $A(Br)$ with $Cr$. For $r=(0,0)$ and $r=(1,0)$ they agree (for the second, $A(Br)=(19,43)=Cr$). For $r=(0,1)$, $A(Br)=(22,50)\ne(22,51)=Cr$, and for $r=(1,1)$, $A(Br)=(41,93)\ne(41,94)=Cr$. Two of four vectors catch the error, the fewest that \cref{thm:consistency:freivalds} allows: an error in one column is caught only when $r$ selects that column.
+
+\paragraph{A worked run: correcting the program at the input that matters.} Let $f(z)=z_1+z_3$ on $\F_2^3$, and let $g$ agree with $f$ except at the input that matters, $x=(1,0,1)$, where it answers $1$ instead of $0$. The self-corrector draws $r\in\F_2^3$ and outputs $g(x+r)+g(r)$, which equals $f(x+r)+f(r)=f(x)$ unless $x+r$ or $r$ is the corrupted point, that is, unless $r\in\{0,x\}$. One trial errs with probability $\frac28=2\delta$ for the corruption rate $\delta=\frac18$, and a majority of a few trials is right with high probability (\cref{prop:consistency:selfcorrect}). Each query on its own is a uniformly random point, so a program that sees one query at a time cannot tell that it is being asked about $x$.
+
+\begin{dictionary}
+program $\Prov^*$, a fixed function & the model, asked each question in a fresh context\\
+input that matters $x$ & the position, forecast or case the overseer must act on\\
+related queries $q_{ji}$ & rotated boards, negated or paraphrased questions, counterfactual records\\
+the checker's test & a consistency rule: related inputs, related outputs\\
+\rej{} (\textsc{buggy}) & an inconsistency: some answer is wrong, perhaps not the one at $x$\\
+\acc{} (\textsc{correct}) & a certified answer, but only if the relations pin $f$ down at $x$\\
+soundness error $s$ & the chance that a wrong answer at $x$ survives the checks\\
+random self-reduction & asking about $x$ through questions that each look like a random question
+\end{dictionary}
+
+\paragraph{What one had to notice.} Verifying a program means proving it correct on every input; Blum and Kannan asked only about its run on the input at hand, and let the checker use the program under suspicion as its source of answers. Two things make that safe: the program is a fixed function, so its answers are commitments made before the checker's coins; and the related queries are random, so the program cannot treat the input that matters differently. The checks of \cref{obs:consistency:fluri} have the first ingredient in part and the second rarely: a rotated board is recognizably the same board.
+
+\section{The theory: randomness instead of recomputation}\label{sec:consistency:randomness}
+
+The first checkers test an answer without computing it. Freivalds's check is the case of degree one of the Schwartz--Zippel lemma (\cref{lem:toolkit:schwartzzippel}). An \emph{integral domain} is a commutative ring with $1\ne0$ in which a product of nonzero elements is nonzero, such as a field or $\Z$.
+
+\begin{theorem}[Freivalds's check; \textcite{Freivalds1977,Freivalds1979}]\label{thm:consistency:freivalds}\index{Freivalds's check}
+Let $R$ be an integral domain, $A,B,C\in R^{n\times n}$, $S\subseteq R$ finite and nonempty, and $r$ uniform on $S^n$.
+\begin{enumerate}
+\item If $AB=C$, then $A(Br)=Cr$ for every $r$.
+\item If $AB\ne C$, then $\Prob_r[A(Br)=Cr]\le1/\abs S$, with equality if $0\in S$ and $AB-C$ has exactly one nonzero column.
+\item One trial costs three products of a matrix with a vector, $3n^2$ multiplications in $R$, and one call to the program; with $t$ independent trials and acceptance only if all pass, the soundness error is at most $\abs S^{-t}$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to find one coordinate of $(AB-C)r$ that vanishes for at most one value of one coordinate of $r$. Associativity gives $A(Br)=(AB)r$, which proves (i). For (ii), let $D=AB-C\ne0$ and choose $D_{ij}\ne0$. The $i$th coordinate of $Dr$ is $D_{ij}r_j+\gamma$, where $\gamma=\sum_{k\ne j}D_{ik}r_k$ does not depend on $r_j$. Fix the coordinates other than $r_j$. Two values $a\ne b$ with $D_{ij}a+\gamma=D_{ij}b+\gamma=0$ would give $D_{ij}(a-b)=0$, impossible in an integral domain; so at most one of the $\abs S$ equally likely values of $r_j$ makes $(Dr)_i=0$. Averaging over the other coordinates, $\Prob[Dr=0]\le\Prob[(Dr)_i=0]\le1/\abs S$. If $D$ has a single nonzero column $d$, in position $j$, then $Dr=r_jd$, which vanishes exactly when $r_j=0$. Part (iii) follows because the trials are independent.
+\end{proof}
+
+Recomputing the product costs $n^3$ multiplications by the schoolbook method, and no method is known that needs only $O(n^2)$; so the check has the little-oh property with respect to every known program.\sidenote{Blum and Kannan found it remarkable that Freivalds's 1979 paper already contained excellent checkers for integer, polynomial and matrix multiplication, a decade before checking was defined.} The hypothesis on $R$ is needed (\cref{ex:consistency:zerodiv}). Over $\F_2$, $\Prob[Dr=0]=2^{-\rank D}$ (\cref{ex:consistency:rank}), so every error of rank one attains the bound, while an error drawn uniformly among nonzero matrices is caught with probability above $1-2^{1-n}$.
+
+The next checkers use the structure of the function: they correct a program that is wrong on a few inputs, possibly on the input that matters, by asking it about other inputs. From here on, $\delta$ is the fraction of inputs on which a program is wrong, not a confidence level.
+
+\begin{proposition}[Self-correction; \textcite{BlumLubyRubinfeld1993}]\label[proposition]{prop:consistency:selfcorrect}\index{self-correction}
+Let $G$ be a finite abelian group, $H$ an abelian group, $f\colon G\to H$ a homomorphism, and $g\colon G\to H$ a function with $\Prob_{z}[g(z)\ne f(z)]\le\delta$ for $z$ uniform on $G$.
+\begin{enumerate}
+\item For every $x\in G$, $\Prob_r\bigl[g(x+r)-g(r)=f(x)\bigr]\ge1-2\delta$, for $r$ uniform on $G$.
+\item If $\delta<\frac14$ and $r_1,\dots,r_t$ are independent and uniform on $G$, then for every $x$ the most frequent value among $g(x+r_i)-g(r_i)$, $i=1,\dots,t$, is $f(x)$ with probability at least $1-e^{-2t(1/2-2\delta)^2}$.
+\item The bound (i) is attained. Let $G=\F_2^n$, $H=\F_2$, and $E$ the set where $g\ne f$. If $E$ and $E+x$ are disjoint, then $\Prob_r[g(x+r)-g(r)\ne f(x)]=2\delta$ for $\delta=\abs E/2^n$; for every $x\ne0$ and $\delta\in(0,\frac12]$ with $\delta2^n$ an integer, such an $E$ of $\delta2^n$ points containing $x$ exists.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is a union bound for (i), Hoeffding's inequality for (ii), and a count with an explicit error set for (iii). (i) Translation by $x$ is a bijection of $G$, so $x+r$ is uniform, and so is $r$. By the union bound, with probability at least $1-2\delta$ both $g(x+r)=f(x+r)$ and $g(r)=f(r)$, and then $g(x+r)-g(r)=f(x+r)-f(r)=f(x)$ because $f$ is a homomorphism.
+
+(ii) Let $Z$ count the indices $i$ with $g(x+r_i)-g(r_i)=f(x)$, a sum of $t$ independent indicators with means at least $1-2\delta$ by (i). If $Z>t/2$, then $f(x)$ is the most frequent value. Hoeffding's inequality (\cref{thm:toolkit:chernoff}) gives $\Prob[Z\le t/2]\le\exp\bigl(-2t(1-2\delta-\tfrac12)^2\bigr)$.
+
+(iii) Over $\F_2$, $g=f+\ind_E$, so $g(x+r)+g(r)=f(x)+\ind_E(x+r)+\ind_E(r)$ is wrong exactly when one of $x+r$ and $r$ lies in $E$. Both cannot, since that would put $r$ in $E\cap(E+x)$; so the error is $\Prob[r\in E]+\Prob[x+r\in E]=2\delta$. For the construction, choose a coordinate $k$ with $x_k=1$ and a set $E_0\subseteq\{z:z_k=0\}\setminus\{0\}$ with $\delta2^n-1$ points, possible because $\delta2^n\le2^{n-1}$, and put $E=E_0\cup\{x\}$. Then $x\notin E_0$, so $E$ has $\delta2^n$ points. The sets $E$ and $E+x=(E_0+x)\cup\{0\}$ are disjoint: points of $E_0+x$ have $k$th coordinate $1$ unlike those of $E_0$, $0\notin E$, and $x\notin E_0+x$ because $0\notin E_0$.
+\end{proof}
+
+A program can be right on most inputs and wrong exactly where it matters; then asking it about $x$ is useless, and asking about random inputs finds nothing. Self-correction turns the second kind of question into an answer to the first, and a little ground truth at random inputs completes a checker that never evaluates $f$ at $x$.
+
+\begin{theorem}[Checking at the input that matters]\label{thm:consistency:spotcorrect}
+Let $f\colon G\to H$ be a homomorphism of abelian groups, $G$ finite, and let the checker be able to draw labeled examples $(z,f(z))$ with $z$ uniform on $G$. On input $x$, the checker $\V$ asks for $y=\Prov^*(x)$; draws $m$ labeled examples and rejects if $\Prov^*(z)\ne f(z)$ for one of them; draws $r_1,\dots,r_t$, $t\ge1$, independently and uniformly; and accepts if and only if more than $t/2$ of the values $\Prov^*(x+r_i)-\Prov^*(r_i)$ equal $y$. It makes $m+2t+1$ calls and $O(m+t)$ operations in $G$ and $H$. The correct program is accepted with probability $1$, and for every program with $\Prov^*(x)\ne f(x)$ and every $\delta\in(0,\frac14)$, with probability over the examples and $\V$'s coins,
+\[
+  \Prob[\V^{\Prov^*}(x)=\acc]\le\max\bigl\{(1-\delta)^m,\;e^{-2t(1/2-2\delta)^2}\bigr\}.
+\]
+\end{theorem}
+
+\begin{proof}
+If $\Prov^*=f$, then the labeled examples agree and every value $\Prov^*(x+r_i)-\Prov^*(r_i)$ equals $f(x)=y$. Now let $\Prov^*(x)\ne f(x)$ and $\delta^*=\Prob_z[\Prov^*(z)\ne f(z)]$. If $\delta^*>\delta$, then each labeled example exposes the program independently with probability $\delta^*$, so all $m$ pass with probability $(1-\delta^*)^m<(1-\delta)^m$. If $\delta^*\le\delta$, then by \cref{prop:consistency:selfcorrect}(ii), applied to $g=\Prov^*$, the most frequent of the values is $f(x)$ except with probability $e^{-2t(1/2-2\delta)^2}$; and then $y\ne f(x)$ is not taken by more than $t/2$ of them, since a value taken by more than half of them is the most frequent.
+\end{proof}
+
+With $\delta=\frac18$ the bound is $\max\{(7/8)^m,e^{-t/8}\}$, below $10^{-3}$ for $m=t=56$. Spot checks alone would not do, since a program wrong only at $x$ passes $m$ of them with probability $(1-1/\abs G)^m$; nor would self-correction alone.
+
+\begin{remark}[Self-testing without ground truth]\label[remark]{rem:consistency:selftest}
+\textcite{BlumLubyRubinfeld1993} also test, without labeled examples, that a program is close to a homomorphism. If the linearity test of \cref{ch:spotchecks} rejects $g\colon\F_2^n\to\F_2$ with probability at most $\delta$, then $g$ agrees with some linear $\ell$ on at least a $1-\delta$ fraction of inputs (\cref{thm:spotchecks:blr}), and self-correction returns $\ell(x)$. Nothing makes $\ell$ equal to $f$: every linear function passes the test. Labeled examples, or known values such as $f(e_1),\dots,f(e_n)$, pin down which linear function is meant.
+\end{remark}
+
+A function $f$ is \term{random self-reducible}\index{random self-reducibility} if a randomized polynomial-time algorithm can compute $f(x)$ from $f(q_1),\dots,f(q_k)$ at queries $q_i$ that it draws, each of which, on its own, is uniformly distributed whatever $x$ is. Linear functions are; so are low-degree polynomials.
+
+\begin{proposition}[Self-correcting a low-degree polynomial; \textcite{BeaverFeigenbaum1990}, \textcite{Lipton1991}]\label[proposition]{prop:consistency:lowdegree}
+Let $\F$ be a finite field, $f\colon\F^\ell\to\F$ a polynomial of total degree at most $d$ with $\abs\F\ge d+2$, and $g\colon\F^\ell\to\F$ a function with $\Prob_z[g(z)\ne f(z)]\le\delta$. Fix distinct nonzero $a_1,\dots,a_{d+1}\in\F$. For $x\in\F^\ell$, draw $w$ uniform on $\F^\ell$, let $h$ be the polynomial of degree at most $d$ with $h(a_i)=g(x+a_iw)$ for every $i$, and output $h(0)$. The output equals $f(x)$ with probability at least $1-(d+1)\delta$ over $w$.
+\end{proposition}
+
+\begin{proof}
+Since $a_i\ne0$, each query $x+a_iw$ is uniform on $\F^\ell$, so by the union bound all $d+1$ answers are correct with probability at least $1-(d+1)\delta$. Then $h$ agrees at $a_1,\dots,a_{d+1}$ with $u\mapsto f(x+uw)$, a polynomial of degree at most $d$, and two such polynomials that agree at $d+1$ points are equal (\cref{lem:toolkit:lagrange}); so $h(0)=f(x)$.
+\end{proof}
+
+The permanent of an $n\times n$ matrix is a polynomial of total degree $n$ in the entries, and computing it for $0$-$1$ matrices is $\cc{\#P}$-complete \parencite{Valiant1979} (\cref{def:toolkit:classes}). By \cref{prop:consistency:lowdegree}, a program that computes the permanent modulo a prime $p\ge n+2$ correctly on all but a $1/(3(n+1))$ fraction of matrices yields a randomized program that is right on every matrix with probability at least $\frac23$; \textcite{Lipton1991} used the permanent's random self-reducibility in this way.\sidenote{Lipton built on Beaver and Feigenbaum's \emph{instance hiding}, in which a weak party learns $f(x)$ from powerful oracles without revealing $x$: each query $x+a_iw$ alone says nothing about $x$. Blum and Kannan describe this lineage.} Matrix multiplication is bilinear and can be corrected with four calls on random pairs of matrices (\cref{ex:consistency:bilinear}).
+
+\section{The theory: checkers are interactive proofs with a fixed prover}\label{sec:consistency:ip}
+
+When no algebraic identity is available, the checker can use the program as the prover of an interactive proof. Blum and Kannan's first example was graph isomorphism.\sidenote{Blum and Kannan note that graph isomorphism has many heuristics that work on most instances, and that a checker appended to a heuristic gives confidence in its output without a proof that the heuristic is correct: the situation of an overseer facing a trained model.} We use \emph{colored} graphs, which make the self-reduction exact. A colored graph on $[n]$ has edges and a color for each vertex, and an isomorphism is a bijection of $[n]$ that preserves edges, non-edges and colors. For a permutation $\pi$, the graph $\pi(G)$ gives vertex $\pi(u)$ the color of $u$ and has the edge $\pi(u)\pi(v)$ exactly when $uv$ is an edge of $G$. To \emph{mark} a vertex with a symbol $a$ is to replace its color $c$ by $(c,a)$. If $a$ is fresh, then $G$ with $u$ marked and $H$ with $v$ marked are isomorphic if and only if some isomorphism $G\to H$ maps $u$ to $v$: an isomorphism of the marked graphs must map the only vertex carrying $a$ to the only one, and it preserves the first components of the colors.
+
+\begin{protocol}{Checking graph isomorphism}\label{prot:consistency:gi}
+\item[\msg{V}{P}] Ask whether the colored graphs $G$ and $H$ on $[n]$ are isomorphic.
+\phase{If the program says \consistencyyes}
+\item[\act{V}] For $i=1,\dots,n$: for each vertex $v$ of $H$ not yet matched, ask whether $G$ and $H$ are isomorphic after marking $i$ in $G$ and $v$ in $H$ with a fresh symbol $a_i$, the earlier marks kept; set $v_i=v$ and keep the marks for the first $v$ with answer \consistencyyes; \rej{} if there is none.
+\item[\act{V}] \acc{} if $i\mapsto v_i$ is an isomorphism $G\to H$; otherwise \rej.
+\phase{If the program says \consistencyno; round $j=1,\dots,t$}
+\item[\act{V}] Pick $b\in\bits$ and a permutation $\pi$ of $[n]$ uniformly; let $K=\pi(G)$ if $b=0$ and $K=\pi(H)$ if $b=1$.
+\item[\msg{V}{P}] Ask whether $G$ and $K$ are isomorphic.
+\item[\act{V}] \rej{} unless the answer is \consistencyyes{} for $b=0$ and \consistencyno{} for $b=1$.
+\phase{Verdict}
+\item[\act{V}] \acc{} if all $t$ rounds passed.
+\end{protocol}
+
+The second branch is the private-coin protocol for graph non-isomorphism of \textcite{GoldreichMicaliWigderson1991} (\cref{thm:interaction:gni}), with the program as the prover. We use one fact from its proof.
+
+\begin{lemma}[Relabeled copies]\label[lemma]{lem:consistency:copies}
+If $G\cong H$ and $\pi$ is a uniformly random permutation of $[n]$, then $\pi(G)$ and $\pi(H)$ have the same distribution.
+\end{lemma}
+
+\begin{proof}
+For an isomorphism $\sigma\colon H\to G$, $\sigma(H)=G$, so $\pi(G)=(\pi\sigma)(H)$; and $\pi\sigma$ is uniform when $\pi$ is.
+\end{proof}
+
+\begin{theorem}[A checker for graph isomorphism; \textcite{BlumKannan1995}]\label{thm:consistency:gichecker}\index{graph isomorphism!checker for}
+The checker of \cref{prot:consistency:gi} makes at most $1+n(n+1)/2$ calls if the program says \consistencyyes{} and $1+t$ if it says \consistencyno, and otherwise runs in time polynomial in $n$ and $t$. If the program decides isomorphism of colored graphs correctly, then the checker accepts with probability $1$ over its coins. If the program's answer on $(G,H)$ is wrong, then the checker rejects with probability $1$ when that answer is \consistencyyes, and accepts with probability exactly $2^{-t}$ when it is \consistencyno.
+\end{theorem}
+
+\begin{proof}
+The plan is to treat the branches separately: the first ends in a certificate check, and the second is an interactive proof in which the program's answers cannot depend on the hidden bit. At step $i$ the scan tries at most $n-i+1$ vertices, so the first branch makes at most $1+\sum_{i=1}^n(n-i+1)=1+n(n+1)/2$ calls; the rest takes polynomial time.
+
+\emph{Answer \consistencyyes, program correct.} Let $G\cong H$, and let $G_i,H_i$ be the graphs after the marks of steps $1,\dots,i$. We show by induction that $G_i\cong H_i$; for $i=0$ this is the hypothesis. If $\phi\colon G_{i-1}\to H_{i-1}$ is an isomorphism, then the marks force $\phi(k)=v_k$ for $k<i$, so $\phi(i)$ is unmatched, and marking $i$ and $\phi(i)$ with $a_i$ gives isomorphic graphs. Hence the correct program says \consistencyyes{} for at least one vertex of the scan, and the vertex $v_i$ kept gives $G_i\cong H_i$. In $G_n$ every vertex carries its own mark, so an isomorphism $G_n\to H_n$ maps $i$ to $v_i$ for every $i$; thus $i\mapsto v_i$ is an isomorphism of $G_n$ to $H_n$, hence of $G$ to $H$, and the final check passes.
+
+\emph{Answer \consistencyyes, wrong.} Then $G\not\cong H$, no bijection is an isomorphism, and the checker rejects, whatever the program answers.
+
+\emph{Answer \consistencyno, program correct.} Then $G\not\cong H$; every $\pi(G)$ is isomorphic to $G$ and no $\pi(H)$ is, so the correct answers reveal $b$ in every round.
+
+\emph{Answer \consistencyno, wrong.} Then $G\cong H$, and by \cref{lem:consistency:copies} the query $K$ has the same distribution for $b=0$ and $b=1$; so $K$ is independent of $b$, and so is the program's answer, a function of $K$. With $\alpha$ the probability that the answer is \consistencyyes, the round passes with probability $\frac12\alpha+\frac12(1-\alpha)=\frac12$. The rounds use independent coins and the program is fixed, so all $t$ pass with probability exactly $2^{-t}$.
+\end{proof}
+
+Blum and Kannan check uncolored graphs with a standard self-reduction (compare \cref{ex:consistency:gadget}). In both branches the honest prover was the correct program and every cheating prover a fixed function: the general pattern.
+
+\begin{definition}[Function-restricted interactive proof; \textcite{BlumKannan1995}]\label[definition]{def:consistency:frip}\index{function-restricted interactive proof}
+A \term{function-restricted interactive proof} of membership in a language $L$, with completeness $c$ and soundness error $s$, is a probabilistic oracle algorithm $\V$, running in polynomial time when each call counts as one step, such that, with probabilities over $\V$'s coins,
+\begin{enumerate}
+\item for every $x\in L$, $\Prob[\V^L(x)=\acc]\ge c$, where the oracle $L$ answers a query $q$ with \consistencyyes{} if $q\in L$ and \consistencyno{} otherwise;
+\item for every $x\notin L$ and every function $\Pi$ from strings to $\{\consistencyyes,\consistencyno\}$, $\Prob[\V^\Pi(x)=\acc]\le s$.
+\end{enumerate}
+A proof of non-membership exchanges the roles of $x\in L$ and $x\notin L$ and keeps the honest oracle $L$.
+\end{definition}
+
+The verifier is that of an interactive proof (\cref{def:toolkit:ip}), but the honest prover is the language itself, and a cheating prover is a function: its answer to a question cannot depend on the other questions.
+
+\begin{theorem}[Checkers are function-restricted interactive proofs; \textcite{BlumKannan1995}]\label{thm:consistency:blumkannan}
+A language $L$ has an efficient program checker with completeness $\frac23$ and soundness error $\frac13$ if and only if it has function-restricted interactive proofs of membership and of non-membership with completeness $\frac23$ and soundness error $\frac13$. In both, $\frac23$ and $\frac13$ can be replaced by $1-2^{-t}$ and $2^{-t}$ at the cost of a factor $O(t)$ in time and calls.
+\end{theorem}
+
+\begin{proof}
+The plan is to simulate each object by the other, using that the program and the prover are the same kind of object, a function from strings to answers, and then to amplify.
+
+\emph{From a checker to proofs.} Let $\V_C$ be the checker. The proof of membership asks for $\Pi(x)$, rejects if it is \consistencyno, and otherwise runs $\V_C^\Pi(x)$. If $x\in L$ and $\Pi=L$, then $L(x)=\consistencyyes$ and $L$ is a correct program, so $\V_C^L(x)$ accepts with probability at least $\frac23$. Let $x\notin L$. If $\Pi(x)=\consistencyno$, then the proof rejects. Otherwise $\Pi(x)=\consistencyyes\ne L(x)$, so $\Pi$ is a program wrong at $x$, and $\V_C^\Pi(x)$ accepts with probability at most $\frac13$. The proof of non-membership exchanges \consistencyyes{} and \consistencyno.
+
+\emph{From proofs to a checker.} Let $\V_1$ and $\V_0$ be the proofs of membership and non-membership. The checker asks for $\Prov^*(x)$ and runs $\V_1^{\Prov^*}(x)$ if the answer is \consistencyyes{} and $\V_0^{\Prov^*}(x)$ otherwise. For the correct program, $\Prov^*=L$, and the run is $\V_1^L(x)$ with $x\in L$ or $\V_0^L(x)$ with $x\notin L$, which accepts with probability at least $\frac23$. Suppose that $\Prov^*(x)$ is wrong. When it is \consistencyyes, $x\notin L$, and the soundness of $\V_1$, which holds for every function and so for $\Prov^*$, bounds the acceptance by $\frac13$. When it is \consistencyno, $x\in L$, and the soundness of $\V_0$ gives the same bound.
+
+\emph{Amplification.} For a fixed oracle, independent runs of an oracle algorithm have independent verdicts, so by Hoeffding's inequality (\cref{thm:toolkit:chernoff}) a majority of $k$ runs errs with probability at most $e^{-2k(1/6)^2}=e^{-k/18}$, which is at most $2^{-t}$ for $k=\ceil{18t\ln2}$.
+\end{proof}
+
+Blum and Kannan remark that the proof is immediate from the definitions; the content is in them. A checker may use the program as its prover; the program is a function, so it cannot adapt to the conversation; and the honest prover is the problem itself, so a correct program can play it.
+
+\begin{corollary}[Where checkable problems live]\label[corollary]{cor:consistency:nexp}
+Every language with an efficient program checker lies in $\cc{NEXP}\cap\cc{coNEXP}$.
+\end{corollary}
+
+\begin{proof}
+By \cref{thm:consistency:blumkannan}, $L$ has a function-restricted proof of membership $\V$ running in polynomial time $T(n)$, so only the oracle's answers on the fewer than $2^{T(n)+1}$ strings of length at most $T(n)$ matter. A nondeterministic machine guesses them, computes the acceptance probability of $\V$ by running it on all $2^{T(n)}$ sequences of coins, and accepts if it is at least $\frac12$, in time $2^{O(T(n))}$: for $x\in L$ the guess that agrees with $L$ is accepted, and for $x\notin L$ every guess gives at most $\frac13$. So $L\in\cc{NEXP}$, and the proof of non-membership gives $\bar L\in\cc{NEXP}$.
+\end{proof}
+
+This is the argument by which \textcite{FortnowRompelSipser1994} placed probabilistic oracle machines, and with them multi-prover interactive proofs, in $\cc{NEXP}$ (\cref{cor:crossexam:upper}). In the other direction, a problem whose interactive proof needs no more power than the problem itself is checkable.
+
+\begin{corollary}[$\cc{PSPACE}$-complete problems are checkable]\label[corollary]{cor:consistency:pspace}
+Every $\cc{PSPACE}$-complete language has an efficient program checker.
+\end{corollary}
+
+\begin{proofsketch}
+Since $\cc{IP}=\cc{PSPACE}$ (\cref{thm:sumcheck:ippspace}), $L$ and $\bar L$ have interactive proofs whose honest prover is a function of the transcript computable in polynomial space (\cref{thm:interaction:ipinpspace}). Whether bit $j$ of its next message is $1$ is a $\cc{PSPACE}$ question, which reduces in polynomial time to $L$; so the verifier can get each message bit by bit from the oracle. The oracle $L$ yields the honest messages, and every other oracle those of some prover that is a function of the transcript, against which the proof is sound. \Cref{thm:consistency:blumkannan} gives the checker. We omit the encoding of messages as bits.
+\end{proofsketch}
+
+For an $\cc{NP}$-complete problem the construction fails as far as is known: the interactive proof for $\cc{coNP}$ of \cref{ch:sumcheck} needs a prover that counts, which a program for satisfiability is not known to simulate. Satisfiability has a function-restricted proof of membership by self-reduction (find a satisfying assignment with the oracle and check it), so by \cref{thm:consistency:blumkannan} it has a checker exactly when it has a proof of non-membership. Blum and Kannan proved this equivalence for $\cc{NP}$ search problems, whose yes-answers come with certificates, and thought it likely that $\cc{NP}$-complete problems have no checker. So graph isomorphism, not known to be in $\cc{P}$, is checkable, while satisfiability, which has short certificates (\cref{ch:certificates}), is not known to be.
+
+Now the negative side. A consistency check of the kind in \cref{obs:consistency:fluri} is a checker of a special form.
+
+\begin{definition}[Consistency check and its solutions]\label[definition]{def:consistency:check}
+Let $f\colon X\to Y$ be a problem. A \emph{consistency check} draws, on input $x$, a tuple $q=(q_1,\dots,q_m)$ from a distribution $\cD_x$ on $X^m$, queries the program at $x,q_1,\dots,q_m$, and accepts if and only if $(\Prov^*(x),\Prov^*(q_1),\dots,\Prov^*(q_m))\in R_{x,q}$, for relations $R_{x,q}\subseteq Y^{m+1}$ fixed in advance. Its \emph{solutions} are the functions $h\colon X\to Y$ with $(h(x),h(q_1),\dots,h(q_m))\in R_{x,q}$ for every $x$ and every $q$ in the support of $\cD_x$; they form the set $\consistencySol$. The check is complete if $f\in\consistencySol$.
+\end{definition}
+
+\begin{proposition}[Consistent liars]\label[proposition]{prop:consistency:liars}\index{consistent liar}
+\begin{enumerate}
+\item Every $h\in\consistencySol$ is accepted at every input with probability $1$, however often the check is repeated. At an input $x$, the soundness error is therefore $1$ unless $h(x)=f(x)$ for every $h\in\consistencySol$.
+\item (Coherence.) Let $\Omega$ be a finite set of outcomes, let the queries be the events $E\subseteq\Omega$ and the conditional events $(E\mid F)$, answered with real numbers $q(E)$ and $q(E\mid F)$, and let the relations be $q(\Omega)=1$, $q(E)\ge0$, $q(E)+q(\Omega\setminus E)=1$, $q(E\cup F)+q(E\cap F)=q(E)+q(F)$, $q(E\cap F)\le q(E)$, and $q(E\cap F)=q(E\mid F)\,q(F)$. Then $q$ is a solution if and only if there is a probability distribution $Q$ on $\Omega$ with $q(E)=Q(E)$ for every event $E$ and $q(E\mid F)=Q(E\cap F)/Q(F)$ whenever $Q(F)>0$.
+\item If the true probabilities are those of a distribution $P$, then a forecaster that reports a distribution $Q$ passes every check built from these relations with probability $1$, while on each event $E$ its expected Brier score\index{Brier score} exceeds that of $P(E)$ by $(Q(E)-P(E))^2$, which is $1$ when $Q(E)=1$ and $P(E)=0$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) A solution satisfies the relation of every tuple in the support, so every run accepts; if some solution has $h(x)\ne f(x)$, then it is a program wrong at $x$ that is accepted with probability $1$.
+
+(ii) A probability distribution satisfies the six relations, the last because $Q(E\cap F)\le Q(F)=0$ when $Q(F)=0$. Conversely, let $q$ be a solution. Negation applied to $\Omega$ gives $q(\varnothing)=1-q(\Omega)=0$, so additivity applied to disjoint $E$ and $F$ gives $q(E\cup F)=q(E)+q(F)$, and by induction $q(E)=\sum_{\omega\in E}q(\{\omega\})$. Put $Q(\omega)=q(\{\omega\})$, which is nonnegative and sums to $q(\Omega)=1$. Bayes's relation gives $q(E\mid F)=Q(E\cap F)/Q(F)$ whenever $Q(F)>0$.
+
+(iii) Acceptance follows from (i) and (ii). For an event of probability $p$ with indicator $Y$ and a forecast $u$, $\E(u-Y)^2=u^2-2up+p=(u-p)^2+p(1-p)$.
+\end{proof}
+
+Part (ii) is a finite form of the classical fact that coherent forecasts are probabilities.\index{coherence of forecasts} What the checks do catch is independent error. If a forecaster answers each question in a fresh context with $P(E)+\sigma Z$, drawing a fresh standard normal $Z$ for every question asked, then a negation check with tolerance $\tau$ sums two independent errors and accepts with probability $\Prob[\abs{N(0,2\sigma^2)}\le\tau]=\operatorname{erf}(\tau/(2\sigma))$, and an additivity check sums four and accepts with probability $\operatorname{erf}(\tau/(2\sqrt2\,\sigma))$. Coherence checks see errors that differ from question to question and are blind to errors that are coherent.
+
+\paragraph{What turns consistency into correctness.} The theorems of this chapter show three ingredients. \emph{Anchoring}: with the checker's own knowledge added (labeled examples, known values, a certificate check), the relations must leave a single solution at $x$; linearity alone leaves every linear function (\cref{rem:consistency:selftest}), and coherence every distribution. \emph{Robustness}: a program that satisfies most instances of the relations must be close to a solution, as \cref{thm:spotchecks:blr} shows for linearity. \emph{Hiding}: the answer at $x$ must be recoverable from questions each distributed independently of $x$, as in random self-reduction, or behind a hidden bit, as for graph isomorphism. The checks of \cref{obs:consistency:fluri} have little of the first and none of the third. Random self-reducibility is rare among hard problems:\sidenote{\textcite{FeigenbaumFortnow1993} showed that an $\cc{NP}$-complete set is not non-adaptively random self-reducible unless the polynomial hierarchy collapses at its third level; we take the statement from the paper's abstract.} it holds for algebraic problems such as the permanent, and is known for few of the problems an overseer meets.
+
+\section{Running the protocol}\label{sec:consistency:running}
+
+Four scripts run the checkers against honest and cheating programs; each uses fixed seeds and finishes in a few seconds.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},vplot,width=82mm,height=49mm,
+  legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize,/tikz/every even column/.append style={column sep=2.5mm}},legend columns=2,legend cell align=left]
+\nextgroupplot[xlabel={rounds $t$},ylabel={acceptance rate},ymode=log,xmin=0.4,xmax=14.6,ymin=4e-6,ymax=2.5,ytick={1e-5,1e-4,1e-3,1e-2,1e-1,1}]
+\addplot[bound] table[x=t,y=bound] {figures/data/03-consistency-freivalds-rates.dat};
+\addplot[bound,dash pattern=on 1pt off 1.5pt] table[x=t,y=bound] {figures/data/03-consistency-freivalds-rates4.dat};
+\addplot[honest] table[x=t,y=honest] {figures/data/03-consistency-freivalds-rates.dat};
+\addplot[cheat,ebars] table[x=t,y=best,y error plus=bestep,y error minus=bestem] {figures/data/03-consistency-freivalds-rates.dat};
+\addplot[only marks,mark=triangle,mark size=2pt,color=verifier,mark options={line width=0.6pt,fill=white},ebars] table[x=t,y=best,y error plus=bestep,y error minus=bestem] {figures/data/03-consistency-freivalds-rates4.dat};
+\addplot[cheat2,ebars] table[x expr=\thisrow{t}+0.3,y=acc,y error plus=ep,y error minus=em] {figures/data/03-consistency-gi.dat};
+\legend{$2^{-t}$,$4^{-t}$,honest product,one wrong entry; $S=\bits$,one wrong entry; $\abs S=4$,isomorphism; wrong \consistencyno}
+\nextgroupplot[xlabel={fraction $\delta$ of inputs on which $g$ is wrong},ylabel={error of the corrected value at $x$},xmin=0,xmax=0.31,ymin=-0.02,ymax=1.08]
+\addplot[bound] table[x=delta,y=bound] {figures/data/03-consistency-selfcorrect-theory.dat};
+\addplot[theory2] table[x=delta,y=rnd] {figures/data/03-consistency-selfcorrect-theory.dat};
+\addplot[theory] table[x=delta,y=maj] {figures/data/03-consistency-selfcorrect-theory.dat};
+\addplot[cheat,ebars] table[x=delta,y=adv,y error plus=advep,y error minus=advem] {figures/data/03-consistency-selfcorrect.dat};
+\addplot[cheat2,ebars] table[x=delta,y=rnd,y error plus=rndep,y error minus=rndem] {figures/data/03-consistency-selfcorrect.dat};
+\addplot[honest,ebars] table[x=delta,y=maj,y error plus=majep,y error minus=majem] {figures/data/03-consistency-selfcorrect.dat};
+\addplot[only marks,mark=x,mark size=2.2pt,color=verifier,line width=0.7pt] table[x=delta,y=mem] {figures/data/03-consistency-selfcorrect.dat};
+\addplot[guide] coordinates {(0.25,-0.02) (0.25,1.08)};
+\legend{bound $2\delta$,$2\delta(1-\delta)$,binomial tail,adversarial; one trial,random; one trial,adversarial; majority of 9,program with memory}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Catching and correcting wrong answers. Left: acceptance against the number of rounds; Freivalds's check over $\F_p$, $p=1{,}000{,}003$, $n=40$, against a product with one wrong entry (circles: $r\in\bits^n$; triangles: entries of $r$ from a set of four) and the correct product (dots), and the isomorphism checker on colored graphs with $8$ vertices against a program that wrongly says \consistencyno{} (squares, shifted by $0.3$); $100{,}000$ runs per program, each stopped at its first failed round; points with fewer than three acceptances omitted; seeds $3$ and $11$--$14$ (products), $31$ (graphs). Right: error of the self-corrected value at $x$ for $g\colon\F_2^{16}\to\F_2$ wrong on a fraction $\delta$ of inputs including $x$, placed to attain the bound (circles) or at random (squares), majority of $9$ trials against the first placement (dots), and a program with memory, right at every input asked alone (crosses, the same program at every $\delta$); $20{,}000$ runs per point ($2{,}000$ with memory), seeds $7$ and $100+1000\delta$. Curves: the bound of \cref{prop:consistency:selfcorrect}, the expected error $2\delta(1-\delta)$ of a random placement, and $\Prob[\mathrm{Bin}(9,2\delta)\ge5]$. Intervals: Clopper--Pearson $95\%$. Scripts \texttt{03-consistency-freivalds.py}, \texttt{-gi.py}, \texttt{-selfcorrect.py}.}
+\label{fig:consistency:catch}
+\end{figure}
+
+\paragraph{Products and isomorphisms.} The left panel of \cref{fig:consistency:catch} shows the bounds of \cref{thm:consistency:freivalds,thm:consistency:gichecker} attained. A product with one wrong entry, the best a cheating program can do, survives a round with probability $0.5014$ for $r\in\bits^n$ (theory $\frac12$) and $0.2516$ for entries from a set of four (theory $\frac14$), and follows $2^{-t}$ and $4^{-t}$ down to the resolution of $100{,}000$ runs. A natural bug, skipping the last term of every inner product, has the error $-ab^\top$ ($a$ the last column of $A$, $b^\top$ the last row of $B$), survives a round only if $b^\top r=0$ in $\F_p$, with probability about $2^{-n}+1/p$, and was accepted in none of $100{,}000$ runs. For a wrong \consistencyno{} the measured rates follow the exact value $2^{-t}$. A degree-counting heuristic that wrongly calls the cube and the Wagner graph ($3$-regular on $8$ vertices) isomorphic was rejected in all $1{,}000$ runs; the honest program was accepted on all $300$ isomorphic and $300$ non-isomorphic random pairs, with $22.8$ calls on average in the first branch (at most $33$; bound $37$) and $11$ in the second ($t=10$).
+
+\paragraph{Self-correction.} In the right panel the bound $2\delta$ is attained, so the adversarial points straddle it within their intervals; a random placement errs slightly less, because both queries are sometimes corrupted and the errors cancel over $\F_2$. The majority of nine trials errs rarely when $\delta$ is small ($0.0186$ at $\delta=0.1$; theory $0.0196$), more often as $\delta$ nears $\frac14$, where one trial errs with probability $\frac12$, and more often than not above it. The program with memory recognizes that its queries $x+r$ and $r$ add up to $x$ and answers the second so that the corrected value is wrong; not being a fixed function, it defeats self-correction in every run. For a program wrong only at $x$, $100$ random spot checks passed in $19{,}969$ of $20{,}000$ runs, while the majority vote of \cref{thm:consistency:spotcorrect} with $t=9$ accepted its wrong answer in none.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}rrrS[table-format=2.2]S[table-format=1.3]@{}}
+\toprule
+$n$ & {$n^3$} & {$3n^2$} & {recompute $AB$ (ms)} & {one check (ms)}\\
+\midrule
+500 & $1.3\cdot10^{8}$ & $7.5\cdot10^{5}$ & 0.57 & 0.017\\
+1000 & $1.0\cdot10^{9}$ & $3.0\cdot10^{6}$ & 4.22 & 0.169\\
+2000 & $8.0\cdot10^{9}$ & $1.2\cdot10^{7}$ & 36.91 & 1.190\\
+\bottomrule
+\end{tabular}
+\caption{Recomputing a product of $n\times n$ matrices against one round of Freivalds's check: multiplications, and wall-clock times on the author's laptop (best of five, double precision, one requested thread, entries from $0$ to $9$ so that arithmetic is exact; times vary between runs). Script \texttt{03-consistency-freivalds.py}.}
+\label{tab:consistency:costs}
+\end{table}
+
+\paragraph{Costs.} In \cref{tab:consistency:costs} the multiplications differ by the factor $n/3$, about $670$ at $n=2000$, but the times only by about $30$: the check reads three matrices once and is limited by memory, while a matrix product reuses every entry and runs at the full speed of the processor's matrix unit.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[vplot,height=47mm,xmode=log,xmin=1e-3,xmax=1,ymin=-0.04,ymax=1.1,
+  xlabel={root-mean-square distance of the forecasts from $P$},ylabel={acceptance of a coherence check},
+  legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize,/tikz/every even column/.append style={column sep=2.5mm}},legend columns=3,legend cell align=left]
+\addplot[bound] coordinates {(1e-3,1) (1,1)};
+\addplot[theory] table[x=sigma,y=thN] {figures/data/03-consistency-forecast-theory.dat};
+\addplot[theory2] table[x=sigma,y=thA] {figures/data/03-consistency-forecast-theory.dat};
+\addplot[cheat,ebars] table[x=rmse,y=acc,y error plus=ep,y error minus=em] {figures/data/03-consistency-forecast-liars.dat};
+\addplot[honest,ebars] table[x=sigma,y=accN,y error plus=epN,y error minus=emN] {figures/data/03-consistency-forecast-noisy.dat};
+\addplot[only marks,mark=square*,mark size=1.5pt,color=proverB,mark options={fill=proverB,draw=white,line width=0.2pt},ebars] table[x=sigma,y=accA,y error plus=epA,y error minus=emA] {figures/data/03-consistency-forecast-noisy.dat};
+\addplot[cheat2,ebars] table[x=rmse,y=acc,y error plus=ep,y error minus=em] {figures/data/03-consistency-forecast-half.dat};
+\legend{coherent forecasts: $1$,$\operatorname{erf}(\tau/2\sigma)$,$\operatorname{erf}(\tau/2\sqrt2\sigma)$,coherent liars,noisy; negation,noisy; additivity,always $\frac12$}
+\end{axis}
+\end{tikzpicture}
+\caption{Coherence checks against accuracy: three binary events (eight outcomes), true distribution $P$ from a flat Dirichlet law, each question answered separately. Coherent liars report $(1-\lambda)P+\lambda Q_1$, $Q_1$ a point mass on the least likely outcome, $\lambda$ from $0.01$ to $1$ (circles: $20{,}000$ negation, additivity and Bayes checks each, per liar). Noisy forecasters report $P(E)+\sigma Z$, fresh standard normal $Z$, unclipped (dots, filled squares: $20{,}000$ negation or additivity checks, plotted at $\sigma$). The forecaster that always says $\frac12$ (square) passes all negation and additivity checks and fails all Bayes checks. Tolerance $\tau=0.02$; curves from \cref{sec:consistency:ip}; Clopper--Pearson $95\%$ intervals; seed $0$. Script \texttt{03-consistency-forecast.py}.}
+\label{fig:consistency:forecast}
+\end{figure}
+
+\paragraph{Coherence checks.} \Cref{fig:consistency:forecast} separates two properties that consistency checks are often taken to measure together. Every coherent liar passed all $60{,}000$ checks, including the one that puts all its probability on an outcome that $P$ makes nearly impossible, at a distance $0.55$ from the truth. A forecaster with independent noise of standard deviation $0.012$, whose excess Brier score is about two thousand times smaller than the worst liar's, failed a quarter of the negation checks and $42\%$ of the additivity checks, as the erf curves predict, and $21\%$ of the Bayes checks. The forecaster that always says $\frac12$ fails only the Bayes checks, in line with the remark of \textcite{PalekaEtAl2025} that answering one half passes several of their checks, and with their finding that conditional checks carry the most signal about accuracy.
+
+\section{The three questions}\label{sec:consistency:questions}
+
+\questionone Read a checker as a game in which the program's author commits to a function before the checker's coins are drawn and is paid when the checker accepts at $x$. Freivalds's check, the isomorphism checker and the checker of \cref{thm:consistency:spotcorrect} accept the correct program with probability $1$ and every program wrong at $x$ with probability at most $s$, so the correct program is a best response at every input and a lie at $x$ earns at most $s$. Unlike the honest provers of \cref{ch:sumcheck}, the honest prover is cheap: it is the program for $f$ itself (\cref{thm:consistency:blumkannan}), so honesty costs nothing beyond being correct. For a consistency check whose relations do not pin $f$ down, every solution is accepted with probability $1$ (\cref{prop:consistency:liars}): a coherent liar is as good a response as the truth.
+
+\questiontwo Freivalds's check spends $3tn^2$ multiplications, $tn$ random elements of $S$ and one call, against $n^3$ multiplications to recompute. The isomorphism checker makes at most $1+n(n+1)/2$ calls, or $1+t$, and polynomial time besides; the checker of \cref{thm:consistency:spotcorrect} makes $m+2t+1$ calls, uses $m$ labeled examples and performs $O(m+t)$ group operations. Blum and Kannan ask that a checker's own work be $o$ of the program's; soundness error $2^{-t}$ costs a factor $O(t)$.
+
+\questionthree Against every fixed program, unbounded in computation, at every input including the one that matters: at least $1-\abs S^{-t}$ for Freivalds's check; $1$ for a wrong \consistencyyes{} and exactly $1-2^{-t}$ for a wrong \consistencyno{} in graph isomorphism; at least $1-\max\{(1-\delta)^m,e^{-2t(1/2-2\delta)^2}\}$, for every $\delta<\frac14$, with self-correction. Against programs with memory, the certificate check and the hidden-bit test keep their soundness, while self-correction can be defeated with probability $1$. Against consistent liars the catch probability is $0$.
+
+\protocolcard{a program's answer at the input that matters, from its answers at related inputs}{the checker $\V$; the program $\Prov^*$, a fixed function queried at inputs of $\V$'s choice}{the correct program is always accepted and pays nothing extra; a lie at $x$ earns at most $s$, but a consistent liar as much as the truth}{$3tn^2$ multiplications against $n^3$ (products); $1+n(n+1)/2$ or $1+t$ calls (isomorphism); $m+2t+1$ calls and $m$ labeled examples (self-correction); own work $o$ of the program's}{$1-\abs S^{-t}$, $1-2^{-t}$, $1-\max\{(1-\delta)^m,e^{-2t(1/2-2\delta)^2}\}$ against every fixed program; none against a consistent liar, or against memory in self-correction}{a fixed program that cannot recognize the input that matters; an algebraic identity, random self-reducibility, or an interactive proof whose prover is the problem itself}
+
+\section{What the model leaves out}\label{sec:consistency:leavesout}
+
+\paragraph{What was idealized away.} The theory's program is a fixed function, asked each question in isolation; a deployed model is not one. Its answers depend on wording and format: changing only the formatting of a few-shot prompt changed LLaMA-2-13B's accuracy by up to $76$ points \parencite{SclarEtAl2024}. It samples and can disagree with itself, although Fluri et al.\ attribute less than a fifth of their strong paraphrase violations to sampling alone.\sidenote{Blum and Kannan check a randomized program by running it often enough that a correct one errs with negligible probability, and then treating it as deterministic; for a sampled model this means a majority over many samples per query.} In agentic use it has memory, and \cref{fig:consistency:catch} shows what memory does to self-correction. It may recognize that it is being tested:\index{evaluation awareness} \textcite{NeedhamEtAl2025} report, in a 2025 preprint, that frontier models tell evaluation transcripts from deployment ones with an area under the curve of up to $0.83$, against $0.92$ for a human baseline; a model that recognizes the related queries can answer them consistently and wrongly. The relations must be exact: a paraphrase that changes the meaning makes a correct model fail, which is why \textcite{FluriEtAl2024} checked their machine-made paraphrases by hand. And $f$ must be defined; whether a bail decision is right is contested, so a checker certifies at best consistency with a specification someone wrote.\sidenote{\textcite{FluriEtAl2024} also note that their checks ask copies of a model in parallel and so do not handle performative predictions, which change the outcome they predict.}
+
+\paragraph{Where it breaks.} Consistency without anchoring has failed as \cref{prop:consistency:liars} predicts. \Textcite{BurnsEtAl2023} searched a language model's activations for a direction whose probabilities are consistent under negation, to find what the model knows, and reported accuracy $4\%$ above zero-shot prompting on average. \Textcite{FarquharEtAl2023} proved, in a preprint, that every binary feature of the questions attains the optimum of that consistency objective, and found the method often recovering a prominent feature other than knowledge; they note that such probes exist, not that a probe of the usual form can express them or that training finds them. \Textcite{PalekaEtAl2025} built a forecaster that arbitrages its own forecasts against each other; it became more consistent on the checks it targeted but not on held-out checks and not in Brier score, and they warn that consistency used for training could be gamed. Checks also find errors rarely when the model is strong: Leela's large violations occur in fewer than one position in a thousand (\cref{obs:consistency:fluri}), and finding them took hundreds of thousands of positions or a guided search. And no random self-reduction is known for the questions of \cref{obs:consistency:fluri}, so the hiding that makes self-correction work is unavailable where oversight needs it.
+
+\paragraph{Open problems.} (1) Consistency checks with soundness for natural-language tasks: relations that leave a single solution once a little ground truth is added, with a robustness theorem saying that a model which passes most checks is close to correct. \Textcite{FluriEtAl2024} ask whether important inconsistencies can be found efficiently, and \textcite{PalekaEtAl2025} propose generating checks adversarially. (2) Hiding for models: query distributions under which the model cannot tell each related question from a question about a random input, so that self-correction applies; this is instance hiding \parencite{BeaverFeigenbaum1990} against a model that may be aware of evaluation. (3) Checking programs with state: \textcite{BlumEtAl1994} checked programs that store and retrieve data, and we know of no theory for checking a model that remembers earlier queries without isolating copies of it (\cref{ch:crossexam}). (4) Whether satisfiability has an efficient program checker, equivalently a function-restricted proof of non-membership, is open as far as we know.
+
+\begin{exercises}
+\item \consolidation (Exact acceptance over $\F_2$.) For $D\in\F_2^{n\times n}$ and $r$ uniform on $\F_2^n$, show that $\Prob[Dr=0]=2^{-\rank D}$. Conclude that the products that maximize acceptance in \cref{thm:consistency:freivalds} with $S=\F_2$ are those with an error of rank one, and that an error $D$ uniform among nonzero matrices is accepted with probability less than $2^{1-n}$. \hint{for $D$ uniform among all matrices, compute $\Prob_{D,r}[Dr=0]$ by conditioning on $r$; then remove $D=0$.}\label{ex:consistency:rank}
+
+\item \consolidation (Zero divisors.) Over $\Z_4$ with $S=\Z_4$, find $1\times1$ matrices with $AB\ne C$ that pass Freivalds's check with probability $\frac12$. Which step of the proof of \cref{thm:consistency:freivalds} fails? Show that over $\Z$ with $S=\{0,\dots,k-1\}$ the bound $1/k$ holds.\label{ex:consistency:zerodiv}
+
+\item \consolidation (Unique correction needs $\delta<\frac14$.) Over $\F_2^n$, $n\ge2$, distinct linear functions differ on half the inputs. Show that a function within distance $\delta<\frac14$ of a linear function is farther than $\frac14$ from every other, and construct $g$ at distance exactly $\frac14$ from two linear functions $\ell_1\ne\ell_2$. Show that a self-corrector that only queries $g$ errs with probability at least $\frac12$, for $f=\ell_1$ or $f=\ell_2$, wherever $\ell_1\ne\ell_2$.\label{ex:consistency:quarter}
+
+\item \consolidation (Correcting the permanent.) Using \cref{prop:consistency:lowdegree}, show that a program computing the permanent of $10\times10$ matrices modulo the prime $p=10007$ correctly on all but a $10^{-3}$ fraction of matrices gives, after $15$ independent corrections and a majority vote, the permanent of every matrix with error probability below $10^{-4}$. Is Hoeffding's inequality enough? \hint{bound the probability that at least $8$ corrections fail by a union bound over sets of $8$.}\label{ex:consistency:permanent}
+
+\item \variation (Bilinear self-correction.) For $n\times n$ matrices over a finite field, show that $AB=(A+U)(B+W)-U(B+W)-(A+U)W+UW$, that each of the four products has a uniformly random pair of arguments when $U$ and $W$ are uniform and independent, and that a program wrong on a $\delta$ fraction of pairs gives the right product with probability at least $1-4\delta$. Combine it with Freivalds's check into a correcting checker.\label{ex:consistency:bilinear}
+
+\item \variation (Uncolored graphs.) For graphs $G,H$ on $[n]$, attach to distinct vertices $u_1,\dots,u_k$ of $G$ and distinct $v_1,\dots,v_k$ of $H$ cliques on $n+j+1$ new vertices, the clique of index $j$ joined to $u_j$ (or $v_j$) by one edge. Show, using degrees, that the new graphs are isomorphic if and only if some isomorphism $G\to H$ maps $u_j$ to $v_j$ for every $j$, and turn \cref{prot:consistency:gi} into a checker for uncolored graphs.\label{ex:consistency:gadget}
+
+\item \attack (Self-correction with memory.) Write down the program with memory of \cref{fig:consistency:catch} and show that it defeats the self-corrector with probability $1$. Let the checker shuffle the $2t$ queries of $t$ trials; show that a program remembering all its queries still makes every corrected value wrong, except with probability at most $\binom{2t}{2}2^{-n}$ over $G=\F_2^n$. What does this say about self-correction within one conversation?\label{ex:consistency:memory}
+
+\item \attack (A checker without a hidden bit.) A proposed isomorphism checker, in the \consistencyno{} branch, asks about $(G,G)$ and $(G,H)$ without relabeling, and accepts if the answers are \consistencyyes{} and \consistencyno. Exhibit a program, wrong on an isomorphic pair, that is accepted with probability $1$. Then relabel randomly but send the bit $b$ with the query, and compute the acceptance probability of the best program.\label{ex:consistency:nohiding}
+
+\item \attack (Consistency without an anchor.) An overseer checks a model's answer $g(x)$, $x\ne0$, to a linear question over $\F_2^n$ by testing $g(x+r)=g(x)+g(r)$ for random $r$. Show that every linear $\ell\ne f$ is accepted with probability $1$, and that a function equal to $f$ except at $x$ is rejected with probability $1-2^{1-n}$. Which ingredient of \cref{sec:consistency:ip} is missing, and what is the cheapest way to add it?\label{ex:consistency:anchor}
+
+\item \simulation (Which checks see a constant forecaster.) Add to the script of \cref{fig:consistency:forecast} a monotonicity check and the law of total probability, $q(E)=q(E\mid F)q(F)+q(E\mid\Omega\setminus F)q(\Omega\setminus F)$. Which checks catch the forecaster that always says $\frac12$, and which the noisy one at $\sigma=0.01$? Relate the answer to \cref{prop:consistency:liars} and to \textcite{PalekaEtAl2025}.\label{ex:consistency:constant}
+
+\item \research (Random self-reductions for oversight.) Find a nontrivial class of questions that an overseer cares about (code that must pass hidden tests, numerical estimates, game positions) with a random self-reduction, or with one whose queries the model cannot distinguish from random ones. As far as we know, none is known for the tasks of \cref{obs:consistency:fluri}; one would give a checker in the sense of \cref{thm:consistency:spotcorrect}.\label{ex:consistency:rsr}
+\end{exercises}
+
+\notesandrefs
+Program checking was introduced by \textcite{BlumKannan1995}, presented at STOC in 1989 and published in 1995; besides the results of this chapter, the paper gives checkers for group-theoretic problems, extended GCD, sorting and matrix rank, and proves Beigel's theorem that polynomial-time equivalent problems are checkable together. \Textcite{BlumLubyRubinfeld1993} added self-testing and self-correcting programs for numerical problems and the linearity test; \textcite{Lipton1991}, building on the instance hiding\index{instance hiding} of \textcite{BeaverFeigenbaum1990}, corrected polynomials and the permanent; and \textcite{GemmellEtAl1991} treated polynomials and functions computed approximately. \Cref{thm:consistency:spotcorrect} is our variant of the self-testing and self-correcting checkers of Blum, Luby and Rubinfeld, with labeled examples in place of a self-tester. Blum and Kannan credit \textcite{Freivalds1979} with checkers for integer, polynomial and matrix multiplication; the matrix check is usually cited to \textcite{Freivalds1977}, and we could consult neither paper.
+
+Function-restricted interactive proofs are probabilistic oracle machines in the sense of \textcite{FortnowRompelSipser1994}, with honest oracles that answer membership questions; two provers questioned apart can act as such an oracle (\cref{thm:crossexam:oracle}), and such machines accept exactly $\cc{NEXP}$ (\cref{thm:crossexam:nexp}): \textcite{FortnowRompelSipser1994} proved the upper bound and \textcite{BabaiFortnowLund1991} the lower. The protocol inside the isomorphism checker is from \textcite{GoldreichMicaliWigderson1991}, the interactive proof for the permanent from \textcite{LundEtAl1992}, and $\cc{IP}=\cc{PSPACE}$ from \textcite{Shamir1992}; \textcite{AroraBarak2009} cover the background. Self-correction returns in \cref{ch:backdoors}, where \textcite{GoldwasserEtAl2025} remove backdoors without detecting them, and scoring rules that reward true forecasts are the subject of \cref{ch:rational}.
+
+\paragraph{Translating the literature.} Blum and Kannan write $\pi$ for the problem (our $f$), $I$ for the instance (our $x$), $P$ for the program (our $\Prov^*$), $C$ for the checker (our $\V$), \textsc{correct} and \textsc{buggy} for \acc{} and \rej, and $k$ for the security parameter (our $t$); their ``function-restricted IP'' and ``co-function-restricted IP'' are our proofs of membership and of non-membership. Blum, Luby and Rubinfeld's \emph{self-tester} certifies that a program is close to correct, and their \emph{self-corrector} is our self-correction. \Textcite{FluriEtAl2024} write $f$ for the model (our program) and a consistency rule as predicates $P$ on inputs and $Q$ on outputs such that $P(x_1,x_2,\dots)$ implies $Q(f(x_1),f(x_2),\dots)$; together they are our relation $R$. Their ``sound'' and ``complete'' are the reverse of ours: a check is sound for them when every violation it reports is a real error, which is our completeness, and complete when it finds many errors, which is our soundness. \Textcite{FarquharEtAl2023} write $p$ for a probe, the role of our forecaster $q$.
+
+\printchapterbib
+\end{refsection}

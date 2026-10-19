@@ -1,0 +1,363 @@
+% Chapter 13 of Verifiable Intelligence: zero-knowledge proofs.
+\newcommand{\zeroknowledgecom}{\mathrm{Com}}
+\newcommand{\zeroknowledgeview}{\mathrm{view}}
+\newcommand{\zeroknowledgeaut}{\operatorname{Aut}}
+\newcommand{\zeroknowledgeiso}{\operatorname{Iso}}
+\newcommand{\zeroknowledgeadv}{\mathrm{adv}}
+\newcommand{\zeroknowledgegood}{\mathrm{Good}}
+\newcommand{\zeroknowledgesim}{\mathsf{S}}
+\newcommand{\zeroknowledgescript}{\texttt{13-\allowbreak zeroknowledge-\allowbreak coloring.py}}
+
+\protocolchapter{Zero Knowledge}{Auditing without disclosure}{commit, challenge, respond}{C,V,P,o,C,V,P,o,C,V,P,D}{ch:zeroknowledge}
+\begin{refsection}[chapters/13-zeroknowledge.bib]
+
+\begin{chaptersummary}
+A developer claims that its secret model has a property and will not show the weights. A zero-knowledge proof convinces an auditor while giving it nothing it could not have produced alone: a simulator that knows only the claim can write every conversation the auditor sees. The protocol is commit, challenge, respond: the prover commits to a randomly disguised certificate, the verifier asks to see a random part, and the prover opens that part only. We prove that graph isomorphism has a perfect zero-knowledge proof, with a rewinding simulator for every verifier, and that, given perfectly binding and computationally hiding commitments, 3-coloring and so all of $\cc{NP}$ has a computational one, by a hybrid argument; one message costs a factor equal to the prover's hashing budget. Honesty is a best response that discloses nothing; the verifier needs about $28$ rounds per edge for error $2^{-40}$; a lie is caught with probability at least $1/\abs E$ per round, against every prover. The model leaves out that a certificate about fixed inputs says little about the deployed model, that a statement reveals what it states, and that oversight which consults a human judge cannot in general be zero knowledge.
+\end{chaptersummary}
+
+\section{The oversight problem: a model the auditor may not see}\label{sec:zeroknowledge:problem}
+
+\begin{oversight}[a score for a model that stays secret]
+A developer has trained a model that it will not release: its weights are its main asset and, it argues, a leak would hand a dangerous capability to whoever obtained them. It publishes a fingerprint of the weights, a commitment of $32$ bytes, and claims that the model behind it has the architecture of its model card, complies with at most $3$ percent of the $2{,}000$ requests of a public benchmark of hazardous requests, and computes every answer its interface returns. A regulator could check the first two claims by running the model, but the developer will not show the weights even to the regulator, whose staff, systems and contractors would then hold them too. Can the regulator check claims about an object it may not see, and can the developer be sure that the check reveals nothing else?
+\end{oversight}
+
+The scenario is invented. Unlike the overseers of earlier chapters, this one lacks access, not computation: the first two claims have short certificates in the sense of \cref{ch:certificates}, namely the weights, which the regulator could check by running the model on the benchmark. The developer can always prove them by disclosure; the question is whether it can prove them without.
+
+Cryptographers have proposed exactly this for machine learning. zkCNN proves that a committed convolutional network computed a prediction, and its accuracy on a set of images \parencite{LiuXieZhang2021}; zkLLM proves inferences of a language model with $13$ billion parameters \parencite{SunLiZhang2024}; \cref{ch:delegation} describes the interactive proofs inside both. \Textcite{SouthEtAl2024}, in a preprint, bundle such proofs into ``verifiable evaluation attestations'' of a private model's metrics on public inputs; ZkAudit proves that committed weights came from training on committed data and answers audit questions with proofs, at costs as low as $\$10$ for a recommender system and $\$108$ for an image classifier \parencite{WaiwitlikhitEtAl2024}; Confidential-PROFITT certifies that a confidential decision tree was trained by a fair procedure \parencite{ShamsabadiEtAl2023}. On the side of AI safety, \textcite{HammondAdamDay2025} train neural provers and verifiers with a zero-knowledge objective,\sidenote{Their zero-knowledge protocols have three verifiers: the one under test, one that tries to extract information, and a simulator that must reproduce the conversation without the prover \parencite[Section~5.2]{HammondAdamDay2025}.} and \textcite{ChiesaGuanYildiz2026} ask, in a preprint, whether oversight that consults a human judge can be zero knowledge (\cref{sec:zeroknowledge:leaves}).
+
+All of these rest on a definition from 1985. \Textcite{GoldwasserMicaliRackoff1989}, in the paper that also introduced interactive proofs (\cref{ch:interaction}), asked how much knowledge a proof conveys beyond the truth of its claim: a Hamiltonian cycle proves that a graph has one, but seems to convey much more than one bit. They called \term{zero-knowledge}\index{zero knowledge} the proofs that convey nothing else, made this precise, and gave the first examples. In 1986 \textcite{GoldreichMicaliWigderson1991} gave zero-knowledge proofs for graph isomorphism, without assumptions, and for every claim in $\cc{NP}$ (\cref{thm:certificates:np}), assuming that secure encryption is possible.\sidenote{Their title states the program: ``Proofs that yield nothing but their validity''. Their proof for $\cc{NP}$ uses the encryption only as a commitment.}
+
+Why can the developer not just send a proof? Every message computed from the certificate may leak part of it, and the overseer need not follow the protocol: it may ask exactly the questions whose answers reveal the weights. Can a verifier be convinced of a claim about a secret, against every lying prover, while every verifier, honest or not, learns nothing it could not have computed without the prover?
+
+\section{The protocol: commit, challenge, respond}\label{sec:zeroknowledge:protocol}
+
+The definition of 1985 measures learning by computation: a verifier learns nothing if everything it sees, its view, can be produced by an efficient algorithm that knows only the claim and what the verifier knew before. Interactive proofs are as in \cref{def:toolkit:ip}.
+
+\begin{definition}[Views, simulators and zero knowledge]\label[definition]{def:zeroknowledge:zk}
+Let $(\Prov,\V)$ be an interactive proof system for a language $L$ whose honest prover receives, besides the input $x$, a certificate $w$ for it, and let $R$ be the set of pairs $(x,w)$ it may receive. A \emph{verifier strategy} $\V^*$ is an algorithm running in time polynomial in $\abs x$; it receives $x$, an \emph{auxiliary input} $z$ of length polynomial in $\abs x$, random bits $\rho$ and the messages so far, and outputs its next message. Its \term{view}\index{view} $\zeroknowledgeview_{\V^*}(x,w,z)=(x,z,\rho,m_1,\dots,m_k)$ lists its inputs, random bits and the messages $m_i$ it receives from $\Prov$, a random variable over both parties' coins. A \term{simulator}\index{simulator} for $\V^*$ is an algorithm $\zeroknowledgesim$ that receives $(x,z)$, runs in expected polynomial time, and may run $\V^*$ on inputs, random bits and messages of its choice. The proof system is
+\begin{enumerate}
+\item \emph{perfect zero knowledge}\index{zero knowledge!perfect} if for every verifier strategy $\V^*$ there is a simulator $\zeroknowledgesim$ such that $\zeroknowledgesim(x,z)$ has the law of $\zeroknowledgeview_{\V^*}(x,w,z)$ for every $(x,w)\in R$ and every $z$;
+\item \emph{statistical zero knowledge} if instead the two are within total variation $\nu(\abs x)$, for a negligible function $\nu$ (\cref{def:toolkit:negl});
+\item \emph{computational zero knowledge}\index{zero knowledge!computational} if instead, for every family $A=(A_n)$ of circuits of size polynomial in $n$, there is a negligible function $\nu_A$ with
+\[
+\bigl|\Prob[A(\zeroknowledgesim(x,z))=1]-\Prob[A(\zeroknowledgeview_{\V^*}(x,w,z))=1]\bigr|\le\nu_A(\abs x)
+\]
+for every $(x,w)\in R$ and every $z$, where $A$ stands for $A_{\abs x}$.
+\end{enumerate}
+It is \emph{honest-verifier}\index{zero knowledge!honest-verifier} zero knowledge, of each kind, if this holds for the prescribed verifier $\V$ with empty $z$.
+\end{definition}
+
+The view determines everything $\V^*$ computes, so whatever it computes after the conversation, running $\zeroknowledgesim$ and then $\V^*$ computes from $(x,z)$ alone. The \term{auxiliary input}\index{auxiliary input} is what the verifier knew before; with it, computational zero knowledge survives sequential repetition \parencite[Section~11.1]{Thaler2022}, which the original definition does not \parencite{GoldreichKrawczyk1996}.\sidenote{\Textcite[Remark~17]{GoldreichMicaliWigderson1991} explain why this matters: zero-knowledge proofs are used inside larger protocols, where the verifier may have learned more in earlier stages.} Simulating the honest verifier is often easy; verifiers that deviate are the difficulty.
+
+For graphs we use the notation of \cref{ch:interaction}: $\pi(G)$ has an edge $\{\pi(u),\pi(v)\}$ for each edge $\{u,v\}$ of $G$, $(\sigma\pi)(G)=\sigma(\pi(G))$, and $G\cong G'$ if $G'=\pi(G)$ for some permutation $\pi$ of $[n]$.
+
+\begin{protocol}{Zero knowledge for graph isomorphism}\label{prot:zeroknowledge:gi}
+\item[\act{V}] Common input: graphs $G_0,G_1$ on $[n]$ and a number of rounds $t$. The claim: $G_0\cong G_1$. The prover's secret: $\varphi$ with $\varphi(G_0)=G_1$.
+\phase{Round $j=1,\dots,t$}
+\item[\msg{P}{V}] Pick $\pi_j\in S_n$ uniformly at random and send $H_j=\pi_j(G_1)$.
+\item[\msg{V}{P}] Pick a bit $b_j$ uniformly at random and send it. The prover reads every message other than $1$ as $0$.
+\item[\msg{P}{V}] Send $\sigma_j=\pi_j$ if $b_j=1$, and $\sigma_j=\pi_j\varphi$ if $b_j=0$.
+\item[\act{V}] If $\sigma_j(G_{b_j})\ne H_j$, then \rej{} and stop.
+\phase{Verdict}
+\item[\act{V}] \acc.
+\end{protocol}
+
+The graph $H_j$ is the prover's commitment: it can answer either challenge, since $(\pi_j\varphi)(G_0)=\pi_j(G_1)=H_j$, and either answer alone is a uniformly random relabeling, while the two together give $\varphi=\pi_j^{-1}(\pi_j\varphi)$. A general certificate has no such free disguise, and the prover needs locked boxes: it must fix every part of a disguised certificate before the challenge and open the requested part only. Commitments (\cref{def:toolkit:commitment}) are such boxes; we fix the properties we use.
+
+\begin{definition}[Binding and hiding]\label[definition]{def:zeroknowledge:commit}
+A \term{commitment scheme}\index{commitment scheme} for messages in $\{1,2,3\}$, with security parameter $\lambda$, maps a message $a$ and an \emph{opening string} $\omega$, uniform in $\bits^{\ell(\lambda)}$, to $\zeroknowledgecom(a;\omega)$ in time polynomial in $\lambda$; to open it, the committer sends $(a,\omega)$ and the receiver recomputes. It is \emph{perfectly binding}\index{commitment scheme!binding} if $\zeroknowledgecom(a;\omega)=\zeroknowledgecom(a';\omega')$ implies $a=a'$, and \emph{computationally hiding}\index{commitment scheme!hiding} if for every family $A$ of circuits of size polynomial in $\lambda$ the advantage
+\[
+\zeroknowledgeadv_A(\lambda)=\max_{a,a'}\bigl|\Prob_\omega[A_\lambda(\zeroknowledgecom(a;\omega))=1]-\Prob_\omega[A_\lambda(\zeroknowledgecom(a';\omega))=1]\bigr|
+\]
+is negligible in $\lambda$.
+\end{definition}
+
+A \term{3-coloring}\index{graph 3-coloring} of a graph $G$ on $[n]$ with edge set $E$ is a map $\kappa\colon[n]\to\{1,2,3\}$, proper if $\kappa(u)\ne\kappa(v)$ for every edge $uv$; whether a graph has a proper 3-coloring is an $\cc{NP}$-complete question, as \textcite{GoldreichMicaliWigderson1991} recall.
+
+\begin{protocol}{Zero knowledge for 3-coloring}\label{prot:zeroknowledge:coloring}
+\item[\act{V}] Common input: a graph $G$ on $[n]$ with edge set $E\ne\emptyset$, a number of rounds $t$, a commitment scheme $\zeroknowledgecom$ with security parameter $n$. The claim: $G$ has a proper 3-coloring. The prover's secret: such a coloring $\kappa$.
+\phase{Round $j=1,\dots,t$}
+\item[\msg{P}{V}] Pick a permutation $\psi_j$ of $\{1,2,3\}$ and opening strings $\omega_{j,v}$ uniformly at random; send $C_{j,v}=\zeroknowledgecom(\psi_j(\kappa(v));\omega_{j,v})$ for every vertex $v$.
+\item[\msg{V}{P}] Pick an edge $e_j=uv$ uniformly at random and send it. The prover reads every message that is not an edge as a fixed edge $e_0$.
+\item[\msg{P}{V}] Open $C_{j,u}$ and $C_{j,v}$: send $(\psi_j(\kappa(u)),\omega_{j,u})$ and $(\psi_j(\kappa(v)),\omega_{j,v})$.
+\item[\act{V}] If an opening is invalid or the two colors are equal, then \rej{} and stop.
+\phase{Verdict}
+\item[\act{V}] \acc.
+\end{protocol}
+
+\textcite{GoldreichMicaliWigderson1991} first described this protocol with locked boxes and then implemented the boxes by encryption with unique decryption.\sidenote{In the physical version the prover places the colors in $n$ locked boxes and hands over the keys of the two boxes the verifier names \parencite[Protocol~4]{GoldreichMicaliWigderson1991}.} The permutation $\psi_j$ makes the two opened colors a uniform ordered pair of distinct colors whatever $\kappa$ is, and a fresh permutation in each round keeps the verifier from combining rounds.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=10mm,y=10mm,
+  col/.style={circle,fill=#1,draw=white,line width=0.6pt,inner sep=0pt,minimum size=4.8mm,font=\scriptsize\bfseries,text=white},
+  box/.style={rectangle,fill=vellumline,draw=muted,line width=0.5pt,inner sep=0pt,minimum size=4.2mm},
+  ed/.style={draw=muted!80,line width=0.8pt},
+  lab/.style={font=\tiny,text=muted}]
+\begin{scope}
+\coordinate (h) at (0,0);
+\foreach \i/\a in {1/90,2/18,3/-54,4/-126,5/162} \coordinate (v\i) at (\a:1.25);
+\draw[ed] (h)--(v1) (h)--(v2) (h)--(v3) (h)--(v4) (h)--(v5) (v1)--(v2)--(v3)--(v4)--(v5);
+\draw[ed,dashed] (v5)--(v1);
+\node[col=prover] at (h) {1};
+\node[col=verifier] at (v1) {2};
+\node[col=proverB] at (v2) {3};
+\node[col=verifier] at (v3) {2};
+\node[col=proverB] at (v4) {3};
+\node[col=verifier] at (v5) {2};
+\foreach \i/\a in {1/90,2/18,3/-54,4/-126,5/162} \node[lab] at (\a:1.62) {\i};
+\node[lab] at (0.27,0.2) {0};
+\node[font=\small] at (0,-1.75) {the prover commits};
+\end{scope}
+\begin{scope}[shift={(4.2,0)}]
+\coordinate (h) at (0,0);
+\foreach \i/\a in {1/90,2/18,3/-54,4/-126,5/162} \coordinate (v\i) at (\a:1.25);
+\draw[ed] (h)--(v1) (h)--(v2) (h)--(v4) (h)--(v5) (v1)--(v2)--(v3)--(v4)--(v5);
+\draw[ed,dashed] (v5)--(v1);
+\draw[draw=verifier,line width=1.6pt] (h)--(v3);
+\node[col=prover] at (h) {1};
+\node[col=verifier] at (v3) {2};
+\foreach \i in {1,2,4,5} \node[box] at (v\i) {};
+\foreach \i/\a in {1/90,2/18,3/-54,4/-126,5/162} \node[lab] at (\a:1.62) {\i};
+\node[lab] at (0.27,0.2) {0};
+\node[font=\small] at (0,-1.75) {the verifier sees};
+\end{scope}
+\end{tikzpicture}
+\caption{A round of \cref{prot:zeroknowledge:coloring} on the wheel with hub $0$ and rim $1,\dots,5$, without the dashed edge. Left: the coloring $\kappa=(3;1,2,1,2,1)$, hub first, permuted by $\psi(1)=2$, $\psi(2)=3$, $\psi(3)=1$, gives the committed colors $(1;2,3,2,3,2)$ (indigo $1$, ochre $2$, teal $3$). Right: the verifier's view after asking for the edge $\{0,3\}$, four sealed commitments and two opened ones. With the dashed edge $\{5,1\}$ the graph is the wheel $W_5$, which has no proper 3-coloring; $\kappa$ gives both ends of $\{5,1\}$ the color $1$.}\label{fig:zeroknowledge:wheel}
+\end{figure}
+
+\paragraph{A worked round.} Let $G$ be the wheel of \cref{fig:zeroknowledge:wheel} without its dashed edge: a hub $0$ joined to $1,\dots,5$ and the rim path $1,2,3,4,5$, nine edges, properly colored by $\kappa=(3;1,2,1,2,1)$. The prover draws $\psi$ with $\psi(1)=2$, $\psi(2)=3$, $\psi(3)=1$ and commits to $(1;2,3,2,3,2)$;\sidenote{Six is not a power of two, so a prover with fair coins draws $\psi$ by rejection sampling, as \cref{ch:interaction} does for permutations of the vertices.} the verifier draws the edge $\{0,3\}$; the prover opens the colors $1$ and $2$; the verifier accepts. The pair $(\kappa(0),\kappa(3))=(3,1)$ became $(\psi(3),\psi(1))$, and each ordered pair of distinct colors comes from exactly one of the six permutations, so the verifier sees a uniform pair of distinct colors whatever $\kappa$ is. With the dashed edge, the wheel $W_5$ has ten edges and no proper 3-coloring, since its rim is an odd cycle and needs three colors, all different from the hub's. On $W_5$, $\kappa$ has one monochromatic edge, $\{5,1\}$, so a prover that commits to permuted copies of $\kappa$ is caught exactly when the verifier asks for it, with probability $1/10$ per round.
+
+\paragraph{What one had to notice.} In earlier chapters the verifier's coins kept the prover from cheating; here the prover's coins also keep the verifier from learning, by making each opened part of the certificate uniformly random, while the verifier's coins choose the part. To say what the verifier did not learn, one had to ask what it could have produced alone. And the oversight claim needs a certificate: ``the model behind this fingerprint complies with at most $3$ percent of these requests'' is in $\cc{NP}$ once the fingerprint is a perfectly binding commitment and compliance is decided by a fixed program, with the weights and the opening string as certificate; \cref{cor:zeroknowledge:np} then gives it a zero-knowledge proof.
+
+\begin{dictionary}
+verifier $\V$ & the auditor or regulator \\
+prover $\Prov$ & the developer, which holds the model \\
+the certificate & the weights and data the developer will not show \\
+a binding, hiding commitment & a fingerprint of the weights, which can neither be changed nor read \\
+the simulator $\zeroknowledgesim$ & what the auditor could have produced without the developer \\
+zero knowledge & an audit that reveals nothing but its verdict \\
+honest-verifier zero knowledge & secrecy only against an auditor that follows the script
+\end{dictionary}
+
+\section{The theory: a simulator for every verifier}\label{sec:zeroknowledge:gi}
+
+Both theorems of this chapter build their simulators the same way: guess the verifier's question, prepare an answer for that guess only, and start again if the guess was wrong.
+
+\begin{lemma}[Trying until lucky]\label[lemma]{lem:zeroknowledge:first}
+Let $Y_1,Y_2,\dots$ be independent random variables with the law of a random variable $Y$ on a finite set, let $B$ be a set with $p=\Prob[Y\in B]>0$, and let $K$ be the least $k$ with $Y_k\in B$. Then $\Prob[K>k]=(1-p)^k$ for every $k\ge0$, $\E K=1/p$, and $Y_K$ has the law of $Y$ conditioned on $Y\in B$.
+\end{lemma}
+
+\begin{proof}
+For $k\ge1$ and every set $B'$, independence gives $\Prob[K=k,\,Y_K\in B']=(1-p)^{k-1}\Prob[Y\in B'\cap B]$. Summing over $k$ gives $\Prob[Y_K\in B']=\Prob[Y\in B'\cap B]/p$, the conditional law, and taking $B'$ to be the whole set shows that $K$ is geometric with parameter $p$.
+\end{proof}
+
+\begin{theorem}[Graph isomorphism has a perfect zero-knowledge proof; \textcite{GoldreichMicaliWigderson1991}]\label{thm:zeroknowledge:gi}
+Let $G_0,G_1$ be graphs on $[n]$, let $t\ge1$, and run \cref{prot:zeroknowledge:gi}.
+\begin{enumerate}
+\item (perfect completeness) If $\varphi(G_0)=G_1$, then the honest prover holding $\varphi$ is accepted with probability $1$; it runs in time $O(tn^2)$.
+\item (soundness) If $G_0\not\cong G_1$, then every prover is accepted with probability at most $2^{-t}$, over the verifier's coins.
+\item (perfect zero knowledge) For every verifier strategy $\V^*$ there is a simulator that runs $\V^*$ on $2t$ partial conversations in expectation, spends $O(n^2)$ further steps on each, and whose output has the law of $\zeroknowledgeview_{\V^*}(G_0,G_1,\varphi,z)$ for every isomorphic pair $G_0,G_1$, every $\varphi$ with $\varphi(G_0)=G_1$, and every auxiliary input $z$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to read completeness and soundness off the isomorphism classes, and to build the simulator by guessing the verifier's bit before choosing the graph, keeping the right guesses; a wrong guess is invisible to the verifier, because both graphs give the same law of $H$.
+
+(i) Both answers pass, since $\pi_j(G_1)=H_j$ and $(\pi_j\varphi)(G_0)=\pi_j(G_1)$; a round draws a permutation, relabels a graph and composes two permutations, in $O(n^2)$ steps.
+
+(ii) Fix a prover and a round $j$, and condition on the past. The graph $H_j$ is fixed before $b_j$ is drawn. If $H_j$ were isomorphic to both $G_0$ and $G_1$, then $G_0\cong G_1$, since isomorphism is an equivalence relation; so for some value of $b$ no $\sigma$ satisfies $\sigma(G_b)=H_j$. As $b_j$ is uniform and independent of $H_j$, the round is passed with probability at most $1/2$, and sequential repetition (\cref{prop:toolkit:amplification}(i)) gives $2^{-t}$.
+
+(iii) Fix $\V^*$, an isomorphic pair, $\varphi$ and $z$. For graphs $G,H$ let $\zeroknowledgeiso(G,H)=\{\sigma:\sigma(G)=H\}$ and $\zeroknowledgeaut(G)=\zeroknowledgeiso(G,G)$. If $H=\sigma_0(G)$, then $\zeroknowledgeiso(G,H)$ is the coset $\sigma_0\zeroknowledgeaut(G)$; so for $\pi$ uniform, $\pi(G)$ is uniform on the isomorphism class of $G$, as in \cref{ch:interaction}. Let $Q$ be the common class of $G_0$ and $G_1$ and $a=\abs{\zeroknowledgeaut(G_0)}=\abs{\zeroknowledgeaut(G_1)}$, so that $\abs Q\,a=n!$. Given its random bits, $\V^*$ is deterministic; for a partial view $\tau=(G_0,G_1,z,\rho,H_1,\sigma_1,\dots,H_{j-1},\sigma_{j-1})$ and a graph $H$, let $b^*_\tau(H)$ be the bit it sends in round $j$ after receiving $H$, with messages other than $1$ read as $0$.
+
+\emph{The real view.} Given $\tau$, the graph $H_j=\pi_j(G_1)$ is uniform on $Q$, and given $H_j=H$, the permutation $\pi_j$ is uniform on $\zeroknowledgeiso(G_1,H)$. When $b^*_\tau(H)=1$, the answer $\sigma_j=\pi_j$ is uniform on $\zeroknowledgeiso(G_1,H)$. When $b^*_\tau(H)=0$, the answer is $\pi_j\varphi$, and $\pi\mapsto\pi\varphi$ maps $\zeroknowledgeiso(G_1,H)$ one to one onto $\zeroknowledgeiso(G_0,H)$, since $(\pi\varphi)(G_0)=\pi(G_1)$. In both cases a pair $(H,\sigma)$ has probability $(1/\abs Q)(1/a)=1/n!$ if $\sigma$ maps $G_{b^*_\tau(H)}$ to $H$, so, given $\tau$,
+\begin{equation}\label{eq:zeroknowledge:giround}
+\Prob[H_j=H,\ \sigma_j=\sigma]=\frac1{n!}\,\ind\bigl[\sigma\bigl(G_{b^*_\tau(H)}\bigr)=H\bigr],
+\end{equation}
+which does not depend on $\varphi$.
+
+\emph{The simulator.} It draws $\rho$ uniformly and builds the view round by round. In round $j$ it repeats an attempt: draw a bit $b'$ and $\sigma\in S_n$ uniformly, set $H=\sigma(G_{b'})$, run $\V^*$ to compute $b^*_\tau(H)$, and succeed if $b^*_\tau(H)=b'$. The first successful attempt appends $(H,\sigma)$ to $\tau$. In one attempt only $b'=b^*_\tau(H)$ can succeed, so the attempt yields $(H,\sigma)$ and succeeds with probability $\frac12\cdot\frac1{n!}\ind[\sigma(G_{b^*_\tau(H)})=H]$. Summing over the $a$ permutations allowed for each $H\in Q$ gives success probability $\frac12$, and conditioning on success gives the right side of \eqref{eq:zeroknowledge:giround}. By \cref{lem:zeroknowledge:first}, a round takes $2$ attempts on average and appends a pair with the law of the real round given $\tau$. Both views begin with a uniform $\rho$, so by induction on $j$ the simulated partial views have the laws of the real ones, and so does the output. Each attempt runs $\V^*$ once and spends $O(n^2)$ further steps.
+\end{proof}
+
+The simulator never sees $\varphi$, and its wrong guesses cost time and nothing else. Capped at a fixed number of attempts per round, it runs in strict polynomial time with a small statistical error (\cref{ex:zeroknowledge:cap}); \textcite[Remark~11]{GoldreichMicaliWigderson1991} note that expected time seems essential to perfect zero knowledge. The rounds are sequential for a reason: the parallel versions of the first protocols for graph isomorphism and for $\cc{NP}$, with enough copies for negligible soundness error, are not zero knowledge by black-box simulation unless these languages are in $\cc{BPP}$ (\cref{def:toolkit:classes}), as \textcite{GoldreichKrawczyk1996} showed; with $O(\log n)$ copies a simulator can still guess all the challenges. Answers to both challenges for one $H$ yield $\varphi$, so a prover accepted with probability above $2^{-t}$ can be made to produce an isomorphism (\cref{ex:zeroknowledge:knowledge}): the protocol is a \emph{proof of knowledge}\index{proof of knowledge}, in the phrase of \textcite{BrassardChaumCrepeau1988}, showing that the prover holds a certificate, not only that one exists.\sidenote{\Textcite[Section~2.3]{GoldreichMicaliWigderson1991} chose not to define proofs of knowledge, noting that the definitions then proposed did not suffice.}
+
+\section{The theory: commitments and all of \texorpdfstring{$\cc{NP}$}{NP}}\label{sec:zeroknowledge:np}
+
+For an arbitrary claim in $\cc{NP}$ zero knowledge becomes computational: the simulator commits to colors it could never justify, and only hiding keeps the verifier from noticing. Hiding is a property of one commitment, while the simulator produces many; the \term{hybrid argument}\index{hybrid argument} passes from one to many.
+
+\begin{lemma}[Hiding many commitments]\label[lemma]{lem:zeroknowledge:hybrid}
+Let $\zeroknowledgecom$ be computationally hiding, let $k(\lambda)$ be a polynomial, and let $M_\lambda,M'_\lambda\in\{1,2,3\}^{k(\lambda)}$; write $\zeroknowledgecom(M)$ for commitments to the entries of $M$ with independent opening strings. For every family $A$ of circuits of polynomial size there is a family $A'$ of circuits of polynomial size with
+\begin{equation}\label{eq:zeroknowledge:hybrid}
+\bigl|\Prob[A_\lambda(\zeroknowledgecom(M_\lambda))=1]-\Prob[A_\lambda(\zeroknowledgecom(M'_\lambda))=1]\bigr|\le k(\lambda)\,\zeroknowledgeadv_{A'}(\lambda),
+\end{equation}
+and the left side is negligible.
+\end{lemma}
+
+\begin{proof}
+The plan is to change the messages one at a time. For $0\le i\le k$ let $Z_i$ commit to $(M'_1,\dots,M'_i,M_{i+1},\dots,M_k)$, so that $Z_0=\zeroknowledgecom(M)$ and $Z_k=\zeroknowledgecom(M')$, and let $g_i=\Prob[A_\lambda(Z_i)=1]$. By the triangle inequality $\abs{g_0-g_k}\le\sum_{i=1}^k\abs{g_{i-1}-g_i}$, so some $i=i(\lambda)$ has $\abs{g_{i-1}-g_i}\ge\abs{g_0-g_k}/k$. The vectors $Z_{i-1}$ and $Z_i$ differ only in coordinate $i$, which commits to $M_i$ in one and to $M'_i$ in the other, and $g_{i-1}-g_i$ is an average, over the opening strings of the other coordinates, of differences for fixed strings; so some fixing gives a difference at least as large in absolute value. The circuit $A'_\lambda$ that places its input at coordinate $i$ and the commitments so fixed elsewhere, and runs $A_\lambda$, has advantage at least $\abs{g_0-g_k}/k$ on the pair $(M_i,M'_i)$, which proves \eqref{eq:zeroknowledge:hybrid}; its size exceeds that of $A_\lambda$ by $k$ fixed commitments. So $\zeroknowledgeadv_{A'}$ is negligible, and so is its product with the polynomial $k$.
+\end{proof}
+
+Such commitments exist if one-way permutations do (\cref{def:toolkit:owf}). For a one-way permutation $f$, \textcite{GoldreichLevin1989} showed that $h(s,r)=\sum_is_ir_i\bmod2$ is a \emph{hard-core predicate} of $g(s,r)=(f(s),r)$, which no circuit of polynomial size predicts from $g(s,r)$ non-negligibly better than a coin; then $(g(s,r),h(s,r)\oplus b)$ commits to a bit $b$, binding perfectly as $g$ is one to one, and hiding as a circuit that told commitments to $0$ and $1$ apart with advantage $\delta$ would predict $h$ with probability $\frac12+\frac\delta2$ \parencite[Chapter~4]{Goldreich2001}. From a pseudorandom generator, and so from every one-way function, \textcite{Naor1991} built a two-message commitment that binds except with exponentially small probability, which then adds to the soundness error. In practice the commitment is a hash, analyzed in the random-oracle model (\cref{def:toolkit:rom}),\sidenote{There, a verifier that evaluates the hash $q$ times learns something about a color committed with a $128$-bit opening string with probability at most about $q2^{-128}$: unless one of its queries contains the opening string, the commitment is a random value independent of the color.} and Pedersen's commitment $g^ah^\omega$ is perfectly hiding and binding against committers that cannot compute discrete logarithms \parencite{Pedersen1991}; zkLLM uses a variant. No scheme is both perfectly hiding and perfectly binding (\cref{def:toolkit:commitment}).
+
+\begin{theorem}[Every 3-colorable graph has a computational zero-knowledge proof; \textcite{GoldreichMicaliWigderson1991}]\label{thm:zeroknowledge:np}
+Let $\zeroknowledgecom$ be perfectly binding and computationally hiding, let $t=t(n)$ be at most a polynomial, and run \cref{prot:zeroknowledge:coloring} for $t$ rounds on a graph $G$ on $[n]$ with edge set $E\ne\emptyset$.
+\begin{enumerate}
+\item (perfect completeness) If $\kappa$ is a proper 3-coloring of $G$, then the honest prover holding $\kappa$ is accepted with probability $1$; it computes $tn$ commitments.
+\item (soundness) If $G$ has no proper 3-coloring, then every prover is accepted with probability at most $(1-1/\abs E)^t$, over the verifier's coins.
+\item (computational zero knowledge) For every verifier strategy $\V^*$, the simulator $\zeroknowledgesim$ of the proof runs $\V^*$ at most $t\abs En$ times and otherwise runs in polynomial time, and for every family $A$ of circuits of polynomial size there is a negligible function $\nu_A$ with
+\[
+\bigl|\Prob[A_n(\zeroknowledgesim(G,z))=1]-\Prob[A_n(\zeroknowledgeview_{\V^*}(G,\kappa,z))=1]\bigr|\le\nu_A(n)
+\]
+for every graph $G$ on $[n]$, every proper 3-coloring $\kappa$ of $G$, and every auxiliary input $z$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to read (i) and (ii) off the colors and binding; and, for (iii), to compare the simulator with an imaginary one that knows $\kappa$, which reproduces the view up to a small statistical error by \cref{lem:zeroknowledge:first}, and which the real simulator matches by \cref{lem:zeroknowledge:hybrid}, since the two differ only inside commitments that are never opened.
+
+(i) The permutation $\psi_j$ is one to one and $\kappa$ is proper, so the opened colors differ and the openings are valid.
+
+(ii) Fix a prover and a round $j$, and condition on the past. By perfect binding each commitment $C_{j,v}$ can be opened to at most one color; let $\hat\kappa(v)$ be that color, or $1$ if there is none. As $G$ has no proper 3-coloring, $\hat\kappa(u)=\hat\kappa(v)$ for some edge $uv$, and if the verifier asks for it, then it rejects: a commitment cannot be opened, or both open to the same color. The edge $e_j$ is uniform and drawn after the commitments, so the round is passed with probability at most $1-1/\abs E$, and \cref{prop:toolkit:amplification}(i) gives $(1-1/\abs E)^t$.
+
+(iii) Fix $\V^*$. Given $G$, $z$ and its random bits $\rho$ it is deterministic; for a partial view $\tau$ before round $j$ and a vector $C$ of $n$ commitments, let $e^*_\tau(C)$ be the edge it asks for in round $j$ after receiving $C$, with messages that are not edges read as $e_0$. Write each edge as $uv$ with $u<v$, and let $K=\abs En$.
+
+\emph{The simulators.} The simulator $\zeroknowledgesim$ draws $\rho$ uniformly and builds the view round by round, with at most $K$ attempts per round. An attempt draws an edge $e'=uv$ and an ordered pair $(a_1,a_2)$ of distinct colors uniformly, commits to $a_1$ at $u$, to $a_2$ at $v$ and to $1$ at every other vertex, and succeeds if $e^*_\tau(C)=e'$ for the resulting vector $C$; then it appends $C$, $e'$ and the openings at $u$ and $v$ to $\tau$. If all $K$ attempts of a round fail, then $\zeroknowledgesim$ outputs a failure symbol. The imaginary simulator $\zeroknowledgesim^\circ$ knows $\kappa$ and differs in one point: in an attempt with edge $uv$ and pair $(a_1,a_2)$ it commits to $\psi(\kappa(w))$ at every vertex $w$, where $\psi$ is the permutation of $\{1,2,3\}$ with $\psi(\kappa(u))=a_1$ and $\psi(\kappa(v))=a_2$, which exists and is unique because $\kappa(u)\ne\kappa(v)$. At $u$ and $v$ both simulators commit to the same colors.
+
+\emph{Step 1: $\zeroknowledgesim^\circ$ is within total variation $te^{-n}$ of the view.} For a fixed edge $e'$, the map $(a_1,a_2)\mapsto\psi$ is a bijection from the six ordered pairs onto the six permutations, so in an attempt of $\zeroknowledgesim^\circ$ the permutation $\psi$ is uniform and independent of $e'$. Hence the vector $C$ has the law of the prover's message in round $j$ and is independent of $e'$, and so is the edge $e^*_\tau(C)$. The attempt therefore succeeds with probability exactly $1/\abs E$, and given success the vector, the edge and the openings have the law that the real round $j$ has given $\tau$. Without a cap on attempts, \cref{lem:zeroknowledge:first} and induction on $j$, as in the proof of \cref{thm:zeroknowledge:gi}, show that $\zeroknowledgesim^\circ$ outputs the view exactly. With the cap and the same coins, its output differs only if some round needs more than $K$ attempts, which by \cref{lem:zeroknowledge:first} and a union bound has probability at most $t(1-1/\abs E)^{\abs En}\le te^{-n}$.
+
+\emph{Step 2: circuits of polynomial size tell $\zeroknowledgesim$ from $\zeroknowledgesim^\circ$ with negligible advantage only.} Draw all coins of both in advance: $\rho$ and, for every round $j\le t$ and attempt $k\le K$, an edge, a pair of colors and an opening string for every vertex. Let $\Theta$ be all of these except the opening strings at the vertices outside the attempt's edge, the \emph{inner} positions, of which there are $N=tK(n-2)$. Given $\Theta$, the two simulators commit to the same colors at the endpoints, and at the inner positions to the vectors $M_\Theta$ (all $1$) and $M^\circ_\Theta$ (the colors $\psi(\kappa(w))$); then both run $\V^*$, compare, and open endpoints only. So their outputs are $F_\Theta(\zeroknowledgecom(M_\Theta))$ and $F_\Theta(\zeroknowledgecom(M^\circ_\Theta))$ for one map $F_\Theta$ that runs $\V^*$ at most $tK$ times. For a family $A$ of circuits of polynomial size, the difference between the probabilities that $A_n$ outputs $1$ on the two outputs is an average over $\Theta$ of differences for fixed $\Theta$; fix, for each $n$, a graph, a proper coloring, an auxiliary input and a $\Theta$ that make it largest in absolute value. Then $A_n\circ F_\Theta$ is a family of circuits of polynomial size, as $t$, $K$ and the running time of $\V^*$ are polynomial, and \cref{lem:zeroknowledge:hybrid} bounds the difference by $N$ times a negligible function.
+
+Laws within total variation $te^{-n}$ give every distinguisher probabilities within $te^{-n}$. By the triangle inequality, the advantage of $A$ between $\zeroknowledgesim$ and the view is at most $te^{-n}$ plus the bound of Step 2, a negligible function, as $t$ is at most a polynomial. The simulator runs $\V^*$ at most $tK=t\abs En$ times.
+\end{proof}
+
+\begin{corollary}[All of $\cc{NP}$; \textcite{GoldreichMicaliWigderson1991}]\label[corollary]{cor:zeroknowledge:np}
+If a perfectly binding, computationally hiding commitment scheme exists, then every language $L\in\cc{NP}$ has a computational zero-knowledge proof with perfect completeness and soundness error $2^{-\abs x}$, whose honest prover runs in polynomial time given a certificate.
+\end{corollary}
+
+\begin{proof}
+The plan is to compose \cref{thm:zeroknowledge:np} with a reduction that also maps certificates. By the Cook--Levin theorem and the reduction from 3SAT to 3-coloring, there are polynomial-time maps $f$ and $g$ such that $x\in L$ if and only if the graph $f(x)$ has a proper 3-coloring, and $g(x,w)$ is one whenever $w$ is a certificate for $x$ \parencite[Theorem~6 and footnote~12]{GoldreichMicaliWigderson1991}; adding isolated vertices, $f(x)$ has $n\ge\abs x$ vertices. Both parties compute $f(x)$; if it has no edges, the verifier accepts; otherwise they run \cref{prot:zeroknowledge:coloring} for $t=\abs E\abs x\le n^3$ rounds, the prover using $g(x,w)$. Completeness is perfect, and the soundness error is $(1-1/\abs E)^{\abs E\abs x}\le e^{-\abs x}\le2^{-\abs x}$. A verifier strategy with input $x$ and auxiliary input $z$ is one for 3-coloring with input $f(x)$ and auxiliary input $(x,z)$, with the same view, so the simulator of \cref{thm:zeroknowledge:np}, run on $f(x)$ and $(x,z)$, serves; a function negligible in $n\ge\abs x$ is negligible in $\abs x$.
+\end{proof}
+
+\paragraph{Arguments, and the limits of statistical zero knowledge.} With perfectly hiding commitments such as Pedersen's, Step~2 becomes an equality and the protocol is statistical zero knowledge, but soundness holds only against provers that cannot break the binding: the protocol is an \term{argument}\index{argument} (\cref{ex:zeroknowledge:pedersen}), as in the minimum-disclosure proofs of \textcite{BrassardChaumCrepeau1988}.\sidenote{Constant-round protocols for $\cc{NP}$ came later, as proofs under stronger assumptions or as arguments; \textcite[Remark~14]{GoldreichMicaliWigderson1991} survey the first ones.} Neither version is unconditional on both sides, and for $\cc{NP}$ that is no accident: every language with a statistical zero-knowledge proof\index{statistical zero knowledge} lies in $\cc{AM}\cap\cc{coAM}$, both it and its complement having two-message public-coin proofs \parencite{Fortnow1987,AielloHastad1991}, as summarized by \textcite[Section~11.2]{Thaler2022}; so if an $\cc{NP}$-complete language had one, then $\cc{coNP}\subseteq\cc{AM}$ and the polynomial hierarchy would collapse, by the result recalled in \cref{ch:interaction}. Two provers who cannot communicate need no assumption: all of $\cc{NP}$ then has perfect zero-knowledge proofs \parencite{BenOrEtAl1988} (\cref{ch:crossexam}). And the complete problem of statistical zero knowledge is the one \cref{ch:interaction} met as the blind test, deciding whether two samplable distributions are close or far apart \parencite{SahaiVadhan2003}.
+
+\paragraph{One message.} A conversation requires the developer to answer every auditor in person; a proof that anyone can check later must be a single message. For a public-coin protocol the \term{Fiat--Shamir transform}\index{Fiat--Shamir transform} \parencite{FiatShamir1986}, introduced for identification and signatures, computes each challenge as a hash of the claim and the conversation so far, and is analyzed with the hash modeled as a random oracle (\cref{def:toolkit:rom}). For three messages its price is the prover's hashing budget.
+
+\begin{proposition}[Fiat--Shamir for three messages]\label[proposition]{prop:zeroknowledge:fs}
+Let a public-coin protocol for $L$ have three messages: the prover sends $\alpha$, the verifier a challenge $\beta$ uniform on a finite set $B$, the prover $\gamma$; the verifier decides by a predicate of $(x,\alpha,\beta,\gamma)$. Suppose that for every $x\notin L$ every prover is accepted with probability at most $s$. In the \emph{Fiat--Shamir version} the prover sends $(\alpha,\gamma)$ and the verifier accepts if the predicate accepts $(x,\alpha,\cO(x,\alpha),\gamma)$, with $\cO$ a random function whose values are uniform on $B$. Then for every $x\notin L$, every prover that makes at most $q$ queries to $\cO$ is accepted with probability at most $(q+1)s$, over $\cO$ and its coins.
+\end{proposition}
+
+\begin{proof}
+The plan is to charge each query its chance of returning a good challenge. For a first message $\alpha$ let $\zeroknowledgegood(\alpha)$ be the set of challenges $\beta$ for which some $\gamma$ is accepted. The interactive prover that sends $\alpha$ and answers every challenge in $\zeroknowledgegood(\alpha)$ acceptably is accepted with probability $\abs{\zeroknowledgegood(\alpha)}/\abs B$, so soundness gives $\abs{\zeroknowledgegood(\alpha)}\le s\abs B$ for every $\alpha$. Now fix a prover for the Fiat--Shamir version and let it also query $\cO(x,\alpha)$ for the $\alpha$ it outputs, if it has not; it makes at most $q+1$ queries, which we may take distinct. Its output is accepted only if $\cO(x,\alpha)\in\zeroknowledgegood(\alpha)$, so only if some query $(x,\alpha_i)$ is answered in $\zeroknowledgegood(\alpha_i)$. When the prover asks query $i$, $\alpha_i$ is a function of the earlier answers and of its coins, while the answer is uniform on $B$ and independent of them, so it lies in $\zeroknowledgegood(\alpha_i)$ with probability at most $s$. A union bound over at most $q+1$ queries gives $(q+1)s$; queries $(x',\alpha)$ with $x'\ne x$ do not matter.
+\end{proof}
+
+While $qs$ is small, the bound is attained up to about its factor $(q+1)/q$ by the \term{grinding}\index{grinding attack} prover, which tries fresh first messages until the hash returns a good challenge (\cref{sec:zeroknowledge:running}); \textcite[Section~5.3]{Thaler2022} recommends well over $80$ bits of statistical security before the transform. The protocol to transform is the parallel version of \cref{prot:zeroknowledge:coloring}, with soundness error $(1-1/\abs E)^t$ (\cref{ex:zeroknowledge:parallel}); hashing the sequential version round by round fails, as Thaler notes for sequential repetition in general. Zero knowledge survives in the random-oracle model: a simulator runs an honest-verifier simulator and sets the oracle's value at $(x,\alpha)$ to the simulated challenge, and one message leaves a verifier nothing to deviate with \parencite[Section~11.1]{Thaler2022}.
+
+Deployed systems add succinctness. A \term{zkSNARK}\index{zkSNARK}, a zero-knowledge succinct non-interactive argument of knowledge, proves a claim about a computation of size $T$ with a proof of length polylogarithmic in $T$, by committing to the certificate, proving the computation with an interactive or probabilistically checkable proof, masking the prover's messages and applying the Fiat--Shamir transform \parencite{Thaler2022}. zkLLM commits to the weights, proves each layer with zero-knowledge variants of the sumcheck protocol (\cref{ch:delegation}), and rests its soundness on discrete logarithms; its proof for LLaMa-2-13B on $2{,}048$ tokens has $188$ kilobytes and was checked in $3.95$ seconds on an A100 GPU \parencite[Table~1]{SunLiZhang2024}. Its zero knowledge is proved against a \emph{semi-honest} verifier, which follows the protocol but tries to learn the weights \parencite[Sections~3.6 and~7.2]{SunLiZhang2024}: honest-verifier zero knowledge, in our terms.
+
+\section{Running the protocol}\label{sec:zeroknowledge:running}
+
+The script \zeroknowledgescript{} runs \cref{prot:zeroknowledge:coloring} on the two wheels of \cref{fig:zeroknowledge:wheel}, with the SHA-256 hash of the color and $16$ random bytes as commitment, and runs \cref{prot:zeroknowledge:gi}; it takes about a minute and a half.\sidenote{In the one-message version each challenge edge is a byte of SHAKE-256 output below $250$, reduced modulo $10$, which is exactly uniform when the bytes are.} On $W_5$, $\kappa$ has one monochromatic edge and no coloring has fewer (\cref{ex:zeroknowledge:byhand}), so the prover that commits to permuted copies of $\kappa$ is a best cheating prover, accepted with probability exactly $(9/10)^t$, the bound of \cref{thm:zeroknowledge:np}(ii).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},vplot,width=82mm,height=50mm]
+\nextgroupplot[xlabel={rounds $t$},ylabel={acceptance rate},ymode=log,xmin=-1,xmax=62,ymin=4e-5,ymax=2.5,
+  legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize,/tikz/every even column/.append style={column sep=2mm}},legend columns=2,legend cell align=left]
+\addplot[bound,forget plot] table[x=t,y=bestexact] {figures/data/13-zeroknowledge-coloring-rounds.dat};
+\addplot[theory2,forget plot] table[x=t,y=randexact] {figures/data/13-zeroknowledge-coloring-rounds.dat};
+\addplot[honest] table[x expr=\thisrow{t}-0.7,y=honest] {figures/data/13-zeroknowledge-coloring-rounds-plot.dat};
+\addplot[cheat2,mark=square*,mark options={fill=proverB!35}] table[x expr=\thisrow{t}+0.7,y=pred] {figures/data/13-zeroknowledge-coloring-rounds-plot.dat};
+\addplot[cheat,ebars] table[x=t,y=best,y error plus=bestp,y error minus=bestm] {figures/data/13-zeroknowledge-coloring-rounds-plot.dat};
+\addplot[cheat,mark=triangle,ebars] table[x=t,y=rand,y error plus=randp,y error minus=randm] {figures/data/13-zeroknowledge-coloring-rounds-plot.dat};
+\legend{honest prover,knows the challenges,best cheating prover,random coloring}
+\nextgroupplot[xlabel={hash queries $q$},ylabel={proof of the false claim found},xmode=log,ymode=log,xmin=0.8,xmax=5000,ymin=4e-4,ymax=2.5,
+  legend style={at={(0.5,1.03)},anchor=south,font=\scriptsize,/tikz/every even column/.append style={column sep=2mm}},legend columns=2,legend cell align=left]
+\addplot[bound,forget plot] table[x=q,y=bound] {figures/data/13-zeroknowledge-coloring-fs-theory.dat};
+\addplot[theory,forget plot] table[x=q,y=parexact] {figures/data/13-zeroknowledge-coloring-fs-theory.dat};
+\addplot[theory2,forget plot] table[x=q,y=seqexact] {figures/data/13-zeroknowledge-coloring-fs-seq-theory.dat};
+\addplot[cheat,ebars] table[x=q,y=par,y error plus=parp,y error minus=parm] {figures/data/13-zeroknowledge-coloring-fs.dat};
+\addplot[cheat2,ebars] table[x=q,y=seq,y error plus=seqp,y error minus=seqm] {figures/data/13-zeroknowledge-coloring-fs-seq.dat};
+\legend{one hash for all rounds,one hash per round}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Soundness of \cref{prot:zeroknowledge:coloring}. Left: acceptance after $t$ sequential rounds, for the honest prover on the 3-colorable wheel ($2{,}000$ sessions of $60$ rounds) and, on $W_5$, a prover that knows the challenges from a published schedule ($2{,}000$), the best cheating prover ($40{,}000$), and a prover that draws one uniformly random coloring per session ($40{,}000$); seeds $1351$--$1354$; the points of a curve share runs. Dashed: $(9/10)^t$, the bound of \cref{thm:zeroknowledge:np}(ii); teal: the exact acceptance of the random coloring, the average of $(1-b/10)^t$ over the $3^6$ colorings with $b$ monochromatic edges. Right: the Fiat--Shamir version with $t=66$, so $s=(9/10)^{66}\approx1/1047$, challenges from SHAKE-256, against a grinding prover: the fraction of trials with an accepted proof within $q$ hash queries ($3{,}000$ trials with one hash for all rounds, seed $1341$, a rerun: see the text; $2{,}000$ with one hash per round, seed $1342$). Dashed: the bound $(q+1)s$ of \cref{prop:zeroknowledge:fs}; solid: $1-(1-s)^q$; teal: the probability that $q$ trials of success probability $9/10$ give at least $66$ successes. Intervals: Clopper--Pearson $95\%$. Script \zeroknowledgescript.}\label{fig:zeroknowledge:runs}
+\end{figure}
+
+\paragraph{Soundness.} In \cref{fig:zeroknowledge:runs} (left) the honest prover was accepted in all $2{,}000$ sessions of $60$ rounds. The best cheating prover was accepted in $90.1\%$ of $40{,}000$ sessions after one round, $34.7\%$ after ten (exact $34.9\%$), and $68$ sessions, a rate of $0.0017$, after sixty (exact $0.0018$). A random coloring, with $10/3$ monochromatic edges on average, is caught faster. Every plotted interval contains its exact value; of the $120$ intervals of the two cheating curves at all $60$ values of $t$, five miss it, all from below, and none lies above $(9/10)^t$. A prover facing a verifier that follows a published schedule commits to a coloring that is proper on the one edge to be asked, and was always accepted: as in \cref{ch:interaction}, the verifier's coins must stay secret until used.
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\small
+\begin{tabular}{@{}l r c c c r c@{}}
+\toprule
+transcripts & runs & spoke asked & agrees with $\V^*$ & first color $1$ & calls & distance \\
+\midrule
+real (honest prover) & \num{30000} & $1.000$ & $1.000$ & $0.335$ & $1$ & $0.021$ \\
+rewinding simulator & \num{29947} & $1.000$ & $1.000$ & $0.333$ & $8.95$ & $0.020$ \\
+simulator, no rewinding & \num{30000} & $0.553$ & $0.110$ & $0.339$ & $1$ & $0.447$ \\
+real, colors never permuted & \num{30000} & $1.000$ & $1.000$ & $0.000$ & $1$ & $0.832$ \\
+\bottomrule
+\end{tabular}
+\caption{One round of \cref{prot:zeroknowledge:coloring} on the 3-colorable wheel against a verifier $\V^*$ that asks for the spoke to the rim vertex with the smallest commitment. Columns: fractions of transcripts whose edge is a spoke, whose edge is the one $\V^*$ asks for on their commitments, and whose first opened color (the hub's) is $1$; calls to $\V^*$ per transcript; total variation distance between the histograms of (edge, opened colors) of these and of real transcripts (first row: a second real sample). Exact values: $5/9$ and $1/9$ in the third row, $1/3$ in the fifth column ($0$ in the last row), distances $4/9$ and $5/6$. Two samples of $30{,}000$ from one law are at distance $0.013$ to $0.023$ in $95\%$ of draws; Clopper--Pearson $95\%$ half-widths are at most $0.006$. Seeds $1311$--$1316$.}\label{tab:zeroknowledge:sim}
+\end{fullwidth}
+\end{table}
+
+\paragraph{Zero knowledge.} The verifier of \cref{tab:zeroknowledge:sim} computes its question from the prover's first message. The rewinding simulator of \cref{thm:zeroknowledge:np}, which never sees $\kappa$, needed $8.95$ calls to $\V^*$ per transcript it output, against $8.91$ for guesses right with probability $1/9$ under its cap of $54$ calls, at which it gave up in $53$ of $30{,}000$ runs, against an expected $30{,}000\cdot(8/9)^{54}\approx52$, the statistical error of Step~1; its transcripts agree with the real ones in every statistic. The simulator without rewinding presents its guess as if $\V^*$ had asked for it, and a distinguisher that reruns $\V^*$ catches it in $89\%$ of transcripts. A prover that never permutes the colors shows the hub's own color on every spoke, which no simulator ignorant of $\kappa$ reproduces. For \cref{prot:zeroknowledge:gi} on a random graph with $8$ vertices and $8$ edges, against a verifier whose bit is the parity of the number of edges of $H$ among four fixed vertices, the simulator of \cref{thm:zeroknowledge:gi} needed $1.994\pm0.020$ calls per round over $20{,}000$ rounds, against exactly $2$, and more than five in $3.0\%$ of rounds, against $2^{-5}\approx3.1\%$.
+
+\paragraph{One message.} In \cref{fig:zeroknowledge:runs} (right) the grinding prover holds $\kappa$ and changes one opening string per hash query until the challenges avoid the edge $\{5,1\}$; a trial is one such search, stopped after $4{,}000$ queries. With one hash for all $66$ rounds it follows $1-(1-s)^q$, under the bound $(q+1)s$: it had an accepted proof within $100$ queries in $8.6\%$ of trials (exact $9.1\%$, bound $9.6\%$) and within $1{,}000$ in $59\%$ (exact $62\%$). The run shown is not the first: a first run, with another seed and fewer trials, put the interval at $q=7$ entirely above $(q+1)s$. A true bound allows this, since it exceeds $1-(1-s)^q$ by only $4$ to $15\%$ for $q$ from $7$ to $100$; under the law of a random oracle, one run of $3{,}000$ trials in about forty puts some interval of the figure above it. Ten further runs of $3{,}000$ trials up to $q=100$ (seeds $1371$--$1380$) put none of their $180$ intervals above it; pooled, they found accepted proofs within $7$ and $100$ queries in $0.68\%$ and $9.4\%$ of $30{,}000$ trials (exact $0.67\%$ and $9.1\%$, bound $0.76\%$ and $9.6\%$). With one hash per round it needed $73.3$ queries on average, at most $85$, against $66\cdot10/9\approx73.3$: the soundness error $1/1047$ is lost.
+
+\section{The three questions}\label{sec:zeroknowledge:questions}
+
+\questionone Read \cref{prot:zeroknowledge:coloring} as a game in which the prover asserts that $G$ is 3-colorable and is paid $1$ if the verifier accepts. A prover that holds a proper coloring and follows the protocol is paid $1$, the most a strategy can earn, and a false assertion at most $(1-1/\abs E)^t$ (\cref{thm:zeroknowledge:np}); so honesty is a best response, and, new in this chapter, it discloses nothing, as every verifier's view can be simulated without the coloring. Honesty is affordable with the certificate: unlike the prover for non-isomorphism in \cref{ch:interaction}, the prover of \cref{prot:zeroknowledge:gi} needs only $\varphi$; for a claim about a model it needs the weights and a proof of the model's computation, $803$ seconds per inference of LLaMa-2-13B for zkLLM as of 2024 \parencite{SunLiZhang2024}. A verifier that deviates gains nothing, in systems that prove zero knowledge against all verifiers. Only claims with certificates can be proved this way: ``no input triggers this behavior'' has none in general (\cref{ch:backdoors}).
+
+\questiontwo Per round of \cref{prot:zeroknowledge:coloring}, $n$ commitments received, one edge sent (about $\log_2\abs E$ random bits), two commitments recomputed: $226$ bytes on the wheel. Error $2^{-k}$ takes $t=\lceil k\ln2/\ln(\abs E/(\abs E-1))\rceil$ rounds, about $0.69k\abs E$, and $264$ on $W_5$ for $k=40$; \cref{prot:zeroknowledge:gi} takes $k$ rounds of time $O(n^2)$. In one message, $t$ must be chosen against the prover's hashing budget (\cref{prop:zeroknowledge:fs}): on $W_5$, $843$ parallel rounds and $190$ kilobytes, about the size of zkLLM's proof, give error $2^{-128}$ before the transform and $2^{-48}$ after it against $2^{80}$ hash queries. Succinct arguments do far better: zkLLM's proof is checked in $3.95$ seconds, and zkCNN's VGG16 proof has $341$ kilobytes checked in $59.3$ milliseconds, in the revised version of \textcite{LiuXieZhang2021}; they replace the error $1-1/\abs E$ per round by errors of order $1/\abs\F$ per check (\cref{ch:sumcheck,ch:delegation}).
+
+\questionthree Per round, $1/2$ for \cref{prot:zeroknowledge:gi} and at least $1/\abs E$ for \cref{prot:zeroknowledge:coloring}, exactly $1/10$ against the best cheating prover on $W_5$; after $t$ rounds, $1-2^{-t}$ and at least $1-(1-1/\abs E)^t$. This holds against every prover when the commitments are perfectly binding, and against efficient provers only, up to a negligible term, when they are computationally binding. In one message, a lie survives $q$ hash queries with probability at most $(q+1)(1-1/\abs E)^t$ in the parallel version, which grinding nearly attains, and after about $t\abs E/(\abs E-1)$ queries when hashed round by round.
+
+\Needspace{16\baselineskip}
+\protocolcard{that a secret certificate exists: an isomorphism, a proper 3-coloring and, through $\cc{NP}$-completeness, every claim with a short certificate, such as a property of committed weights}{a verifier $\V$ that must learn nothing beyond the claim, whether it follows the protocol or not; one prover $\Prov$ that holds the certificate}{a best response that discloses nothing: the truth earns $1$, a lie at most $(1-1/\abs E)^t$, and every verifier's view is simulated without the certificate}{per round $n$ commitments received, one random edge sent, two openings checked; about $0.69k\abs E$ rounds for error $2^{-k}$; in one message, $t$ parallel rounds chosen against the prover's hashing budget}{at least $1/\abs E$ per round for 3-coloring and $1/2$ for graph isomorphism, against every prover; a lie survives with probability at most $(q+1)(1-1/\abs E)^t$ in one message against $q$ hash queries}{perfectly binding commitments for soundness, computationally hiding ones for secrecy (one-way permutations); a random oracle for one message; rewinding simulators for verifiers that deviate}
+
+\section{What the model leaves out}\label{sec:zeroknowledge:leaves}
+
+\paragraph{What was idealized away.} The claim must be a formal statement about a committed object, and the proof certifies that statement only. The architecture and the benchmark are public, as in practice: zkLLM assumes a model of publicly known structure \parencite[Section~3.6]{SunLiZhang2024}, and ZkAudit keeps the weights, but not the architecture, secret \parencite{WaiwitlikhitEtAl2024}. Compliance must be decided by a program, or the computation consults an oracle (below). The proof concerns the model behind the fingerprint, not the one behind the interface, unless every answer carries a proof against the same commitment. Zero knowledge hides the certificate, not what the statement says: a proof of an inference discloses its output, and outputs can disclose a model; \textcite{CarliniEtAl2024}, according to their abstract, recovered the embedding projection layer of two production language models through their interfaces for under $\$20$. Computationally hiding commitments protect the weights only against verifiers that cannot break them, now or later. And an interactive proof convinces its verifier alone, which cannot show the transcript to the public as evidence, since a simulator could have produced it \parencite{BrassardChaumCrepeau1988}.
+
+\paragraph{Where it breaks.} (1) \emph{Fixed audit sets.} In a preprint whose abstract we rely on, \textcite{LuckEtAl2026} show that a developer who engineers its training data can obtain a valid certificate of more than $99\%$ accuracy on an audit set for a model whose accuracy on fresh samples from the same distribution is under $30\%$: the proofs were sound, but the property they certified was not the one the auditor cared about, and the auditor could not inspect the model to notice. (2) \emph{Honest verifiers only.} zkLLM's zero knowledge is proved against a semi-honest verifier \parencite{SunLiZhang2024}, and a verifier that deviates can extract what an honest one cannot: the protocol of \cref{ch:interaction} for non-isomorphism lets a verifier learn which input graph is isomorphic to a third graph of its choosing \parencite[Section~2.3]{GoldreichMicaliWigderson1991}, and in \cref{tab:zeroknowledge:sim} a simulator that does not rewind fails against a verifier whose question depends on the commitments. (3) \emph{One message.} The Fiat--Shamir transform multiplies the soundness error by the prover's hashing budget, and hashing round by round destroys it (\cref{fig:zeroknowledge:runs}); implementations that leave the claim out of the hash have been attacked \parencite[Section~5.2]{Thaler2022}; and \cref{ch:delegation} describes accepted proofs of false statements in a widely used GKR-based system. (4) \emph{A human judge.} \Textcite{ChiesaGuanYildiz2026}, in a preprint, consider claims that confidential data $w$ exists on which a computation $D$ accepts, where $D$ consults an oracle such as a physician's judgment or a laboratory assay. In the random-oracle model, they prove, some such computation has no argument that is even witness hiding, a requirement weaker than zero knowledge, even if the verifier may run for polynomially longer than the computation: it can check an oracle answer only by asking the question itself, and the question may contain the secret, as a query about a molecule contains its structure. The impossibility extends to debate (\cref{ch:debate}) in which only the honest debater holds the secret. If the oracle signs its answers, every such computation has a zero-knowledge argument with an efficient prover and succinct verification, given collision-resistant hashing (\cref{def:toolkit:crhf,def:toolkit:signature}): the claim becomes the $\cc{NP}$ claim that the prover holds $w$ and a record of signed answers on which $D$ accepts, proved by an argument of knowledge. The price is a signer, a physician or a laboratory, that sees the questions and is trusted to sign only genuine answers.
+
+\paragraph{Open problems.} Which oracle-aided computations admit zero-knowledge oversight without signed answers is, as far as we know, open: the impossibility of \textcite{ChiesaGuanYildiz2026} exhibits one computation, and a judge who must see confidential data to sign a judgment remains party to the secret (\cref{ex:zeroknowledge:signed}). Certifying in zero knowledge a property of a secret model on its input distribution, not on a fixed audit set, is open at the scale of language models; \textcite{LuckEtAl2026} formalize security notions for it and give a generic template (\cref{ex:zeroknowledge:distribution}). How far the overhead of proving an inference or a training run (\cref{ch:training}) can fall is open. And \textcite[Theorem~12]{HammondAdamDay2025} show only that approximate equilibria of their zero-knowledge game are valid zero-knowledge proof systems; whether training finds provers that keep secrets from unseen verifiers is open.
+
+\begin{exercises}
+\item \consolidation (The worked round.) In \cref{fig:zeroknowledge:wheel}, list the colors opened on $\{0,3\}$ for each of the six permutations $\psi$, and check that each ordered pair of distinct colors appears once. Show that every 3-coloring of $W_5$ has a monochromatic edge and that exactly $60$ of its $729$ colorings have exactly one, $30$ on the rim and $30$ on a spoke.\label{ex:zeroknowledge:byhand}
+
+\item \consolidation (How many rounds.) Show that error at most $2^{-k}$ in \cref{prot:zeroknowledge:coloring} takes $t=\lceil k\ln2/\ln(\abs E/(\abs E-1))\rceil$ rounds, that $(\abs E-1)k\ln2\le t\le\abs Ek\ln2+1$, and that $t=264$ for $W_5$ and $k=40$, and $843$ for $k=128$.\label{ex:zeroknowledge:rounds}
+
+\item \consolidation (Knowledge.) In \cref{prot:zeroknowledge:gi}, let $\sigma_0,\sigma_1$ be accepted answers to the challenges $0$ and $1$ for one graph $H$. Show that $\sigma_1^{-1}\sigma_0$ maps $G_0$ to $G_1$. Deduce that if a deterministic prover is accepted in $t$ rounds with probability greater than $2^{-t}$, then in some round reached with positive probability it answers both challenges, so that rerunning it finds an isomorphism.\label{ex:zeroknowledge:knowledge}
+
+\item \consolidation (A simulator with a deadline.) Cap the simulator of \cref{thm:zeroknowledge:gi} at $k$ attempts per round, with a failure symbol if all fail. Show that it runs $\V^*$ at most $tk$ times and that its output is within total variation $t2^{-k}$ of the view.\label{ex:zeroknowledge:cap}
+
+\item \variation (Parallel rounds.) In the parallel version of \cref{prot:zeroknowledge:coloring} the prover sends $t$ vectors of commitments, the verifier $t$ edges, the prover $t$ pairs of openings. (a) Show that on a graph with no proper 3-coloring, for every first message, at most $(\abs E-1)^t$ of the $\abs E^t$ challenges can be answered. (b) Show that it is honest-verifier computational zero knowledge. (c) Why would the rewinding simulator of \cref{thm:zeroknowledge:np} need about $\abs E^t$ attempts?\label{ex:zeroknowledge:parallel}
+
+\item \variation\hard (Perfectly hiding commitments.) Let $g,h$ generate a group of prime order $p$ and $\zeroknowledgecom(a;\omega)=g^ah^\omega$, $\omega$ uniform in $\{0,\dots,p-1\}$. (a) Show perfect hiding. (b) Show that two openings $(a,\omega)\ne(a',\omega')$ of one commitment give the discrete logarithm of $h$ to the base $g$. (c) Show that a prover accepted in one round of \cref{prot:zeroknowledge:coloring} with probability $1-1/\abs E+\eta$, on a graph with no proper 3-coloring, yields two openings of one commitment with probability at least $\abs E\eta$, by rerunning it on every edge. \hint{if it answers every edge for a fraction $f$ of its first messages, it is accepted with probability at most $f+(1-f)(1-1/\abs E)$.}\label{ex:zeroknowledge:pedersen}
+
+\item \attack (Commitments without randomness.) A prover commits by $C_{j,v}=\text{SHA-256}(\psi_j(\kappa(v)))$, without opening strings. Show that a verifier learns every committed color from the first message, hence the partition of the vertices into color classes, the certificate up to the names of the colors. Which property of \cref{def:zeroknowledge:commit} fails?\label{ex:zeroknowledge:deterministic}
+
+\item \attack (Hashing too little, or too often.) (a) A one-message version of \cref{prot:zeroknowledge:coloring} computes the challenge of round $j$ as a hash of the graph and of $j$, not of the commitments. Show that a prover gets an accepted proof for a graph with no proper 3-coloring with $t$ hash queries. (b) Another hashes, in round $j$, the graph and the conversation up to the commitments of round $j$. Show that a prover holding a coloring with one monochromatic edge succeeds after $t\abs E/(\abs E-1)$ queries on average.\label{ex:zeroknowledge:weakfs}
+
+\item \simulation (Every verifier costs two calls.) In part (c) of the script \zeroknowledgescript, replace the verifier's parity bit by the degree of vertex $1$ of $H$ modulo $2$, or by a bit that is $1$ with probability $0.9$ whatever $H$ is. Observe that the simulator still needs $2$ calls per round on average, and explain with the proof of \cref{thm:zeroknowledge:gi} why no verifier can change this.\label{ex:zeroknowledge:simulate}
+
+\item \research (Signed judgments.) For the fitness-for-duty example of \textcite{ChiesaGuanYildiz2026}, in which a physician judges confidential medical records, write down the claim, what the physician signs, and what the employer and the physician learn. Open, as far as we know: for which judgments the data can be kept from the judge too.\label{ex:zeroknowledge:signed}
+
+\item \research (Certificates about distributions.) Design a zero-knowledge audit whose test inputs stay secret until the developer has committed to the model, as private coins do in \cref{ch:interaction}, and analyze what a developer that engineers its training data, as in \textcite{LuckEtAl2026}, can still achieve. Open: such guarantees at the scale of language models.\label{ex:zeroknowledge:distribution}
+\end{exercises}
+
+\notesandrefs
+Zero knowledge was defined by \textcite{GoldwasserMicaliRackoff1989}, in the STOC 1985 paper that also introduced interactive proofs, with the first examples, for quadratic residuosity and non-residuosity. \Textcite{GoldreichMicaliWigderson1991}, first presented at FOCS in 1986, gave the protocol for graph isomorphism of this chapter (their Protocol~2 and Theorem~2), a zero-knowledge proof for non-isomorphism (Protocol~3), and the protocol for 3-coloring (Protocol~4), which they ran $\abs E^2$ times for error about $e^{-\abs E}$, and obtained all of $\cc{NP}$ through the standard reductions (Theorems~5 and~6). Our proof of \cref{thm:zeroknowledge:np} follows theirs, with commitments in place of encryption, an imaginary simulator that knows the coloring, and an explicit hybrid argument. \Textcite[Chapter~4]{Goldreich2001} is the standard treatment and \textcite[Chapters~11--13]{Thaler2022} the closest to practice; \cref{prop:zeroknowledge:fs} is the bound that the proof of \textcite[Theorem~5.1]{Thaler2022} gives for three-message proofs, where Thaler states the qualitative conclusion.
+
+We quote \textcite{Fortnow1987} and \textcite{GoldreichKrawczyk1996} from their abstracts, \textcite{AielloHastad1991} and \textcite{BenOrEtAl1988} from their titles and secondary accounts, \textcite{SouthEtAl2024} from its abstract, and \textcite{ShamsabadiEtAl2023} from its title.
+
+\paragraph{Translating the literature.} \Textcite{GoldreichMicaliWigderson1991} write $G_1=\psi G_0$, so their $\psi$ is our $\varphi$, and $\alpha$ for our challenge $b_j$; in Protocol~4 they write $\phi$ for our coloring $\kappa$, $\pi\in\mathrm{Sym}(\{1,2,3\})$ for our $\psi_j$, $F_v=f(\pi(\phi(v)),r_v)$ for our commitments, with $f$ an encryption function, and $m$ for our $\abs E$. \Textcite{Thaler2022} calls our zero knowledge malicious- or dishonest-verifier zero knowledge, and \textcite{SunLiZhang2024} call our honest verifier semi-honest. \Textcite{ChiesaGuanYildiz2026} write $D^f(x,w)$ for a computation with oracle $f$ and call their protocols relativized arguments. In \textcite{HammondAdamDay2025} a zero-knowledge protocol has three verifiers: $v_1$, our $\V$; $v_2$, which tries to extract information, our $\V^*$; and $v_3$, our simulator.
+
+\printchapterbib
+\end{refsection}

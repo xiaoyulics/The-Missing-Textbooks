@@ -1,0 +1,363 @@
+% Chapter 6 of Verifiable Intelligence: delegating computation and the GKR protocol.
+\newcommand{\delegationadd}{\widetilde{\mathrm{add}}}
+\newcommand{\delegationmult}{\widetilde{\mathrm{mult}}}
+\newcommand{\delegationeq}{\mathrm{eq}}
+
+\protocolchapter{Delegation}{Checking a computation without redoing it}{the GKR protocol}{P,V,P,V,P,o,P,V,P,V,P,o,P,V,P,V,P,D}{ch:delegation}
+\begin{refsection}[chapters/06-delegation.bib]
+
+\begin{chaptersummary}
+A developer reports what its released model computes on a hundred thousand prompts; the overseer can read the model and the prompts but cannot afford to run the one on the other. Written as a layered arithmetic circuit, the computation can be checked from the output down: the GKR protocol turns a claim about one random point of the multilinear extension of a layer into a claim about the layer below, by a sumcheck and a line, until the verifier evaluates the extension of its input. We prove that the honest prover is always accepted, that a false output survives with probability at most $(\ell_0+5\sum_{i\ge1}\ell_i)/\abs{\F}$, about $5D\log_2S/\abs{\F}$ for a circuit of depth $D$ and size $S$, and that a prover who reports a computation with one wrong gate is caught as if that layer alone had been checked. Honesty is a best response that costs $O(S\log S)$ field operations; the verifier reads its input once and spends $O(D\log S)$ further operations when the wiring is structured; a lie is caught with probability $1-O(D\log S/\abs{\F})$. The model leaves out that the overseer must specify the computation exactly, in field arithmetic, and that the protocol certifies a computation, not the judgment the computation was meant to encode.
+\end{chaptersummary}
+
+\section{The oversight problem: a computation too long to repeat}\label{sec:delegation:problem}
+
+Many claims about AI systems are claims about computations: these are the outputs of the released model on the benchmark; this score is what the evaluation harness computes from them. Each can be checked by running the computation again, and for large models the overseer often cannot afford to.
+
+\begin{oversight}[an evaluation the overseer cannot rerun]
+A developer reports that its released model, run on a public benchmark of $100{,}000$ prompts, gives a hazardous answer on $3.1$ percent of them, and publishes the model's output on every prompt. A regulator holds the released weights and the benchmark. Reading both takes its workstation an hour; running the model on every prompt would take it a year. The regulator must certify, or refuse to certify, that the published outputs are the ones the released model computes, and it may exchange as many messages with the developer's servers as it likes.
+\end{oversight}
+
+The scenario is invented, with the proportions of batch inference, in which every weight is used again for every token of every prompt.\sidenote{One forward pass of a dense network costs about two arithmetic operations per weight per token; a benchmark of $10^5$ prompts of $10^3$ tokens processes $10^8$ tokens.} The claim is about a computation, not about the world: whether the outputs are the ones the model computes, not whether the model is safe.
+
+Why can the regulator not check the claim? Rerunning is what it cannot afford. Recomputing $100$ random outputs costs $100$ inferences and misses a single altered output among $10^5$ with probability $0.999$. A certificate in the sense of \cref{ch:certificates} exists, the value of every unit of the network on every prompt, but checking it costs as much as the computation, and checking $q$ random units of it (\cref{ch:spotchecks}) catches one wrong value among $S$ with probability about $q/S$. The regulator needs a check that costs about as much as reading the input and still notices one wrong value anywhere.
+
+Complexity theory asked this of interactive proofs in 2008. The interactive proofs of \cref{ch:sumcheck} check claims far beyond the verifier's power, but their honest prover must solve the problem being checked, and scaled down to polynomial-time computations it still needs super-polynomial time \parencite{GoldwasserKalaiRothblum2015}. Shafi Goldwasser, Yael Kalai and Guy Rothblum asked instead for interactive proofs in which the honest prover runs in polynomial time, a ``muggle'',\sidenote{The word is J.~K. Rowling's, for a person without supernatural powers \parencite[footnote~1]{GoldwasserKalaiRothblum2015}; the honest provers of \cref{ch:sumcheck} would need such powers.} and the verifier in nearly linear time, so that a server can run a computation for a client and prove that it ran it correctly. They gave such proofs for every computation by a log-space uniform circuit of small depth, at STOC in 2008 and in full in 2015 \parencite{GoldwasserKalaiRothblum2015}.\index{delegation of computation} The protocol became practical with the prover of \textcite{CormodeMitzenmacherThaler2012}, running in time $O(S\log S)$ on a circuit of size $S$, and later linear-time provers \parencite{Thaler2013,XieEtAl2019}. Combined with cryptographic commitments, it is the engine of proof systems for neural-network inference \parencite{LiuXieZhang2021,SunLiZhang2024}, and such systems are motivated by an overseer's question: zkLLM addresses ``the authenticity of outputs generated by LLMs'' \parencite{SunLiZhang2024}, and zkGPT the worry that ``service providers may deploy smaller models to reduce costs'' \parencite{QuEtAl2025}.\sidenote{zkLLM's verifier is ``like an AI regulation enforcer'' who asks for a proof that the output returned for its prompt is correct \parencite{SunLiZhang2024}.} On the AI-safety side, \textcite{ChenKalaiXi2026} propose single-prover doubly-efficient interactive proofs and arguments as an alternative to debate (\cref{ch:debate}).
+
+The question of this chapter is the regulator's: can a verifier that reads the input once, and does little else, check the output of a computation of size $S$ against a prover that may lie, when the honest prover may do little more than the computation itself?
+
+\section{The protocol: from the output down, one layer at a time}\label{sec:delegation:protocol}
+
+The computation is first written as a circuit of additions and multiplications in a finite field, arranged in layers; \cref{sec:delegation:reach} discusses what this costs for a neural network.
+
+\begin{definition}[Layered arithmetic circuits]\label[definition]{def:delegation:circuit}\index{arithmetic circuit!layered}
+Let $\F$ be a field and $D\ge1$. A \emph{layered arithmetic circuit} $C$ of depth $D$ over $\F$ has layers $0,\dots,D$ of $S_0,\dots,S_D\ge1$ gates; layer $D$ holds the $n=S_D$ \emph{inputs}, and layer $0$ the \emph{outputs}. Each gate $a$ of a layer $i<D$ adds or multiplies two gates $\mathrm{in}_1(a)$ and $\mathrm{in}_2(a)$ of layer $i+1$, possibly equal; write $G_a(u,v)=u+v$ or $uv$ accordingly. The \emph{size} of $C$ is $S=\sum_iS_i$. Let $\ell_i=\lceil\log_2S_i\rceil$ and label the gates of layer $i$ by distinct strings in $\bits^{\ell_i}$; the strings that label no gate are \emph{dummies}. On an input $x\in\F^n$ the \emph{value function} $W_i\colon\bits^{\ell_i}\to\F$ is $W_D(a)=x_a$, $W_i(a)=G_a\bigl(W_{i+1}(\mathrm{in}_1(a)),W_{i+1}(\mathrm{in}_2(a))\bigr)$ on the gates of a layer $i<D$, and $0$ on dummies; $C(x)\in\F^{S_0}$ lists the values of the outputs. The \emph{wiring predicates} $\mathrm{add}_i,\mathrm{mult}_i\colon\bits^{\ell_i}\times\bits^{\ell_{i+1}}\times\bits^{\ell_{i+1}}\to\bits$, $i<D$, are $1$ at $(a,b,c)$ exactly when $a$ is an addition gate, respectively a multiplication gate, with $(\mathrm{in}_1(a),\mathrm{in}_2(a))=(b,c)$.
+\end{definition}
+
+Every circuit of fan-in two can be made layered by gates that copy values, at most multiplying its size by $D$.\sidenote{\Textcite[\S4.6.3]{Thaler2022}. Copying a value $u$ needs a constant, as in $u\cdot1$, with a constant $1$ among the inputs carried up by $1\cdot1$.} For $f\colon\bits^\ell\to\F$ we write $\tilde f$ for its \term{multilinear extension}\index{multilinear extension}, the unique polynomial of degree at most $1$ in each variable that agrees with $f$ on $\bits^\ell$ (\cref{lem:toolkit:mle}). With $\chi_a$ as in \eqref{eq:toolkit:eq},
+\[
+\tilde f(z)=\sum_{a\in\bits^\ell}f(a)\,\chi_a(z),\qquad\chi_a(z)=\prod_{u=1}^\ell\bigl(z_ua_u+(1-z_u)(1-a_u)\bigr),
+\]
+and $\tilde f(z)$ can be computed with $O(2^\ell)$ field operations. The protocol uses the extensions $\tilde W_i$ of the layers, $\delegationadd_i$ and $\delegationmult_i$ of the wiring predicates, $\tilde x=\tilde W_D$ of the input, and $\tilde y$ of the claimed output $y$, extended by $0$ to the dummies of layer $0$. For $z\in\F^{\ell_i}$ and $b,c\in\F^{\ell_{i+1}}$ let
+\begin{equation}\label{eq:delegation:summand}
+f_{i,z}(b,c)=\delegationadd_i(z,b,c)\bigl(\tilde W_{i+1}(b)+\tilde W_{i+1}(c)\bigr)+\delegationmult_i(z,b,c)\,\tilde W_{i+1}(b)\,\tilde W_{i+1}(c).
+\end{equation}
+
+\begin{lemma}[A layer is a sum over the next; \textcite{Thaler2015}]\label[lemma]{lem:delegation:identity}\index{wiring predicate}
+For every layer $i<D$ and every $z\in\F^{\ell_i}$,
+\begin{equation}\label{eq:delegation:identity}
+\tilde W_i(z)=\sum_{b,c\in\bits^{\ell_{i+1}}}f_{i,z}(b,c).
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+Call the right side $R(z)$. For fixed $b,c\in\bits^{\ell_{i+1}}$ the numbers $\tilde W_{i+1}(b)=W_{i+1}(b)$ and $\tilde W_{i+1}(c)$ are constants and the wiring extensions are multilinear in $z$, so $R$ is multilinear. At a point $a\in\bits^{\ell_i}$ the extensions take the values of the predicates. If $a$ is an addition gate, then the only nonzero term of $R(a)$ is the one with $(b,c)=(\mathrm{in}_1(a),\mathrm{in}_2(a))$, and it equals $W_i(a)$; multiplication gates are the same, and at a dummy every term vanishes, as does $W_i$. So $R$ is multilinear and agrees with $W_i$ on $\bits^{\ell_i}$, and $R=\tilde W_i$ by the uniqueness in \cref{lem:toolkit:mle}.
+\end{proof}
+
+The verifier cannot compute $\tilde W_i$ for $i<D$ without evaluating the circuit, but it can check a claimed value of it by the sumcheck protocol of \cref{ch:sumcheck} applied to \eqref{eq:delegation:identity}. The sumcheck ends with a value of $f_{i,z}$ at a random point $(b^*,c^*)$, which needs two values of $\tilde W_{i+1}$; the prover supplies $\tilde W_{i+1}$ on the line through $b^*$ and $c^*$, and the verifier keeps one random point of that line. One claim about layer $i$ has become one claim about layer $i+1$.
+
+\begin{protocol}{The GKR protocol}\label{prot:delegation:gkr}
+\item[\msg{P}{V}] Send the claimed output $y\in\F^{S_0}$. The honest prover sends $C(x)$.
+\item[\act{V}] Pick $z_0\in\F^{\ell_0}$ uniformly at random, send it, and set $v_0=\tilde y(z_0)$.
+\phase{Phase $i=0,\dots,D-1$, holding $z_i\in\F^{\ell_i}$ and a claimed value $v_i$ of $\tilde W_i(z_i)$}
+\item[\msg{P}{V}] Round $j=1,\dots,2\ell_{i+1}$ of a sumcheck for $\sum_{b,c}f_{i,z_i}(b,c)=v_i$: send $g_j$ of degree at most $2$, as three coefficients.
+\item[\act{V}] If $g_j(0)+g_j(1)$ differs from $g_{j-1}(r_{j-1})$ (from $v_i$ when $j=1$), \rej. Otherwise pick $r_j\in\F$ uniformly at random and send it.
+\item[\msg{P}{V}] Let $b^*=(r_1,\dots,r_{\ell_{i+1}})$, $c^*=(r_{\ell_{i+1}+1},\dots,r_{2\ell_{i+1}})$ and $\gamma(t)=(1-t)b^*+tc^*$. Send $q$ of degree at most $\ell_{i+1}$, as $\ell_{i+1}+1$ coefficients. The honest prover sends $q(t)=\tilde W_{i+1}(\gamma(t))$.
+\item[\act{V}] Let $e=g_{2\ell_{i+1}}(r_{2\ell_{i+1}})$, or $e=v_i$ if $\ell_{i+1}=0$. If $e\ne\delegationadd_i(z_i,b^*,c^*)\bigl(q(0)+q(1)\bigr)+\delegationmult_i(z_i,b^*,c^*)\,q(0)\,q(1)$, \rej. Otherwise pick $t^*\in\F$ uniformly at random, send it, and set $z_{i+1}=\gamma(t^*)$ and $v_{i+1}=q(t^*)$.
+\phase{Final check}
+\item[\act{V}] \acc{} if $\tilde x(z_D)=v_D$; otherwise \rej.
+\end{protocol}
+
+In the sumcheck of phase $i$ the honest prover sends the partial sums $\tau_j$ of \cref{ch:sumcheck}. The verifier never sees a gate: it holds one claim at a time, about one point of the extension of one layer, and computes on its own only $\tilde y(z_0)$, the wiring extensions at one point per layer, and $\tilde x(z_D)$. The first and the last take $O(S_0)$ and $O(n)$ field operations; the wiring is the subject of \cref{prop:delegation:wiring}.
+
+\paragraph{A worked run.} The smallest circuit of the family of \cref{sec:delegation:running} computes $y=(wx)^2$: layer $2$ holds the inputs, $w$ with label $0$ and $x$ with label $1$; layer $1$ is one gate computing $wx$; layer $0$ squares it. So $\ell_2=1$, $\ell_1=\ell_0=0$, $\delegationmult_0=1$, $\delegationmult_1(b,c)=(1-b)c$ and $\delegationadd_0=\delegationadd_1=0$. Over $\F_{13}$ with $w=2$ and $x=3$, $\tilde x(b)=2+b$, the hidden value is $6$ and $y=36\equiv10$. Phase $0$ has no sumcheck: the prover sends the constant $q=6$, and the verifier checks $10=6\cdot6$. In phase $1$, $f_1(b,c)=(1-b)c\,(2+b)(2+c)$ sums to its value $6$ at $(0,1)$. \Cref{tab:delegation:run} follows the run with the coins $r_1=4$, $r_2=7$, $t^*=5$, and a liar that claims $y=12$: it must answer $q^2=12$ in phase $0$, which it does with $q=5$, a false claim about the hidden value, and it keeps that lie alive by planting roots, as in \cref{ch:sumcheck}, until the verifier evaluates $\tilde x(6)=8$. Over all $13^3$ coin triples the liar that claims $12$ is accepted on $734$, with probability $0.334$; \cref{thm:delegation:gkr} below bounds every prover by $1-(\frac{11}{13})^2\frac{12}{13}\approx0.339$ and by $\frac5{13}\approx0.385$ (\cref{ex:delegation:run}).
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\small
+\begin{tabular}{@{}l l l l l c@{}}
+\toprule
+& \multicolumn{2}{c}{honest prover, claims $10$} & \multicolumn{2}{c}{root-planting liar, claims $12$} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+step & sends & check, new claim & sends & check, new claim & coin\\
+\midrule
+phase $0$, line & $q=6$ & $6\cdot6=10$; $v_1=6$ & $q=5$ & $5\cdot5=12$; $v_1=5$ & --\\
+phase $1$, round $1$ & $6+10X+10X^2$ & $6+0=6$; $g_1(4)=11$ & $6+8X+11X^2$ & $6+12=5$; $g_1(4)=6$ & $r_1=4$\\
+phase $1$, round $2$ & $3X+8X^2$ & $0+11=11$; $e=10$ & $6X$ & $0+6=6$; $e=3$ & $r_2=7$\\
+phase $1$, line & $6+3t$ & $5\cdot6\cdot9=10$; $v_2=8$ & $6+11t$ & $5\cdot6\cdot4=3$; $v_2=9$ & $t^*=5$\\
+\midrule
+final & & $\tilde x(6)=8=v_2$: \acc & & $\tilde x(6)=8\ne9$: \rej & \\
+\bottomrule
+\end{tabular}
+\caption{A run of \cref{prot:delegation:gkr} over $\F_{13}$ on $y=(wx)^2$ with $w=2$, $x=3$; all arithmetic is modulo $13$. In phase $1$, $\delegationmult_1(b^*,c^*)=(1-4)\cdot7=5$ and $\gamma(t)=4+3t$, so $z_2=\gamma(5)=6$. The liar keeps the values of the honest messages at $0$ and $2$ and changes the value at $1$; in the line step it keeps $q(0)$ and changes $q(1)$. With $r_1\in\{0,2\}$, $r_2\in\{0,2\}$ or $t^*=0$ its claim would have become true. Script \texttt{06-delegation-gkr.py}.}\label{tab:delegation:run}
+\end{fullwidth}
+\end{table}
+
+\begin{dictionary}
+layered circuit $C$ over $\F$ & the specified model, quantized, as a fixed schedule of additions and multiplications\\
+input $x$; claimed output $y$ & the released weights and the prompts; the published outputs\\
+value function $W_i$ & every activation at depth $i$ on every prompt\\
+the claim $\tilde W_i(z_i)=v_i$ & one number that summarizes a layer of activations, and that one wrong activation almost surely changes\\
+wiring predicates & the architecture: which units feed which\\
+prover with one wrong gate & a server that ran a corrupted or cheaper computation and reports it faithfully\\
+soundness error $s$ & the chance that a wrong table of outputs is certified\\
+the verifier's cost & one pass over the weights and prompts, plus a few thousand field operations
+\end{dictionary}
+
+What one had to notice is that a check need not look at the computation's values to notice a wrong one. A single wrong activation among a million is invisible to spot checks, but it changes the multilinear extension of its layer at almost every point of $\F^{\ell_i}$, since a nonzero multilinear polynomial vanishes on few points; and a claim about one point of a layer can be pushed down to one point of the next, so the verifier pays per layer, not per gate.
+
+\section{The theory: a lie must reach the input}\label{sec:delegation:theory}
+
+If the claimed output is wrong, then the claim $\tilde W_0(z_0)=v_0$ is almost surely false. In each phase the sumcheck either catches the false claim or passes the falsehood on to the value $e$, the line step either catches it or passes it on to the next layer, and the last false claim meets the verifier's own evaluation of $\tilde x$. Three facts about degrees control each passing.
+
+\begin{lemma}[Degrees]\label[lemma]{lem:delegation:degrees}
+\begin{enumerate}
+\item For every $i<D$ and $z\in\F^{\ell_i}$, $f_{i,z}$ has degree at most $2$ in each of its $2\ell_{i+1}$ variables.
+\item If $h\in\F[X_1,\dots,X_\ell]$ is multilinear, $b,c\in\F^\ell$ and $\gamma(t)=(1-t)b+tc$, then $h\circ\gamma$ is a polynomial of degree at most $\ell$ with $h(\gamma(0))=h(b)$ and $h(\gamma(1))=h(c)$.
+\item If $\F$ is finite, $h\in\F[X_1,\dots,X_\ell]$ is multilinear and nonzero, and $z$ is uniform on $\F^\ell$, then $\Prob[h(z)=0]\le1-(1-1/\abs{\F})^\ell\le\ell/\abs{\F}$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to count degrees for (i) and (ii) and to peel off one variable at a time for (iii). For (i), the wiring extensions have degree at most $1$ in each variable, and $\tilde W_{i+1}(b)$ has degree at most $1$ in each coordinate of $b$ and none in $c$, and symmetrically; so each product in \eqref{eq:delegation:summand} has degree at most $2$ in each variable. For (ii), each coordinate of $\gamma(t)$ is affine in $t$, and each monomial of $h$ is a product of at most $\ell$ coordinates. For (iii) we use induction on $\ell$, the case $\ell=0$ being a nonzero constant. Write $h=h_0+X_\ell h_1$ with $h_0,h_1$ multilinear in $X_1,\dots,X_{\ell-1}$, and $z=(z',z_\ell)$. If $h_1=0$, then $h=h_0$ and $h(z)\ne0$ with probability at least $(1-1/\abs{\F})^{\ell-1}\ge(1-1/\abs{\F})^\ell$ by induction. If $h_1\ne0$, then $h_1(z')\ne0$ with at least that probability, and for such $z'$ the polynomial $h_0(z')+X_\ell h_1(z')$ has one root, which the independent $z_\ell$ avoids with probability $1-1/\abs{\F}$. The last inequality is Bernoulli's.
+\end{proof}
+
+Part (iii) is the Schwartz--Zippel lemma (\cref{lem:toolkit:schwartzzippel}) for multilinear polynomials, in a product form that $\chi_a$ attains (\cref{ex:delegation:chi}). The next lemma is where the sumcheck theorem of \cref{ch:sumcheck} enters.
+
+\begin{lemma}[One phase]\label[lemma]{lem:delegation:phase}
+Fix a prover strategy, a phase $i<D$, and a history up to the start of phase $i$ in which the verifier has not rejected and holds a false claim, $\tilde W_i(z_i)\ne v_i$. Let $\ell=\ell_{i+1}\le\abs{\F}$. Over the verifier's coins in phase $i$, the probability that it does not reject in phase $i$ and leaves with a true claim, $\tilde W_{i+1}(z_{i+1})=v_{i+1}$, is at most
+\[
+1-\Bigl(1-\frac2{\abs{\F}}\Bigr)^{2\ell}\Bigl(1-\frac{\ell}{\abs{\F}}\Bigr)\le\frac{5\ell}{\abs{\F}}.
+\]
+\end{lemma}
+
+\begin{proof}
+The plan is to bound the chance that the sumcheck hands on a true value $e$, and then the chance that the line turns a false $e$ into a true claim. Let $Q(t)=\tilde W_{i+1}(\gamma(t))$, of degree at most $\ell$ with $Q(0)=\tilde W_{i+1}(b^*)$ and $Q(1)=\tilde W_{i+1}(c^*)$ (\cref{lem:delegation:degrees}(ii)), and let $\alpha=\delegationadd_i(z_i,b^*,c^*)$ and $\mu=\delegationmult_i(z_i,b^*,c^*)$, so that $f_{i,z_i}(b^*,c^*)=\alpha(Q(0)+Q(1))+\mu Q(0)Q(1)$. By \cref{lem:delegation:identity} the sumcheck claim $\sum_{b,c}f_{i,z_i}(b,c)=v_i$ is false.
+
+Let $E$ be the event that every round check of the phase passes and $e=f_{i,z_i}(b^*,c^*)$. If $\ell=0$, then there are no rounds, $e=v_i$, and $f_{i,z_i}$ is the single term of the sum, so $E$ is impossible. If $\ell\ge1$, then the history fixes $z_i$, $v_i$ and the prover's state, and the prover's messages in the rounds, as functions of $r_1,r_2,\dots$, form a prover strategy for the sumcheck protocol on the false claim $(f_{i,z_i},v_i)$, whose $2\ell$ variables have degree at most $2$ (\cref{lem:delegation:degrees}(i)). The event $E$ is the event that the verifier of \cref{thm:sumcheck:sumcheck}, which evaluates $f_{i,z_i}(b^*,c^*)$ itself, accepts; that theorem gives $\pi=\Prob[E]\le1-(1-2/\abs{\F})^{2\ell}$ and $\pi\le4\ell/\abs{\F}$.
+
+Suppose that every round check passes but $E$ fails, so that $e\ne\alpha(Q(0)+Q(1))+\mu Q(0)Q(1)$. If the line check passes, then $e=\alpha(q(0)+q(1))+\mu\,q(0)q(1)$, so $(q(0),q(1))\ne(Q(0),Q(1))$ and $q\ne Q$. Both have degree at most $\ell$, and $q$ is fixed before $t^*$ is drawn, so $q(t^*)=Q(t^*)$ with probability at most $\ell/\abs{\F}$ (\cref{lem:toolkit:lagrange}); and the new claim, $v_{i+1}=q(t^*)$ about $\tilde W_{i+1}(\gamma(t^*))=Q(t^*)$, is true exactly then. Adding the two cases, the probability in question is at most
+\[
+\pi+(1-\pi)\frac{\ell}{\abs{\F}}=1-(1-\pi)\Bigl(1-\frac{\ell}{\abs{\F}}\Bigr),
+\]
+which increases with $\pi$ because $\ell\le\abs{\F}$; the bounds on $\pi$ give both inequalities.
+\end{proof}
+
+\begin{theorem}[The GKR protocol; \textcite{GoldwasserKalaiRothblum2015}, \textcite{CormodeMitzenmacherThaler2012}, \textcite{Thaler2015}]\label{thm:delegation:gkr}\index{GKR protocol}
+Let $C$ be a layered arithmetic circuit of depth $D$ and size $S$ over a finite field $\F$, with $\ell_i=\lceil\log_2S_i\rceil$; let $x\in\F^n$ be its input and $y\in\F^{S_0}$ a claimed output. Run \cref{prot:delegation:gkr}.
+\begin{enumerate}
+\item \emph{Completeness.} If $y=C(x)$, then the honest prover is accepted with probability $1$.
+\item \emph{Soundness.} If $y\ne C(x)$, then for every prover $\Prov^*$ the verifier accepts with probability at most
+\begin{equation}\label{eq:delegation:sound}
+s=\frac{\ell_0+5\sum_{i=1}^D\ell_i}{\abs{\F}}\le\frac{5(D+1)\lceil\log_2S\rceil}{\abs{\F}}
+\end{equation}
+over its coins, and, if every $\ell_i\le\abs{\F}$, at most $1-(1-\frac1{\abs{\F}})^{\ell_0}\prod_{i=1}^D(1-\frac2{\abs{\F}})^{2\ell_i}(1-\frac{\ell_i}{\abs{\F}})$.
+\item \emph{Costs.} There are $1+\sum_{i=1}^D(2\ell_i+1)$ rounds. The prover sends $S_0+\sum_{i=1}^D(7\ell_i+1)$ field elements and the verifier $\ell_0+\sum_{i=1}^D(2\ell_i+1)$ uniform ones. The verifier performs $O(S_0+n+\sum_i\ell_i)$ field operations besides one evaluation of $\delegationadd_i$ and of $\delegationmult_i$ for each $i<D$. Given $C$ and $x$, the honest prover's messages take $O\bigl(\sum_{i<D}(\ell_{i+1}+1)(S_i+S_{i+1})\bigr)=O(S\log S)$ field operations.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to follow the verifier's claim along an honest run, to bound by \cref{lem:delegation:phase} the chance that a false claim becomes true in each phase of a dishonest one, and then to count. For (i), every claim $\tilde W_i(z_i)=v_i$ is true. Indeed $\tilde y=\tilde W_0$, since $y=C(x)$ and both vanish at dummies. If the claim of phase $i$ is true, then so is the sumcheck claim, by \cref{lem:delegation:identity}; the honest messages pass every round check and end with $e=f_{i,z_i}(b^*,c^*)$, by the completeness part of \cref{thm:sumcheck:sumcheck} (when $\ell_{i+1}=0$, $e=v_i=f_{i,z_i}$ directly); the honest $q$ has $q(0)=\tilde W_{i+1}(b^*)$ and $q(1)=\tilde W_{i+1}(c^*)$ by \cref{lem:delegation:degrees}(ii), so the line check reads $e=f_{i,z_i}(b^*,c^*)$; and $v_{i+1}=q(t^*)=\tilde W_{i+1}(z_{i+1})$. The final check compares $v_D=\tilde W_D(z_D)$ with $\tilde x(z_D)$, the same number.
+
+For (ii), suppose first that every $\ell_i\le\abs{\F}$, and let $R_i$ be the event that the verifier rejects before phase $i$ or reaches phase $i$ (the final check, for $i=D$) with a false claim. On $R_D$ the verifier rejects. Since $y\ne C(x)$, the extension $\tilde y-\tilde W_0$ of the nonzero function $y-W_0$ is a nonzero multilinear polynomial (\cref{lem:toolkit:mle}), so $\Prob[R_0]\ge(1-1/\abs{\F})^{\ell_0}$ by \cref{lem:delegation:degrees}(iii). Condition on a history up to phase $i$ that lies in $R_i$. If the verifier has rejected, then $R_{i+1}$ holds; otherwise its claim is false, and by \cref{lem:delegation:phase} $R_{i+1}$ holds with conditional probability at least $(1-2/\abs{\F})^{2\ell_{i+1}}(1-\ell_{i+1}/\abs{\F})$. Averaging over histories,
+\[
+\Prob[R_{i+1}]\ge\Bigl(1-\frac2{\abs{\F}}\Bigr)^{2\ell_{i+1}}\Bigl(1-\frac{\ell_{i+1}}{\abs{\F}}\Bigr)\Prob[R_i],
+\]
+and induction gives the product form. The sum form follows from $\prod_k(1-x_k)\ge1-\sum_kx_k$ for $x_k\in[0,1]$, true by induction on the number of factors, applied to the $\ell_0$ factors $1-1/\abs{\F}$, the $2\ell_i$ factors $1-2/\abs{\F}$ and the factors $1-\ell_i/\abs{\F}$, whose $x_k$ add up to $s$. If some $\ell_i>\abs{\F}$, then $s>5$. Finally $\ell_0+5\sum_{i\ge1}\ell_i\le5\sum_{i=0}^D\ell_i\le5(D+1)\lceil\log_2S\rceil$.
+
+For (iii), the rounds and messages are read off \cref{prot:delegation:gkr}. The verifier computes $\tilde y(z_0)$ and $\tilde x(z_D)$ with $O(S_0)$ and $O(n)$ operations (\cref{lem:toolkit:mle}), each round check with $O(1)$ (a sum of coefficients and Horner's rule), and each line step with $O(\ell_{i+1})$ besides the wiring. The honest prover evaluates $C$ with $S-n$ operations. In phase $i$ write $\ell=\ell_{i+1}$ and $z=z_i$. Since $\mathrm{add}_i$ and $\mathrm{mult}_i$ are nonzero only at the triples $(a,\mathrm{in}_1(a),\mathrm{in}_2(a))$, \cref{lem:toolkit:mle} gives
+\[
+f_{i,z}(b,c)=\sum_a\chi_a(z)\,\chi_{\mathrm{in}_1(a)}(b)\,\chi_{\mathrm{in}_2(a)}(c)\,G_a\bigl(\tilde W_{i+1}(b),\tilde W_{i+1}(c)\bigr),
+\]
+the sum over the gates of layer $i$. Round $j\le\ell$ sums $f_{i,z}(r_1,\dots,r_{j-1},X,b'',c)$ over Boolean $b''$ and $c$, and $\chi_{\mathrm{in}_1(a)}$ and $\chi_{\mathrm{in}_2(a)}$ vanish there unless $b''$ is the string $\sigma_a$ of the last $\ell-j$ bits of $\mathrm{in}_1(a)$ and $c=\mathrm{in}_2(a)$; so each gate contributes one term. With $\epsilon_a$ the $j$-th bit of $\mathrm{in}_1(a)$, $\chi_0(X)=1-X$, $\chi_1(X)=X$ and $\beta_{a,j}=\prod_{u<j}\chi_{(\mathrm{in}_1(a))_u}(r_u)$,
+\[
+\tau_j(X)=\sum_a\chi_a(z)\,\beta_{a,j}\,\chi_{\epsilon_a}(X)\,G_a\bigl(\tilde W_{i+1}(r_1,\dots,r_{j-1},X,\sigma_a),\,W_{i+1}(\mathrm{in}_2(a))\bigr).
+\]
+The prover keeps the $2^{\ell-j+1}$ values $\tilde W_{i+1}(r_1,\dots,r_{j-1},w)$, $w\in\bits^{\ell-j+1}$, and the numbers $\chi_a(z)\beta_{a,j}$; then the three coefficients of $\tau_j$, a sum over gates of products of polynomials of degree at most $1$ in $X$ read off the table, cost $O(S_i)$, and after $r_j$ arrives one fold of the table, as in the proof of \cref{lem:toolkit:mle}, and the update of the $\beta$'s cost $O(2^{\ell-j}+S_i)$. The numbers $\chi_a(z)$ cost $O(2^{\ell_i})$, by $\chi_{(a,\epsilon)}(z_1,\dots,z_{u+1})=\chi_a(z_1,\dots,z_u)\chi_\epsilon(z_{u+1})$. Rounds $\ell+1,\dots,2\ell$ are the same with $b$ and $c$ exchanged and $\tilde W_{i+1}(b^*)$ a constant, and $q$ is fixed by its values at $0,\dots,\ell$ (\cref{lem:toolkit:lagrange}), each costing $O(2^\ell)$. Phase $i$ thus costs $O(2^{\ell_i}+\ell S_i+(\ell+1)2^\ell)=O((\ell_{i+1}+1)(S_i+S_{i+1}))$, since $2^{\ell_k}<2S_k$, and $\sum_{i<D}(\ell_{i+1}+1)(S_i+S_{i+1})\le2(\lceil\log_2S\rceil+1)S$.
+\end{proof}
+
+The bound is nearly tight. Over $\F_p$ with $p$ odd, a liar that keeps the honest values of each sumcheck message at $0$ and $2$ and changes its value at $1$ survives a round exactly when $r_j\in\{0,2\}$; one that changes $q$ at one of the nodes $0,1$ survives a line when $t^*$ is one of the other $\ell_{i+1}$ nodes among $0,\dots,\ell_{i+1}$; and once its claim is true it plays honestly. This \emph{root-planting} prover\index{root-planting prover} attains the product bound, except when some line check cannot be met at all because $\delegationadd_i$ and $\delegationmult_i$ both vanish at the random point (\cref{fig:delegation:runs}). The degrees are the liar's room.
+
+The natural cheat in delegation is narrower: a server that ran some other computation, a cheaper model or a corrupted one, and answers faithfully about what it ran. It is caught at every layer where its computation departs from the circuit, as if that layer alone had been checked.
+
+\begin{proposition}[A computation that is wrong somewhere]\label[proposition]{prop:delegation:fault}\index{honest prover!of a wrong computation}
+Let $\F$ be finite. A prover holds functions $W'_i\colon\bits^{\ell_i}\to\F$, $0\le i\le D$, zero at dummies; it sends $W'_0$ on the output labels as $y$, and in every later step the message prescribed for the honest prover with $W'$ in place of the true value functions. Let $\Delta_D=W'_D-W_D$, and for $i<D$ let $\Delta_i(a)=W'_i(a)-G_a\bigl(W'_{i+1}(\mathrm{in}_1(a)),W'_{i+1}(\mathrm{in}_2(a))\bigr)$ on gates and $0$ on dummies. Then the verifier accepts with probability exactly $\prod_{i=0}^D\Prob[\tilde\Delta_i(z)=0]$, with $z$ uniform on $\F^{\ell_i}$ in the $i$-th factor. In particular, if $W'$ is the computation of $C$ on $x$ with the value of one gate of layer $f$ changed and the layers above recomputed, then the verifier accepts with probability exactly $1-(1-1/\abs{\F})^{\ell_f}$, whether or not $y=C(x)$.
+\end{proposition}
+
+\begin{proof}
+The plan is to show that the verifier passes phase $i$ exactly when $\tilde\Delta_i(z_i)=0$, and that $z_0,\dots,z_D$ are independent and uniform. Suppose the verifier enters phase $i$ holding $v_i=\tilde W'_i(z_i)$, as it does for $i=0$. Let $W''_i(a)=G_a(W'_{i+1}(\mathrm{in}_1(a)),W'_{i+1}(\mathrm{in}_2(a)))$ on gates, so that $W'_i=W''_i+\Delta_i$. The prover's messages in phase $i$ are computed from $W'_{i+1}$, so by \cref{lem:delegation:identity}, with $W'_{i+1}$ in place of $W_{i+1}$, they prove the value $\tilde W''_i(z_i)$. The first round check (the line check, if $\ell_{i+1}=0$) compares it with $v_i=\tilde W''_i(z_i)+\tilde\Delta_i(z_i)$ and passes exactly when $\tilde\Delta_i(z_i)=0$; then the rest of the phase passes and leaves $v_{i+1}=\tilde W'_{i+1}(z_{i+1})$, as in the proof of completeness. The final check compares $\tilde x(z_D)$ with $\tilde x(z_D)+\tilde\Delta_D(z_D)$. So the verifier accepts exactly when every $\tilde\Delta_i(z_i)=0$.
+
+The point $z_0$ is uniform, and for $i\ge1$, $z_i=(1-t^*)b^*+t^*c^*$ for the coins of phase $i-1$, with $b^*$ and $c^*$ uniform on $\F^{\ell_i}$ and independent of each other and of $t^*$; one of the coefficients $1-t^*$ and $t^*$ is nonzero, so $z_i$ is uniform. Since $z_i$ depends only on the coins of phase $i-1$, the points are independent, which gives the product. For the last claim, $\Delta_f$ is nonzero only at the changed gate $g$ and every other $\Delta_i$ is zero, so the product is $\Prob[\chi_g(z)=0]$; and $\chi_g(z)$ vanishes exactly when one of its $\ell_f$ factors does, which depend on distinct coordinates of $z$ and each vanish with probability $1/\abs{\F}$.
+\end{proof}
+
+Each factor with $\Delta_i\ne0$ is at most $\ell_i/\abs{\F}$ (\cref{lem:delegation:degrees}(iii)). Checking random points of extensions is not checking random gates \parencite[\S4.6.5]{Thaler2022}: a verifier that inspects $q$ random gates of a computation with one wrong gate among $S-n$ catches it with probability $1-(1-1/(S-n))^q$.\sidenote{For the network of \cref{sec:delegation:running} with $N=64$, a $99\%$ chance needs about $2.4$ million gate checks, against $528{,}320$ gates (\cref{ex:delegation:spot}).}
+
+\paragraph{What the verifier must evaluate.} Nothing in the protocol makes the wiring extensions cheap. For a circuit given as a list of gates, $\delegationadd_i(z,b,c)=\sum_a\chi_a(z)\chi_{\mathrm{in}_1(a)}(b)\chi_{\mathrm{in}_2(a)}(c)$ over the addition gates costs $O(S_i+2^{\ell_i}+2^{\ell_{i+1}})$ operations, and a verifier that pays this in every layer spends more than evaluating the circuit (\cref{tab:delegation:costs}). Three ways around it are known: the evaluations depend only on the verifier's coins, so they can be done offline, before the input arrives \parencite{GoldwasserKalaiRothblum2015,Thaler2022}; for log-space uniform circuits the prover can prove them (\cref{thm:delegation:uniform}); and regular wiring has closed forms \parencite{CormodeMitzenmacherThaler2012,Thaler2013}. For bits $u,v,w$ write $\delegationeq(u,v)=uv+(1-u)(1-v)$ and $\delegationeq(u,v,w)=uvw+(1-u)(1-v)(1-w)$, the extensions of the indicators of $u=v$ and of $u=v=w$.
+
+\begin{proposition}[Structured wiring]\label[proposition]{prop:delegation:wiring}\index{wiring predicate!closed form}
+\begin{enumerate}
+\item If $h\colon\bits^m\to\F$ is a product $h(w)=\prod_kh_k(w_{B_k})$ of functions of the coordinates in disjoint blocks $B_k$ that partition $\{1,\dots,m\}$, then $\tilde h(w)=\prod_k\tilde h_k(w_{B_k})$.
+\item Suppose that every string of $\bits^{\ell_i}$ labels a gate of layer $i$. If the layer squares each gate of the next ($\mathrm{in}_1(a)=\mathrm{in}_2(a)=a$), then $\delegationmult_i(z,b,c)=\prod_u\delegationeq(z_u,b_u,c_u)$. If it adds pairs ($\mathrm{in}_1(a)$ and $\mathrm{in}_2(a)$ are $a$ with a bit $0$, respectively $1$, inserted at a fixed position $\circ$), then $\delegationadd_i(z,b,c)=(1-b_\circ)\,c_\circ\prod_u\delegationeq(z_u,b_u,c_u)$, the product over the other positions, matched in order. Each takes $O(\ell_i+\ell_{i+1})$ field operations.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+For (i), the right side is multilinear, each factor being multilinear in its own block, and it agrees with $h$ on $\bits^m$; by uniqueness (\cref{lem:toolkit:mle}) it is $\tilde h$. For (ii), since every string labels a gate, the predicates are products, over disjoint blocks of positions, of the indicators of equality of two or three bits, of $b_\circ=0$ and of $c_\circ=1$, whose extensions are $\delegationeq(u,v)$, $\delegationeq(u,v,w)$, $1-u$ and $u$; each factor costs $O(1)$ operations.
+\end{proof}
+
+The same reasoning covers every wiring that factorizes over blocks of bits, such as the products layer of \cref{sec:delegation:running} (\cref{ex:delegation:prodwiring}); \textcite[\S4.6.6]{Thaler2022} surveys which circuits have wiring extensions computable in time $O(\log S)$, and notes that no clean characterization is known.
+
+\section{The theory: doubly-efficient proofs, and the road to practice}\label{sec:delegation:reach}
+
+Complexity theory asks which languages, decided by families of circuits or machines (\cref{sec:toolkit:machines}), have proofs of this kind.
+
+\begin{definition}[Doubly-efficient interactive proofs]\label[definition]{def:delegation:de}\index{doubly-efficient interactive proof}
+An interactive proof for a language $L$ (\cref{def:toolkit:ip}) is \emph{doubly efficient} if its prescribed prover strategy can be computed in time polynomial in $n$, its verifier runs in time $O(n\polylog n)$, and its soundness holds against every prover.
+\end{definition}
+
+The notion is due to \textcite{GoldwasserKalaiRothblum2015}; the bound $O(n\polylog n)$ is our reading of their ``nearly-linear'' verifier.\sidenote{The name is used by \textcite{ReingoldRothblumRothblum2021} and \textcite{Goldreich2018}, whose survey asks for almost-linear time and leaves the term vague on purpose (\S1.1); our bound is its strictest reading, the one that fits \cref{thm:delegation:uniform}.}
+
+\begin{theorem}[Delegation for uniform circuits; \textcite{GoldwasserKalaiRothblum2015}, Theorem 1.1]\label{thm:delegation:uniform}
+Let $L$ be decided by a family of $O(\log S)$-space uniform Boolean circuits of size $S=S(n)$ and depth $D=D(n)$. Then $L$ has a public-coin interactive proof with perfect completeness and soundness error $1/2$, communication $D\cdot\polylog(S)$, a prover running in time $\poly(S)$, and a verifier running in time $n\cdot\poly(D,\log S)$ and space $O(\log S)$. Given oracle access to the low-degree extension of its input, the verifier runs in time $\poly(D,\log S)$.
+\end{theorem}
+
+\begin{proofsketch}
+The circuit is made layered and its Boolean gates are written as arithmetic over $\mathrm{GF}(2)$, extended to a larger field. The protocol is \cref{prot:delegation:gkr} with low-degree extensions over a subfield $H$ with $\max(D,\log S)\le\abs{H}\le\poly(D,\log S)$ in place of multilinear extensions over $\bits$. For circuits that simulate a log-space machine, the wiring predicates are computable by small-depth circuits in polylogarithmic time, and the verifier evaluates their extensions directly; for a general log-space uniform family, it asks the prover for the values it needs and checks them with the protocol for log-space computations. We omit this construction \parencite[\S4]{GoldwasserKalaiRothblum2015} and the parameters.
+\end{proofsketch}
+
+For log-space uniform $\cc{NC}$, circuits of polylogarithmic depth, the theorem gives a polynomial-time prover, a verifier running in time $n\polylog n$, and polylogarithmic communication. The rounds grow with the depth; a different construction removes this dependence for computations in small space.
+
+\begin{theorem}[Constant rounds for small space; \textcite{ReingoldRothblumRothblum2021}, Theorem 1]\label{thm:delegation:rrr}
+Let $L$ be decidable in time $\poly(n)$ and space $\sigma(n)$, and let $\eta\in(0,1)$ be a constant. Then $L$ has a public-coin interactive proof with perfect completeness, soundness error $1/2$ and $O(1)$ rounds, in which the communication is $\poly(\sigma)\cdot n^\eta$, the prover runs in time $\poly(n)$, and the verifier in time $\tilde O(n)+\poly(\sigma)\cdot n^\eta$.
+\end{theorem}
+
+The proof introduces unambiguous and probabilistically checkable interactive proofs; \textcite{Goldreich2018} gives an overview.
+
+\paragraph{Arguments.} Against provers that run in polynomial time, cryptography gives more (\cref{ch:training,ch:zeroknowledge}),\sidenote{Before the work of Goldwasser, Kalai and Rothblum, related questions had been studied for a verifier that reads a few bits of an encoded proof \parencite{BabaiEtAl1991} and for provers bounded in computation \parencite{Kilian1992,Micali2000}.} such as one-round arguments for every computation in time $T$, with a prover running in time $\poly(T)$ and a verifier in time $n\polylog T$, from a private-information-retrieval scheme with sub-exponential security \parencite{KalaiRazRothblum2014}. Systems built on \cref{prot:delegation:gkr} take two cryptographic steps. They replace the verifier's coins by hashes of the transcript, the Fiat--Shamir transform \parencite{FiatShamir1986},\index{Fiat--Shamir transform} which makes the proof one message and is analyzed by modeling the hash function as a random oracle (\cref{def:toolkit:rom}). And they replace the verifier's evaluation of $\tilde x(z_D)$ by the opening of a commitment to $\tilde x$: the owner commits to the weights once, and each proof ends with a short proof that the committed extension takes the value $v_D$ at $z_D$ \parencite{WahbyEtAl2018,SunLiZhang2024}. The verifier then never reads the weights, and soundness holds only against provers that cannot break the cryptography; commitments, with random masks on the messages, also keep the weights secret (\cref{ch:zeroknowledge}).
+
+\paragraph{Networks as field circuits.} A network computes with real numbers, the protocol with elements of a field. The bridge is quantization,\index{quantization} integer arithmetic in place of floating point \parencite{JacobEtAl2018}, and one fact.
+
+\begin{proposition}[Exact field arithmetic]\label[proposition]{prop:delegation:quantized}
+Let $p$ be prime, $C$ a layered circuit of additions and multiplications, and $x$ an integer input on which every gate of $C$, computed over the integers, takes a value in $(-p/2,p/2)$. Then the outputs of $C$ over $\F_p$ on $x\bmod p$, read as integers in $(-p/2,p/2)$, are the outputs of $C$ over the integers.
+\end{proposition}
+
+\begin{proof}
+Reduction modulo $p$ is a ring homomorphism from $\Z$ to $\F_p$, so each gate's value over $\F_p$ is the reduction of its value over $\Z$, and reduction is injective on the integers in $(-p/2,p/2)$.
+\end{proof}
+
+The script of \cref{sec:delegation:running} takes weights and inputs in $\{-7,\dots,7\}$, so that every gate value is at most $2401N^3<p/2$ in absolute value for $N\le64$ and $p=2^{31}-1$. A trained network also rescales after each multiplication and applies functions that are not polynomials, such as softmax and its activations; systems prove these with lookup arguments or bit decompositions, at extra cost.\sidenote{zkLLM scales parameters and data by $2^{16}$ and proves rescaling and activations with a parallel lookup argument; its quantized LLaMa-2-13B has perplexity $6.528$ on the C4 corpus against $6.520$ before quantization \parencite[Table~1]{SunLiZhang2024}.} What the protocol certifies is the quantized computation.
+
+\section{Running the protocol}\label{sec:delegation:running}
+
+The script \texttt{06-delegation-gkr.py} implements \cref{prot:delegation:gkr} for circuits that evaluate a two-layer network with square activation and unit output weights on a batch: for $N=2^\nu$, weights $\Theta\in\F^{N\times N}$ and inputs $X\in\F^{N\times N}$, one per column, the outputs are $y_e=\sum_h(\sum_j\Theta_{hj}X_{je})^2$, $e=1,\dots,N$. The circuit multiplies $\Theta_{hj}X_{je}$ in one layer, adds over $j$ in $\nu$ layers, squares, and adds over $h$ in $\nu$ more, so $D=2\nu+2$, $n=2N^2$ and $S=2N^3+3N^2-N$; its wiring is that of \cref{prop:delegation:wiring}, evaluated in closed form. The worked run is the case $N=1$.
+
+The soundness experiment uses $N=4$: depth $6$, $172$ gates, $32$ inputs drawn from $\{-7,\dots,7\}$, and $(\ell_0,\dots,\ell_6)=(2,3,4,4,5,6,5)$, so that $s=137/p$. Three provers face the verifier over $\F_p$ for ten primes $p$ from $151$ to $10{,}007$: the honest prover; the root-planting liar, which adds $1$ to the first output; and a prover with \emph{one wrong gate}, which increases the first square gate by $1$, claims the resulting outputs and answers faithfully about its own computation, so that by \cref{prop:delegation:fault} it is accepted with probability exactly $1-(1-1/p)^4$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},vplot,
+    width=0.47\linewidth,height=0.34\linewidth,xmode=log,ymode=log,
+    legend style={font=\scriptsize}]
+\nextgroupplot[xlabel={field size $p$},ylabel={acceptance rate},xmin=130,xmax=11500,ymin=1e-4,ymax=2.2,
+    title={(a) $N=4$: depth $6$, $172$ gates},legend columns=2,
+    legend style={at={(0.5,-0.24)},anchor=north,/tikz/every even column/.append style={column sep=2mm}}]
+\addplot[bound] table[x=p,y=bound]{figures/data/06-delegation-gkr-theory.dat};
+\addplot[theory] table[x=p,y=product]{figures/data/06-delegation-gkr-theory.dat};
+\addplot[theory2] table[x=p,y=fault]{figures/data/06-delegation-gkr-theory.dat};
+\addplot[cheat,ebars] table[x=p,y=plant,y error plus=plantep,y error minus=plantem]{figures/data/06-delegation-gkr.dat};
+\addplot[cheat2,ebars] table[x=p,y=fault,y error plus=faultep,y error minus=faultem]{figures/data/06-delegation-gkr.dat};
+\addplot[honest] table[x=p,y=honest]{figures/data/06-delegation-gkr.dat};
+\legend{bound $137/p$,product bound,exact: one wrong gate,root-planting liar,one wrong gate,honest prover}
+\nextgroupplot[xlabel={circuit size $S$},ylabel={field operations},xmin=15,xmax=1.2e6,ymin=8,ymax=1e9,
+    title={(b) $N=2,\dots,64$, $p=2^{31}-1$},legend style={at={(0.02,0.98)},anchor=north west}]
+\addplot[prover,line width=0.6pt,mark=*,mark size=1.6pt,mark options={fill=prover,draw=white,line width=0.2pt}] table[x=S,y=pops]{figures/data/06-delegation-costs.dat};
+\addplot[proverB,line width=0.6pt,mark=square,mark size=1.5pt,mark options={line width=0.6pt,fill=white}] table[x=S,y=vgen]{figures/data/06-delegation-costs.dat};
+\addplot[guide] table[x=S,y=evalops]{figures/data/06-delegation-costs.dat};
+\addplot[verifier,line width=0.6pt,mark=o,mark size=1.7pt,mark options={line width=0.6pt,fill=white}] table[x=S,y=vops]{figures/data/06-delegation-costs.dat};
+\legend{honest prover,verifier: generic wiring,evaluating the circuit,verifier: closed-form wiring}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{(a) Acceptance rates of \cref{prot:delegation:gkr} on the $N=4$ network over $\F_p$ (logarithmic axes): $20{,}000$ runs per prime for each liar, $2{,}000$ for the honest prover; bars are Clopper--Pearson $95\%$ intervals. Dashed indigo: the bound \eqref{eq:delegation:sound}; solid: the product bound of \cref{thm:delegation:gkr}(ii); dashed teal: $1-(1-1/p)^4$ (\cref{prop:delegation:fault}). (b) Field operations of one honest run on the networks with $N=2,4,\dots,64$ (depth $4$ to $14$), counted by instrumented code, against the circuit size $S$; dashed: the $S-n$ operations of evaluating the circuit. Scripts \texttt{06-delegation-gkr.py} (seeds $6$ and $600$--$692$) and \texttt{06-delegation-costs.py} (seeds $61$--$66$, $601$--$606$).}\label{fig:delegation:runs}
+\end{figure}
+
+The honest prover was accepted in all $20{,}000$ of its runs (\cref{fig:delegation:runs}(a)). The prover with one wrong gate follows its exact curve, a factor of about $34$ below the bound, and all ten of its intervals contain the exact value. The root-planting liar falls below the product bound at small fields, $0.561$ against $0.600$ at $p=151$ and $0.276$ against $0.290$ at $p=401$, and from $p=631$ on its interval contains the bound. The difference is the event, named after \cref{thm:delegation:gkr}, in which the wiring extensions vanish at the random point and no line message can pass; the script counted it in about $2\%$ of runs per layer at $p=151$ and $0.2$ to $0.6\%$ at $p=1009$, each such run lost to the liar. No interval lies above a proved bound. At $p=6301$ and $p=10{,}007$ the measured rates, $0.0220$ and $0.0140$, exceed both bounds ($0.0217$ and $0.0137$ for the sum), which lie inside their intervals: there the liar attains the bounds up to the vanishing events, so about half of such measurements should land above.
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\small
+\begin{tabular}{@{}r r r r r r r r r@{}}
+\toprule
+& & & & \multicolumn{4}{c}{field operations} & \\
+\cmidrule(lr){5-8}
+$N$ & $D$ & $S$ & $n$ & evaluation & honest prover & verifier & verifier, generic & prover sends\\
+\midrule
+$2$ & $4$ & $26$ & $8$ & $18$ & \num{2380} & $325$ & $406$ & $76$\\
+$4$ & $6$ & $172$ & $32$ & $140$ & \num{28181} & $903$ & \num{2008} & $199$\\
+$8$ & $8$ & \num{1208} & $128$ & \num{1080} & \num{304372} & \num{1935} & \num{11634} & $380$\\
+$16$ & $10$ & \num{8944} & $512$ & \num{8432} & \num{3118311} & \num{4075} & \num{81140} & $621$\\
+$32$ & $12$ & \num{68576} & \num{2048} & \num{66528} & \num{30634090} & \num{9927} & \num{615558} & $926$\\
+$64$ & $14$ & \num{536512} & \num{8192} & \num{528320} & \num{291549945} & \num{29883} & \num{4815640} & \num{1303}\\
+\bottomrule
+\end{tabular}
+\caption{Costs of one honest run of \cref{prot:delegation:gkr} on the batch network over $\F_p$, $p=2^{31}-1$, with weights and inputs in $\{-7,\dots,7\}$, so that the field outputs equal the integer outputs (\cref{prop:delegation:quantized}); every run was accepted. Operations are counted by instrumented code; ``verifier, generic'' evaluates the wiring by sums over gates. Script \texttt{06-delegation-costs.py}.}\label{tab:delegation:costs}
+\end{fullwidth}
+\end{table}
+
+\Cref{tab:delegation:costs} and \cref{fig:delegation:runs}(b) show the costs. From $N=2$ to $N=64$ the circuit grows $20{,}600$-fold, the prover's operations $122{,}500$-fold and the verifier's $92$-fold. The prover spends $543$ field operations per gate at $N=64$, or $28.6\,S\log_2S$, against one per gate to evaluate the circuit; the factor $\log S$ comes from the $2\ell_{i+1}$ rounds of each layer's sumcheck, at about $17$ operations per gate each. The verifier spends $29{,}883$ operations to check a computation of $528{,}320$; $24{,}573$ of them evaluate the input's extension and the rest grow like $D\log S$, so its slope on the logarithmic axes, $0.54$ between the last two sizes, approaches $2/3$, the growth of $n=2N^2$ against $S\approx2N^3$. A verifier that evaluates the wiring by sums over gates spends $4.8$ million operations, nine times the cost of evaluating the circuit: without structured wiring the protocol saves the verifier nothing. Over $\F_{2^{31}-1}$ the bound \eqref{eq:delegation:sound} is $881/p\approx4.1\times10^{-7}$ (\cref{ex:delegation:comm} counts the messages).
+
+\section{The three questions}\label{sec:delegation:questions}
+
+\questionone Read \cref{prot:delegation:gkr} as a game in which the prover chooses the outputs it reports and is paid $1$ if the verifier accepts. Reporting $C(x)$ and sending the prescribed messages earns $1$ (\cref{thm:delegation:gkr}(i)), the most a strategy can earn, and every false output earns at most $s=(\ell_0+5\sum_{i\ge1}\ell_i)/\abs{\F}$ (\cref{thm:delegation:gkr}(ii)); so honesty is a best response, and the true outputs are the only report that earns more than $s$. Unlike in \cref{ch:sumcheck}, the honest strategy is affordable: $O(S\log S)$ field operations (\cref{thm:delegation:gkr}(iii)), $O(S)$ with the provers of \textcite{Thaler2013}, for regular wiring, and \textcite{XieEtAl2019}, and about $540$ per gate in our implementation. The game also rewards honest computation, not only an honest answer: a prover that reports faithfully about values other than those of $C$ earns at most $\ell_i/\abs{\F}$ for a layer $i$ where they depart from $C$, even when its outputs are right (\cref{prop:delegation:fault}).
+
+\questiontwo The verifier spends $O(D\log S)$ rounds, receives $O(S_0+D\log S)$ field elements, draws $O(D\log S)$ uniform ones, and performs $O(S_0+n+D\log S)$ field operations besides $D$ evaluations of each wiring extension (\cref{thm:delegation:gkr}(iii) gives the exact counts), which cost $O(\log S)$ each for structured wiring (\cref{prop:delegation:wiring}) and as much as the circuit for general wiring, unless done offline or proved by the prover. Reading the input dominates in \cref{tab:delegation:costs}; a commitment to the input removes the $n$ term, at the price of computational soundness.
+
+\questionthree Against every prover, however powerful, a false output is rejected with probability at least the product of \cref{thm:delegation:gkr}(ii), at least $1-s$, per run, and the root-planting liar is rejected with that probability up to the vanishing events; the guarantee is information-theoretic. A computation with one wrong gate in layer $f$ is caught with probability exactly $(1-1/\abs{\F})^{\ell_f}$. The error is inversely proportional to $\abs{\F}$, below $4.1\times10^{-7}$ for the $N=64$ network over $\F_{2^{31}-1}$, and $t$ independent runs give $s^t$ (\cref{prop:toolkit:amplification}). At $p=10{,}007$ the root-planting liar was caught in $98.6\%$ of its runs (\cref{fig:delegation:runs}(a)). Deployed systems, which add the Fiat--Shamir transform and commitments, are sound only against provers that cannot break the hash function and the commitment, and for concrete hash functions not always then (\cref{sec:delegation:leaves}).
+
+\protocolcard{that $y=C(x)$ for a layered arithmetic circuit $C$ over $\F$: the outputs of a specified, quantized model on given inputs}{a verifier $\V$ that reads $x$ and $y$ and can evaluate the wiring extensions; one prover $\Prov$ that evaluates $C$}{a best response the prover can afford, $O(S\log S)$ field operations ($O(S)$ with linear-time provers); the truth earns $1$, a false output at most $(\ell_0+5\sum_{i\ge1}\ell_i)/\abs{\F}$}{$O(D\log S)$ rounds; $O(S_0+n+D\log S)$ field operations plus $D$ evaluations of each wiring extension, $O(\log S)$ each for structured wiring; $O(S_0+D\log S)$ field elements received}{at least $(1-\frac1{\abs{\F}})^{\ell_0}\prod_i(1-\frac2{\abs{\F}})^{2\ell_i}(1-\frac{\ell_i}{\abs{\F}})$ per run against every prover; exactly $(1-\frac1{\abs{\F}})^{\ell_f}$ against a computation wrong at one gate of layer $f$; enlarge the field to amplify}{the computation written exactly as a layered field circuit; wiring the verifier can evaluate; fresh public coins; a verifier that reads the whole input, or a commitment to it}
+
+\section{What the model leaves out}\label{sec:delegation:leaves}
+
+\paragraph{What was idealized away.} The overseer must specify the computation exactly, as a layered circuit of field operations, and the protocol certifies that circuit and nothing else. A trained network computes in floating point, with operations that are not field operations; quantization and lookup arguments turn it into a field circuit (\cref{sec:delegation:reach}), and the overseer must accept the quantized network as the model. Floating-point runs are not even reproducible bit for bit across GPU types \parencite{SrivastavaAroraBoneh2024}, so the specification must be the field circuit, not the developer's run. Language models sample their outputs, and the sampler's randomness must be part of the input or committed in advance. The verifier reads its input, so it saves work only when the computation is much longer than the input: one inference of a dense network uses each weight about once per token; our runs save through the batch, deployed systems through commitments, which make the guarantee computational. The honest prover's overhead is real: $543$ field operations per gate in our implementation, and for zkLLM, with commitments and zero knowledge, $803$ seconds on one A100 GPU to prove one inference of LLaMa-2-13B on $2{,}048$ tokens, after $986$ seconds to commit to the weights \parencite[Table~1]{SunLiZhang2024}. Finally, the protocol says that the published outputs are what the model computes, not that they are good, that the benchmark measures what it claims to, or that the model behaves the same way elsewhere.
+
+\paragraph{Where it breaks.} The cryptographic steps that make the protocol practical have failed in a specific way. \Textcite{KhovratovichRothblumSoukhanov2025} attack a widely used succinct argument built on the GKR protocol and compiled with the Fiat--Shamir transform: for every choice of the hash function they construct a circuit for which they can produce an accepting proof of a false statement, and for every circuit $C$ and desired output a functionally equivalent circuit for which they can do the same (we rely on their abstract). Soundness of the deployed protocol therefore depends on how the computation is written, not only on what it computes. Certifying a computation on a fixed audit set has a gap of its own: \textcite{LuckEtAl2026}, in a preprint, show that a developer who engineers its training data can obtain a valid certificate of more than $99\%$ accuracy on an audit set for a model whose accuracy on fresh samples from the same distribution is below $30\%$; the proofs were sound, and the property certified was not the one the auditor cared about. zkLLM's zero knowledge holds only against a semi-honest verifier, one that reports the outcome of verification truthfully but tries to learn the weights \parencite{SunLiZhang2024}. And generation fits one circuit badly: written as one, it is deep, which costs rounds here, and, by the DeepProve authors' account, quadratic in the sequence length unless memory is modeled in the circuit; DeepProve certifies the output sequence instead \parencite{GaillyEtAl2026}.\sidenote{An ePrint preprint whose record lists CCS 2026; its abstract reports $174$ and $86$ tokens per minute for GPT-2 and Gemma~3, and verification in $1$ to $3.7$ seconds. We rely on the abstract.}
+
+\paragraph{Open problems.} Which languages have doubly-efficient interactive proofs is open \parencite{ReingoldRothblumRothblum2021}: the known constructions cover small depth (\cref{thm:delegation:uniform}) and small space (\cref{thm:delegation:rrr}), and as far as we know it is unknown whether all of $\cc{P}$ does, which would put $\cc{P}$ in almost-linear space \parencite[\S1.4]{Goldreich2018}. The computations that matter for oversight often consult an oracle, a human judgment or a database, and the protocol's algebra needs the oracle's low-degree extension (\cref{ch:sumcheck}). \Textcite{ChenKalaiXi2026} give doubly-efficient single-prover interactive proofs and arguments for oracle-aided computations when the oracle is a low-degree polynomial or the computation tolerates a small fraction of wrong oracle answers (we rely on their abstract); whether human or learned judgments can be given such structure, and at what cost, is open. Which circuits, written in which way, can be compiled with the Fiat--Shamir transform and a concrete hash function without loss of soundness is open.
+
+\begin{exercises}
+\item \consolidation (The worked run.) Check \cref{tab:delegation:run}. Show that the liar that claims $12$ is accepted on exactly $2\cdot13^2+11\cdot2\cdot13+10\cdot11=734$ of the $13^3$ coin triples $(r_1,r_2,t^*)$: it survives if $r_1\in\{0,2\}$, else if $r_2\in\{0,2\}$, else if $t^*=0$, except that no line message passes when $r_1=1$. Show that keeping instead the honest values at $1$ and $2$ in round $1$ gives exactly $13^3-11^2\cdot12=745$, the product bound. Why is a liar that claims $11$ rejected whatever it sends?\label{ex:delegation:run}
+
+\item \consolidation (The product form is attained.) Show that $\Prob[\chi_a(z)=0]=1-(1-1/\abs{\F})^\ell$ for every $a\in\bits^\ell$ and $z$ uniform on $\F^\ell$. Conclude that if exactly one output is misreported, then the verifier's first claim, $\tilde y(z_0)=\tilde W_0(z_0)$, is true with probability exactly $1-(1-1/\abs{\F})^{\ell_0}$, so that this factor of \cref{thm:delegation:gkr}(ii) cannot be improved.\label{ex:delegation:chi}
+
+\item \consolidation (Communication.) Derive the counts in part (iii) of \cref{thm:delegation:gkr}, and check them against \cref{tab:delegation:costs}: for $N=64$, $\ell_0=6$ and $\sum_{i\ge1}\ell_i=175$, so the prover sends $1{,}303$ field elements and the verifier $370$, in $365$ rounds.\label{ex:delegation:comm}
+
+\item \consolidation (Wiring of the products layer.) In the circuit of \cref{sec:delegation:running}, label the input $\Theta_{hj}$ by $(0,h,j)$, $X_{je}$ by $(1,j,e)$ and the product gate by $(h,j,e)$. Use \cref{prop:delegation:wiring}(i) to write $\delegationmult$ of this layer as a product of $1-b_0$, $c_0$ and factors $\delegationeq(\cdot,\cdot)$ and $\delegationeq(\cdot,\cdot,\cdot)$, one per bit of $h$, $j$ and $e$, and conclude that it takes $O(\log N)$ operations.\label{ex:delegation:prodwiring}
+
+\item \variation (Skip the last line.) In phase $D-1$ the verifier knows $W_D=x$. Let it check $e$ against $\tilde x(b^*)$ and $\tilde x(c^*)$ directly. Show that the bound becomes $(\ell_0+5\sum_{i=1}^{D-1}\ell_i+4\ell_D)/\abs{\F}$, which is $132/p$ instead of $137/p$ for the $N=4$ network, at the cost of a second evaluation of $\tilde x$.\label{ex:delegation:lastline}
+
+\item \variation (Two claims into one by a random combination.) Instead of the line step, let the prover send $w_0$ and $w_1$, claimed to be $\tilde W_{i+1}(b^*)$ and $\tilde W_{i+1}(c^*)$; let the verifier check $e$ against them, draw $\rho_0,\rho_1\in\F$, and run the next phase's sumcheck on $\sum_{b,c}(\rho_0f_{i+1,b^*}+\rho_1f_{i+1,c^*})(b,c)=\rho_0w_0+\rho_1w_1$. Show that a false pair $(w_0,w_1)$ yields a true combined claim with probability exactly $1/\abs{\F}$ and that, if the last pair is checked against $\tilde x$ directly, the bound becomes $(\ell_0+4\sum_{i=1}^D\ell_i+D-1)/\abs{\F}$. What must the verifier now evaluate in each layer?\label{ex:delegation:combine}
+
+\item \attack (A verifier that checks one point.) A verifier saves a coin by always taking $t^*=0$, so that $z_{i+1}=b^*$. Show that a prover that keeps $q(0)=\tilde W_{i+1}(b^*)$ and chooses $q(1)$ to pass the line check turns every false claim into a true one, unless $\delegationadd_i+\delegationmult_i\,\tilde W_{i+1}(b^*)$ vanishes at the point. In the script, such a prover is accepted on the $N=4$ network in $98.2\%$ of runs at $p=151$ and $99.7\%$ at $p=1009$.\label{ex:delegation:onepoint}
+
+\item \attack (No degree bound on the line.) Suppose the verifier accepts a line message $q$ of every degree. Show that a prover holding a false $e$ can send a $q$ of degree at most $\abs{\F}-1$ that differs from $Q=\tilde W_{i+1}\circ\gamma$ only at $t=1$ and passes the line check whenever $\alpha+\mu Q(0)\ne0$, so that its claim becomes true unless $t^*=1$. Why does the degree bound cost the verifier nothing to enforce?\label{ex:delegation:degree}
+
+\item \attack (Spot checks of a transcript.) A proposed protocol: the prover sends every gate value, and the verifier checks $q$ uniformly random non-input gates against their inputs. Show that a transcript with one wrong gate among $S-n$ is caught with probability $1-(1-1/(S-n))^q$, which is $0.069$ for $q=10$ and $0.512$ for $q=100$ on the $N=4$ network, and that the $N=64$ network needs about $2.4$ million checks for probability $0.99$. Compare with \cref{prop:delegation:fault}.\label{ex:delegation:spot}
+
+\item \simulation (Where the wrong gate is.) In \texttt{06-delegation-gkr.py}, move the wrong gate to each layer $f=0,\dots,6$ of the $N=4$ network, the input layer included, and compare the measured acceptance with $1-(1-1/p)^{\ell_f}$. Why does the probability depend on the layer's width and not on its depth?\label{ex:delegation:where}
+
+\item \research (Delegation with a judgment in the loop.) An evaluation harness calls a grader, a person or a model, on each output. Formulate ``the published score is what the harness computes'' as an oracle-aided computation, and say which condition of \textcite{ChenKalaiXi2026}, a low-degree oracle or robustness to a small fraction of wrong oracle answers, a realistic grader could satisfy. Open: whether either can be met by a human grader at a cost that preserves the savings of delegation.\label{ex:delegation:oracle}
+\end{exercises}
+
+\notesandrefs
+Interactive proofs with an efficient honest prover for tractable computations were introduced by \textcite{GoldwasserKalaiRothblum2015} (STOC 2008), with a sumcheck \parencite{LundEtAl1992} in each layer and a reduction of two points to one on a line. They also derived one-round arguments for log-space uniform $\cc{NC}$, interactive proofs with log-space verifiers for all of $\cc{P}$, and zero-knowledge proofs with small communication. \Textcite{Goldreich2018} surveys doubly-efficient interactive proofs, with a fairly complete presentation of the GKR construction and an overview of that of \textcite{ReingoldRothblumRothblum2021}.
+
+Multilinear extensions over $\bits$ are those of the implementation of \textcite{CormodeMitzenmacherThaler2012}, with its $O(S\log S)$ prover; folding the dependence on $z$ into the wiring extensions, as in \cref{lem:delegation:identity}, is from a note of \textcite{Thaler2015}, which removes a third block of sumcheck variables, and our presentation follows \textcite[\S4.6]{Thaler2022}. \Textcite{Thaler2013} reached a linear-time prover for regular wiring and gave a protocol for data-parallel computations, \textcite{XieEtAl2019} a linear-time prover for all layered circuits, and \textcite{WahbyEtAl2018} combined the protocol with commitments to multilinear polynomials and the Fiat--Shamir transform. Our soundness analysis, by the events that a false claim becomes true, is that of \textcite{GoldwasserKalaiRothblum2015}; the product form and \cref{prop:delegation:fault} follow from the same argument, and we have not seen them stated in this form.
+
+For networks, zkCNN \parencite{LiuXieZhang2021} proves a VGG16 inference in $88.3$ seconds, with a $341$-kilobyte proof checked in $59.3$ milliseconds (in the final version); zkLLM \parencite{SunLiZhang2024} and DeepProve \parencite{GaillyEtAl2026} extend the approach to transformers, and zkGPT reports proofs of GPT-2 inference in under $25$ seconds \parencite{QuEtAl2025}. Related systems package proofs of a model's outputs on a dataset as verifiable evaluation attestations \parencite{SouthEtAl2024}, and audit training data and models without revealing them \parencite{WaiwitlikhitEtAl2024}. For oversight, debate \parencite{IrvingEtAl2018} may need an exponentially powerful honest debater (\cref{ch:debate}), \textcite{BrownCohenEtAl2024} asked that the honest debaters be efficient too (\cref{ch:efficientdebate}), and \textcite{ChenKalaiXi2026} return to a single prover with oracle access.
+
+\paragraph{Translating the literature.} \Textcite{GoldwasserKalaiRothblum2015} write $d$ for our depth $D$, $\tilde V_i$ for our $\tilde W_i$ (a low-degree extension over a set $H$), and $r_{i-1}$ for our $v_{i-1}$; their phase $i$ is our phase $i-1$, and its sumcheck runs over $(p,\omega_1,\omega_2)\in H^{3m}$ with the extension $\tilde\beta(z,p)$ of equality, which we fold into $\delegationadd_i$ and $\delegationmult_i$; their line $\gamma$ passes through $\omega_1,\omega_2$ at fixed $t_1,t_2$ (our $0,1$), and their bound is $7md\delta/\abs{\F}$. \Textcite{Thaler2022} writes $d$ for the depth, $k_i$ for our $\ell_i$, $r_i$ and $m_i$ for our $z_i$ and $v_i$, $\ell$ for our line $\gamma$, $r^*$ for our $t^*$ and $D$ for the claimed outputs, our $y$. \Textcite{ReingoldRothblumRothblum2021} write $S$ for the space, our $\sigma$, and $\delta$ for our $\eta$.
+
+\printchapterbib
+\end{refsection}
