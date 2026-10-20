@@ -35,6 +35,8 @@ npx remotion render src/index.ts PromoEN out/The-Missing-Textbooks-promo-EN-1080
 scripts/export_x.sh out/The-Missing-Textbooks-promo-EN-1080p.mp4 out/The-Missing-Textbooks-promo-EN-X-1080p.mp4
 ```
 
+The first render downloads a headless Chrome (about 170 MB) into `node_modules`. A fresh clone reproduces the frames exactly: three frames rendered in a clean checkout matched the original render pixel for pixel. The scenes use macOS system fonts (Palatino, Songti SC, PingFang SC, Menlo), so on another system the text will be set in whatever the fallback is.
+
 Always render with `--color-space=bt709`. Remotion's default converts RGB to YUV with the BT.601 matrix but leaves the matrix untagged, so most players decode HD video as Rec. 709 and every colour shifts by about ten code values (a vermilion of 217/72/43 comes out near 228/82/38).
 
 ## Posting on X
