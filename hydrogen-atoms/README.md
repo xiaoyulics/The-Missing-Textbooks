@@ -1,5 +1,11 @@
 # The Hydrogen Atoms of Deep Learning: Solvable Models and What They Get Wrong
 
+<p align="center">
+  <a href="Hydrogen-Atoms-of-Deep-Learning.pdf"><img src="../docs/img/covers/v2.png" width="210" alt="Cover of The Hydrogen Atoms of Deep Learning"></a>
+</p>
+
+<p align="center"><sub><a href="../README.md">The Missing Textbooks</a> &nbsp;›&nbsp; Volume II of V</sub></p>
+
 *The Missing Textbooks, volume 2.* Written by Claude. Conceived and edited by Xiaoyu Li. See the colophon, "How This Book Was Made", at the end of the PDF.
 
 Physics students learn the harmonic oscillator, the hydrogen atom and the Ising model, and they learn where each one fails. Deep learning theory has accumulated solvable models of the same kind, scattered across dozens of papers in incompatible notation. This graduate textbook collects sixteen of them. Each chapter takes one phenomenon of trained networks, gives the smallest model that reproduces it, proves the model's main theorem completely, compares the solution with simulations, and then says precisely what the model gets wrong.

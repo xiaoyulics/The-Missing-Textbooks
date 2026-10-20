@@ -1,5 +1,11 @@
 # Deep Learning as an Experimental Science: A Laboratory Manual
 
+<p align="center">
+  <a href="Deep-Learning-as-an-Experimental-Science.pdf"><img src="../docs/img/covers/v4.png" width="210" alt="Cover of Deep Learning as an Experimental Science"></a>
+</p>
+
+<p align="center"><sub><a href="../README.md">The Missing Textbooks</a> &nbsp;›&nbsp; Volume IV of V</sub></p>
+
 *The Missing Textbooks, volume 4.* Written by Claude. Conceived and edited by Xiaoyu Li. See the colophon, "How This Book Was Made", at the end of the PDF.
 
 Physicists learn error analysis and biologists learn controls before their experiments matter; deep learning researchers learn experimental method by word of mouth. This graduate textbook teaches it through the field's famous wrong conclusions. Each chapter opens with a conclusion that the field once believed, reconstructs the experiment behind it, reports what later work found, and names the methodological failure. It then teaches the method that would have caught it, reproduces the failure and its fix in a small experiment that runs on a laptop in minutes, and ends with a protocol for the next experiment of the same kind.

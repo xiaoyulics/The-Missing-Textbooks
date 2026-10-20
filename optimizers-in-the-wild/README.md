@@ -1,5 +1,11 @@
 # Optimizers in the Wild: Steepest Descent and the Dynamics of Training
 
+<p align="center">
+  <a href="Optimizers-in-the-Wild.pdf"><img src="../docs/img/covers/v3.png" width="210" alt="Cover of Optimizers in the Wild"></a>
+</p>
+
+<p align="center"><sub><a href="../README.md">The Missing Textbooks</a> &nbsp;›&nbsp; Volume III of V</sub></p>
+
 《现代优化器的理论》 — *The Missing Textbooks, volume 3.* Written by Claude. Conceived and edited by Xiaoyu Li. See the colophon, "How This Book Was Made", at the end of the PDF.
 
 Optimization textbooks end with convex analysis and with the theorem that stochastic gradient descent reaches a stationary point. In practice, what makes or breaks a training run is something else: Adam or Muon, the warmup, the weight decay, the learning-rate schedule, the batch size, and the fact that training runs at the edge of stability. This graduate textbook gives the theory of those decisions along two lines. The **unification line**: almost every optimizer is steepest descent under some norm, plus preconditioning and moving averages — SGD, signSGD, Adam, Lion, Shampoo and Muon are all instances, and the norm of a whole network fixes how learning rates scale with width. The **dynamics line**: sharpness self-stabilizes at the edge of stability, warmup is needed because early curvature is too high, gradient noise sets a floor that schedules remove (cosine, warmup–stable–decay and the river valley), weight decay drives normalized layers to an equilibrium, and Adam beats SGD on transformers for reasons that involve both lines.
