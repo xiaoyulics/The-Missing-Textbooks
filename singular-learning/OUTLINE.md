@@ -75,7 +75,7 @@ differently (e.g. with another prior) says so.
 | the chain | $y=a_1a_2\cdots a_Lx$ | $L$ | $(a_1\cdots a_L)^2/2$ | the union of the coordinate hyperplanes | $1/2$ | $L$ | $L/2$ |
 | the tanh neuron | $y=a\tanh(bx)$, $x\sim\Unif[-1,1]$, prior on $[-2,2]^2$ | 2 | $\tfrac{a^2}2\E[\tanh^2(bx)]\asymp a^2b^2$ | the cross | $1/2$ | 2 | $1$ |
 | the ReLU neuron | $y=a\relu(bx)$ | 2 | $a^2b^2/4$ exactly | the cross | $1/2$ | 2 | $1$ |
-| the mixture | $(1-a)\Normal(0,1)+a\Normal(b,1)$, $a\in[0,1]$, $b\in[-2,2]$, truth $\Normal(0,1)$ | 2 | $K\asymp a^2b^2$ (not analytic in $a$ at $a=0$) | $\{a=0\}\cup\{b=0\}$ | $1/2$ | 2 | $1$ |
+| the mixture | $(1-a)\Normal(0,1)+a\Normal(b,1)$, $a\in[0,1]$, $b\in[-2,2]$ (default; Ch. 10 uses $[-1,1]$, Ch. 1 $[-4,4]$ at its regular truth, each stated there), truth $\Normal(0,1)$ | 2 | $K\asymp a^2b^2$ (not analytic in $a$ at $a=0$) | $\{a=0\}\cup\{b=0\}$ | $1/2$ | 2 | $1$ |
 | rank-one regression | $y=b\,a^\top x$, $a\in\R^N$, $b\in\R^M$, truth $0$ | $M+N$ | $\norm{a}^2\norm{b}^2/2$ | $\{a=0\}\cup\{b=0\}$ | $\min(M,N)/2$ | 2 if $M=N$, else 1 | $(M+N)/2$ |
 | reduced-rank regression | $y=BAx$, $B\in\R^{M\times H}$, $A\in\R^{H\times N}$, truth of rank $r$ | $H(M+N)$ | $\norm{BA-B_0A_0}_F^2/2$ | — | Aoyagi–Watanabe formula; e.g. $M=N=2$, $r=1$: $H=1$: $3/2$; $H=2$: $2$ ($m=2$). $M=N=3$, $r=1$: $H=1,2,3$: $5/2$, $7/2$ ($m=2$), $4$ | | $H(M+N)/2$ |
 
@@ -293,7 +293,7 @@ in the chapter specifications.
 | `thm:blowups:pullback` | the learning coefficient is computed on a resolution: pulling back $K$ and $\varphi\,\dd w$ by a proper analytic map that is an isomorphism off a null set |
 | `prop:blowups:rules` | rules: invariance under analytic isomorphism, comparison, sums of functions of separate variables, $\lambda\le d/2$ |
 | `prop:blowups:morsebott` | a critical set that is a smooth manifold of dimension $s$ with nondegenerate normal Hessian has $\lambda=(d-s)/2$, $m=1$ ("minimally singular"; used in Chapters 13–14) |
-| `thm:newton:plane` | the Newton-polygon formula $\lambda=1/t$ in two variables for sums of monomials and for non-degenerate functions |
+| `thm:newton:plane` | the Newton-polygon formula $\lambda=1/t$ in two variables, as proved in Chapter 6: for sums of monomials with positive coefficients and even exponents (the nondegenerate case in $d$ variables is the stated `thm:newton:general`) |
 | `thm:catalogue:rankone` | the learning coefficient of rank-one regression: $\lambda=\min(M,N)/2$, $m=2$ if $M=N$ |
 | `thm:catalogue:aoyagi` | the Aoyagi–Watanabe formula for reduced-rank regression (statement) |
 | `thm:freeenergy:linear` | the free energy formula for models $y=G(w)x+$noise (matrix-valued $G$, so rank-one and reduced-rank regression are covered; only $\E\norm{x}^2<\infty$; no compactness — the geometry enters through $V(\eps)\sim C\eps^\lambda(\log\frac1\eps)^{m-1}$) (complete proof, as written by Chapter 8) |
@@ -305,7 +305,7 @@ in the chapter specifications.
 | `thm:temperature:wbic` | WBIC $=F_n+O_p(\sqrt{\log n})$ (statement; complete proof for the linear models of Chapter 8) |
 | `thm:phases:local` | local free energies and the posterior's choice between phases |
 | `def:llc:llc` | the local learning coefficient $\lambda(w^*)$ |
-| `thm:llc:hessian` | Hessian bounds: $\tfrac r2\le\lambda(w^*)\le\tfrac r2+\tfrac{d-r}4$ for a Hessian of rank $r$ (verify) |
+| `thm:llc:hessian` | Hessian bounds: $\tfrac r2\le\lambda(w^*)\le\tfrac r2+\tfrac{d-r}4$ for a Hessian of rank $r$ (Chapter 13 proves it for any $C^4$ loss $K\ge0$; the upper bound is Lin 2017, Cor. 4.15) |
 | `thm:sgd:balance` | gradient flow on the product model conserves $a^2-b^2$ and converges to the point of the hyperbola it selects |
 
 ## Shared citation keys
@@ -350,7 +350,7 @@ authors), with a letter suffix only for the same author and year.
 | `WangEtAl2025a`, `HitchcockHoogland2025`, `PepinLehalleurEtAl2025`, `UrdshalsEtAl2025`, `BakerEtAl2026` | refined LLCs (ICLR 2025); the local-sampling benchmark (preprint, under review); the programme's position paper; MDL and the LLC; susceptibilities (ICLR 2026) |
 | `Aoyagi2024`, `Aoyagi2025`, `PepinLehalleurRimanyi2024`, `NagayasuWatanabe2023` | deep linear networks: the exact learning coefficient (*Neural Networks* 172, 106132); its restatement; fibres of the multiplication map; free energy of overparameterized deep ReLU networks (arXiv) |
 | `ElhageEtAl2022`, `OlssonEtAl2022`, `GargEtAl2022` | toy models of superposition; induction heads; in-context linear regression |
-| `Sussmann1992`, `ChenEtAl1993`, `AlbertiniSontag1993`, `FarrugiaRoberts2023a`, `FukumizuAmari2000`, `WeiEtAl2008`, `CousseauEtAl2008` | symmetries and fibres of networks; plateaus and dynamics near singularities (several are verified bibliographically only — digest 03 §8) |
+| `Sussmann1992`, `ChenEtAl1993`, `AlbertiniSontag1993`, `FarrugiaRoberts2023a`, `FukumizuAmari2000`, `WeiEtAl2008`, `CousseauEtAl2008`, `WatanabeAmari2003` (truths at distance of order $1/n$ from the singular ones; added by Ch. 12's referee) | symmetries and fibres of networks; plateaus and dynamics near singularities (several are verified bibliographically only — digest 03 §8) |
 | `MacKay1992a`, `MacKay2003`, `Balasubramanian1997` | the Bayesian Occam factor; MacKay's book (Ch. 28); Occam's razor and statistical mechanics |
 | `DinhEtAl2017`, `MandtEtAl2017`, `IzmailovEtAl2021`, `SaxeEtAl2014`, `KuninEtAl2021` | sharp minima can generalize; SGD as approximate Bayesian inference; posteriors of real networks; exact dynamics of deep linear networks; symmetries and conservation laws |
 | `Murfet2023a` | Murfet's reply to Skalse (LessWrong comment, 2023-11-20) |
@@ -389,8 +389,8 @@ that the argument is the book's; if a published proof exists, cite it.
 ### Prologue — Two parameters (key: prologue; special chapter)
 
 Written by the coordinating author. Opens with the model $y=abx$: two numbers multiplied together,
-fitted to data that are pure noise. Draws of the posterior (the title page's picture, Figure P.1)
-crowd onto the cross $ab=0$. Classical statistics would charge two parameters $\log n$; the
+fitted to data that are pure noise. Draws of the posterior (Figure P.1; the title page's emblem is
+a separate grid sample at $n=400$ from `00-emblem.py`) crowd onto the cross $ab=0$. Classical statistics would charge two parameters $\log n$; the
 measured free energy grows like $\tfrac12\log n-\log\log n$ (Figure P.2, from
 `figures/scripts/00-prologue-free.py`). The two numbers $\tfrac12$ and $m=2$ are the book's subject:
 where they come from (geometry: the volume of nearly true parameters), what they control (the free
@@ -680,7 +680,7 @@ moderate size.
 needed), $(ab-cd)^2$ near the origin of $\R^4$ (hard: give hints); the multiplicity of $a^2b^2+a^4b^4$;
 show $\lambda\le d/2$ fails if $\varphi(w_0)=0$.
 
-**Key references.** Hironaka1964, Watanabe2009, Lin2011, Sullivant2018 (chapter on Bayesian
+**Key references.** Hironaka1964a, Hironaka1964b, Watanabe2009, Lin2011, Sullivant2018 (chapter on Bayesian
 integrals; verify), Kollar1997 (log canonical thresholds; verify), Saito2007.
 
 ### Chapter 6. Newton Polygons — The toric shortcut (key: newton)
@@ -928,9 +928,11 @@ the temperature is a posterior mean. Regular answer box: equipartition, $\Ewb{nK
 integration $F_n=\int_0^1\Ewb{nL_n}\dd\beta$; equipartition broken: a singular model stores
 $\lambda/\beta$, not $\tfrac d{2\beta}$.
 
-**The theorem.** `prop:temperature:mean` (complete proof, population version): if
-$V(\eps)\sim C\eps^\lambda(\log\frac1\eps)^{m-1}$, then $\Ewb{nK}=\frac\lambda\beta-\frac{m-1}{\beta\log(n\beta)}
-+o(\frac1{\beta\log(n\beta)})$ as $n\beta\to\infty$ (Abelian lemma applied to $t\,\dd V(t)$).
+**The theorem.** `prop:temperature:mean` (complete proof, population version): under the
+two-term volume expansion `ass:temperature:volume` (as written by Chapter 11; the asymptotics
+$V(\eps)\sim C\eps^\lambda(\log\frac1\eps)^{m-1}$ alone do **not** suffice — a slowly oscillating
+counterexample is an exercise there), $\Ewb{nK}=\frac\lambda\beta-\frac{m-1}{\beta\log(n\beta)}
++o(\frac1{\beta\log(n\beta)})$ as $n\beta\to\infty$.
 `thm:temperature:wbic` (Watanabe 2013, Theorem 4, Corollaries 1–3; digest 01 §6:
 $\WBIC=nL_n(w_0)+\lambda\log n+U_n\sqrt{\lambda\log n/2}+O_p(1)$ with $\E U_n=0$, $U_n=0$ under odd
 parity; hence $F_n=\WBIC+O_p(\sqrt{\log n})$, and $F_n-\WBIC$ contains $-(m-1)\log\log n$ even when
@@ -1024,8 +1026,10 @@ $a\ne0$, $b=0$ ($M/2$ versus $\min(M,N)/2$); the ReLU neuron at $(0,0)$ and on i
 Hessians at the same points.
 
 **The theorem.** `def:llc:llc` (the local learning coefficient as the learning coefficient of $K$
-restricted to a small neighbourhood; well defined for analytic $K$). `thm:llc:hessian` (complete
-proof given the splitting lemma, `thm:toolkit:splitting`): if $K$ is analytic, $w^*\in W_0$ is
+restricted to a small neighbourhood; well defined for analytic $K$). `thm:llc:hessian` (as written
+by Chapter 13: complete proof by volumes for any $C^4$ loss $K\ge0$, with no splitting lemma and no
+analyticity; only `cor:llc:minimal` uses `thm:toolkit:splitting`. The plan below was the
+specification): if $K$ is analytic, $w^*\in W_0$ is
 interior, $\varphi(w^*)>0$ and $\nabla^2K(w^*)$ has rank $r$, then
 $\tfrac r2\le\lambda(w^*)\le\tfrac r2+\tfrac{d-r}4$. Proof plan: the analytic splitting lemma writes
 $K=\sum_{i\le r}u_i^2+g(z)$ in new coordinates; $\lambda$ adds over separate variables

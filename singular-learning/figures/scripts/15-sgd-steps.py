@@ -15,14 +15,15 @@ Prediction for the conserved quantity (Proposition prop:sgd:discrete): every ste
 D = a^2 - b^2 by 1 - eta^2 r^2, r = kappa_B (ab - c_B); near the fibre ab = c_hat the minibatch residual
 has mean square about v/b, with v = (1/n) sum (x_i y_i)^2 (about 1), so |D_t/D_0| ~ exp(-eta^2 v t / b).
 Prediction for collapse (heuristic in the chapter): once D ~ 0, SGD drifts to the origin when
-|c_hat| < eta v / (2 kappa b), or when it reached the balanced line on the side opposite to c_hat.
+|c_hat| < eta v / (2 kappa b); otherwise it fluctuates along the balanced line on the side of c_hat, with |ab|
+of mean about |c_hat| - eta v / (2 kappa b). (The chapter writes |B| for the minibatch size b and sigma_xy^2 for v.)
 
 Outputs (figures/data):
   15-sgd-steps-cdf.dat       tau, exact posterior CDF of log|a|/log n (mean over data sets), and the
                              empirical CDFs of flow, SGD, SGLD, Langevin end points with Clopper-Pearson
                              95% intervals (as offsets lo/hi)
   15-sgd-steps-balance.dat   t, median over runs of |D_t / D_0| for SGD, SGLD, GD, and exp(-eta^2 v t / b)
-Run from the volume root: python figures/scripts/15-sgd-steps.py   (about 60 s)
+Run from the volume root: python figures/scripts/15-sgd-steps.py   (about 20 s; under a minute)
 """
 import math
 import os
@@ -39,7 +40,7 @@ OUT = os.path.join("figures", "data")
 N, R = 10_000, 400
 B, ETA = 10, 0.1
 EPS = 2.0 * ETA / N                      # SGLD step with the same drift as SGD
-T_SGD, T_GD = 50_000, 20_000
+T_SGD, T_GD, T_AVG = 50_000, 20_000, 10_000
 WGRID = np.arange(-60.0, 30.0, 0.002)
 
 
@@ -89,6 +90,8 @@ def main():
     a_g, b_g = a0.copy(), b0.copy()          # GD, finite step
     checkpoints = sorted({int(round(10 ** e)) for e in np.arange(1.0, math.log10(T_SGD) + 1e-9, 0.25)} | {T_SGD})
     bal = []
+    c_avg = np.zeros(R)                      # SGD: mean of |ab| over the last T_AVG steps
+
     for t in range(1, T_SGD + 1):
         idx = noise.integers(0, N, (R, B))
         kB = xx[rows, idx].mean(1)
@@ -104,6 +107,8 @@ def main():
         if t <= T_GD:
             r = kappa * a_g * b_g - Sxy / N
             a_g, b_g = a_g - ETA * r * b_g, b_g - ETA * r * a_g
+        if t > T_SGD - T_AVG:
+            c_avg += np.abs(a_s * b_s) / T_AVG
         if t in checkpoints:
             # medians of |D_t/D_0|; an exact 0 (a^2 = b^2 in floating point) is written as nan
             med = lambda a, b: float(np.median(np.abs((a * a - b * b) / D0))) or float("nan")
@@ -148,11 +153,14 @@ def main():
     below = np.abs(c_hat) < thr
     print(f"[collapse] SGD runs ending with |ab| < 1e-8: {collapsed.sum()} of {R} ({collapsed.mean():.3f}); "
           f"data sets with |c_hat| < eta v/(2 kappa b): {below.sum()} ({below.mean():.3f})")
-    print(f"   collapsed among those below the threshold: {collapsed[below].mean():.3f}; above: {collapsed[~below].mean():.3f}")
+    print(f"   collapsed among those below the threshold: {collapsed[below].mean():.3f}; above: {collapsed[~below].mean():.3f}"
+          f" (largest |c_hat| / threshold among the latter: {np.max(np.abs(c_hat[collapsed & ~below]) / thr[collapsed & ~below]):.2f})")
     alive = ~collapsed
     same_side = np.sign(c_end[alive]) == np.sign(c_hat[alive])
     print(f"   surviving runs on the side of c_hat: {same_side.mean():.3f}; their |a| / sqrt|c_hat|: median "
           f"{np.median(np.abs(a_s[alive]) / np.sqrt(np.abs(c_hat[alive]))):.3f}")
+    print(f"   surviving runs: |ab| averaged over the last {T_AVG} steps and over the runs = {c_avg[alive].mean():.4f}, "
+          f"against the mean of |c_hat| - eta v/(2 kappa b) = {np.mean(np.abs(c_hat[alive]) - thr[alive]):.4f}")
     print(f"   SGLD runs with |ab| < 1e-8: {np.sum(np.abs(a_l * b_l) < 1e-8)}; GD (finite step) median |D_end/D_0| = "
           f"{np.median(np.abs((a_g * a_g - b_g * b_g) / D0)):.4f}, max |a_GD - a_flow| = {np.max(np.abs(a_g - af)):.3f}")
     print(f"   median v = {np.median(v):.4f}, median kappa = {np.median(kappa):.4f}")

@@ -2,7 +2,8 @@
 
 Prints, with the uniform prior on [-1, 1]^d unless stated:
   1. the constants C of V(eps) ~ C eps^lambda (log 1/eps)^(m-1) for the running models, from the
-     closed forms of the chapter and from prop:volume:monomial, with one-dimensional quadrature checks;
+     closed forms of the chapter and from prop:volume:monomial, and the nine exact volumes of
+     tab:volume:running against quadrature of the exact sections;
   2. the population free energies -log Z(n) and the Abelian constants -log(C Gamma(lambda+1))
      (lem:volume:abelian), with Z(n) by quadrature at n = 10^4 and 10^8;
   3. the constant of prop:volume:monomial with non-constant factors a(w), b(w), against quadrature;
@@ -68,6 +69,33 @@ def main():
     print("  closed forms: product 1/sqrt2 =", 1 / math.sqrt(2), "; cusp 2*2^(1/4) =", 2 * 2 ** 0.25,
           "; cubic cusp (3/2) 2^(1/6) =", 1.5 * 2 ** (1 / 6), "; chain sqrt2/8 =", math.sqrt(2) / 8,
           "; a^2b^4c^6: (9/2) 2^(1/6) =", 4.5 * 2 ** (1 / 6), "; a^2b^4c^4: 2^(1/4)/2 =", 2 ** 0.25 / 2)
+    # the nine volumes of tab:volume:running against quadrature: by symmetry V(eps) is the share of
+    # [0,1]^d where K < eps; integrate the exact length of the section in the last coordinate
+    def sec(f):
+        """share of [0,1]^2 where b < f(a), f the exact section boundary (clipped to [0,1])"""
+        def V(eps):
+            kinks = [k for k in (math.sqrt(2 * eps), (2 * eps) ** 0.25) if 0 < k < 1]
+            return integrate.quad(lambda a: min(1.0, max(f(a, eps), 0.0)), 0, 1, points=kinks, limit=400,
+                                  epsabs=1e-14, epsrel=1e-11)[0]
+        return V
+    root = lambda x, p: max(x, 0.0) ** (1.0 / p)
+    S = lambda e: math.sqrt(2 * e)
+    table = [
+        ("regular plane", sec(lambda a, e: root(2 * e - a * a, 2)), lambda e: math.pi / 2 * e),
+        ("quartic cup", sec(lambda a, e: root(2 * e - a ** 4, 4)), lambda e: sumpow((2, 2))[1] * e ** 0.5),
+        ("quartic model", sec(lambda a, e: root(2 * e - a * a, 4)), lambda e: sumpow((1, 2))[1] * e ** 0.75),
+        ("sextic model", sec(lambda a, e: root(2 * e - a * a, 6)), lambda e: sumpow((1, 3))[1] * e ** (2 / 3)),
+        ("mixed cup", sec(lambda a, e: root(2 * e - a ** 4, 6)), lambda e: sumpow((2, 3))[1] * e ** (5 / 12)),
+        ("product model", sec(lambda a, e: S(e) / a), lambda e: S(e) * (1 + math.log(1 / S(e)))),
+        ("cusp model", sec(lambda a, e: (S(e) / a) ** 0.5), lambda e: 2 * S(e) ** 0.5 - S(e)),
+        ("cubic cusp", sec(lambda a, e: (S(e) / a) ** (1 / 3)), lambda e: 0.5 * (3 * S(e) ** (1 / 3) - S(e))),
+        ("chain, L=3", lambda e: integrate.dblquad(lambda b, a: min(1.0, S(e) / (a * b)), 0, 1, 0, 1,
+                                                   epsabs=1e-13, epsrel=1e-10)[0],
+         lambda e: S(e) * (1 + math.log(1 / S(e)) + 0.5 * math.log(1 / S(e)) ** 2)),
+    ]
+    print("  table of exact volumes against quadrature (relative difference):")
+    for name, Vq, Vx in table:
+        print("    %-14s" % name + "".join(f"  eps={e:g}: {Vq(e) / Vx(e) - 1:+.1e}" for e in (1e-2, 1e-6)))
     # exact volumes by the exponential-tail formula versus the asymptotic constants
     for eps in (1e-6, 1e-12, 1e-24):
         s = math.sqrt(2 * eps)

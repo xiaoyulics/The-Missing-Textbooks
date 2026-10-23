@@ -11,9 +11,10 @@ vestigial bias is -3, deep inside its critical set (with a bias near 0 the sampl
 set for the 5+-gon).  Intervals: Student-t 95% over the 4 data sets (chain averages).
 At the smallest and the largest n the same chains are also run on the closed-form population
 loss, at t = n beta from the exact k-gon: t (mean L - L(w*)), the "population skeleton" of the
-estimator (no data noise).
+estimator (no data noise).  At the smallest n the chains on the data are rerun with three further
+sampler seeds (1451-1453), to show how far the means move with the sampler alone.
 Writes figures/data/14-stages-calib.dat.
-Run from the volume root: python figures/scripts/14-stages-calib.py   (60 to 100 s, depending on load)
+Run from the volume root: python figures/scripts/14-stages-calib.py   (80 to 120 s, depending on load)
 """
 import os
 import sys
@@ -193,10 +194,22 @@ def main():
         print(line + f"   [{time.perf_counter() - t_start:.0f}s]", flush=True)
         print("    per data set (chain averages): " + "  ".join(f"{NAMES[k]} {np.round(est[k], 2).tolist()}" for k in range(3)),
               flush=True)
+        if j == 0:
+            first = (loss, W, b, nbeta, est.mean(1))
     hdr = ["n", "nbeta"]
     for nm in NAMES:
         hdr += [nm, nm + "lo", nm + "hi", nm + "S", nm + "Slo", nm + "Shi"]
     sk.write_dat(OUT, hdr, rows)
+    # sampler-seed check at the smallest n: the same data sets and starting points, three further
+    # sampler seeds; the Student-t intervals above cover data sets for one sampler seed only
+    loss, W, b, nbeta, means = first
+    allm = [means]
+    for seed in (1451, 1452, 1453):
+        allm.append(langevin(loss, W, b, nbeta, sk.rng(seed)).reshape(3, DATASETS).mean(1))
+        print(f"  n = {NS[0]}, sampler seed {seed}: " + "  ".join(f"{NAMES[k]} {allm[-1][k]:.2f}" for k in range(3)), flush=True)
+    allm = np.array(allm)
+    print(f"  n = {NS[0]}, sampler seeds 1450-1453, range of the means: "
+          + "  ".join(f"{NAMES[k]} {allm[:, k].min():.2f} to {allm[:, k].max():.2f}" for k in range(3)))
     print(f"wrote {OUT}; total time {time.perf_counter() - t_start:.1f}s")
 
 

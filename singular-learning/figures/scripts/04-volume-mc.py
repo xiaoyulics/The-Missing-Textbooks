@@ -87,7 +87,7 @@ def fit(eps, V, w, m):
 def fit_full(eps, V, w, m, start):
     """Weighted nonlinear least squares of log V on lambda log eps + log P(log 1/eps), with P a
     polynomial of degree m - 1 with free coefficients: the exact form of the volume of a monomial
-    with a constant prior factor (Step 1 of the proof of prop:volume:monomial). Returns lambda."""
+    with a constant prior factor (Step 2 of the proof of prop:volume:monomial). Returns lambda."""
     L = np.log(1.0 / eps)
     W = np.sqrt(w)
 

@@ -8,17 +8,17 @@ sparsity limit).  We write ell(w) = E||x - f(x, w)||^2 (Chen et al.'s "L") and H
 p(x | w) ~ exp(-||x - f||^2 / 2), so L = ell / 2 + const and K = L - L(w*) = (ell - ell(w*)) / 2.
 
 This script checks every number of the chapter's "By hand" section:
-  1. the closed form of ell against Monte Carlo;
+  1. the closed form of ell against quadrature of the 36 integrals and against Monte Carlo;
   2. the regular 5-gon and 6-gon: the two equations of the symmetric reduction, their solution
      (l*, b*), the loss, and that the full 18-dimensional gradient vanishes there;
   3. the Hessian of H at the 6-gon, the 5-gon (sixth column vestigial, bias -1/2) and the
      5+-gon (sixth bias 1/12): eigenvalues, number of zero eigenvalues, rank, and
      lambda = rank / 2 by the minimally singular rule;
   4. the Fourier blocks of the 6-gon's Hessian (the symmetry makes it block circulant);
-  5. a search for the lowest critical value by gradient descent from 400 random starts;
+  5. a search for the lowest critical value by L-BFGS from 300 random starts;
   6. the crossing of the local free energies of the 5-gon and the 6-gon (Chen et al., App. C)
      under two conventions, and the size of the omitted Laplace constants.
-Writes figures/data/14-stages-kgons-spectrum.dat (the three spectra).
+It writes no data file: the chapter prints its numbers in the text and in a table.
 Run from the volume root: python figures/scripts/14-stages-kgons.py   (about 20 s)
 """
 import os
@@ -30,13 +30,12 @@ os.environ.setdefault("MKL_NUM_THREADS", "1")
 import time
 
 import numpy as np
-from scipy import optimize
+from scipy import integrate, optimize
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sltkit as sk  # noqa: E402
 
 C6 = 6
-DATA = os.path.join("figures", "data", "14-stages-kgons-spectrum.dat")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -106,6 +105,24 @@ def kgon(k, c, l, beta, vest=-0.5, pos=()):
     for i in pos:
         b[i] = 1.0 / (2 * c)
     return W, b
+
+
+def quad_ell(W, b):
+    """ell by adaptive quadrature of the 36 one-dimensional integrals (kink as a breakpoint)."""
+    G = W.T @ W
+    c = W.shape[1]
+    tot = 0.0
+    for o in range(c):
+        for j in range(c):
+            al, be = G[o, j], b[o]
+            if o == j:
+                f = lambda m, al=al, be=be: (m - max(al * m + be, 0.0)) ** 2
+            else:
+                f = lambda m, al=al, be=be: max(al * m + be, 0.0) ** 2
+            kink = -be / al if al != 0 else -1.0
+            pts = [kink] if 0 < kink < 1 else None
+            tot += integrate.quad(f, 0, 1, points=pts, epsabs=1e-13, epsrel=1e-13, limit=200)[0]
+    return tot / c
 
 
 def mc_ell(W, b, m, seed):
@@ -215,16 +232,20 @@ def main():
     print(f"  5+-gon: the sixth output contributes 18 b^2 - 3 b + 1 = {18 / 144 - 3 / 12 + 1:.4f} to H at b = 1/12,"
           f" against 1 for the 5-gon: ell drops by {0.125 / 18:.6f}")
 
-    # 1. closed form against Monte Carlo ---------------------------------------------------------
-    print("== closed form against Monte Carlo (10^6 draws, +- 2 standard errors)")
-    for j, (name, (W, b)) in enumerate(pts.items()):
-        m, se = mc_ell(W, b, 1_000_000, 1401 + j)
-        print(f"  {name:7s} closed {ell(W[None], b[None])[0]:.5f}   Monte Carlo {m:.5f} +- {se:.5f}")
+    # 1. closed form against quadrature and Monte Carlo -------------------------------------------
+    print("== closed form against quadrature of the 36 integrals and Monte Carlo (10^6 draws; +- 2 standard errors)")
+    checks = list(pts.items())
     g = sk.rng(1404)
     for j in range(3):
-        W = g.normal(size=(2, C6)); b = 0.5 * g.normal(size=C6)
-        m, se = mc_ell(W, b, 1_000_000, 1410 + j)
-        print(f"  random  closed {ell(W[None], b[None])[0]:.5f}   Monte Carlo {m:.5f} +- {se:.5f}")
+        checks.append(("random", (g.normal(size=(2, C6)), 0.5 * g.normal(size=C6))))
+    qdev, zmax = 0.0, 0.0
+    for j, (name, (W, b)) in enumerate(checks):
+        cl = ell(W[None], b[None])[0]
+        q = quad_ell(W, b)
+        m, se = mc_ell(W, b, 1_000_000, 1401 + j if j < 3 else 1410 + j - 3)
+        qdev, zmax = max(qdev, abs(cl - q)), max(zmax, abs(m - cl) / (se / 2))
+        print(f"  {name:7s} closed {cl:.5f}   quadrature {q:.5f}   Monte Carlo {m:.5f} +- {se:.5f}")
+    print(f"  largest |closed - quadrature| = {qdev:.1e}; largest |Monte Carlo - closed| = {zmax:.2f} standard errors")
 
     # 3. Hessians ------------------------------------------------------------------------------
     print("== Hessian of H = 18 ell (the Hessian of K = (ell - ell*)/2 is this divided by 36)")
@@ -331,12 +352,7 @@ def main():
     a7, b7 = solve_kgon(7, (2.1, -0.97))
     print(f"== 7-gon (c = 7): l* = {np.sqrt(a7):.5f}, b* = {b7:.5f}, ell = phi/3 = {phi_and_grad(a7, b7, 7)[0] / 3:.5f},"
           f" a cos(2pi/7) + b = {a7 * np.cos(2 * np.pi / 7) + b7:.4f}, a cos(4pi/7) = {a7 * np.cos(4 * np.pi / 7):.4f}")
-
-    # data file: the three spectra (of the Hessian of K = (ell - ell*)/2), sorted
-    rows = [[i + 1, spectra["6-gon"][i] / 36, spectra["5-gon"][i] / 36, spectra["5+-gon"][i] / 36]
-            for i in range(18)]
-    sk.write_dat(DATA, ["index", "hex", "pent", "pentplus"], rows)
-    print(f"wrote {DATA}; total time {time.perf_counter() - t_start:.1f}s")
+    print(f"total time {time.perf_counter() - t_start:.1f}s")
 
 
 if __name__ == "__main__":

@@ -133,8 +133,17 @@ def main():
           f"max {rows[i_max_d,3]:.4f} at tau {rows[i_max_d,1]:.3f}")
     print("Lambda_pop at tau = 0.1, 1, 10, 100:", [round(Lambda_pop(t), 4) for t in (0.1, 1, 10, 100)])
     print("Lambda_data at tau = 0.1, 1, 10, 100:", [round(Lambda_data(t), 4) for t in (0.1, 1, 10, 100)])
+    # extremes located by a bounded optimizer (the grid above has step 0.1 in log(n delta^2))
+    from scipy.optimize import brentq, minimize_scalar
+    for name, fun in (("Lambda_pop", Lambda_pop), ("Lambda_data", Lambda_data)):
+        lo = minimize_scalar(fun, bounds=(0.1, 1.5), method="bounded", options={"xatol": 1e-6})
+        hi = minimize_scalar(lambda t: -fun(t), bounds=(1.5, 8.0), method="bounded", options={"xatol": 1e-6})
+        print(f"{name}: minimum {lo.fun:.5f} at n delta^2 = {lo.x ** 2:.3f}; "
+              f"maximum {-hi.fun:.5f} at n delta^2 = {hi.x ** 2:.2f}")
+    hmax = minimize_scalar(lambda t: -log_h_ratio([t])[0][0], bounds=(0.2, 2.0), method="bounded",
+                           options={"xatol": 1e-7})
+    print(f"h is largest at tau = {hmax.x:.4f}")
     # midpoints 7/8
-    from scipy.optimize import brentq
     tp = brentq(lambda t: Lambda_pop(t) - 0.875, 0.2, 3.0)
     td = brentq(lambda t: Lambda_data(t) - 0.875, 0.2, 3.0)
     print(f"Lambda = 7/8 at tau_pop = {tp:.3f} (n delta^2 = {tp*tp:.3f}), tau_data = {td:.3f} (n delta^2 = {td*td:.3f})")

@@ -15,8 +15,11 @@ Measurements.
   * quadrature: V(eps) = int_0^inf e^{-x} beta_eps(e^{-x}) dx in logarithmic coordinates x = -log a, where
     beta_eps(a) = sup{b in [0, 1] : K(a, b) < eps} is found by Newton's method on y = -log b (K is increasing
     in b). Adaptive Gauss-Kronrod (scipy quad, relative tolerance 1e-12) on panels; checked against the exact
-    volumes of a^2 b^2, a^4 + b^6, a^2 + b^4. The exponent and the multiplicity are measured by least squares
-    of log V on (-L, log L, 1, 1/L) at L = log(1/eps) = 250, 500, 1000, 2000, 4000 (no input from the theory).
+    volumes of a^2 b^2, a^4 + b^6, a^2 + b^4. The routine uses the polygon only to rescale the integrand (by
+    e^{L/t}) and to place panel boundaries (at the rays of the normal fan); a blind variant that rescales by the
+    integrand's largest value on a grid and uses uniform panels is run at the smallest and largest L, and the
+    script prints the largest difference in log V. The exponent and the multiplicity are measured by least
+    squares of log V on (-L, log L, 1, 1/L) at L = log(1/eps) = 250, 500, 1000, 2000, 4000.
   * naive Monte Carlo: N = 2 000 000 uniform points of (0, 1]^2 per function (seed 100 + k); the slope of
     log V between eps1 = 1e-2 and eps2 = 1e-4, log(n1/n2)/log(eps1/eps2) with n_i the counts below eps_i; its
     95% interval comes from the exact (Clopper-Pearson) interval of n2/n1 given n1 (binomial conditionally).
@@ -118,13 +121,18 @@ def newton(Sc):
 # ------------------------------------------------------------------------------------------------
 # V(eps) by quadrature in logarithmic coordinates
 # ------------------------------------------------------------------------------------------------
-def logV(Sc, L, rel=1e-12):
-    """log V(e^{-L}) for a positive even sum with the uniform prior on [-1, 1]^2."""
+def logV(Sc, L, rel=1e-12, blind=False):
+    """log V(e^{-L}) for a positive even sum with the uniform prior on [-1, 1]^2.
+
+    With blind=True the polygon is not used at all: the integrand is rescaled by its largest value on a grid and
+    the panels are uniform (a check that the polygon does not steer the quadrature)."""
     T = [(float(v[0]), float(v[1]), log(c)) for v, c in Sc.items()]
     Ta = [u for u in T if u[1] == 0.0]
     Tb = [u for u in T if u[1] > 0.0]
-    t, _, _, _ = newton(Sc)
-    shift = L / float(t)
+    shift = 0.0
+    if not blind:
+        t, _, _, _ = newton(Sc)
+        shift = L / float(t)
 
     def lse(zs):
         mx = max(zs)
@@ -179,15 +187,21 @@ def logV(Sc, L, rel=1e-12):
         while lse([lc - v1 * hi for v1, v2, lc in T]) >= -L:
             hi *= 2
         x1 = bisect(lambda x: lse([lc - v1 * x for v1, v2, lc in T]) < -L, 0.0, hi)
-    _, rays, mu = fan(list(Sc))
     upper = x1 if isfinite(x1) else 20.0 * L + 200.0
-    bps = {x0, upper}
-    for e, u in zip(rays, mu):
-        if u > 0 and e[0] > 0:
-            for d in (0.0, 2.0, 10.0):
-                bps.update((L * e[0] / u - d, L * e[0] / u + d))
-    bps.update(x0 + k * (upper - x0) / 20.0 for k in range(1, 20))
-    pts = sorted(b for b in bps if x0 <= b <= upper)
+    if blind:
+        grid = np.linspace(x0, upper, 2001)
+        ys = [ysol(x) for x in grid]
+        shift = -max(-x - y for x, y in zip(grid, ys) if isfinite(y))
+        pts = list(np.linspace(x0, upper, 401))
+    else:
+        _, rays, mu = fan(list(Sc))
+        bps = {x0, upper}
+        for e, u in zip(rays, mu):
+            if u > 0 and e[0] > 0:
+                for d in (0.0, 2.0, 10.0):
+                    bps.update((L * e[0] / u - d, L * e[0] / u + d))
+        bps.update(x0 + k * (upper - x0) / 20.0 for k in range(1, 20))
+        pts = sorted(b for b in bps if x0 <= b <= upper)
     total = 0.0
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -347,8 +361,10 @@ def main():
     gen = sk.rng(6)
     LS = [250.0, 500.0, 1000.0, 2000.0, 4000.0]
     rows = []
+    sums = []
     for k in range(30):
         Sc = random_sum(gen)
+        sums.append(Sc)
         t, m, C, V = newton(Sc)
         lv = [logV(Sc, L) for L in LS]
         lam_q, m_q = fit_exponent(LS, lv)
@@ -373,6 +389,9 @@ def main():
         print(f"  naive MC slope minus 1/t, m = {mm}: mean {bias.mean():.3f}, range [{bias.min():.3f}, {bias.max():.3f}]")
     cover = np.sum((R[:, 5] - R[:, 7] <= R[:, 1]) & (R[:, 1] <= R[:, 5] + R[:, 6]))
     print(f"  naive 95% intervals that contain 1/t: {cover} of 30")
+    dblind = max(abs(logV(Sc, L) - logV(Sc, L, blind=True)) for Sc in sums for L in (LS[0], LS[-1]))
+    print(f"  quadrature without the polygon (rescaled by the integrand's maximum, uniform panels), "
+          f"L = {LS[0]:.0f} and {LS[-1]:.0f}: max |difference in log V| = {dblind:.1e}")
 
     # degenerate examples
     drows = []

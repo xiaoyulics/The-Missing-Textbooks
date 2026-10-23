@@ -4,7 +4,7 @@ product model y = abx, against exact posterior draws (Theorem thm:sgd:balance).
 The product model y = abx + N(0,1) noise, x ~ N(0,1), uniform prior on [-1,1]^2. The empirical loss
 is L_n(a,b) = (kappa/2)(ab - c_hat)^2 + const with kappa = S_xx/n and c_hat = S_xy/S_xx, so both
 gradient flow and the posterior depend on the data only through (S_xx, S_xy). At the singular truth
-S_xx ~ chi^2_n and S_xy | S_xx ~ N(0, S_xx) exactly, so data sets of size 10^8 are simulated exactly.
+S_xx ~ chi^2_n and S_xy | S_xx ~ N(0, S_xx) exactly, so data sets of size 10^12 are simulated exactly.
 
 Gradient flow. Theorem thm:sgd:balance: with u = a + b, v = a - b and D = a0^2 - b0^2 (conserved),
 the flow converges to the point with u v = D, u^2 - v^2 = 4 c_hat and the signs of (u0, v0):
@@ -28,7 +28,7 @@ Outputs (figures/data):
                              mean over 200 data sets, with Student-t 95% half-widths, for the
                              posterior draws (2000 per data set) and the flow from the two starts
                              (200 starts per data set); and the exact data-averaged posterior value
-Run from the volume root: python figures/scripts/15-sgd-product.py   (about 40 s)
+Run from the volume root: python figures/scripts/15-sgd-product.py   (about 5 s)
 """
 import math
 import os
@@ -38,7 +38,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 from scipy import special, stats
-from scipy.integrate import solve_ivp
+from scipy.integrate import dblquad, quad, solve_ivp
 
 import sltkit as sk
 
@@ -90,12 +90,13 @@ def stats_singular_truth(n, gen):
 def part1_check():
     """Closed form against numerical integration, on data sets of size 10^4 at the singular truth."""
     gen = sk.rng(1501)
-    worst, worst_cons, count = 0.0, 0.0, 0
+    worst, worst_cons, count, ndata = 0.0, 0.0, 0, 0
     for k in range(6):
         Sxx, Sxy = stats_singular_truth(10_000, gen)
         kappa, c_hat = Sxx / 10_000, Sxy / Sxx
         if abs(c_hat) < 3e-3:            # keep integration times moderate (rate kappa*sqrt(D^2+4c^2))
             continue
+        ndata += 1
 
         def rhs(t, w):
             r = kappa * (w[0] * w[1] - c_hat)
@@ -112,8 +113,8 @@ def part1_check():
             worst = max(worst, abs(aT - ac), abs(bT - bc))
             worst_cons = max(worst_cons, float(np.max(np.abs(sol.y[0] ** 2 - sol.y[1] ** 2 - (a0 * a0 - b0 * b0)))))
             count += 1
-    print(f"[check] {count} flows integrated numerically: max |end point - closed form| = {worst:.2e}, "
-          f"max drift of a^2 - b^2 = {worst_cons:.2e}")
+    print(f"[check] {count} flows on {ndata} of the 6 data sets (those with |c_hat| >= 3e-3) integrated numerically: "
+          f"max |end point - closed form| = {worst:.2e}, max drift of a^2 - b^2 = {worst_cons:.2e}")
 
 
 def part2_byhand():
@@ -128,7 +129,11 @@ def part2_byhand():
               f"top Hessian eigenvalue kappa(a^2+b^2) = {sharp:.5f}")
     c0 = 1e-3 * 2e-3
     print(f"   plateau time from (1e-3, 2e-3): (1/(2 kappa c_hat)) log(c_hat/c0) = {math.log(c_hat / c0) / (2 * kappa * c_hat):.0f}")
-    # Computation 15.2 at n = 10^6, |c_hat| = 10^-3: mass beyond |a| = 0.1
+    plateau = solve_ivp(lambda t, w: [-kappa * (w[0] * w[1] - c_hat) * w[1], -kappa * (w[0] * w[1] - c_hat) * w[0]],
+                        [0.0, 1000.0], [1e-3, 2e-3], method="DOP853", rtol=1e-11, atol=1e-15,
+                        events=lambda t, w: w[0] * w[1] - c_hat / 2)
+    print(f"   numerically, c(t) reaches c_hat/2 at t = {plateau.t_events[0][0]:.0f}")
+    # Computation 15.2 at n = 10^6, |c_hat| = 10^-3, kappa = 1 (S_xx = n, S_xy = 10^3): mass beyond |a| = 0.1
     n, Z = 10**6, 1.0
     ell = 0.5 * math.log(n)
     p_post = 1.0 - float(exact_cdf(math.log(0.1), Z, ell))
@@ -136,8 +141,15 @@ def part2_byhand():
     a0, b0 = gen.uniform(-1, 1, (2, 1_000_000))
     la = log_abs_a_limit(a0, b0, 1e-3)
     p_flow = float(np.mean(la > math.log(0.1)))
+    # exactly: |a_inf| > 0.1 iff D > 0.1^2 - c_hat^2/0.1^2; P(|a0|^2 - |b0|^2 > delta) for |a0|, |b0| ~ U[0,1]
+    delta = 0.01 - 1e-6 / 0.01
+    p_flow_exact = quad(lambda bb: max(1.0 - math.sqrt(bb * bb + delta), 0.0), 0.0, 1.0)[0]
     print(f"   n = 10^6, Z = 1 (c_hat = 1e-3): posterior P(|a| > 0.1) = {p_post:.3f}; "
-          f"flow from the prior P(|a_inf| > 0.1) = {p_flow:.3f}; flow from a small start: |a_inf| = {math.sqrt(1e-3):.4f}")
+          f"flow from the prior P(|a_inf| > 0.1) = {p_flow:.3f} (Monte Carlo), {p_flow_exact:.4f} (quadrature: P(D > {delta:.4f}));"
+          f" flow from a small start: |a_inf| = {math.sqrt(1e-3):.4f}")
+    # the event max(|a|,|b|) > 0.1 of Chapter 2: by the symmetry a <-> b it has twice the probability, because both
+    # |a| > 0.1 and |b| > 0.1 would need |ab| > 0.01 = 10 c_hat (posterior: a 9-sigma event; flow: impossible)
+    print(f"   P(max(|a|,|b|) > 0.1): posterior {2 * p_post:.3f}, flow from the prior {2 * p_flow_exact:.3f}")
     print(f"   prior P(a0^2 - b0^2 > 0) = {np.mean(a0**2 > b0**2):.4f}")
 
 
@@ -198,8 +210,9 @@ def part4_scatter_and_cdf():
     sk.write_dat(os.path.join(OUT, "15-sgd-scatter-prior.dat"), ["la", "lb"],
                  np.column_stack([np.log10(np.abs(a)), np.log10(np.abs(b))]))
     lpa = np.log10(np.abs(a))
-    print(f"   flow from the prior: {np.mean(lpa > -1):.3f} with log10|a| > -1, {np.mean(lpa < math.log10(abs(c_hat)) + 1):.3f} "
-          f"within a decade of the other end, {np.mean((lpa > -5) & (lpa < -1)):.3f} between")
+    top, bottom = np.mean(lpa > -1), np.mean(lpa < math.log10(abs(c_hat)) + 1)
+    print(f"   flow from the prior: {top:.3f} with log10|a| > -1, {bottom:.3f} within a decade of the other end "
+          f"(log10|a| < log10|c_hat| + 1), {1 - top - bottom:.3f} between")
     s0, t0 = small * gen.standard_normal((2, 300))
     a, b = flow_limit(s0, t0, c_hat)
     sk.write_dat(os.path.join(OUT, "15-sgd-scatter-small.dat"), ["la", "lb"],
@@ -245,6 +258,12 @@ def part4_scatter_and_cdf():
               f" flow from prior {F_prior[:, j].mean():.3f}, flow from small start {F_small[:, j].mean():.3f}")
     print(f"   mass of -3/8 < tau <= -1/8: posterior {np.mean(mid_post):.3f}, flow from prior {np.mean(mid_prior):.4f}, "
           f"flow from small start {np.mean(mid_small):.3f}")
+    # tau = -1/2 is an atom of the flow's limit law, so the distribution function there need not tend to 1/2: on {D < 0},
+    # log|a_inf| + (1/2) log n -> log|Z| - (1/2) log|D|, so F(-1/2) -> P(D < 0, Z^2 <= |D|)
+    #   = int_0^1 int_0^b erf(sqrt((b^2 - a^2)/2)) da db   (uniform start, Z ~ N(0,1) independent)
+    lim = dblquad(lambda a, b: special.erf(math.sqrt(max(b * b - a * a, 0.0) / 2.0)), 0.0, 1.0, lambda b: 0.0, lambda b: b,
+                  epsabs=1e-10)[0]
+    print(f"   flow from prior at tau = -1/2: limit of the distribution function P(D < 0, Z^2 <= |D|) = {lim:.3f}")
 
 
 if __name__ == "__main__":

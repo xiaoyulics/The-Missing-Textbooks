@@ -274,10 +274,11 @@ def run_population(seed):
                       f"Gibbs {gib[0]:.3f} +- {gib[2] - gib[0]:.3f}; exact {exact:.3f}; acceptance {acc:.2f}")
             else:
                 exact = population_value(g_box, n)
-                balls = population_value(g_balls, n) if n < 100_000 else float("nan")
+                balls = (f"; with the prior uniform on the product of balls {population_value(g_balls, n):.3f}"
+                         if n < 100_000 else "")          # the slowest quadrature; not needed at n = 1e5
                 print(f"rank-one 3x3, truth (1/2) e1 e1^T, no noise, n = {n:6d}: Metropolis {est[0]:.3f} +- "
-                      f"{est[2] - est[0]:.3f}; exact population value {exact:.3f} (lambda = 5/2); with the prior "
-                      f"uniform on the product of balls {balls:.3f}; acceptance {acc:.2f}")
+                      f"{est[2] - est[0]:.3f}; exact population value {exact:.3f} (lambda = 5/2){balls}; "
+                      f"acceptance {acc:.2f}")
             rows[n] += [est[0], est[2] - est[0], exact]
     return [rows[n] for n in NS]
 

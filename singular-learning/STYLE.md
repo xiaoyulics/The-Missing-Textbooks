@@ -298,7 +298,8 @@ it as an invariant of a function, and say once per chapter that the two are the 
   they lack, say so in your report.
 - **Labels** carry your chapter key: `ch:key`, `sec:key:...`, `thm:key:...`, `lem:key:...`,
   `prop:key:...`, `cor:key:...`, `def:key:...`, `ass:key:...`, `obs:key:...`, `eq:key:...`,
-  `fig:key:...`, `tab:key:...`, `comp:key:...`, `ex:key:...`. Refer with `\cref{...}` (sentence
+  `fig:key:...`, `tab:key:...`, `comp:key:...`, `ex:key:...` (exercises), `exa:key:...`
+  (examples), `conj:key:...`, `rem:key:...`. Refer with `\cref{...}` (sentence
   start `\Cref{...}`). Other chapters: `\cref{ch:key}` with the keys in OUTLINE.md, and their
   results with the labels OUTLINE.md fixes; appendix results with the fixed `toolkit` labels.
 - **Environments (class):** `theorem lemma proposition corollary conjecture claim` (boxed, italic);

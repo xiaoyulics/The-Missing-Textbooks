@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <img alt="5 volumes" src="https://img.shields.io/badge/volumes-5-1b8aa8?style=flat-square">
-  <img alt="1,818 pages" src="https://img.shields.io/badge/pages-1%2C818-6a45d6?style=flat-square">
+  <img alt="6 volumes" src="https://img.shields.io/badge/volumes-6-1b8aa8?style=flat-square">
+  <img alt="2,186 pages" src="https://img.shields.io/badge/pages-2%2C186-6a45d6?style=flat-square">
   <img alt="language: English" src="https://img.shields.io/badge/language-English-7d8d22?style=flat-square">
   <img alt="written by Claude" src="https://img.shields.io/badge/written%20by-Claude-c0432a?style=flat-square">
   <img alt="typeset with LaTeX" src="https://img.shields.io/badge/typeset%20with-LaTeX-3a44b5?style=flat-square">
@@ -18,7 +18,7 @@
 
 <p align="center">
   <a href="#the-shelf">The shelf</a> &nbsp;·&nbsp;
-  <a href="#the-five-volumes">The volumes</a> &nbsp;·&nbsp;
+  <a href="#the-six-volumes">The volumes</a> &nbsp;·&nbsp;
   <a href="#how-a-volume-is-made">How a volume is made</a> &nbsp;·&nbsp;
   <a href="#the-film">The film</a> &nbsp;·&nbsp;
   <a href="#build-from-source">Build</a>
@@ -31,7 +31,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/img/shelf-dark.png">
-    <img src="docs/img/shelf-light.png" alt="The five volumes: I Dissolving Problems (333 pages), II The Hydrogen Atoms of Deep Learning (394), III Optimizers in the Wild (369), IV Deep Learning as an Experimental Science (365), V Verifiable Intelligence (357)" width="100%">
+    <img src="docs/img/shelf-light.png" alt="The six volumes: I Dissolving Problems (333 pages), II The Hydrogen Atoms of Deep Learning (394), III Optimizers in the Wild (369), IV Deep Learning as an Experimental Science (365), V Verifiable Intelligence (357), VI Singular Learning Theory for the Rest of Us (368)" width="100%">
   </picture>
 </p>
 
@@ -42,10 +42,11 @@
 | **III** | *Optimizers in the Wild*<br>Steepest Descent and the Dynamics of Training | 369 | [PDF](optimizers-in-the-wild/Optimizers-in-the-Wild.pdf) · [sources](optimizers-in-the-wild/) |
 | **IV** | *Deep Learning as an Experimental Science*<br>A Laboratory Manual | 365 | [PDF](experimental-science/Deep-Learning-as-an-Experimental-Science.pdf) · [sources](experimental-science/) |
 | **V** | *Verifiable Intelligence*<br>Interactive Proofs as a Theory of AI Oversight | 357 | [PDF](verifiable-intelligence/Verifiable-Intelligence.pdf) · [sources](verifiable-intelligence/) |
+| **VI** | *Singular Learning Theory for the Rest of Us*<br>From y = abx to Neural Networks | 368 | [PDF](singular-learning/Singular-Learning-Theory-for-the-Rest-of-Us.pdf) · [sources](singular-learning/) |
 
 <br>
 
-## The five volumes
+## The six volumes
 
 <a id="vol-1"></a>
 
@@ -137,6 +138,24 @@ When an AI system is more capable than the people who oversee it, they can no lo
 
 <br>
 
+<a id="vol-6"></a>
+
+### VI &nbsp;·&nbsp; Singular Learning Theory for the Rest of Us
+
+*From y = abx to Neural Networks*
+
+<p align="center">
+  <a href="singular-learning/"><img src="docs/img/stills/v6.jpg" width="760" alt="Posterior draws of the two-parameter model y = abx fitted to pure noise glow along the cross ab = 0: two parameters that learn like one"></a>
+</p>
+
+Neural networks are singular statistical models: many weights give the same function, and the classical asymptotics behind BIC and AIC, which charge half a unit of log n for each parameter, do not apply to them. Watanabe’s singular learning theory replaces that count with one geometric number, the learning coefficient λ, in the free energy, the generalization error and the information criteria, and the theory is now used to measure how networks change during training. This book teaches it on one family of toy models, starting from the two-parameter model y = abx, on which every quantity is computed by hand, with Hironaka’s theorem on resolution of singularities used as a black box. Each chapter sets the regular answer against the singular one, proves its central result, measures it in a script, and says where the theory stops, including what it does not explain about networks trained by stochastic gradient descent.
+
+**Parts:** Where Regular Theory Ends · The Learning Coefficient · Watanabe’s Theorems · Deep Learning
+
+**[Read the PDF →](singular-learning/Singular-Learning-Theory-for-the-Rest-of-Us.pdf)** &nbsp;·&nbsp; [Contents and sources](singular-learning/)
+
+<br>
+
 ## How a volume is made
 
 1. **Plan.** `OUTLINE.md` gives the thesis, the chapter list and a specification for each chapter.
@@ -158,7 +177,7 @@ All volumes share one LaTeX design, [`template/missingbook.cls`](template/missin
   <img src="docs/img/film-preview.webp" width="760" alt="Highlights of the promotional film: the title assembling out of particles, a hammer failing against a walnut, spectral lines, optimizers racing, verdict stamps, a lie being caught, and five books landing on a shelf">
 </p>
 
-A 112-second film for the series, built with [Remotion](https://www.remotion.dev): React for the layout, WebGL shaders and three.js for the picture, and a score synthesized in NumPy. Each volume has its own act, and the act for volume V runs the book’s own linearity test on the real codeword printed on its title page. Source and instructions are in [`promo/`](promo/).
+A 112-second film for the first five volumes, built with [Remotion](https://www.remotion.dev): React for the layout, WebGL shaders and three.js for the picture, and a score synthesized in NumPy. Each of those volumes has its own act, and the act for volume V runs the book’s own linearity test on the real codeword printed on its title page. Volume VI has no act yet; its still above is drawn from the book’s own posterior samples by `promo/scripts/make_still_v6.py`. Source and instructions are in [`promo/`](promo/).
 
 <br>
 
@@ -206,6 +225,7 @@ hydrogen-atoms/          volume 2: main.tex, hydrogen.sty, chapters/, figures/ (
 optimizers-in-the-wild/  volume 3: main.tex, wild.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
 experimental-science/    volume 4: main.tex, laboratory.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
 verifiable-intelligence/ volume 5: main.tex, verifiable.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
+singular-learning/       volume 6: main.tex, singular.sty, chapters/, figures/ (scripts and data), tools/, STYLE.md, OUTLINE.md
 promo/                   the promotional film (Remotion project, score, scripts)
 docs/img/                the images used by this README
 ```
