@@ -73,11 +73,29 @@ differently (e.g. with another prior) says so.
 | the quartic cup | $y=a^2x_1+b^2x_2$ | 2 | $(a^4+b^4)/2$ | a point | $1/2$ | 1 | $1$ |
 | the mixed cup | $y=a^2x_1+b^3x_2$ | 2 | $(a^4+b^6)/2$ | a point | $5/12$ | 1 | $1$ |
 | the chain | $y=a_1a_2\cdots a_Lx$ | $L$ | $(a_1\cdots a_L)^2/2$ | the union of the coordinate hyperplanes | $1/2$ | $L$ | $L/2$ |
-| the tanh neuron | $y=a\tanh(bx)$ | 2 | $\tfrac{a^2}2\E[\tanh^2(bx)]=\tfrac{a^2b^2}2(1+O(b^2))$ | the cross | $1/2$ | 2 | $1$ |
+| the tanh neuron | $y=a\tanh(bx)$, $x\sim\Unif[-1,1]$, prior on $[-2,2]^2$ | 2 | $\tfrac{a^2}2\E[\tanh^2(bx)]\asymp a^2b^2$ | the cross | $1/2$ | 2 | $1$ |
 | the ReLU neuron | $y=a\relu(bx)$ | 2 | $a^2b^2/4$ exactly | the cross | $1/2$ | 2 | $1$ |
-| the mixture | $(1-a)\Normal(0,1)+a\Normal(b,1)$, $a\in[0,1]$, truth $\Normal(0,1)$ | 2 | $\tfrac{a^2}2(e^{b^2}-1)(1+O(a))$ | $\{a=0\}\cup\{b=0\}$ | $1/2$ | 2 | $1$ |
-| rank-one regression | $y=b\,a^\top x$, $a\in\R^N$, $b\in\R^M$ | $M+N$ | $\norm{a}^2\norm{b}^2/2$ | $\{a=0\}\cup\{b=0\}$ | $\min(M,N)/2$ | 2 if $M=N$, else 1 | $(M+N)/2$ |
-| reduced-rank regression | $y=BAx$, $B\in\R^{M\times H}$, $A\in\R^{H\times N}$, truth of rank $r$ | $H(M+N)$ | $\norm{BA-B_0A_0}_F^2/2$ | — | Aoyagi–Watanabe formula (Chapter 7) | | $H(M+N)/2$ |
+| the mixture | $(1-a)\Normal(0,1)+a\Normal(b,1)$, $a\in[0,1]$, $b\in[-2,2]$, truth $\Normal(0,1)$ | 2 | $K\asymp a^2b^2$ (not analytic in $a$ at $a=0$) | $\{a=0\}\cup\{b=0\}$ | $1/2$ | 2 | $1$ |
+| rank-one regression | $y=b\,a^\top x$, $a\in\R^N$, $b\in\R^M$, truth $0$ | $M+N$ | $\norm{a}^2\norm{b}^2/2$ | $\{a=0\}\cup\{b=0\}$ | $\min(M,N)/2$ | 2 if $M=N$, else 1 | $(M+N)/2$ |
+| reduced-rank regression | $y=BAx$, $B\in\R^{M\times H}$, $A\in\R^{H\times N}$, truth of rank $r$ | $H(M+N)$ | $\norm{BA-B_0A_0}_F^2/2$ | — | Aoyagi–Watanabe formula; e.g. $M=N=2$, $r=1$: $H=1$: $3/2$; $H=2$: $2$ ($m=2$). $M=N=3$, $r=1$: $H=1,2,3$: $5/2$, $7/2$ ($m=2$), $4$ | | $H(M+N)/2$ |
+
+**Corrections from digest 02 (`build/research/02-computing-rlct.md` §6).** (1) With Gaussian
+inputs the tanh neuron's $K$ is $C^\infty$ but **not real-analytic** at $b=0$ (the Taylor series has
+radius $0$: the complex poles of $\tanh$ meet the unbounded Gaussian support), so Watanabe's
+analyticity condition fails; with $x\sim\Unif[-1,1]$ the radius is $\pi/2$ and the theorems apply
+verbatim. The book therefore uses $x\sim\Unif[-1,1]$ for the tanh neuron (then $\E[x^2]=\tfrac13$).
+(2) The mixture's $K$ is not analytic in $a$ at $a=0$ for $b\neq0$; its values $\lambda=\tfrac12$,
+$m=2$ (attained at $(0,0)$, on the boundary $a=0$) follow by comparison with $a^2b^2$, but the
+general theorems do not apply verbatim (Watanabe treats mixtures separately; Watanabe 2021,
+*Behaviormetrika*). Chapters that use it say so. (3) The ReLU neuron's $K$ is a polynomial, but the
+model is not analytic in $b$ at $b=0$ (a kink), so the same caution applies. (4) Generic truths of
+the product model: if the hyperbola meets the prior box only at a corner, $\lambda$ jumps (to $1$ for
+$ab=1$ on $[-1,1]^2$); use truths whose true set crosses the interior. (5) The cusp attains $\tfrac14$
+along the whole segment $b=0$, not only at the origin ("one constraint, yet $\lambda=\tfrac14$"). (6)
+In the chain, a point with exactly $j$ vanishing coordinates has local value $(\tfrac12,j)$: depth
+raises $m$, not $\lambda$. (7) The tanh neuron at a nonzero truth $(a_0,b_0)$ is regular: the true
+set is $\{\pm(a_0,b_0)\}$ and $\lambda=1$, though one Fisher eigenvalue is small (at $(1,1)$ with
+Gaussian $x$: $0.0196$), so the posterior looks singular for small $n$.
 
 The values for the product model, the chain, the cusps, and the sums of independent monomials are
 proved in the book (Chapters 3–6); the tanh neuron, the ReLU neuron and the mixture are reduced to
@@ -211,7 +229,8 @@ $a\asymp b$ means bounded above and below by constant multiples.
 book, where "singular models" include the regular ones), *regular* and *singular* describe the truth
 relative to the model: the pair is **regular** if $W_0$ is a single point $w_0$ in the interior of
 $W$ and the Hessian $\nabla^2L(w_0)$ (the Fisher information, in the realizable case) is positive
-definite; otherwise it is **singular**. "A singular model" is shorthand for a model with singular
+definite; otherwise it is **singular**. (The interior condition is the book's addition: Watanabe
+2010, Definition 2, has none — Chapter 2 says so.) "A singular model" is shorthand for a model with singular
 truths of interest (e.g. $y=abx$ at $ab=0$). The product model at a generic truth is singular too:
 $W_0$ is a curve, though $\lambda=\tfrac12$ is then the regular value for the one-dimensional
 reparametrization $c=ab$.
@@ -273,15 +292,16 @@ in the chapter specifications.
 | `thm:volume:zeta` | the volume, the state density and the zeta function: the largest pole of $\zeta$ and the asymptotics of $V$ determine each other |
 | `thm:blowups:pullback` | the learning coefficient is computed on a resolution: pulling back $K$ and $\varphi\,\dd w$ by a proper analytic map that is an isomorphism off a null set |
 | `prop:blowups:rules` | rules: invariance under analytic isomorphism, comparison, sums of functions of separate variables, $\lambda\le d/2$ |
+| `prop:blowups:morsebott` | a critical set that is a smooth manifold of dimension $s$ with nondegenerate normal Hessian has $\lambda=(d-s)/2$, $m=1$ ("minimally singular"; used in Chapters 13–14) |
 | `thm:newton:plane` | the Newton-polygon formula $\lambda=1/t$ in two variables for sums of monomials and for non-degenerate functions |
 | `thm:catalogue:rankone` | the learning coefficient of rank-one regression: $\lambda=\min(M,N)/2$, $m=2$ if $M=N$ |
 | `thm:catalogue:aoyagi` | the Aoyagi–Watanabe formula for reduced-rank regression (statement) |
-| `thm:freeenergy:linear` | the free energy formula for models $y=g(w)^\top x+$noise whose $K$ has learning coefficient $\lambda$ and multiplicity $m$ (complete proof) |
+| `thm:freeenergy:linear` | the free energy formula for models $y=G(w)x+$noise (matrix-valued $G$, so rank-one and reduced-rank regression are covered; only $\E\norm{x}^2<\infty$; no compactness — the geometry enters through $V(\eps)\sim C\eps^\lambda(\log\frac1\eps)^{m-1}$) (complete proof, as written by Chapter 8) |
 | `thm:freeenergy:main` | Watanabe's free energy formula $F_n=nS_n+\lambda\log n-(m-1)\log\log n+O_p(1)$ (statement, proof sketch) |
 | `thm:generalization:onecoef` | $n(\E[G_n]-S)\to\lambda$ for one-coefficient models (complete proof) |
 | `thm:generalization:main` | Watanabe's generalization theorem: $\E[G_n]-S=\lambda/n+o(1/n)$ and the equations of state (statement) |
 | `thm:waic:main` | WAIC is asymptotically unbiased for the Bayes generalization loss and asymptotically equivalent to leave-one-out cross-validation (statement) |
-| `prop:temperature:mean` | the tempered mean energy: $\E^\beta_w[nK]$ behaves like $\lambda/\beta$ (population version, complete proof) |
+| `prop:temperature:mean` | the tempered mean energy: $\E^\beta_w[nK]=\lambda/\beta-(m-1)/(\beta\log n\beta)+\dots$ (population version, complete proof). As written by Chapter 11 it assumes a two-term *volume expansion* (`ass:temperature:volume`), true for analytic $K$ and for the running models: the $-(m-1)$ term does not follow from $V(\eps)\sim C\eps^\lambda(\log\frac1\eps)^{m-1}$ alone. Chapter 11 also defines `thm:temperature:wbiclinear` and `cor:temperature:estimators` |
 | `thm:temperature:wbic` | WBIC $=F_n+O_p(\sqrt{\log n})$ (statement; complete proof for the linear models of Chapter 8) |
 | `thm:phases:local` | local free energies and the posterior's choice between phases |
 | `def:llc:llc` | the local learning coefficient $\lambda(w^*)$ |
@@ -334,7 +354,7 @@ authors), with a letter suffix only for the same author and year.
 | `MacKay1992a`, `MacKay2003`, `Balasubramanian1997` | the Bayesian Occam factor; MacKay's book (Ch. 28); Occam's razor and statistical mechanics |
 | `DinhEtAl2017`, `MandtEtAl2017`, `IzmailovEtAl2021`, `SaxeEtAl2014`, `KuninEtAl2021` | sharp minima can generalize; SGD as approximate Bayesian inference; posteriors of real networks; exact dynamics of deep linear networks; symmetries and conservation laws |
 | `Murfet2023a` | Murfet's reply to Skalse (LessWrong comment, 2023-11-20) |
-| `Carroll2023`, `Skalse2023`, `Erdil2023`, `Bushnaq2024` | LessWrong: the DSLT sequence; two critiques; the Hessian-rank bound |
+| `Carroll2023`, `Skalse2023`, `Erdil2023`, `Bushnaq2024` | LessWrong: the DSLT sequence (digest 04's entry; the single post "DSLT 2" is `Carroll2023b`); two critiques; the Hessian-rank bound |
 | `Schwarz1978`, `Akaike1974`, `Haughton1988` | BIC; AIC; BIC for curved families and its consistency |
 | `vanderVaart1998`, `ClarkeBarron1990`, `KassRaftery1995`, `TierneyKadane1986` | asymptotic statistics; Bayes asymptotics; Bayes factors; Laplace approximations |
 | `Hartigan1985`, `Fukumizu1996`, `Fukumizu2003`, `SelfLiang1987`, `Davies1977`, `LiuShao2003`, `DacunhaCastelleGassiat1999`, `Drton2009` | classical failures of regular theory |
@@ -342,9 +362,14 @@ authors), with a letter suffix only for the same author and year.
 | `GelmanMeng1998`, `FrielPettitt2008`, `VehtariEtAl2017`, `GelmanEtAl2014` | path sampling; power posteriors; PSIS-LOO; predictive information criteria (digest 01: `VehtariGelmanGabry2017`, `GelmanHwangVehtari2014`) |
 | `WellingTeh2011`, `MacKay1992` | SGLD; Bayesian Occam factor |
 
-(Keys for the catalogue of learning coefficients are added when digest 02 arrives; until then use
-the convention. Digest 03 calls Watanabe's 2001 *Neural Computation* paper `Watanabe2001` and the
-2024 review `Watanabe2022`: use `Watanabe2001a` and `Watanabe2024`.)
+| `Lin2017`, `Greenblatt2010`, `Saito2007`, `Kollar1997`, `ArnoldEtAl1988` | ideal-theoretic RLCTs, Newton polyhedra and the Hessian bound (*J. Algebraic Statistics*); sublevel volumes and Newton polyhedra; real log canonical thresholds; singularities of pairs; Arnold, Gusein-Zade and Varchenko, *Singularities of Differentiable Maps* II |
+| `AoyagiNagata2012`, `Aoyagi2010a`, `Aoyagi2019`, `RusakovGeiger2005`, `Hayashi2021`, `KariyaWatanabe2022`, `YamazakiWatanabe2005a` | Vandermonde-type singularities; restricted Boltzmann machines; further network results; naive Bayes networks; LDA; two-component mixtures; HMMs (check each entry's content in digest 02 §5 before quoting) |
+| `Watanabe2021`, `Watanabe2021b` | "WAIC and WBIC for mixture models", *Behaviormetrika* 48 (2021); "Information criteria and cross validation for Bayesian inference in regular and singular cases", *JJSDS* 4 (2021) (the coordinator renamed digest 01's key for the latter) |
+
+Digest 03 calls Watanabe's 2001 *Neural Computation* paper `Watanabe2001` and the 2024 review
+`Watanabe2022`; digest 02 uses `BernshteinGelfand1969`, `NagayasuWatanabe2023a/b` and
+`HooglandEtAl2024`: use the keys in this table (`Watanabe2001a`, `Watanabe2024`,
+`BernsteinGelfand1969`, `NagayasuWatanabe2023`, `HooglandEtAl2025`).
 
 ## Chapter specifications
 
@@ -617,7 +642,12 @@ Jacobians $\abs u$ and $\abs v$, drawn (TikZ: the exceptional divisor as a line 
 $(ab)^2$ (already normal crossing); $(a^2+b^2)^2$ (one blow-up; $\lambda=\tfrac12$); $a^2+b^4$ (two
 blow-ups, or one weighted blow-up $(a,b)=(uv^2,v)$; $\lambda=\tfrac34$) — computation boxes; the
 product model with a generic truth (local coordinates on the hyperbola; $\lambda=\tfrac12$, $m=1$);
-an example that needs more than one ordinary blow-up and shows how the multiplicity can appear.
+the cusp $K=(a^2-b^3)^2$, which needs three point blow-ups and has $\lambda=\tfrac5{12}$, $m=1$ (digest
+02 §2.7, with the charts written out); Watanabe's three-parameter example $K=(ab+c)^2+a^2b^4$,
+$\lambda=\tfrac34$ (digest §2.8). The form of Hironaka's theorem that the book uses is Watanabe's
+"standard representation" (Watanabe 2013, Theorem 1, whose proof is given in Theorem 6.1 of the 2009
+book according to that paper; digest 02 §1); Atiyah's local form is what Lin's thesis says Watanabe
+(2009) uses as Theorem 2.3 (secondary). Cite them that way.
 
 **The theorem.** `thm:toolkit:hironaka` is stated in the appendix (black box); here
 `thm:blowups:pullback` (complete proof): if $g\colon U\to W$ is proper, real analytic, an analytic
@@ -672,10 +702,15 @@ the Newton boundary, and $m=2$ if that point is a vertex, $1$ otherwise. Plan: $
 b^{v_2}$; in logarithmic coordinates $a=e^{-s},b=e^{-u}$ the set $\{K<\eps\}$ becomes the polyhedron
 $\{v\cdot(s,u)\ge\log\frac1\eps+O(1)\ \forall v\}$ and the volume an integral of $e^{-(s+u)}$ over
 it; the exponent is the value of a linear program, $L/t$, by LP duality, and the power of $L$ is the
-dimension of the optimal face. Then Varchenko's theorem for functions non-degenerate with respect to
-their Newton polyhedron in $d$ variables (statement; proof sketch by toric resolution; cite
-Varchenko1976 and Lin2011, with the exact hypotheses: non-degeneracy, the role of coordinate
-hyperplanes, the prior).
+dimension of the optimal face. Then the general statements (digest 02 §3): in **every**
+coordinate system $\lambda\le1/t$ (Greenblatt 2010, Theorem 1.2(a)); equality holds when $K$ is
+nondegenerate, meaning that no compact-face polynomial vanishes on the real torus $(\R^*)^d$
+(Greenblatt 2010, Theorem 1.6; Lin 2017, Theorem 1.3; Varchenko 1976 for the analytic origin, whose
+condition $t>1$ matters only for oscillatory integrals with a sign-changing phase, not for $K\ge0$);
+"$\lambda$ depends only on the ideal" (Lin 2017, Proposition 3.6), stated exactly. Counterexamples:
+$(a-b)^2$ (the diagram says $1$, the truth is $\tfrac12$) and $(a-b^2)^2$ (the diagram says $\tfrac34$,
+the truth is $\tfrac12$); and the cusp $(a^2-b^3)^2$, degenerate as written but with
+$\lambda=\tfrac5{12}$, the same as the chapter's nondegenerate emblem $a^4+b^6$.
 
 **Measuring it.** `06-newton-random.py`: for 30 random sums of even monomials in two variables, the
 Newton prediction against Monte Carlo volume exponents; the degenerate examples off the line.
@@ -706,13 +741,21 @@ coordinates in $a$ and in $b$; $\lambda=\min(M,N)/2$; the chain; the tanh neuron
 
 **The theorem.** `thm:catalogue:rankone` (complete proof). `thm:catalogue:aoyagi`: the Aoyagi–Watanabe
 (2005) formula for reduced-rank regression with $H$ hidden units and a truth of rank $r$ (exact
-statement with its case distinctions; verify), with a check that it gives the rank-one value;
-deep linear networks (Aoyagi 2024; verify); normal mixtures (Yamazaki–Watanabe 2003 bounds and later
-exact values; verify); three-layer networks with analytic activations (Watanabe 2001 bounds;
-Aoyagi's Vandermonde-type results; verify); restricted Boltzmann machines (Aoyagi 2010); naive Bayes
-networks (Rusakov–Geiger 2005); non-negative matrix factorization (Hayashi; verify). A table of
-$\lambda$ versus $d/2$ for small instances. The singular BIC (Drton–Plummer 2017): how these values
-enter model selection (statement and a worked example).
+statement with its case distinctions from digest 02 §5.1 — the digest worked from restatements; say
+so), checked against the rank-one value and the digest's small cases ($M=N=2$, $r=1$: $3/2$, $2$;
+$M=N=3$, $r=1$: $5/2$, $7/2$, $4$). Then the catalogue (digest 02 §5, with each entry's status):
+deep linear networks (Aoyagi 2024; the multiplicity is $a(\ell-a)+1$ and can exceed $2$); three-layer
+networks with analytic activations and Vandermonde-type singularities (Aoyagi and Nagata 2012 and
+related; inputs on $[-1,1]$); normal mixtures (Yamazaki and Watanabe 2003 bounds; Kariya and Watanabe
+2022 for the two-component case); restricted Boltzmann machines (Aoyagi 2010 — the digest found two
+entries that look wrong by its own computation: check before quoting); naive Bayesian networks
+(Rusakov and Geiger 2005); LDA (an exact formula, Hayashi 2021) and NMF (bounds); ReLU networks
+(only free-energy upper bounds are published, Nagayasu and Watanabe; exact three-layer values are
+claimed in an unrefereed 2025 preprint by Aoyagi). A table of $\lambda$ versus $d/2$ for small
+instances. The singular BIC (Drton and Plummer 2017): how these values enter model selection
+(statement and a worked example). A pre-asymptotic warning (digest 02 §8.3): for a tanh network with
+two hidden units, plain Monte Carlo sees $\lambda\approx0.5$ down to $\eps=10^{-5}$ while the true value
+is $2/3$.
 
 **Measuring it.** `07-catalogue-rrr.py`: for reduced-rank regression with $M=N=3$ and $H=1,2$ and
 truths of rank $0,1$, estimate $\lambda$ by the two-temperature estimator with Metropolis
@@ -987,10 +1030,11 @@ interior, $\varphi(w^*)>0$ and $\nabla^2K(w^*)$ has rank $r$, then
 $\tfrac r2\le\lambda(w^*)\le\tfrac r2+\tfrac{d-r}4$. Proof plan: the analytic splitting lemma writes
 $K=\sum_{i\le r}u_i^2+g(z)$ in new coordinates; $\lambda$ adds over separate variables
 (`prop:blowups:rules`); $g\ge0$ has no quadratic part, so its lowest-order part has even degree at
-least $4$ and $g\le C\abs z^4$, whence $0\le\lambda(g)\le\frac{d-r}4$ by comparison. Source: Bushnaq,
-LessWrong, 2024-08-08 (`Bushnaq2024`), whose upper bound was improved to $\frac{d-r}4$ by Dmitry
-Vaintrob in an edit of 2024-08-16; it is a blog post, not refereed, so the book proves the bound
-itself and credits the post. Both bounds are attained: $a^2$ in $\R^2$ (lower), $a^2+b^4$ and
+least $4$ and $g\le C\abs z^4$, whence $0\le\lambda(g)\le\frac{d-r}4$ by comparison. Sources: the
+upper bound is published, in Jacobian-rank form, as Lin (2017), Corollary 4.15 (= Lin 2011,
+Corollary 4.21; digest 02 §0.2); it was rediscovered in Bushnaq's LessWrong post of 2024-08-08
+(`Bushnaq2024`), whose upper bound was improved to $\frac{d-r}4$ by Dmitry Vaintrob in an edit of
+2024-08-16. The book proves both bounds itself and credits Lin first. Both bounds are attained: $a^2$ in $\R^2$ (lower), $a^2+b^4$ and
 $a^2b^2$ (upper). The local learning coefficient as Lau et al. define it (2025, Definition 1: the exponent of the
 local volume $V(\eps)$ on a ball where $w^*$ minimizes $L$; well-definedness in their App. B needs
 $w^*$ at least as degenerate as nearby minimizers and relatively finite variance), its invariance
@@ -1046,8 +1090,8 @@ has nothing to say about training dynamics.
 high-sparsity limit (one coordinate, uniform length in $[0,1]$); the closed-form population loss
 (their Lemma 3.1); the $k$-gon critical points; and their learning coefficients from the rule that a
 critical set which is a smooth manifold of dimension $s$ with a nondegenerate normal Hessian has
-$\lambda=(d-s)/2$, $m=1$ ("minimally singular"; prove the rule from `prop:blowups:rules` and the
-Morse–Bott form): the $6$-gon is nondegenerate modulo the rotation symmetry, so $\lambda=(18-1)/2=8.5$.
+$\lambda=(d-s)/2$, $m=1$ ("minimally singular"; Chapter 5 proves it as `prop:blowups:morsebott`):
+the $6$-gon is nondegenerate modulo the rotation symmetry, so $\lambda=(18-1)/2=8.5$.
 Check Chen et al.'s Table 1 ($5$-gon $\lambda=7$, $L=0.06874$; $5^+$-gon $\lambda=8.5$, $L=0.06180$;
 $6$-gon $\lambda=8.5$, $L=0.04819$) against the rule and numerically, and say which values are proved
 in their paper and which are not (digest 03 §2.3).

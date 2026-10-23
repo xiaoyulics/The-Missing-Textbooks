@@ -1,0 +1,410 @@
+% Chapter 13 of Singular Learning Theory for the Rest of Us: the local learning coefficient.
+\newcommand{\llcpost}[1]{\mathbb{E}_{w\mid\wstar,\beta,\gamma}\!\left[#1\right]}
+\newcommand{\llcpop}[1]{\mathbb{E}_{t}\!\left[#1\right]}
+\newcommand{\llcB}{\mathcal{B}}
+
+\sltchapter{The Local Learning Coefficient}{Measuring a trained network}{$y=a\relu(bx)$, deep linear networks}{ch:llc}
+\newtonfoot{2/2}{2}{\tfrac12}{a^2b^2}
+\begin{refsection}[chapters/13-llc.bib]
+
+\begin{chaptersummary}
+A trained network is one point $\wstar$; how many of its parameters do the data pay for there? The local learning coefficient $\lambda(\wstar)$, the learning coefficient of the loss near $\wstar$, answers: by hand it is $\tfrac12$ at every point of the ReLU neuron's cross and $\tfrac32$ at two very different points of a six-parameter rank-one regression. We prove that the rank $r$ of the Hessian sandwiches it, $\tfrac r2\le\lambda(\wstar)\le\tfrac r2+\tfrac{d-r}4$, with equality on the left exactly when the true set is a manifold of dimension $d-r$, and that it is invariant under reparametrization, unlike the Hessian's eigenvalues. The estimator in use, an average over a localized posterior sampled by stochastic-gradient Langevin dynamics, is consistent with a compact localizer; we compute its finite-$n$ bias exactly, prove that a fixed Gaussian localizer can make it converge to another point's value, and measure it on fourteen points with known values. No theorem covers the estimator as it is used on large networks.
+\end{chaptersummary}
+
+\section{The question: how complex is one trained network?}\label{sec:llc:question}
+
+Training ends at a point. Stochastic gradient descent has moved the weights of a network to some $\wstar$ near a minimum of the training loss, and every later question, about generalization, compression, or what the network has learned, is asked about that one point, not about a posterior. The oldest measure of how complex the point is counts parameters, each charged $\tfrac12\log n$ by the Bayesian information criterion. Finer measures look at the basin around $\wstar$: flat minima were proposed as simple ones by \textcite{HochreiterSchmidhuber1997}, and MacKay's effective number of parameters counts the directions that the data determine, through the eigenvalues of the Hessian of the loss \parencite{MacKay1992a}. All of these descend from the Laplace approximation.
+
+\begin{regularanswer}[the complexity of one minimum]
+If $\wstar$ is a nondegenerate minimum of $L$ in the interior of $W$, with $\varphi(\wstar)>0$, then the local form of \cref{thm:regular:laplace} gives, for the free energy $F_n(\llcB)=-\log\int_{\llcB}\varphi(w)e^{-nL_n(w)}\dd w$ of a small ball $\llcB$ around $\wstar$,
+\[
+F_n(\llcB)=nL_n(\hat w)+\frac d2\log\frac n{2\pi}+\frac12\log\det\nabla^2L(\wstar)-\log\varphi(\wstar)+o_p(1):
+\]
+each direction costs $\tfrac12\log n$ and its curvature $h_i$ adds $\tfrac12\log h_i$. When the Hessian is degenerate the theory says nothing, and the practice is to keep its $r$ nonzero eigenvalues: the minimum is said to have $r$ effective parameters and to cost $\tfrac r2\log n$.
+\end{regularanswer}
+
+Degenerate Hessians are the rule: the Hessians of trained networks have a bulk of eigenvalues near zero \parencite{SagunEtAl2016}, and for ReLU networks with more than one layer the Hessian of the population loss is degenerate at every true parameter \parencite{WeiEtAl2023}. The ReLU neuron $y=a\relu(bx)$ shows what goes wrong. At $\wstar=(0,0)$, the unit switched off, the Hessian is zero: the rank charges nothing, the parameter count charges $\log n$, and the truth (\cref{ch:coefficient}) is $\tfrac12\log n-\log\log n$. At $\wstar=(1,0)$ the rank, $1$, happens to be right, but the curvature that Laplace also needs is not a property of the function: the weights $(a/s,sb)$ give the same function for every $s>0$ and move the nonzero eigenvalue from $\tfrac12$ to $1/(2s^2)$. \textcite{DinhEtAl2017} used this rescaling to make the minima of rectifier networks arbitrarily sharp without changing them.
+
+Singular learning theory replaces the count by a volume. The \term{local learning coefficient}\index{learning coefficient!local} $\lambda(\wstar)$ is the learning coefficient of the loss restricted to a small neighbourhood of $\wstar$, the exponent with which the volume of nearly optimal parameters near $\wstar$ shrinks; its multiplicity $m(\wstar)$ is the power of the accompanying logarithm. It replaces $\tfrac d2$ in the free energy of the neighbourhood, $F_n(\llcB)=nL_n(\wstar)+\lambda(\wstar)\log n-(m(\wstar)-1)\log\log n+O_p(1)$, as \textcite{LauEtAl2025} sketch by following Watanabe's proof (their Appendix~B). They introduced the quantity for deep learning, with an estimator since applied to networks with up to $10^8$ parameters. This chapter asks two questions. What is $\lambda(\wstar)$ at the points of our models, and what does the Hessian say about it? And what does the estimator estimate, and how well?
+
+\section{By hand: the cast at a point}\label{sec:llc:byhand}
+
+We compute local learning coefficients where the Hessian sees everything and where it sees nothing. The volume is the tool, as in \cref{ch:volume}: if the volume $V(\eps)$ of the parameters near $\wstar$ with loss below $\eps$ behaves like $\eps^\lambda(\log\frac1\eps)^{m-1}$, then $\lambda(\wstar)=\lambda$ and $m(\wstar)=m$ (\cref{def:llc:llc} makes this precise).
+
+\begin{computation}{The ReLU neuron at the origin and on its cross}\label{comp:llc:relu}
+\step For $b\ge0$, $\relu(bx)=b\relu(x)$, and for $b<0$, $\relu(bx)=\abs b\relu(-x)$. Since $\E[\relu(x)^2]=\E[x^2\ind\{x>0\}]=\tfrac12$ for $x\sim\Normal(0,1)$, $\E[\relu(bx)^2]=b^2/2$, and the truth $y=\text{noise}$ gives $K(a,b)=\tfrac12\E[(a\relu(bx))^2]=\tfrac14a^2b^2$, the product model's loss up to a factor $\tfrac12$. The true set is the cross $\{ab=0\}$.
+\step The Hessian is $\nabla^2K(a,b)=\begin{pmatrix}b^2/2&ab\\ab&a^2/2\end{pmatrix}$. At the origin it is $0$, so $r=0$. At $(a^*,0)$ with $a^*\ne0$ it is $\diag(0,a^{*2}/2)$, so $r=1$; likewise $r=1$ at $(0,b^*)$.
+\step At the origin, with the uniform prior on $[-1,1]^2$, $V(\eps)=\Prob(\abs{ab}<2\sqrt\eps)=s(1+\log\frac1s)$ with $s=2\sqrt\eps$, because $\Prob(\abs a\abs b\le s)=s(1-\log s)$ for independent uniforms on $[-1,1]$ (\cref{ch:coefficient}). So $V(\eps)\asymp\eps^{1/2}\log\frac1\eps$: $\lambda(0,0)=\tfrac12$ and $m(0,0)=2$. The same exponents hold on every ball around the origin, because $K$ is homogeneous (\cref{lem:llc:homogeneous}).
+\step Near $(a^*,0)$, on the box $\{\abs{a-a^*}\le\abs{a^*}/2,\ \abs b\le\delta\}$, the factor $a^2/4$ lies between $a^{*2}/16$ and $9a^{*2}/16$, so $\{K<\eps\}$ is the set $\abs b<2\sqrt\eps/\abs a$, of area $\int4\sqrt\eps/\abs a\dd a\asymp\eps^{1/2}$: $\lambda(a^*,0)=\tfrac12$ with $m=1$, and likewise at $(0,b^*)$. The bounds of \cref{thm:llc:hessian} below, $[0,\tfrac12]$ at the origin and $[\tfrac12,\tfrac34]$ on the arms, are attained at the top and the bottom; the parameter count $\tfrac d2=1$ is wrong at both.
+\end{computation}
+
+\begin{computation}{Rank-one regression with $M=N=3$ at two points}\label{comp:llc:rankone}
+\step The model is $y=b\,(a^\top x)$ with $a\in\R^3$, $b\in\R^3$, $x\sim\Normal(0,I_3)$, and the truth is pure noise. Then $K(a,b)=\tfrac12\E\abs{b\,a^\top x}^2=\tfrac12\abs b^2\E[(a^\top x)^2]=\tfrac12\abs a^2\abs b^2$, with $d=6$. The true set $\{a=0\}\cup\{b=0\}$ is two $3$-planes in $\R^6$ meeting at the origin.
+\step The Hessian has blocks $\partial^2_{aa}K=\abs b^2I_3$, $\partial^2_{bb}K=\abs a^2I_3$, $\partial^2_{ab}K=2ab^\top$. At the origin it vanishes: $r=0$. At $(a^*,0)$ with $a^*\ne0$ it is $\diag(0,\abs{a^*}^2I_3)$: $r=3$.
+\step At the origin, take Lebesgue measure on the product of unit balls and polar coordinates $\rho=\abs a$, $\sigma=\abs b$, so that $\{K<\eps\}=\{\rho\sigma<s\}$ with $s=\sqrt{2\eps}$:
+\[
+V(\eps)=\int_0^1 4\pi\rho^2\,\frac{4\pi}3\min\Bigl(1,\frac s\rho\Bigr)^3\dd\rho=\frac{16\pi^2}3\Bigl(\frac{s^3}3+s^3\log\frac1s\Bigr).
+\]
+So $V(\eps)\asymp\eps^{3/2}\log\frac1\eps$: $\lambda(0)=\tfrac32$ and $m(0)=2$, the value $\min(M,N)/2$ of \cref{thm:catalogue:rankone}.
+\step Near $(a^*,0)$ the factor $\abs a^2$ is pinched between positive constants, so $K\asymp\abs b^2$, nondegenerate in the three coordinates of $b$ with those of $a$ free: $V(\eps)\asymp\eps^{3/2}$, $\lambda=\tfrac32$, $m=1$. The Hessian bounds, $[0,\tfrac32]$ at the origin and $[\tfrac32,\tfrac94]$ at $(a^*,0)$, are attained at the top and the bottom; the parameter count $\tfrac d2=3$ is twice the truth at both.
+\step For general $M,N$ the same computations give $\lambda(0)=\min(M,N)/2$, $\lambda(a^*,0)=M/2$ and $\lambda(0,b^*)=N/2$. When $N<M$ the origin is strictly more singular than the points $(a^*,0)$ of the same true set, a fact the Hessian ranks ($0$ and $M$) do not reveal.
+\end{computation}
+
+What one had to notice is that the Hessian sees only the quadratic part of $K$, while the volume sees everything. At $(a^*,0)$ the quadratic part controls the directions it constrains and the others are exactly flat, so the rank is the answer; at the origin the quadratic part vanishes, the quartic $a^2b^2$ decides, and the rank says nothing beyond $\lambda\ge0$. The global coefficient of \cref{ch:catalogue} is the minimum of these local ones over the true set (\cref{prop:blowups:rules}), and a trained network sits at one point of that set, not necessarily the minimizing one.
+
+\section{The theorem: the Hessian sandwich}\label{sec:llc:hessian}
+
+Throughout this section $\wstar$ is a local minimum of the population loss $L$, and $K(w)=L(w)-L(\wstar)$, which is the book's $K$ when $\wstar$ is a true parameter and in general is nonnegative on a neighbourhood $U$ of $\wstar$. Balls are closed and centred at $\wstar$; for a ball $\llcB\subset U$ and a prior density $\varphi$,
+\[
+V_{\llcB}(\eps)=\int_{\llcB\cap\{K<\eps\}}\varphi(w)\dd w .
+\]
+We write $f\asymp g$ for two positive functions of $\eps$ when $c\,g\le f\le C\,g$ for some constants $0<c\le C$ and all small $\eps>0$.
+
+\begin{definition}[Local learning coefficient]\label{def:llc:llc}
+Let $\varphi$ be continuous on $U$ with $\varphi(\wstar)>0$. If there are a number $\lambda\ge0$, an integer $m\ge1$ and a radius $\rho_0>0$ such that
+\[
+V_{\llcB}(\eps)\asymp\eps^{\lambda}\Bigl(\log\frac1\eps\Bigr)^{m-1}\qquad(\eps\to0)
+\]
+for every ball $\llcB$ of radius at most $\rho_0$, then $\lambda(\wstar)=\lambda$ is the \term{local learning coefficient} of $K$ at $\wstar$ and $m(\wstar)=m$ its \term{local multiplicity}\index{multiplicity!local}.
+\end{definition}
+
+The pair is unique when it exists, because $\eps^{\lambda}(\log\frac1\eps)^{m-1}\asymp\eps^{\lambda'}(\log\frac1\eps)^{m'-1}$ forces $\lambda=\lambda'$ and then $m=m'$. It does not depend on $\varphi$, which is pinched between two positive constants on small balls, so Lebesgue measure gives the same pair; \textcite{LauEtAl2025} use Lebesgue measure on one ball on which $\wstar$ minimizes $L$ (their Definition~1).
+
+\begin{remark}[Analytic losses]\label{rem:llc:analytic}
+If $K$ is real analytic near $\wstar$, the pair exists, $\lambda(\wstar)$ is rational, $V_{\llcB}(\eps)=c_{\llcB}\,\eps^{\lambda}(\log\frac1\eps)^{m-1}(1+o(1))$, and $-\lambda(\wstar)$ is the largest pole of the local zeta function $\int_{\llcB}K^z\varphi$, of order $m(\wstar)$ (\cref{thm:volume:zeta}). This is resolution of singularities (\cref{thm:toolkit:hironaka}) near $\wstar$: on one resolution over a fixed ball the exponent of $V_{\llcB}$ takes finitely many values $(h_j+1)/(2k_j)$ and can only grow as $\llcB$ shrinks, so it is constant for small balls. The global learning coefficient is the minimum of the local ones over the true set \parencite[Proposition~2.5]{Lin2017}; so every point of a small ball has local coefficient at least $\lambda(\wstar)$, the extra condition that Lau et al.\ impose for the local free energy (their Appendix~B). The real log canonical threshold of $K$ at $\wstar$ is the same number as $\lambda(\wstar)$.
+\end{remark}
+
+The main result of the chapter compares $\lambda(\wstar)$ with the rank of the Hessian.
+
+\begin{theorem}[The Hessian sandwich]\label{thm:llc:hessian}
+Let $K$ be four times continuously differentiable on a neighbourhood of $\wstar\in\R^d$, with $K\ge0$ there and $K(\wstar)=0$, let $\varphi$ be continuous with $\varphi(\wstar)>0$, and let $r$ be the rank of $\nabla^2K(\wstar)$. There are a radius $\rho_0>0$ and constants $0<c\le C$ such that for every ball $\llcB$ of radius at most $\rho_0$ and all sufficiently small $\eps>0$
+\begin{equation}\label{eq:llc:sandwich}
+c\,\eps^{\frac r2+\frac{d-r}4}\ \le\ V_{\llcB}(\eps)\ \le\ C\,\eps^{\frac r2}.
+\end{equation}
+Consequently, if $\lambda(\wstar)$ exists, in particular if $K$ is analytic, then
+\[
+\frac r2\ \le\ \lambda(\wstar)\ \le\ \frac r2+\frac{d-r}4,
+\]
+and if $\lambda(\wstar)=\tfrac r2$, then $m(\wstar)=1$.
+\end{theorem}
+
+\begin{proof}
+The plan is to bound the sublevel set $\{K<\eps\}$ from outside by a slab of width $\sqrt\eps$ in the directions the Hessian sees, and from inside by a box of widths $\sqrt\eps$ and $\eps^{1/4}$. Translate $\wstar$ to the origin and rotate so that $H=\nabla^2K(0)=\diag(h_1,\dots,h_r,0,\dots,0)$ with $h_1,\dots,h_r>0$; the Hessian is positive semidefinite because $0$ is a local minimum of $K$, and rotations about the centre preserve balls and volumes. Write $w=(u,z)$ with $u\in\R^r$ and $z\in\R^{d-r}$, let $h=\min_ih_i$ and $h^*=\max_ih_i$, and let $\omega_k$ be the volume of the unit ball of $\R^k$. If $r=0$ there is nothing to prove on the right of \eqref{eq:llc:sandwich}, since $V_{\llcB}(\eps)\le\int_{\llcB}\varphi$; if $r=d$ there are no $z$-coordinates, and the argument below applies with them omitted.
+
+\emph{The upper bound on $V_{\llcB}$.} The block $\partial^2_{uu}K$ is continuous and equals $\diag(h_1,\dots,h_r)$ at $0$, so there is $\delta>0$ such that on the cube $Q=[-\delta,\delta]^d$ we have $K\ge0$ and $\partial^2_{uu}K(u,z)\succeq\tfrac h2I_r$. Fix $z\in[-\delta,\delta]^{d-r}$ and let $k_z(u)=K(u,z)$ on the convex set $Q_u=[-\delta,\delta]^r$. Taylor's formula with integral remainder and the bound on $\partial^2_{uu}K$ give $k_z(u')\ge k_z(u)+\nabla k_z(u)\cdot(u'-u)+\tfrac h4\abs{u'-u}^2$ for $u,u'\in Q_u$. Let $u_z$ minimize $k_z$ on the compact set $Q_u$. Along the segment from $u_z$ to $u'\in Q_u$ the function $k_z$ is smallest at $u_z$, so $\nabla k_z(u_z)\cdot(u'-u_z)\ge0$, and therefore, since $k_z\ge0$,
+\[
+k_z(u')\ \ge\ k_z(u_z)+\tfrac h4\abs{u'-u_z}^2\ \ge\ \tfrac h4\abs{u'-u_z}^2 .
+\]
+Hence the slice $\{u\in Q_u:K(u,z)<\eps\}$ lies in the ball of radius $2\sqrt{\eps/h}$ around $u_z$, of volume $\omega_r(4\eps/h)^{r/2}$. Integrating over $z$ (Fubini) and bounding $\varphi$ by its maximum $\varphi_{\max}$ on $Q$, every ball $\llcB\subset Q$ satisfies
+\[
+V_{\llcB}(\eps)\ \le\ \varphi_{\max}(2\delta)^{d-r}\omega_r(4/h)^{r/2}\,\eps^{r/2}.
+\]
+
+\emph{The cubic term vanishes on the kernel.} By Taylor's theorem there are $\delta'\in(0,1]$ and $C_4$ with $K(w)=\tfrac12w^\top Hw+T(w)+R(w)$ and $\abs{R(w)}\le C_4\abs w^4$ for $\abs w\le\delta'$, where $T$ is the cubic form of third derivatives at $0$. Fix $z$ and let $s\to0$: the quadratic term vanishes on $(0,z)$, so $0\le K(0,sz)=s^3T(0,z)+R(0,sz)$, and dividing by $\abs s^3$ and letting $s\to0$ from both sides gives $T(0,z)\ge0$ and $-T(0,z)\ge0$. So $T(0,z)=0$ for every $z$.
+
+\emph{The lower bound on $V_{\llcB}$.} By the last step every monomial of $T$ contains a coordinate of $u$; the monomials with exactly one such coordinate are bounded by $C_3\abs u\abs z^2$, and those with two or three by $C_3\abs u^2\abs w$, for a constant $C_3$. For $\abs w\le\delta'\le1$ we use $\abs u\abs z^2\le\tfrac12(\abs u^2+\abs z^4)$, $\abs u^2\abs w\le\abs u^2$ and $\abs w^4\le2\abs u^4+2\abs z^4\le2\abs u^2+2\abs z^4$; with $A=\tfrac{h^*}2+\tfrac32C_3+2C_4$, which we may take positive, this gives
+\[
+K(u,z)\ \le\ \tfrac{h^*}2\abs u^2+C_3\abs u\abs z^2+C_3\abs u^2\abs w+C_4\abs w^4\ \le\ A\bigl(\abs u^2+\abs z^4\bigr).
+\]
+On the set $P_\eps=\{\abs u<(\eps/2A)^{1/2},\ \abs z<(\eps/2A)^{1/4}\}$ this gives $K<\eps$, and $P_\eps$ lies in $\llcB$ and in $\{\abs w\le\delta'\}$ once $\eps$ is small. With $\varphi_{\min}>0$ the minimum of $\varphi$ on $Q$,
+\[
+V_{\llcB}(\eps)\ \ge\ \varphi_{\min}\,\omega_r\,\omega_{d-r}\,(2A)^{-\frac r2-\frac{d-r}4}\,\eps^{\frac r2+\frac{d-r}4}.
+\]
+Taking $\rho_0=\delta$ proves \eqref{eq:llc:sandwich}.
+
+\emph{The consequences.} Suppose $V_{\llcB}(\eps)\asymp\eps^{\lambda}(\log\frac1\eps)^{m-1}$. If $\lambda<\tfrac r2$, then $V_{\llcB}(\eps)/\eps^{r/2}\ge c'\eps^{\lambda-r/2}\to\infty$, against the upper bound; if $\lambda=\tfrac r2$ and $m\ge2$, then $V_{\llcB}(\eps)/\eps^{r/2}\ge c'\log\frac1\eps\to\infty$, against it again; and if $\lambda>\tfrac r2+\tfrac{d-r}4$, then $V_{\llcB}(\eps)/\eps^{r/2+(d-r)/4}\le C'\eps^{\lambda-r/2-(d-r)/4}(\log\frac1\eps)^{m-1}\to0$, against the lower bound.
+\end{proof}
+
+Both bounds are attained, as \cref{comp:llc:relu,comp:llc:rankone} showed: the lower one on the arms of the cross and at $(a^*,0)$ in rank-one regression, the upper one at the origin of both models, with multiplicity $2$, and at the origin of the quartic model $y=ax_1+b^2x_2$ of \cref{ch:blowups} ($r=1$, $d=2$, $\lambda=\tfrac34$, $m=1$). The lower bound on $\lambda$ needs only two derivatives (\cref{ex:llc:twoderivs}). The upper bound needs four: killing the cubic term on the kernel is what gives a quarter per kernel direction; with three derivatives the argument gives only $\tfrac r2+\tfrac{d-r}3$, and with fewer the bound fails (\cref{ex:llc:original}).\sidenote{The upper bound, in the language of ideals and with the rank of a Jacobian in place of the Hessian, is Corollary~4.15 of \textcite{Lin2017}, a paper first posted to arXiv in 2010; see also \textcite{Lin2011}. \textcite{Bushnaq2024} rediscovered it in a blog post of 8 August 2024, first with $3$ in the denominator; an edit dated 16 August credits Dmitry Vaintrob with the improvement to $4$. The post calls the lower bound known; a footnote of \textcite[Appendix~D.3]{WangEtAl2025a} sketches it through the splitting lemma.} Our proof works with volumes, needs no splitting lemma and no analyticity for \eqref{eq:llc:sandwich}, and so applies to a $C^4$ loss, such as the ReLU neuron's polynomial $K$, whenever its exponents exist.
+
+When is the lower bound attained? The splitting lemma (\cref{thm:toolkit:splitting}) answers this. In its real-analytic form it says: if $f$ is analytic near $0\in\R^d$ with $f(0)=0$, $\nabla f(0)=0$ and $\rank\nabla^2f(0)=r$, then there is an analytic diffeomorphism $\psi$ of a neighbourhood of $0$ with $\psi(0)=0$ and $f(\psi(u,z))=\sum_{i\le r}\pm u_i^2+g(z)$, where $g$ is analytic near $0\in\R^{d-r}$ and vanishes at $0$ with its first and second derivatives.
+
+\begin{corollary}[Minimally singular points]\label{cor:llc:minimal}
+Let $K$ be analytic near $\wstar$, with $K\ge0$ and $K(\wstar)=0$, and let $r=\rank\nabla^2K(\wstar)$. Then $\lambda(\wstar)=\tfrac r2$ if and only if, near $\wstar$, the set $\{K=0\}$ is an analytic submanifold of dimension $d-r$. In that case $m(\wstar)=1$.
+\end{corollary}
+
+\begin{proof}
+The plan is to move to the coordinates of the splitting lemma, where the question becomes whether $g$ vanishes. Apply the lemma to $f=K$ at $\wstar$. The Hessian of $K\circ\psi$ at $0$, $D\psi(0)^\top\nabla^2K(\wstar)D\psi(0)$, is positive semidefinite and equals $\diag(\pm2,\dots,\pm2,0,\dots,0)$, so every sign is $+$: $K\circ\psi=\abs u^2+g(z)$ on a box $Q_u\times Q_z$ around $0$, with $g(z)=K(\psi(0,z))\ge0$. By \cref{prop:llc:invariance} below we may compute $\lambda$ and $m$ for $K\circ\psi$ with Lebesgue measure on such boxes; $\{K=0\}$ corresponds to $\{u=0,\ g(z)=0\}$.
+
+If $g\equiv0$ on a neighbourhood of $0$, then $\{K\circ\psi=0\}$ is the plane $\{u=0\}$ near $0$, whose image under $\psi$ is an analytic submanifold of dimension $d-r$, and $V(\eps)=\omega_r\eps^{r/2}\vol(Q_z)$ for small $\eps$, so $\lambda=\tfrac r2$ and $m=1$. Otherwise the analytic function $g$ is not identically zero on the connected box $Q_z$, so its zero set has measure zero (\cref{def:toolkit:analytic}) and contains no open piece of the plane, and $V_g(\eps)=\vol\{z\in Q_z:g(z)<\eps\}$ decreases to $0$. Since $\abs u^2<\eps-g(z)$ forces $g(z)<\eps$, we get $V(\eps)\le\omega_r\eps^{r/2}V_g(\eps)$, so $V(\eps)/\eps^{r/2}\to0$ and $\lambda(\wstar)\ne\tfrac r2$; and $\{K\circ\psi=0\}=\{0\}\times\{g=0\}$ is not a $(d-r)$-dimensional submanifold near $0$.
+\end{proof}
+
+The lower bound is attained exactly at the \term{minimally singular}\index{minimally singular point} points of \textcite{WeiEtAl2023}, where the loss is a nondegenerate quadratic transversally to a smooth true set (\cref{prop:blowups:morsebott}); \cref{ch:stages} uses them for the critical points of a toy model of superposition. The next proposition says why the local learning coefficient, unlike the Hessian's eigenvalues, is a property of the function the network computes.
+
+\begin{proposition}[Reparametrization invariance]\label{prop:llc:invariance}
+Let $\psi$ be a $C^1$ diffeomorphism from a neighbourhood of $w'$ onto a neighbourhood of $\wstar=\psi(w')$, and let $K'=K\circ\psi$. Then $\lambda(K',w')$ and $m(K',w')$ exist if and only if $\lambda(\wstar)$ and $m(\wstar)$ do, and they are equal. If $\psi$ is $C^2$, the Hessians satisfy $\nabla^2K'(w')=D\psi(w')^\top\nabla^2K(\wstar)D\psi(w')$: they have the same rank, but not in general the same eigenvalues.
+\end{proposition}
+
+\begin{proof}
+For a small ball $\llcB'$ around $w'$, the set $\psi(\llcB')$ contains a ball $\llcB_1$ and lies in a ball $\llcB_2$ around $\wstar$, both as small as we like. By the change of variables formula, $V'_{\llcB'}(\eps)=\int_{\psi(\llcB')\cap\{K<\eps\}}\varphi'(\psi^{-1}(w))\abs{\det D\psi^{-1}(w)}\dd w$, and on the compact closure the integrand lies between two positive multiples of $\varphi(w)$, for priors $\varphi'$, $\varphi$ continuous and positive at the two points. So $V'_{\llcB'}$ lies between positive multiples of $V_{\llcB_1}$ and $V_{\llcB_2}$, both $\asymp\eps^{\lambda(\wstar)}(\log\frac1\eps)^{m(\wstar)-1}$ if these exist; the converse follows with $\psi^{-1}$. Differentiating $K\circ\psi$ twice at a critical point gives the Hessian formula, and congruent matrices have the same rank.
+\end{proof}
+
+For the ReLU neuron the rescaling $\psi_s(a,b)=(a/s,sb)$ of \cref{sec:llc:question} is such a diffeomorphism, with $K\circ\psi_s=K$: at $(a^*/s,0)$ the rank, $1$, and $\lambda=\tfrac12$ stay, while the eigenvalue $a^{*2}/(2s^2)$ takes every positive value. The invariance is Appendix~C of \textcite{LauEtAl2025}, who checked their estimator on small ReLU networks rescaled over eight orders of magnitude, with a preconditioner set by hand.
+
+The coefficients of \cref{ch:catalogue} are global, minima over the true set, and an estimator measures a local one. At the centre of a homogeneous loss the two coincide.
+
+\begin{lemma}[Homogeneous losses]\label{lem:llc:homogeneous}
+If $K(\wstar+s(w-\wstar))=s^kK(w)$ for all $s>0$ and some $k>0$, then the exponents of $V_{\llcB}$ are the same for all balls around $\wstar$, and $\lambda(\wstar)$, $m(\wstar)$ are the learning coefficient and multiplicity of $K$ for every bounded, compactly supported prior that is positive and continuous near $\wstar$.
+\end{lemma}
+
+\begin{proof}
+Take $\wstar=0$ and Lebesgue measure. The substitution $w=\rho v$ gives $\vol(\llcB_\rho\cap\{K<\eps\})=\rho^d\vol(\llcB_1\cap\{K<\eps\rho^{-k}\})$ for the balls $\llcB_\rho$ of radius $\rho$, which therefore share their exponents; and such a prior lies between positive multiples of the indicators of a small and a large ball.
+\end{proof}
+
+For a deep linear network $y=W_L\cdots W_1x$ with zero truth and $x\sim\Normal(0,I)$, the loss $K=\tfrac12\norm{W_L\cdots W_1}_F^2$ is homogeneous of degree $2L$, so its local coefficient at $0$ is the global one, computed by Aoyagi. We state her theorem as Aoyagi restates it \parencite[Definition~4]{Aoyagi2025}, with the multiplicity; the restatement by Lau et al.\ (their Theorem~1) leaves the integer $a$ undefined.
+
+\begin{theorem}[\textcite{Aoyagi2024}]\label{thm:llc:aoyagi}
+Let $y=W_L\cdots W_1x+\varepsilon$ with layer widths $H_0$ (input), $H_1,\dots,H_L$ (output), Gaussian noise, inputs with a density positive on a set of positive volume, and a smooth compactly supported prior positive at the true parameter; let $r$ be the rank of the true product and $\Delta_j=H_j-r$. If some $\Delta_j=0$, then $\lambda=\tfrac12(r(H_0+H_L)-r^2)$ and $m=1$. Otherwise there is a set $\Sigma\subset\{0,\dots,L\}$ with $\abs\Sigma=\ell+1\ge2$ such that $\Delta_j<\Delta_k$ for $j\in\Sigma$, $k\notin\Sigma$, and with $S=\sum_{j\in\Sigma}\Delta_j$, $S\ge\ell\Delta_j$ for $j\in\Sigma$ and $S<\ell\Delta_k$ for $k\notin\Sigma$; with $q=\lceil S/\ell\rceil$ and $a=S-(q-1)\ell$,
+\[
+\lambda=\frac{r(H_0+H_L)-r^2}2+\frac{a(\ell-a)}{4\ell}+\frac{S^2}{4\ell}-\frac14\sum_{j\in\Sigma}\Delta_j^2,\qquad m=a(\ell-a)+1 .
+\]
+\end{theorem}
+
+Widths $(N,1,M)$ give rank-one regression, $\lambda=\min(M,N)/2$ with $m=2$ exactly when $M=N$ (\cref{thm:catalogue:rankone}), and widths $(1,\dots,1)$ give the chain, $\lambda=\tfrac12$ with $m=L$; our implementation reproduces both, and the set $\Sigma$ was unique in all of 3000 random architectures we tried. At points of the true set other than the most degenerate ones the local coefficient can exceed the global one, so the experiments of \cref{sec:llc:measuring} sit at the origin, or at a point that \textcite{HitchcockHoogland2025}, following \textcite{PepinLehalleurRimanyi2024}, show to be most degenerate: for equal widths, every layer the partial identity with $r$ ones.
+
+\section{The theorem: what the estimator estimates}\label{sec:llc:estimator}
+
+Volumes in $10^8$ dimensions cannot be computed. The estimator of \textcite{LauEtAl2025} replaces the volume by an average energy, the localized form of WBIC (\cref{thm:temperature:wbic}).
+
+\begin{definition}[The LLC estimator; \textcite{LauEtAl2025}]\label{def:llc:estimator}
+Let $\wstar$ be a local minimum of $L$, $\beta=1/\log n$ and $\gamma>0$. The \term{localized tempered posterior}\index{localized posterior} is the probability density on $\R^d$
+\[
+p(w\mid\wstar,\beta,\gamma)\ \propto\ \exp\Bigl\{-n\beta L_n(w)-\frac\gamma2\abs{w-\wstar}^2\Bigr\},
+\]
+and the \term{LLC estimator}\index{LLC estimator} is $\hat\lambda(\wstar)=n\beta\bigl(\llcpost{L_n(w)}-L_n(\wstar)\bigr)$. To compute the expectation, stochastic-gradient Langevin dynamics (SGLD, \cref{sec:toolkit:sgld}) starts at $w_0=\wstar$ and iterates
+\[
+w_{t+1}=w_t+\frac\epsilon2\Bigl(-n\beta\,\nabla L_{B_t}(w_t)-\gamma(w_t-\wstar)\Bigr)+\sqrt\epsilon\,\xi_t,\qquad\xi_t\iid\Normal(0,I_d),
+\]
+with the minibatch loss $L_{B}(w)=-\frac1{\abs B}\sum_{i\in B}\log p(X_i\mid w)$ and step size $\epsilon$; the data are shuffled once and cut into consecutive minibatches $B_t$. After a burn-in the average of $L_n(w_t)$ replaces the expectation; their Algorithm~1 averages the minibatch losses $L_{B_t}(w_t)$ already computed for the gradients instead.
+\end{definition}
+
+The step size $\epsilon$ is not the tolerance $\eps$ of a volume. We keep Lau et al.'s conventions throughout: $n\beta=n/\log n$ and a localizing drift $-\tfrac\epsilon2\gamma(w-\wstar)$. Later work changed both, so numbers from different papers are not directly comparable: version~1.3 of the \texttt{devinterp} library \parencite{vanWingerdenEtAl2024} sets $n\beta=b/\log b$ by default, with $b$ the minibatch size, \textcite{WangEtAl2025a} use $n\beta=30$, and \textcite{HooglandEtAl2025} write the localizing term with $\gamma/2$ in place of $\gamma$.
+
+What does $\hat\lambda(\wstar)$ estimate? Replace the empirical loss by the population loss, write $t=n\beta$, and replace the Gaussian by a weight $\Psi\ge0$, for instance the indicator of a small ball times a prior. The number $t\,\llcpop{K}$, with $\llcpop{\cdot}$ the expectation under the density proportional to $e^{-tK}\Psi$, is the \term{population skeleton}\index{LLC estimator!population skeleton} of the estimator, the subject of \cref{prop:temperature:mean}, whose proof uses only the volume function; we record the leading term.
+
+\begin{lemma}[The skeleton with a compact localizer]\label{lem:llc:population}
+Let $\Psi\ge0$ be bounded, measurable and compactly supported, $K\ge0$ continuous on its support, and suppose $V_\Psi(\eps)=\int_{\{K<\eps\}}\Psi\dd w=c\,\eps^\lambda(\log\frac1\eps)^{m-1}(1+o(1))$ as $\eps\to0$, with $c,\lambda>0$. Then $t\,\llcpop{K}\to\lambda$ as $t\to\infty$.
+\end{lemma}
+
+\begin{proof}
+The plan is to write both expectations through $V_\Psi$ and pass to the limit under the integral. Let $\mu$ be the image of $\Psi(w)\dd w$ under $K$, so that $V_\Psi(\eps)=\mu([0,\eps))$. Write $e^{-tx}$ and $xe^{-tx}$ as the integrals of $te^{-ts}$ and $(ts-1)e^{-ts}$ over $s>x$, exchange the order of integration and substitute $s=\sigma/t$:
+\[
+t\,\llcpop{K}=\frac{t\int xe^{-tx}\dd\mu(x)}{\int e^{-tx}\dd\mu(x)}=\frac{\int_0^\infty(\sigma-1)e^{-\sigma}V_\Psi(\sigma/t)\dd\sigma}{\int_0^\infty e^{-\sigma}V_\Psi(\sigma/t)\dd\sigma}.
+\]
+Divide both integrals by $V_\Psi(1/t)$; for fixed $\sigma$ the ratio $V_\Psi(\sigma/t)/V_\Psi(1/t)$ tends to $\sigma^\lambda$. Choose $\eps_0<1$ such that $V_\Psi(\eps)$ is within a factor $2$ of $c\eps^\lambda(\log\frac1\eps)^{m-1}$ for $\eps\le\eps_0$. Then the ratio is at most $1$ for $\sigma\le1$, because $V_\Psi$ is nondecreasing, at most $4\sigma^\lambda$ for $1<\sigma\le\eps_0t$, because $\log(t/\sigma)\le\log t$, and at most $\mu(\R)/V_\Psi(1/t)\le Ct^\lambda$ beyond, where its integral against $(1+\sigma)e^{-\sigma}$ tends to $0$. By dominated convergence the two integrals, divided by $V_\Psi(1/t)$, tend to $\Gamma(\lambda+2)-\Gamma(\lambda+1)=\lambda\Gamma(\lambda+1)$ and $\Gamma(\lambda+1)$.
+\end{proof}
+
+With $\Psi$ the indicator of a small ball, the limit is $\lambda(\wstar)$ (\cref{def:llc:llc}). The convergence is slow when $m\ge2$: for the expansion of the volume in powers of $\log\frac1\eps$ that analytic losses have, \cref{prop:temperature:mean} gives $t\,\llcpop{K}=\lambda-\frac{m-1}{\log t}+o(\frac1{\log t})$, a bias of order $1/\log n$ that no better sampler removes. On the ReLU neuron the skeleton can be computed exactly.
+
+\begin{computation}{The skeleton at the ReLU neuron's origin}\label{comp:llc:ideal}
+\step Localize with the book's prior box $[-1,1]^2$. By symmetry $Z(t)=\tfrac14\int\!\!\int_{[-1,1]^2}e^{-ta^2b^2/4}\dd a\dd b=\int_0^1\!\!\int_0^1e^{-ta^2b^2/4}\dd b\dd a$, and $t\,\llcpop{K}=-t\frac{\dd}{\dd t}\log Z(t)$.
+\step The inner integral is $\int_0^1e^{-ta^2b^2/4}\dd b=\frac{\sqrt\pi}{a\sqrt t}\operatorname{erf}\bigl(\frac{a\sqrt t}2\bigr)$, and the substitution $v=a\sqrt t/2$ gives $Z(t)=\sqrt{\pi/t}\;G(\sqrt t/2)$ with $G(X)=\int_0^X\operatorname{erf}(v)\frac{\dd v}v$.
+\step For large $X$, $G(X)=\log X+\int_0^\infty\bigl(\operatorname{erf}(v)-\ind\{v>1\}\bigr)\frac{\dd v}v+\int_X^\infty\operatorname{erfc}(v)\frac{\dd v}v$. Integrating by parts, the constant is $-\frac2{\sqrt\pi}\int_0^\infty\log(v)e^{-v^2}\dd v=-\frac1{2\sqrt\pi}\Gamma'(\tfrac12)=\frac{\gamma_E}2+\log2$, by $\Gamma'(\tfrac12)/\Gamma(\tfrac12)=-\gamma_E-2\log2$ ($\gamma_E$ is Euler's constant), and the last integral is $O(e^{-X^2})$.
+\step So $Z(t)=\frac{\sqrt\pi}{2\sqrt t}(\log t+\gamma_E)+O(e^{-t/4})$, with a derivative of the same exponentially small order, and
+\[
+t\,\llcpop{K}=\frac12-\frac1{\log t+\gamma_E}+O(e^{-t/4}).
+\]
+\step At $n=10^4$, $t=n/\log n=1086$ and the skeleton is $0.368$, $26\%$ below $\lambda=\tfrac12$; at $n=10^6$ it is $0.415$, and at $n=10^{12}$ still $0.460$. The leading correction is $-\frac{m-1}{\log t}$ with $m=2$, as \cref{prop:temperature:mean} says.
+\step At $(1,0)$, with the box $[\tfrac12,\tfrac32]\times[-\tfrac12,\tfrac12]$, which avoids the origin, the inner integral is $\frac{2\sqrt\pi}{a\sqrt t}\operatorname{erf}\bigl(\frac{a\sqrt t}4\bigr)$, so $Z(t)\propto t^{-1/2}(1+O(e^{-t/64}))$ and the skeleton is $\tfrac12$ up to exponentially small terms. Same $\lambda$, multiplicity $1$: no logarithmic bias.
+\end{computation}
+
+What one had to notice is that the posterior over the cross is a mixture over scales, as in \cref{ch:singular}: the factor $\log t+\gamma_E$ counts the scales of $\abs a$ the posterior can occupy, and the estimator pays for them with a bias that decays like $1/\log n$, even with an exact sampler. With noisy data there is a second bias: at the true parameter each identifiable direction contributes $-\beta Z^2/2$ with $Z\sim\Normal(0,1)$, on average $-1/(2\log n)$ (\cref{ex:llc:noise}). Both biases show in the normal-crossing test of the first arXiv version of \textcite{LauEtAl2025}: for $y=w_1w_2x$ with $n=1000$ ($\lambda=\tfrac12$, $m=2$; noisy labels, $\gamma=1$) it reports means of $0.29$ to $0.33$ from MCMC and SGLD (its Table~2), and the exact estimator, computed as above, has mean $0.32$ (\texttt{13-llc-ideal.py}): the shortfall is the estimator's, not the sampler's.
+
+With data and a compact localizer, Watanabe's theorem on WBIC applies to the problem restricted to the ball, as \textcite{HitchcockHoogland2025} note (their Theorem~3.2).
+
+\begin{theorem}[\textcite{Watanabe2013}, Theorem~4, applied to a ball]\label{thm:llc:wbic}
+Let $\llcB$ be a small closed ball around $\wstar$ on which the model, the truth and the restricted prior satisfy Watanabe's fundamental conditions (an analytic log-likelihood ratio with six moments, relatively finite variance, an analytic times a smooth positive prior, $\wstar$ an interior minimizer of $L$ on $\llcB$), and let $\hat\lambda_{\llcB}=n\beta(\E^\beta_{\llcB}[L_n]-L_n(\wstar))$ with $\beta=1/\log n$ and the tempered posterior restricted to $\llcB$. Then there are random variables $U_n$ with $\E[U_n]=0$, converging in law to a Gaussian random variable and equal to $0$ when the parity of the problem is odd, such that
+\[
+\hat\lambda_{\llcB}=\lambda(\wstar)+U_n\sqrt{\frac{\lambda(\wstar)}{2\log n}}+O_p\Bigl(\frac1{\log n}\Bigr).
+\]
+In particular $\hat\lambda_{\llcB}\to\lambda(\wstar)$ in probability.
+\end{theorem}
+
+This is \cref{thm:temperature:wbic} divided by $\log n$, for the restricted problem, whose learning coefficient is $\lambda(\wstar)$ once $\llcB$ is small (\cref{rem:llc:analytic}). Practice leaves it in three ways: a Gaussian localizer, a trained $\wstar$ found on the same data, and a short constant-step SGLD chain. For the Gaussian localizer \textcite{LauEtAl2025} state, as a direct extension of Watanabe's proofs, that the localized WBIC matches the first two terms of the localized free energy, with some coefficient $\tilde\lambda(\wstar)$, and conjecture that $\tilde\lambda(\wstar)=\lambda(\wstar)$ under conditions on $\gamma$ to be found (their Appendix~D). The next proposition shows what such conditions must accomplish.
+
+\begin{proposition}[What a fixed Gaussian localizer measures]\label{prop:llc:gaussian}
+In rank-one regression, $K(a,b)=\tfrac12\abs a^2\abs b^2$ with $a\in\R^N$, $b\in\R^M$, let $\wstar=(a^*,0)$ with $a^*\ne0$, so that $\lambda(\wstar)=M/2$, and let $\llcpop{\cdot}$ be the expectation under the density proportional to $\exp\{-tK(w)-\frac\gamma2\abs{w-\wstar}^2\}$ on $\R^{N+M}$.
+\begin{enumerate}
+\item $t\,\llcpop{K}=\frac M2\,\E\Bigl[\frac{t\abs a^2}{t\abs a^2+\gamma}\Bigr]$, where $a$ has the density proportional to $(t\abs a^2+\gamma)^{-M/2}e^{-\gamma\abs{a-a^*}^2/2}$ on $\R^N$.
+\item For every fixed $\gamma>0$, $t\,\llcpop{K}\to\min(M,N)/2$ as $t\to\infty$.
+\end{enumerate}
+In particular, if $N<M$ the population estimate converges to $N/2$, the local learning coefficient of the origin, and not to $\lambda(\wstar)=M/2$.
+\end{proposition}
+
+\begin{proof}
+The plan is to integrate out $b$ exactly and then let $t\to\infty$ in the remaining integral over $a$. For fixed $a$ the exponent is $-\frac12(t\abs a^2+\gamma)\abs b^2-\frac\gamma2\abs{a-a^*}^2$, a centred Gaussian in $b$ with precision $\kappa=t\abs a^2+\gamma$; so $\int e^{-\kappa\abs b^2/2}\dd b=(2\pi/\kappa)^{M/2}$, and $\int\frac t2\abs a^2\abs b^2e^{-\kappa\abs b^2/2}\dd b=\frac M2\frac{t\abs a^2}\kappa(2\pi/\kappa)^{M/2}$. Dividing gives (i).
+
+For (ii) write $h_t(a)=(t\abs a^2+\gamma)^{-M/2}e^{-\gamma\abs{a-a^*}^2/2}$, $I_t=\int h_t$ and $I_t-J_t=\int\frac\gamma{t\abs a^2+\gamma}h_t$, so that $t\,\llcpop{K}=\frac M2J_t/I_t$; there are three cases.
+
+If $N<M$, substitute $a=s/\sqrt t$. The factor $e^{-\gamma\abs{s/\sqrt t-a^*}^2/2}$ is at most $1$ and tends to $e^{-\gamma\abs{a^*}^2/2}$ for each $s$, and $(\abs s^2+\gamma)^{-M/2}$ is integrable on $\R^N$, so by dominated convergence $t^{N/2}I_t\to e^{-\gamma\abs{a^*}^2/2}\int_{\R^N}(\abs s^2+\gamma)^{-M/2}\dd s$, and likewise for $t^{N/2}J_t$ with the extra factor $\abs s^2/(\abs s^2+\gamma)$. In polar coordinates both limits are Beta integrals, $\int_0^\infty\rho^{p-1}(\rho^2+\gamma)^{-q}\dd\rho=\tfrac12\gamma^{p/2-q}B(\tfrac p2,q-\tfrac p2)$, and their ratio is $B(\tfrac N2+1,\tfrac{M-N}2)/B(\tfrac N2,\tfrac{M-N}2)=N/M$. So $t\,\llcpop{K}\to\frac M2\cdot\frac NM=\frac N2$.
+
+If $N>M$, then $t^{M/2}h_t(a)=(\abs a^2+\gamma/t)^{-M/2}e^{-\gamma\abs{a-a^*}^2/2}$ increases to $\abs a^{-M}e^{-\gamma\abs{a-a^*}^2/2}$, which is integrable on $\R^N$, so $t^{M/2}I_t$ has a finite positive limit by monotone convergence. Since $\frac\gamma{t\abs a^2+\gamma}\le\min\bigl(1,\frac\gamma{t\abs a^2}\bigr)$, dominated convergence with the same integrable bound gives $t^{M/2}(I_t-J_t)\to0$. So $J_t/I_t\to1$ and the limit is $\frac M2$.
+
+If $N=M$, fix $\delta\in(0,\abs{a^*})$. On $\abs a>\delta$ the integrand of $t^{N/2}I_t$ is at most $\delta^{-N}e^{-\gamma\abs{a-a^*}^2/2}$, so that part is bounded. On $\abs a\le\delta$ the Gaussian factor lies between $e^{-\gamma(\abs{a^*}+\delta)^2/2}$ and $e^{-\gamma(\abs{a^*}-\delta)^2/2}$, and the substitution $a=s/\sqrt t$ turns the rest into $S_{N-1}\int_0^{\delta\sqrt t}\rho^{N-1}(\rho^2+\gamma)^{-N/2}\dd\rho=\tfrac12S_{N-1}\log t+O(1)$, with $S_{N-1}$ the area of the unit sphere. So $t^{N/2}I_t\to\infty$, while $t^{N/2}(I_t-J_t)\le\int_{\R^N}\gamma(\abs s^2+\gamma)^{-N/2-1}\dd s<\infty$. Again $J_t/I_t\to1$, and the limit is $\frac M2=\frac{\min(M,N)}2$.
+\end{proof}
+
+The mechanism is the competition of \cref{ch:phases}: the Gaussian gives the origin a weight $e^{-\gamma\abs{a^*}^2/2}$, a constant, while the volume near the origin wins a factor $t^{(M-N)/2}$ that grows without bound. Comparing the two local free energies gives a rule of thumb.
+
+\begin{heuristic}
+Let $w'$ be a point of the true set at distance $\delta$ from $\wstar$ with $\lambda(w')<\lambda(\wstar)$. In the localized posterior its neighbourhood has free energy about $\frac\gamma2\delta^2+\lambda(w')\log t$, against $\lambda(\wstar)\log t$ near $\wstar$ (\cref{thm:phases:local}, with the localizer in the prior), so the posterior stays near $\wstar$ only while $\gamma\delta^2\gtrsim2(\lambda(\wstar)-\lambda(w'))\log t$. And $\gamma$ must stay small against the curvature $t\abs{a^*}^2$ of the identifiable directions, or part (i) shows a shrinkage factor $t\abs{a^*}^2/(t\abs{a^*}^2+\gamma)$. For $M=3$, $N=2$, $\abs{a^*}=1$ and $n=10^4$ this leaves the window $7\lesssim\gamma\ll10^3$.
+\end{heuristic}
+
+So whatever conditions make the conjecture of Lau et al.\ true, in this example they cannot be conditions on a fixed $\gamma$: the localizer must tighten as $n$ grows, at least like $\log n$. The issue arises wherever a more singular point lies within reach of the Gaussian; not at the origin of a deep linear network with zero truth (\cref{lem:llc:homogeneous}).
+
+\begin{observation}[\textcite{LauEtAl2025}]
+On random deep linear networks with $10^3$ to $10^8$ parameters (noiseless labels, $n=10^5$ or $10^6$, $\gamma=1$, minibatches of $500$, $90\%$ burn-in), SGLD estimates at true parameters, and at minima found by SGD, tracked Aoyagi's learning coefficient across five orders of magnitude. The step size had to be retuned for each size class, from $5\times10^{-7}$ to $2\times10^{-8}$, and some chains diverged.
+\end{observation}
+
+The comparison was with the global coefficient, a lower bound for the local one at random true parameters, as Lau et al.\ note (their Appendix~I). In the benchmark of \textcite{HitchcockHoogland2025}, a preprint with exactly known local values, plain SGLD underestimates at the most degenerate (``special'') points and is accurate at generic ones, and RMSProp-preconditioned SGLD is the least sensitive to the step size; the bias of \cref{comp:llc:ideal}, largest at high multiplicity, may explain part of the underestimate.
+
+\section{Measuring it}\label{sec:llc:measuring}
+
+Three scripts measure the estimator where the values are known: without a sampler, with SGLD at fourteen points of nine models, and with a varying localizer.
+
+\paragraph{The estimator without a sampler.} The script \texttt{13-llc-ideal.py} computes $\hat\lambda(\wstar)$ exactly for the ReLU neuron with noisy labels: on each half-plane $b>0$, $b<0$ the energy depends on $(a,b)$ only through $c=ab$, so every posterior average is a one-dimensional integral (\cref{ch:coefficient}). The localizers are the boxes of \cref{comp:llc:ideal}. At the origin, where $m=2$, the exact estimate is $0.32$ at $n=10^4$ and $0.38$ at $n=10^6$ for a true value of $\tfrac12$; at $(1,0)$, where $m=1$, it is $0.46$ at both (\cref{fig:llc:ideal}). The bronze curves, the skeletons of \cref{comp:llc:ideal} minus the noise term $1/(2\log n)$ of \cref{ex:llc:noise}, agree with the measured means to within $0.03$ for $n\ge10^4$ and within the intervals for $n\ge3\cdot10^5$; at small $n$ they are too low, because the noise term is only a leading-order description. The regular count, $\tfrac d2=1$, is off by a factor of two to six.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,height=0.41\linewidth,xmode=log,xlabel={sample size $n$},ylabel={exact estimate $\hat\lambda(w^*)$},
+  xmin=60,xmax=1.7e6,ymin=0,ymax=1.08,ytick={0,0.25,0.5,0.75,1},
+  legend columns=2,legend style={font=\scriptsize,at={(0.5,0.765)},anchor=center}]
+\addplot[regularpred,domain=60:1.7e6,samples=2] {1};
+\addplot[guide,domain=60:1.7e6,samples=2] {0.5};
+\addplot[theory] table[x=n,y=fpred] {figures/data/13-llc-ideal-curve.dat};
+\addplot[theory2] table[x=n,y=opred] {figures/data/13-llc-ideal-curve.dat};
+\addplot[measured2,ebars] table[x=n,y=f,y error plus=fep,y error minus=fem] {figures/data/13-llc-ideal.dat};
+\addplot[measured,ebars] table[x=n,y=o,y error plus=oep,y error minus=oem] {figures/data/13-llc-ideal.dat};
+\legend{{regular: $\tfrac d2=1$},{$\lambda=\tfrac12$},{prediction at $(1,0)$},{prediction at $(0,0)$},{exact at $(1,0)$, $m=1$},{exact at $(0,0)$, $m=2$}}
+\end{axis}
+\end{tikzpicture}
+\caption{The LLC estimator of the ReLU neuron with an exact posterior, at the origin (dots; prior box $[-1,1]^2$, $m=2$) and at $(1,0)$ (circles; box $[\tfrac12,\tfrac32]\times[-\tfrac12,\tfrac12]$, $m=1$), with $\beta=1/\log n$ and noisy labels: means over $200$ data sets per $n$ with Student-$t$ $95\%$ intervals (seed $1301$; sufficient statistics drawn exactly). Solid and dotted bronze: the skeletons of \cref{comp:llc:ideal} minus $1/(2\log n)$. Script \texttt{13-llc-ideal.py}.}\label{fig:llc:ideal}
+\end{figure}
+
+\paragraph{SGLD at fourteen points.} The script \texttt{13-llc-sgld.py} follows Lau et al.'s deep-linear-network protocol at laptop scale (noiseless labels, $x\sim\Normal(0,I)$, minibatches of $500$, $\gamma=1$; the rest in \cref{tab:llc:calib}) at five step sizes. The models are linear in a feature vector, so losses come from minibatch sufficient statistics and the $840$ chains run in $85$ seconds. The target is the skeleton, exact where we can compute it (\cref{prop:llc:gaussian}; the ReLU neuron is the case $N=M=1$ with $K=\tfrac14a^2b^2$), otherwise $\lambda-(m-1)/\log(n\beta)$. The script also records the diagnostic that \textcite{LauEtAl2025} recommend for tuning $\epsilon$, the Metropolis acceptance probability of the Langevin step with full-batch gradients, to be kept between $0.9$ and $0.95$; the diagnostic rule takes the largest step with mean at least $0.9$.
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\footnotesize\setlength{\tabcolsep}{4.2pt}
+\begin{tabular}{@{}llrrccccll@{}}
+\toprule
+model & $w^*$ & $d$ & $r$ & $[\tfrac r2,\tfrac r2+\tfrac{d-r}4]$ & $\lambda$\,($m$) & $\tfrac d2$ & target & $\hat\lambda$, $\epsilon=10^{-4}$ & $\hat\lambda$, diagnostic ($\epsilon$)\\
+\midrule
+regular plane & $0$ & 2 & 2 & $[1,1]$ & $1$\,(1) & 1 & $0.999$ & $1.01\pm0.03$ & $1.10\pm0.03$ ($3\cdot10^{-4}$)\\
+ReLU neuron & $(0,0)$ & 2 & 0 & $[0,0.5]$ & $\tfrac12$\,(2) & 1 & $0.372$ & $0.36\pm0.12$ & $0.45\pm0.14$ ($10^{-3}$)\\
+ & $(1,0)$ & 2 & 1 & $[0.5,0.75]$ & $\tfrac12$\,(1) & 1 & $0.389$ & $0.40\pm0.14$ & $0.50\pm0.18$ ($10^{-3}$)\\
+ & $(1,0)^\dagger$ & 2 & 1 & $[0.5,0.75]$ & $\tfrac12$\,(1) & 1 & $0.474$ & $0.47\pm0.06$ & $0.54\pm0.04$ ($10^{-3}$)\\
+rank-one $3\times3$ & $0$ & 6 & 0 & $[0,1.5]$ & $\tfrac32$\,(2) & 3 & $1.347$ & $1.38\pm0.19$ & $1.51\pm0.11$ ($10^{-3}$)\\
+ & $(e_1,0)$ & 6 & 3 & $[1.5,2.25]$ & $\tfrac32$\,(1) & 3 & $1.355$ & $1.38\pm0.07$ & $1.57\pm0.26$ ($10^{-3}$)\\
+ & $(e_1,0)^\dagger$ & 6 & 3 & $[1.5,2.25]$ & $\tfrac32$\,(1) & 3 & $1.412$ & $1.43\pm0.14$ & $1.63\pm0.13$ ($10^{-3}$)\\
+DLN 2-2-2 & $0$ & 8 & 0 & $[0,2]$ & $\tfrac32$\,(1) & 4 & $1.5$ & $1.49\pm0.09$ & $1.62\pm0.24$ ($3\cdot10^{-4}$)\\
+DLN 3-3-3 & $0$ & 18 & 0 & $[0,4.5]$ & $\tfrac72$\,(2) & 9 & $3.36$ & $3.36\pm0.12$ & the same ($10^{-4}$)\\
+DLN 3-3-3-3 & $0$ & 27 & 0 & $[0,6.75]$ & $3$\,(1) & 13.5 & $3$ & $2.94\pm0.23$ & the same ($10^{-4}$)\\
+DLN 4-3-2-4 & $0$ & 26 & 0 & $[0,6.5]$ & $3$\,(3) & 13 & $2.71$ & $2.68\pm0.19$ & the same ($10^{-4}$)\\
+DLN 3-4-5-3 & $0$ & 47 & 0 & $[0,11.75]$ & $4$\,(1) & 23.5 & $4$ & $4.15\pm0.18$ & $3.29\pm0.18$ ($3\cdot10^{-5}$)\\
+DLN 2-2-2-2-2 & $0$ & 16 & 0 & $[0,4]$ & $\tfrac32$\,(5) & 8 & $0.93$ & $1.00\pm0.28$ & $1.27\pm0.09$ ($10^{-3}$)\\
+DLN 3-3-3$^\ddagger$ & special & 18 & 5 & $[2.5,5.75]$ & $4$\,(1) & 9 & $4$ & $4.12\pm0.19$ & the same ($10^{-4}$)\\
+\bottomrule
+\end{tabular}
+\end{fullwidth}
+\caption{SGLD estimates at $n=10^4$ ($n\beta=1086$, noiseless labels, $\gamma=1$, or $10$ where marked $\dagger$; $4$ data sets $\times$ $3$ chains of $12{,}000$ steps, half discarded; seed $1302$) with Student-$t$ $95\%$ half-widths over data sets. DLN $H_0$-$\cdots$-$H_L$: deep linear network, zero truth except $\ddagger$ (rank-one truth, special point); $\lambda$, $m$ from \cref{thm:llc:aoyagi}; $r$ computed numerically. Target: the exact skeleton (three decimals) or $\lambda-(m-1)/\log(n\beta)$. Script \texttt{13-llc-sgld.py}.}\label{tab:llc:calib}
+\end{table}
+
+At $\epsilon=10^{-4}$, the middle of the grid, all fourteen estimates in \cref{tab:llc:calib} lie within their intervals of the target, order the points correctly, and are far below the parameter counts; at the points of multiplicity $3$ and $5$ they are $11\%$ and $33\%$ below $\lambda$, as $\lambda-(m-1)/\log(n\beta)$ predicts. Across the grid, though, the errors run from $-34\%$ to $+31\%$ for DLN 3-3-3-3 and from $-82\%$ to $-15\%$ for DLN 2-2-2-2-2 (\cref{fig:llc:steps}). Small steps leave the chain near $\wstar$, where the loss is lowest, and underestimate; large steps inflate the posterior's width and overestimate. For the regular plane the second effect is exact: on a quadratic loss the recursion has stationary variance $1/(\kappa(1-\epsilon\kappa/4))$ instead of $1/\kappa$, $\kappa=n\beta+\gamma$ (\cref{ex:llc:ula}), which predicts $1.027$, $1.088$ and $1.372$ at the three largest steps; we measured $1.014$, $1.103$ and $1.375$. The diagnostic rule picks $10^{-3}$ for the ReLU neuron and rank-one regression, $12$ to $28\%$ above the target, and $3\cdot10^{-5}$ for the largest network, $18\%$ below. It never beats the fixed step against the target, and against $\lambda$ only where the upward bias of large steps cancels the skeleton's downward bias, a cancellation that nobody without the true value can rely on.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,height=0.41\linewidth,xmode=log,xlabel={step size $\epsilon$},ylabel={relative error $(\hat\lambda-\lambda)/\lambda$},
+  xmin=7e-6,xmax=1.4e-3,ymin=-1.0,ymax=0.95,ytick={-1,-0.5,0,0.5},
+  legend columns=2,legend style={font=\scriptsize,at={(0.03,0.97)},anchor=north west}]
+\addplot[guide,domain=7e-6:1.4e-3,samples=2] {0};
+\addplot[theory] table[x=eps,y=rel] {figures/data/13-llc-sgld-ula.dat};
+\addplot[theory2,domain=7e-6:1.4e-3,samples=2] {-0.3815};
+\addplot[measured3,ebars] table[x=eps,y=plane,y error plus=planehi,y error minus=planelo] {figures/data/13-llc-sgld-eps.dat};
+\addplot[measured,ebars] table[x=eps,y=dln3333,y error plus=dln3333hi,y error minus=dln3333lo] {figures/data/13-llc-sgld-eps.dat};
+\addplot[measured2,ebars] table[x=eps,y=dln22222,y error plus=dln22222hi,y error minus=dln22222lo] {figures/data/13-llc-sgld-eps.dat};
+\legend{{exact value},{discretization bias, plane},{skeleton bias, $m=5$},{regular plane},{DLN 3-3-3-3, $m=1$},{DLN 2-2-2-2-2, $m=5$}}
+\end{axis}
+\end{tikzpicture}
+\caption{Relative error of the SGLD estimate against the step size at three of the points of \cref{tab:llc:calib} (same runs and intervals). Solid bronze: the exact discretization bias for the regular plane, $(1-\epsilon(n\beta+\gamma)/4)^{-1}n\beta/(n\beta+\gamma)-1$. Dotted bronze: the predicted bias $-(m-1)/(\lambda\log(n\beta))$ of the skeleton at the multiplicity-$5$ point. Script \texttt{13-llc-sgld.py}.}\label{fig:llc:steps}
+\end{figure}
+
+\paragraph{The localizer.} The script \texttt{13-llc-localize.py} computes the skeleton of \cref{prop:llc:gaussian} for rank-one regression at $\wstar=(e_1,0)$ by quadrature and runs SGLD there ($\epsilon=10^{-4}$, $30{,}000$ steps; \cref{fig:llc:localize}). With $(M,N)=(3,2)$ and $n=10^4$ the estimate is $0.99$ at $\gamma=1$, the value of the origin, not of $\wstar$; it rises to $1.44$ at $\gamma=30$ and falls as the localizer takes over, to $1.36$ at $\gamma=100$ and $1.17$ at $\gamma=300$. The SGLD estimates follow the skeleton within their intervals except at $\gamma=30$; there and at $\gamma=100$ they lie $2$ to $3\%$ above it, the discretization bias $(1-\epsilon\kappa/4)^{-1}$ with $\kappa=n\beta+\gamma$. At fixed $\gamma$ every curve ends at $N/2=1$ as $t$ grows; $\gamma=30$ holds out until $t\approx10^{10}$. For $M=N=3$, where both points have $\lambda=\tfrac32$, the skeleton moves by less than $10\%$ over $0.3\le\gamma\le100$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=13mm},splot,width=0.5\linewidth,height=0.32\linewidth,
+  ymin=0.75,ymax=1.65,ylabel={$t\,\mathbb{E}_t[K]$ and $\hat\lambda(w^*)$},
+  legend style={font=\scriptsize,at={(0.5,-0.36)},anchor=north,legend columns=3}]
+\nextgroupplot[xmode=log,xlabel={localization strength $\gamma$},xmin=0.1,xmax=1000,title={(a) $t=1086$ ($n=10^4$)}]
+\addplot[guide,domain=0.1:1000,samples=2,forget plot] {1.5};
+\addplot[guide,domain=0.1:1000,samples=2,forget plot] {1.0};
+\addplot[theory] table[x=gamma,y=r32] {figures/data/13-llc-localize-gamma.dat};
+\addplot[theory2] table[x=gamma,y=r33] {figures/data/13-llc-localize-gamma.dat};
+\addplot[measured,ebars] table[x=gamma,y=est,y error plus=ep,y error minus=em] {figures/data/13-llc-localize-sgld.dat};
+\legend{{skeleton, $(3,2)$},{skeleton, $(3,3)$},{SGLD, $(3,2)$}}
+\nextgroupplot[xmode=log,xlabel={$t=n\beta$},xmin=10,xmax=1e12,title={(b) $(M,N)=(3,2)$, fixed $\gamma$},ylabel={}]
+\addplot[guide,domain=10:1e12,samples=2,forget plot] {1.5};
+\addplot[guide,domain=10:1e12,samples=2,forget plot] {1.0};
+\addplot[theory] table[x=t,y=g30] {figures/data/13-llc-localize-t.dat};
+\addplot[theory2] table[x=t,y=g10] {figures/data/13-llc-localize-t.dat};
+\addplot[singular!45,line width=0.9pt,dashed,no marks] table[x=t,y=g1] {figures/data/13-llc-localize-t.dat};
+\legend{{$\gamma=30$},{$\gamma=10$},{$\gamma=1$}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{What a Gaussian localizer measures in rank-one regression at $w^*=(e_1,0)$, where $\lambda(w^*)=\tfrac32$; the origin has $\lambda=\min(M,N)/2$ (grey lines at $\tfrac32$ and $1$). (a) The skeleton of \cref{prop:llc:gaussian} against $\gamma$, and SGLD estimates for $(M,N)=(3,2)$ ($\epsilon=10^{-4}$, $30{,}000$ steps, half discarded, noiseless labels, $3$ data sets $\times$ $4$ chains, Student-$t$ $95\%$ intervals, seed $1303$). (b) The skeleton against $t$ at fixed $\gamma$. Script \texttt{13-llc-localize.py}.}\label{fig:llc:localize}
+\end{figure}
+
+These measurements are small ($d\le47$, $n=10^4$, noiseless labels): they show that the estimator can be right on such models, and how it goes wrong, not that it is right with $10^8$ parameters.
+
+\section{The ledger}\label{sec:llc:ledger}
+
+The local learning coefficient is the exponent of the volume of nearly optimal parameters near one point. It lies between half the rank of the Hessian and that plus a quarter of the nullity, equals the lower end exactly at minimally singular points, and survives the reparametrizations that move Hessian eigenvalues at will. Its estimator is consistent in the setting of Watanabe's theorem, but biased by about $(m-1)/\log n$ even with an exact sampler; with SGLD it moves with the step size by tens of percent, and with a fixed Gaussian localizer it can measure another point. At scale there are no known values to check it against.
+
+\ledgercard{the local learning coefficient $\lambda(w^*)$ and multiplicity $m(w^*)$ at a minimum $w^*$, and the estimate $\hat\lambda(w^*)$}{Laplace at $w^*$: $\tfrac d2$, or $\tfrac r2$ with $r$ the Hessian rank when the Hessian is degenerate}{$\tfrac r2\le\lambda(w^*)\le\tfrac r2+\tfrac{d-r}4$ (\cref{thm:llc:hessian}); $=\tfrac r2$ iff the true set is a $(d-r)$-manifold near $w^*$ (\cref{cor:llc:minimal}); invariant under reparametrization (\cref{prop:llc:invariance})}{rank-one regression, $M=N=3$: $\lambda=\tfrac32$ at $0$ ($r=0$, $m=2$) and at $(e_1,0)$ ($r=3$, $m=1$); $\tfrac d2=3$}{exact estimator for the ReLU neuron at $n=10^4$: $0.32$ ($m=2$) and $0.46$ ($m=1$) for $\lambda=\tfrac12$; SGLD at $\epsilon=10^{-4}$: all $14$ points within their intervals of the target, but errors from $-82\%$ to $+118\%$ across step sizes; fixed Gaussian localizer: $0.99$ instead of $\tfrac32$}{$w^*$ a local minimum of a $C^4$ (for existence, analytic) loss; for the estimator: a compact localizer, exact posterior averages, $n\to\infty$; no guarantee for SGLD}
+
+\section{Where the theory stops}\label{sec:llc:stops}
+
+\paragraph{What was assumed.} The definition and the Hessian sandwich need little: a local minimum of the population loss and four derivatives there. The estimator needs much more: \cref{thm:llc:wbic} assumes Watanabe's conditions on a ball (an analytic model; relatively finite variance, which \textcite{LauEtAl2025} call unclear for real data), a compact localizer, exact posterior averages, and $n\to\infty$ with the model fixed. Practice departs from each. The point $\wstar$ is a trained parameter, near a minimum of $L_n$ rather than of $L$ (Lau et al.\ saw no adverse effect on deep linear networks). ReLU networks are not analytic; our ReLU neuron escapes because its $K$ is a polynomial and each half-plane is a one-coefficient model. The localizer is Gaussian. The averages come from a few thousand steps of constant-step minibatch SGLD, whose stationary law is biased by the step size and the gradient noise \parencite{BrosseEtAl2018}; the consistency results for SGLD assume decreasing steps and growth conditions \parencite{TehEtAl2016} that degenerate losses violate \parencite{HitchcockHoogland2025}.
+
+\paragraph{Where it breaks.} With a Gaussian localizer of fixed width the estimator converges to the learning coefficient of the most singular point within reach, not of $\wstar$ (\cref{prop:llc:gaussian}): at $n=10^4$ and Lau et al.'s $\gamma=1$, rank-one regression at $(e_1,0)$ gives $0.99$ for $\lambda(\wstar)=1.5$, computed and measured (\cref{fig:llc:localize}). Even with an exact sampler and a compact localizer, the estimate at a point of multiplicity $2$ is $26\%$ low at $n=10^4$ and $17\%$ low at $n=10^6$ (\cref{comp:llc:ideal}), and the bias grows with $m$. The step size moves the answer by tens of percent either way (\cref{fig:llc:steps}); chains diverge on large models \parencite{LauEtAl2025}; and the unadjusted Langevin algorithm diverges when the gradient of the log-density grows faster than linearly, as for deep linear networks (a theorem of Hutzenthaler et al.\ that \textcite{HitchcockHoogland2025} invoke). At points that are not minima the estimate can be negative \parencite{LauEtAl2025,ChenEtAl2023}, yet it is routinely computed along training, away from minima \parencite{HooglandEtAl2025}. At scale there is no ground truth: \textcite{WangEtAl2025a} write that they cannot guarantee the accuracy of their estimates and rely on their ordering. The Hessian sandwich is hard to use at scale for another reason: the numerical rank of a large Hessian depends on a threshold, and Wang et al.\ (their Appendix~D) found Hessian-rank estimates sensitive to it and inconclusive.
+
+\paragraph{Open problems.} (1) The conjecture of \textcite[Appendix~D]{LauEtAl2025}: find conditions on $\gamma$, necessarily depending on $n$ by \cref{prop:llc:gaussian}, under which the Gaussian-localized estimator converges to $\lambda(\wstar)$. (2) Explain why short SGMCMC chains recover local volume exponents at all; \textcite{HitchcockHoogland2025} pose this, and ask what determines the effective support of the chains. (3) Error bars: our intervals cover the variation over data sets and chains, not the bias; no method gives valid confidence intervals for $\lambda(\wstar)$ in a large network. (4) Ground truth beyond deep linear networks, which are only mildly singular (their coefficients are half the codimension of the true set, \textcite{PepinLehalleurRimanyi2024} as restated by \textcite{HitchcockHoogland2025}). (5) Estimators corrected for the $(m-1)/\log n$ bias.
+
+\begin{exercises}
+\item \consolidation (Two derivatives suffice below.) Check that the first part of the proof of \cref{thm:llc:hessian} uses only that $K$ is twice continuously differentiable, and conclude that $\lambda(\wstar)\ge\tfrac r2$ whenever $K\in C^2$ and $\lambda(\wstar)$ exists.\label{ex:llc:twoderivs}
+
+\item \consolidation (The original bound.) (a) Show that if $K$ is only three times continuously differentiable, the argument of the proof gives $\lambda(\wstar)\le\tfrac r2+\tfrac{d-r}3$. (b) Show that $K(a,b)=a^2+\abs b^{7/2}$ is $C^3$ but not $C^4$, has $r=1$ at the origin, and has $\lambda=\tfrac12+\tfrac27>\tfrac34$; so the fourth derivative is needed for the quarter.\label{ex:llc:original}
+
+\item \consolidation (Discretization bias.) For $K=\frac h2\abs w^2$ on $\R^d$ and the full-gradient recursion of \cref{def:llc:estimator}, show that the stationary law is $\Normal(0,vI_d)$ with $v=1/(\kappa(1-\epsilon\kappa/4))$, $\kappa=th+\gamma$, if $\epsilon\kappa<4$, so that the estimate is $\frac d2\frac{th}\kappa(1-\epsilon\kappa/4)^{-1}$. Evaluate it for the regular plane at $t=1086$, $\gamma=1$, $\epsilon=10^{-4},3\cdot10^{-4},10^{-3}$.\label{ex:llc:ula}
+
+\item \consolidation (Noise at the true parameter.) For the regular line $y=ax+\varepsilon$ with truth $a=0$ and the prior uniform on $[-1,1]$, show that the exact estimator at $\wstar=0$ is $\hat\lambda=\tfrac12-\beta Z^2/2$ up to terms that are exponentially small in $\beta S_{xx}$ on the event $\abs{S_{xy}/S_{xx}}<\tfrac12$, where $Z=S_{xy}/\sqrt{S_{xx}}\sim\Normal(0,1)$. Deduce that its mean is close to $\tfrac12-1/(2\log n)$, and that evaluating at the empirical minimizer instead removes this term.\label{ex:llc:noise}
+
+\item \byhand (The chain.) For $y=a_1a_2a_3x$ with truth $0$, find $\lambda$, $m$, the Hessian rank and the bounds of \cref{thm:llc:hessian} at $(1,0,0)$, at $(1,1,0)$ and at the origin, and say which bounds are attained.\label{ex:llc:chain}
+
+\item \byhand (The cusp.) For $y=ab^2x$, so $K=\tfrac12a^2b^4$, do the same at the origin, at $(1,0)$ and at $(0,1)$. Show that the Hessian vanishes at every point of the axis $\{b=0\}$ while $\lambda=\tfrac14$ there, strictly inside the bounds.\label{ex:llc:cusp}
+
+\item \byhand (Depth.) For a deep linear network of depth $L$ with zero truth, show that $K(w)\le\frac1{2L^L}\abs w^{2L}$ and deduce $\lambda(0)\le\frac d{2L}$. Compare with \cref{thm:llc:aoyagi} for widths $3$-$3$-$3$-$3$ and for the chain, where the bound is attained.\label{ex:llc:depth}
+
+\item \variation (Equal sizes.) In \cref{prop:llc:gaussian} with $M=N$, show that $(\frac M2-t\,\llcpop{K})\log t\to1$, the multiplicity correction $(m-1)/\log t$ with $m=2$. \hint{$t^{N/2}(I_t-J_t)\to e^{-\gamma\abs{a^*}^2/2}S_{N-1}\int_0^\infty\gamma\rho^{N-1}(\rho^2+\gamma)^{-N/2-1}\dd\rho$, and the integral is $1/N$.}\label{ex:llc:equal}
+
+\item \measurement (Choosing the step.) In \texttt{13-llc-sgld.py}, refine the step-size grid between $3\cdot10^{-5}$ and $10^{-3}$ for the deep linear networks 3-3-3-3 and 3-4-5-3, and plot the relative error against the mean acceptance diagnostic. Is there a diagnostic level at which the error crosses zero for both? What does the answer say about tuning the step size without ground truth?\label{ex:llc:tune}
+
+\item \research (Conditions on the localizer.) For rank-one regression with $N<M$, find conditions on a sequence $\gamma_n$ under which the population estimate, and then the estimator with data, converges to $M/2$, and formulate the analogous condition for an analytic $K$ in terms of the distance from $\wstar$ to the points of $\{K=0\}$ with smaller local coefficient. \textcite{LauEtAl2025} conjecture that some such conditions exist; the general question is open.\label{ex:llc:research}
+\end{exercises}
+
+\notesandrefs
+Watanabe's learning coefficient appeared with the free energy formula \parencite{Watanabe2001a} and is the subject of his first book \parencite{Watanabe2009}. \textcite{WeiEtAl2023} argued that it, not the parameter count, measures the effective dimension of a neural network. The local learning coefficient of a trained network and the SGLD estimator are due to \textcite{LauEtAl2025}, whose first arXiv version (2023) was titled \emph{Quantifying degeneracy in singular models via the learning coefficient} and whose second absorbed \textcite{FurmanLau2024}. Stochastic-gradient Langevin dynamics is due to \textcite{WellingTeh2011}; \textcite{TehEtAl2016} proved its consistency for decreasing steps, and \textcite{BrosseEtAl2018} showed that with a constant step its stationary law can stay far from the posterior.
+
+The upper half of the Hessian sandwich is Corollary~4.15 of \textcite{Lin2017}, also in his thesis \parencite{Lin2011}, stated for the ideal of functions $f_1,\dots,f_s$ with the rank of their Jacobian, the rank of the Hessian of $K=\sum f_i^2$; \textcite{Bushnaq2024} found it again. Our volume proof of \cref{thm:llc:hessian}, \cref{cor:llc:minimal}, \cref{lem:llc:homogeneous}, \cref{comp:llc:ideal} and \cref{prop:llc:gaussian} are the book's own; we did not find them in the literature.
+
+Aoyagi's formula \parencite{Aoyagi2024} extends the reduced-rank regression formula of \textcite{AoyagiWatanabe2005}; \textcite{PepinLehalleurRimanyi2024} study the fibres of the multiplication map, from which \textcite{HitchcockHoogland2025} compute local coefficients at generic points.
+
+\paragraph{Translating the literature.} \Textcite{LauEtAl2025} write $\epsilon$ for both the step size and the tolerance of the volume, $\beta^*$ for our $\beta=1/\log n$, $m$ for the minibatch size (our $\abs{B_t}$), and $B(w^*)$ for a ball on which $w^*$ minimizes $L$. \textcite{Lin2017} writes $\mathrm{RLCT}$ for the pair (threshold, multiplicity); the threshold of an ideal $\langle f_1,\dots,f_s\rangle$ is twice our $\lambda$ for $K\asymp\sum f_i^2$, so his bound $\tfrac12(r+d)$ is our $\tfrac r2+\tfrac{d-r}4$. \textcite{Aoyagi2025} numbers layers from the output ($H^{(1)}$ is the output width), writes $M^{(s)}$ for our $\Delta_j$, $\mathcal M$ for our $\Sigma$, $M$ also for our $q$, and $\theta$ for the multiplicity. In \texttt{devinterp} \parencite{vanWingerdenEtAl2024}, \texttt{nbeta} is our $n\beta$ and \texttt{localization} our $\gamma$.
+
+\printchapterbib
+\end{refsection}

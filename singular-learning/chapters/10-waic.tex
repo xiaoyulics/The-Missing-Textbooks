@@ -1,0 +1,406 @@
+% Chapter 10 of Singular Learning Theory for the Rest of Us: WAIC.
+\newcommand{\waicLOO}{\mathrm{LOO}}
+\newcommand{\waicEt}[2]{\mathbb{E}^{(i,#1)}_{w}\!\left[#2\right]}
+
+\sltchapter{WAIC}{Estimating generalization without knowing $\lambda$}{$(1-a)\Normal(0,1)+a\Normal(b,1)$}{ch:waic}
+\newtonfoot{2/2}{2}{\tfrac12}{a^2b^2}
+\begin{refsection}[chapters/10-waic.bib]
+
+\begin{chaptersummary}
+The expected generalization error of a singular model is $\lambda/n$, and $\lambda$ is rarely known; this chapter asks whether the error can be estimated from the data and one posterior. By hand we compute the Bayes training loss, the functional variance $V_n$ and leave-one-out cross-validation for the regular line and the product model, where $V_n$ tends to $1$ and not to the parameter count $2$, and we find that all three are values of one cumulant generating function. We prove that leave-one-out cross-validation and $\WAIC=T_n+V_n/n$ differ by $O(n^{-2})$ in mean, under a moment condition that we verify for the product model and that Watanabe states under general hypotheses; with the equations of state this makes WAIC unbiased for the Bayes generalization loss (\cref{thm:waic:main}). Over $500$ data sets per sample size the bias of WAIC is zero within its interval for the mixture and the product model, the penalty $d/n$ of AIC overstates the error by about $1/n$, and the errors of leave-one-out cross-validation and of the predictive have correlation below $-0.98$. The mixture itself violates the analyticity that the theorems assume, and without relatively finite variance the learning curve changes its order.
+\end{chaptersummary}
+
+\section{The question: the test loss of a posterior}\label{sec:waic:question}
+
+A Bayesian neural network sampled by Markov chain Monte Carlo, or by stochastic-gradient Langevin dynamics \parencite{WellingTeh2011}, ends as a cloud of parameter vectors drawn, approximately, from a posterior, and it predicts by averaging over the cloud. How well will it predict data it has not seen? A held-out set answers at the price of data, and leave-one-out cross-validation at the price of $n$ posteriors. As of 2026, one computes instead, from the single cloud, the widely applicable information criterion of \textcite{Watanabe2010a},\sidenote{\textcite{GelmanEtAl2014} read the acronym as the \emph{Watanabe--Akaike} information criterion; ``widely applicable'' is Watanabe's own name.} or leave-one-out cross-validation estimated by importance sampling; the R package \texttt{loo} computes both \parencite{VehtariEtAl2017}, and both come with an ``effective number of parameters'' \parencite{GelmanEtAl2014}. This chapter asks what these numbers estimate when the model is singular, and why they need no knowledge of the learning coefficient.
+
+Throughout, the inverse temperature is $\beta=1$: $\Ew{\cdot}$ is the ordinary posterior expectation, $\Var_w$ the posterior variance, and $p^*(x)=\Ew{p(x\mid w)}$ the predictive density. We write $\ell_i(w)=\log p(X_i\mid w)$ for the log-likelihood of one observation.
+
+\begin{definition}[Generalization, training, WAIC and leave-one-out]\label{def:waic:criteria}
+The \term{Bayes generalization loss}\index{Bayes generalization loss} is $G_n=-\E_X[\log p^*(X)]$, the \term{Bayes training loss}\index{Bayes training loss} is $T_n=-\frac1n\sum_{i=1}^n\log p^*(X_i)$, the \term{functional variance}\index{functional variance} is $V_n=\sum_{i=1}^n\Var_w[\ell_i(w)]$, and the \term{widely applicable information criterion}\index{WAIC} is $\WAIC=T_n+V_n/n$. The \term{Bayes leave-one-out cross-validation loss}\index{leave-one-out cross-validation} is
+\[
+\waicLOO=-\frac1n\sum_{i=1}^n\log p(X_i\mid X^n_{-i}),\qquad p(x\mid X^n_{-i})=\E^{(-i)}_w[p(x\mid w)],
+\]
+with $\E^{(-i)}_w$ the posterior given the $n-1$ observations other than $X_i$. Subtracting $L(w_0)$ from $G_n$, and $L_n(w_0)$ from $T_n$, $\WAIC$ and $\waicLOO$, gives the corresponding \emph{errors}. In the realizable case $L(w_0)=S$, $L_n(w_0)=S_n$, and $G_n-S=\KL(q\,\|\,p^*)$.
+\end{definition}
+
+The four losses live on the per-sample scale of the log loss; the book never multiplies $\WAIC$ by $2n$ (\cref{sec:waic:practice} converts to the scale of the statistical software). Only $G_n$ needs the unknown $q$. The others need the data and the posterior, and $\waicLOO$ seems to need $n$ further posteriors as well.
+
+\begin{regularanswer}[estimating the generalization loss]
+If the model is regular and realizable, the training loss of the maximum-likelihood fit $\hat w$ underestimates its generalization loss by $\tfrac dn$ on average, and $\AIC=L_n(\hat w)+\tfrac dn$ corrects it \parencite{Akaike1974}. The Bayes predictive obeys the same rule: $\E[G_n]-S=\tfrac d{2n}+o(\tfrac1n)$ (\cref{thm:regular:aic}) and $\E[T_n]-S=-\tfrac d{2n}+o(\tfrac1n)$ \parencite{Watanabe2010a}, so $T_n+\tfrac dn$ is unbiased to $o(\tfrac1n)$. Leave-one-out cross-validation with maximum-likelihood fits chooses models as AIC does, asymptotically \parencite{Stone1977}.
+\end{regularanswer}
+
+For a singular model both halves of this answer fail. The first half fails in its penalty: the Bayes training loss underestimates the Bayes generalization loss by $2\nu/n$ on average, with $\nu$ the singular fluctuation of \cref{ch:generalization}, and not by $d/n$. For the product model $y=abx$ and for the mixture $(1-a)\Normal(0,1)+a\Normal(b,1)$ at the truth $\Normal(0,1)$, both with $d=2$, we will find $2\nu=1$: the optimism of the training loss is half of what AIC charges (\cref{sec:waic:byhand}). The second half fails in its target. Watanabe's theorem gives $\E[G_n]-S=\lambda/n+o(1/n)$ (\cref{thm:generalization:main}), and $\lambda$ is what we do not know. Even when we know it, the formula is poor at practical sample sizes: for the product model, with $\lambda=\tfrac12$, the measured $n\,\E[G_n-S]$ is $0.40$ at $n=10^3$ and still $0.39$ at $n=10^5$ (\cref{sec:waic:measure}), because the multiplicity $m=2$ adds a correction of order $1/(n\log n)$.
+
+So the question of this chapter is: \emph{is there a statistic, computed from the data and one posterior, whose expectation is $\E[G_n]$ up to $o(1/n)$ whatever $\lambda$, $\nu$ and $m$ are; and how is it related to leave-one-out cross-validation, which seems to need $n$ posteriors?}
+
+\section{By hand: three readings of one function}\label{sec:waic:byhand}
+
+The statistics $T_n$, $V_n$ and $\waicLOO$ are posterior averages of functions of the $\ell_i(w)$. For the regular line the posterior is Gaussian and they come out in closed form; for the product model the posterior of the coefficient $c=ab$ is a Gaussian multiplied by a logarithm; and leave-one-out cross-validation turns out to need no further posterior at all.
+
+\begin{computation}{WAIC and leave-one-out for the regular line}\label{comp:waic:regular}
+\step The model is $y=ax+\varepsilon$ with $x,\varepsilon\sim\Normal(0,1)$ and the flat prior on $\R$; the uniform prior on $[-1,1]$ changes what follows by terms exponentially small in $n$ when the truth is interior. With $S=\sum_ix_i^2$ and $\hat a=\sum_ix_iy_i/S$ the posterior is $\Normal(\hat a,1/S)$. Write $r_i=y_i-\hat ax_i$ for the residuals and $h_i=x_i^2/S$ for the \term{leverages}\index{leverage}; note $\sum_ih_i=1$.
+\step The predictive at $x$ is $\Normal(\hat ax,1+x^2/S)$, so
+\[
+T_n=\frac1n\sum_{i=1}^n\Bigl[\tfrac12\log2\pi+\tfrac12\log(1+h_i)+\frac{r_i^2}{2(1+h_i)}\Bigr].
+\]
+\step Put $a=\hat a+Z/\sqrt S$ with $Z\sim\Normal(0,1)$ under the posterior. Then $\ell_i(a)=-\tfrac12\log2\pi-\tfrac12r_i^2+r_ix_iZ/\sqrt S-\tfrac12x_i^2Z^2/S$, and since $\Var Z=1$, $\Cov(Z,Z^2)=0$ and $\Var Z^2=2$,
+\[
+V_n=\sum_{i=1}^n\bigl(r_i^2h_i+\tfrac12h_i^2\bigr).
+\]
+Here $\sum_ir_i^2h_i=\sum_ir_i^2x_i^2/\sum_ix_i^2\to\E[\varepsilon^2x^2]/\E[x^2]=1$ and $\sum_ih_i^2\le\max_ih_i\to0$ in probability: $V_n\to1=d$.
+\step Without $X_i$ the posterior is $\Normal(\hat a_{-i},1/(S-x_i^2))$. Its predictive at $x_i$ has variance $1+x_i^2/(S-x_i^2)=1/(1-h_i)$, and $y_i-\hat a_{-i}x_i=r_i/(1-h_i)$, the classical leave-one-out residual. Hence
+\[
+\waicLOO=\frac1n\sum_{i=1}^n\Bigl[\tfrac12\log2\pi-\tfrac12\log(1-h_i)+\frac{r_i^2}{2(1-h_i)}\Bigr].
+\]
+\step Subtracting the two previous steps from this one,
+\[
+n(\waicLOO-\WAIC)=\sum_{i=1}^n\Bigl[-\tfrac12\log(1-h_i^2)-\tfrac12h_i^2+\frac{r_i^2h_i^3}{1-h_i^2}\Bigr],
+\]
+in which every term is $O(h_i^3)$, and $h_i^3\approx x_i^6/n^3$. The leading part is $\sum_ir_i^2h_i^3\approx\sum_i\varepsilon_i^2x_i^6/n^3$, whose expectation is $15/n^2$ because $\E[x^6]=15$: so $n^3\,\E[\waicLOO-\WAIC]\to15$.
+\step Expanding $\log(1+h_i)$ and $1/(1+h_i)$ to first order in $h_i$, the second step gives $nT_n=nL_n(\hat a)+\tfrac12\bigl(1-\sum_ir_i^2h_i\bigr)+O_p(\tfrac1n)$, and the bracket is $O_p(n^{-1/2})$. So $T_n=L_n(\hat a)+O_p(n^{-3/2})$ and $\WAIC=L_n(\hat a)+\tfrac1n+O_p(n^{-3/2})$: for a regular model WAIC is AIC.
+\end{computation}
+
+Three facts are visible. The functional variance counts the parameter, $V_n\to d=1$. Leave-one-out cross-validation needs no refitting: the leverages of the single fit give it exactly. And leave-one-out and WAIC are much closer to each other, $O(n^{-3})$, than either is to its target, whose fluctuations are of order $n^{-1/2}$. The measured $n^3\,\E[\waicLOO-\WAIC]$ is $14.99\pm0.05$ at $n=10^5$ (\cref{sec:waic:measure}).
+
+The product model is the same computation with a twist. Its likelihood depends on $(a,b)$ only through $c=ab$, and under the uniform prior on $[-1,1]^2$ the coefficient $c$ has the density $\rho(c)=\tfrac12\log\frac1{\abs c}$ on $[-1,1]$ (\cref{ch:coefficient}). A Gaussian likelihood of width $n^{-1/2}$ against this density is a Gaussian with a slowly varying weight, and that is the whole difference from the regular line.
+
+\begin{computation}{The functional variance of $y=abx$}\label{comp:waic:product}
+\step The truth is $c=0$. With $S=\sum_ix_i^2$ and $\hat c=\sum_ix_iy_i/S$, the posterior of $c$ is proportional to $\rho(c)\exp(-\tfrac S2(c-\hat c)^2)$ on $[-1,1]$, and every posterior average of a function of the $\ell_i$ is an average over this one-dimensional posterior.
+\step Rescale: $t=\sqrt S\,c$, $\mu=\sqrt S\,\hat c$, $L=\tfrac12\log S$. Since $\log\frac1{\abs c}=L-\log\abs t$, the posterior density of $t$ is proportional to
+\[
+(L-\log\abs t)\,e^{-(t-\mu)^2/2}\qquad(\abs t\le\sqrt S).
+\]
+Under the truth $\mu=\sum_ix_iy_i/\sqrt S$ is exactly $\Normal(0,1)$ given the inputs. As $n\to\infty$ the weight $L-\log\abs t$ varies little, relative to its size $L$, where the Gaussian factor lives: the posterior of $t$ tends to $\Normal(\mu,1)$, the posterior of a regular one-parameter model.
+\step With $r_i=y_i-\hat cx_i$ we have $\ell_i(c)-\ell_i(\hat c)=r_ix_i(c-\hat c)-\tfrac12x_i^2(c-\hat c)^2$, and as in \cref{comp:waic:regular},
+\[
+V_n=\Var(t)\,\frac{\sum_ir_i^2x_i^2}{S}+O_p(\tfrac1n),
+\]
+the posterior moments of $t$ being bounded in probability. Hence $V_n\to1$: the product model has the functional variance of one parameter, half its parameter count.
+\step To first order in $1/L$ the weight shifts the variance: $\Var(t)=1-\Cov\bigl((U-\mu)^2,\log\abs U\bigr)/L+O(L^{-2})$ with $U\sim\Normal(\mu,1)$. Differentiating $h_0(\mu)=\E\log\abs{\mu+Z}$, $Z\sim\Normal(0,1)$, twice under the Gaussian shows that this covariance is $h_0''(\mu)$, and $h_0'(\mu)=\sqrt2\,D(\mu/\sqrt2)$ with Dawson's function $D(u)=e^{-u^2}\int_0^ue^{s^2}\dd s$, so $h_0''(\mu)=1-\mu h_0'(\mu)$. At $\mu=0$ it is $1$; averaged over $\mu\sim\Normal(0,1)$ it is $\tfrac12$ (\cref{ex:waic:dawson}). Therefore
+\[
+\E[V_n]=1-\frac{1}{\log n}+O\bigl((\log n)^{-2}\bigr),
+\]
+which is $0.891$ at $n=10^4$; the script measures $0.896\pm0.007$.
+\step With $t$ approximately $\Normal(\mu,1)$, the product model behaves at order $1/n$ like the regular line in the coordinate $c$: $n(G_n-S)\approx\tfrac12\mu^2$, $n(T_n-S_n)\approx-\tfrac12\mu^2$ and $n(\waicLOO-S_n)\approx1-\tfrac12\mu^2$. The expectations are $\tfrac12$, $-\tfrac12$ and $\tfrac12$, and $n(G_n-S)+n(\waicLOO-S_n)\approx1=2\lambda$ for every data set.
+\end{computation}
+
+The last two steps are expansions, not proofs; \cref{thm:waic:main} below makes the limits exact, and the measurements of \cref{sec:waic:measure} check the first-order corrections. What the computation shows is the size of WAIC's penalty: $V_n/n\approx1/n$, while AIC charges $d/n=2/n$. The penalty is set by the posterior's fluctuation, not by the number of coordinates.
+
+The chapter's model, the mixture $p(x\mid a,b)=(1-a)\phi(x)+a\phi(x-b)$ with $a\in[0,1]$, $b\in[-1,1]$, uniform prior and truth $\phi=\Normal(0,1)$, reduces to the same picture. Writing $g_{a,b}(x)=\log(p(x\mid a,b)/\phi(x))=\log\bigl(1+a(e^{bx-b^2/2}-1)\bigr)$, for each fixed $x$ we have $g_{a,b}(x)=abx+O(ab^2+a^2b^2)$ near $(0,0)$: to first order the mixture is a regression on the single coefficient $c=ab$, and $c$ again has the density $\tfrac12\log\frac1{\abs c}$ on $[-1,1]$ (this is why we take $b\in[-1,1]$ rather than the range $[-2,2]$ of \cref{ch:singular}, a change that affects neither $\lambda$ nor $m$). Its Kullback--Leibler divergence $K(a,b)=\tfrac12a^2(e^{b^2}-1)(1+O(a))$ is comparable to $a^2b^2$, so $\lambda=\tfrac12$ and $m=2$ (\cref{ch:singular}). There is one difference that will matter. For $b\ne0$, $K$ is infinitely differentiable but not analytic in $a$ at $a=0$: the coefficient of $a^k$ in its Taylor series is $(-1)^k\E[(e^{bX-b^2/2}-1)^k]/k$, which grows like $e^{k(k-1)b^2/2}$, so the series has radius of convergence zero. The likelihood ratio $e^{bx}$ is unbounded in $x$, and the analyticity that Watanabe's theorems assume fails.\sidenote{The same failure occurs for the $\tanh$ neuron with Gaussian inputs, where the poles of $\tanh$ at $\pm i\pi/2$ meet the unbounded support of the input; with inputs on $[-1,1]$ it disappears.}
+
+The third computation needs no model at all.
+
+\begin{lemma}[Leave-one-out from one posterior]\label{lem:waic:importance}
+Let $n\ge2$, let $p(x\mid w)>0$ for all $x$ and $w$, and suppose that $Z=\int\varphi(w)\prod_{j=1}^np(X_j\mid w)\dd w$ and $Z_{-i}=\int\varphi(w)\prod_{j\ne i}p(X_j\mid w)\dd w$ are finite and positive for each $i$. Then $p(X_i\mid X^n_{-i})=1/\Ew{1/p(X_i\mid w)}$, so that
+\[
+\waicLOO=\frac1n\sum_{i=1}^n\log\Ew{\frac1{p(X_i\mid w)}}.
+\]
+If moreover $\E\abs{\log p(X_i\mid X^n_{-i})}<\infty$, then $\E[\waicLOO]=\E[G_{n-1}]$ exactly, where $G_{n-1}$ is the generalization loss of the posterior from $n-1$ observations.
+\end{lemma}
+
+\begin{proof}
+The posterior given $X^n_{-i}$ has density $\varphi\prod_{j\ne i}p(X_j\mid w)/Z_{-i}$, so integrating $p(X_i\mid w)$ against it gives $p(X_i\mid X^n_{-i})=Z/Z_{-i}$; the full posterior density times $1/p(X_i\mid w)$, finite because $p>0$, is $\varphi\prod_{j\ne i}p(X_j\mid w)/Z$, whose integral is $\Ew{1/p(X_i\mid w)}=Z_{-i}/Z$. For the second statement, the pair $(X^n_{-i},X_i)$ has the law of $(X^{n-1},X)$ with $X\sim q$ independent of $X^{n-1}$, so $\E[-\log p(X_i\mid X^n_{-i})]=\E[-\log p^*_{n-1}(X)]=\E[G_{n-1}]$; average over $i$.
+\end{proof}
+
+The identity $p(X_i\mid X^n_{-i})=1/\Ew{1/p(X_i\mid w)}$ is \term{importance-sampling leave-one-out}\index{importance sampling!leave-one-out}: the full posterior, reweighted by $1/p(X_i\mid w)$, is the posterior without $X_i$.\sidenote{Watanabe attributes the importance-sampling form to \textcite{GelfandEtAl1992}; cross-validation itself goes back at least to \textcite{Geisser1975} and \textcite{Stone1977}.} With exact posterior averages it is exact, not an approximation. The second statement says that leave-one-out cross-validation is an unbiased estimate of the expected generalization loss with $n-1$ observations, for every model, prior and $n$; it needs neither regularity nor $\lambda$.
+
+What one had to notice is that the three statistics are three readings of one function. Let $\kappa_i(\alpha)=\log\Ew{p(X_i\mid w)^\alpha}$. Then
+\begin{equation}\label{eq:waic:readings}
+T_n=-\frac1n\sum_{i=1}^n\kappa_i(1),\qquad V_n=\sum_{i=1}^n\kappa_i''(0),\qquad\waicLOO=\frac1n\sum_{i=1}^n\kappa_i(-1),
+\end{equation}
+the first by definition, the second because $\kappa_i''(0)$ is the posterior variance of $\ell_i$, the third by \cref{lem:waic:importance}. In $\kappa_i(1)+\kappa_i(-1)$ the odd powers of $\alpha$ cancel and the first surviving term is $\kappa_i''(0)$. That is why the training loss plus the variance, which is WAIC, reproduces leave-one-out cross-validation; for the regular line all derivatives of order three and higher are tiny, which is \cref{comp:waic:regular} in one line.
+
+\section{The theorem: leave-one-out is WAIC to order \texorpdfstring{$n^{-2}$}{1/n\texttwosuperior}}\label{sec:waic:loo}
+
+The derivatives of $\kappa_i$ at points other than $0$ are cumulants of $\ell_i$ under reweighted posteriors.
+
+\begin{definition}[Tilted posteriors]\label{def:waic:tilt}
+For data $X^n$, an index $i$ and $\alpha\in\R$, the \term{tilted posterior}\index{tilted posterior} is
+\[
+\waicEt{\alpha}{g}=\frac{\Ew{g(w)\,p(X_i\mid w)^\alpha}}{\Ew{p(X_i\mid w)^\alpha}}.
+\]
+It is the posterior in which $X_i$ has weight $1+\alpha$: at $\alpha=-1$ the posterior without $X_i$, at $\alpha=1$ the posterior with $X_i$ counted twice. With $p_0$ the density of the optimal parameter, $f(x,w)=\log p_0(x)-\log p(x\mid w)$ is the log density ratio, so that $K(w)=\E_X[f(X,w)]$.
+\end{definition}
+
+\begin{lemma}[Tilted cumulants]\label{lem:waic:tilted}
+Suppose that $w\mapsto\ell_i(w)$ is bounded on $W$. Then $\kappa_i$ is infinitely differentiable on $\R$, and $\kappa_i^{(k)}(\alpha)$ is the $k$-th cumulant of $\ell_i(w)$ under $\E^{(i,\alpha)}_w$. In particular $\kappa_i''(0)=\Var_w[\ell_i(w)]$, and for every $\alpha$ and every constant $c$,
+\[
+\abs{\kappa_i^{(4)}(\alpha)}\le32\,\waicEt{\alpha}{(\ell_i(w)-c)^4}.
+\]
+\end{lemma}
+
+\begin{proof}
+The plan is to recognize the increments of $\kappa_i$ as a cumulant generating function, and then to compare the fourth cumulant with the fourth moment. Since $\ell_i$ is bounded, $\Ew{e^{\alpha\ell_i}}$ is finite and positive for every real $\alpha$, and differentiation under the expectation is justified by dominated convergence; so $\kappa_i$ is smooth. For fixed $\alpha$ and real $s$,
+\[
+\kappa_i(\alpha+s)-\kappa_i(\alpha)=\log\frac{\Ew{e^{s\ell_i}e^{\alpha\ell_i}}}{\Ew{e^{\alpha\ell_i}}}=\log\waicEt{\alpha}{e^{s\ell_i(w)}},
+\]
+the cumulant generating function of $\ell_i$ under the tilted posterior; its derivatives at $s=0$ are the tilted cumulants. For the bound, let $Y=\ell_i(w)-c$ under $\E^{(i,\alpha)}_w$; cumulants of order four do not change when a constant is added, so $\kappa_i^{(4)}(\alpha)$ is the fourth cumulant of $Y$. In terms of the central moments $\mu_k=\E(Y-\E Y)^k$ it is $\mu_4-3\mu_2^2$, and $0\le\mu_2^2\le\mu_4$ by Jensen's inequality; hence $-2\mu_4\le\mu_4-3\mu_2^2\le\mu_4$. Finally Minkowski's inequality gives $\mu_4^{1/4}\le(\E Y^4)^{1/4}+\abs{\E Y}\le2(\E Y^4)^{1/4}$, so $2\mu_4\le32\,\E Y^4$.
+\end{proof}
+
+The hypothesis of the theorem is a bound on the fourth moments of the log density ratio under the tilted posteriors, averaged over the observations and over the data.
+
+\begin{assumption}[Tilted fourth moments]\label{ass:waic:moments}
+There are $C$ and $n_0$ such that for every $n\ge n_0$
+\begin{equation}\label{eq:waic:moments}
+M_n\defeq\sup_{\abs\alpha\le1}\E\Bigl[\frac1n\sum_{i=1}^n\waicEt{\alpha}{f(X_i,w)^4}\Bigr]\le\frac C{n^2},
+\end{equation}
+where $\E$ is the expectation over the data $X^n$.
+\end{assumption}
+
+The scaling is the natural one: over the bulk of the posterior $f(X_i,w)$ is of order $n^{-1/2}$, so its fourth moment is of order $n^{-2}$. The supremum over $\alpha$ is outside the expectation, which matters for verifying the assumption.
+
+\begin{theorem}[Leave-one-out equals WAIC to order $n^{-2}$; \textcite{Watanabe2010}, Theorem~1 and Corollary~1, at $\beta=1$]\label{thm:waic:loo}
+Let $\beta=1$, and suppose that $w\mapsto\log p(x\mid w)$ is bounded on $W$ for every $x$. Then for every data set
+\begin{equation}\label{eq:waic:exact}
+\waicLOO-\WAIC=\frac1n\sum_{i=1}^n\int_0^1\frac{(1-t)^3}6\bigl[\kappa_i^{(4)}(t)+\kappa_i^{(4)}(-t)\bigr]\dd t,
+\end{equation}
+and, with $M_n$ as in \eqref{eq:waic:moments},
+\[
+\E\abs{\waicLOO-\WAIC}\le\tfrac83\,M_n.
+\]
+Under \cref{ass:waic:moments}, $\E\abs{\waicLOO-\WAIC}\le\frac{8C}{3n^2}$ for $n\ge n_0$; in particular $\waicLOO=\WAIC+O_p(n^{-2})$.
+\end{theorem}
+
+\begin{proof}
+The plan is to write both statistics through the functions $\kappa_i$, expand $\kappa_i(1)+\kappa_i(-1)$ by Taylor's formula with integral remainder, and bound the remainder by \cref{lem:waic:tilted}. By \eqref{eq:waic:readings} and the definition $\WAIC=T_n+V_n/n$,
+\[
+\waicLOO-\WAIC=\frac1n\sum_{i=1}^n\bigl[\kappa_i(1)+\kappa_i(-1)-\kappa_i''(0)\bigr].
+\]
+The function $\kappa_i$ is smooth by \cref{lem:waic:tilted}, and $\kappa_i(0)=0$. Taylor's formula with integral remainder, applied to $\kappa_i$ on $[0,1]$ and to $\alpha\mapsto\kappa_i(-\alpha)$ on $[0,1]$, gives
+\[
+\kappa_i(\pm1)=\pm\kappa_i'(0)+\tfrac12\kappa_i''(0)\pm\tfrac16\kappa_i'''(0)+\int_0^1\frac{(1-t)^3}6\,\kappa_i^{(4)}(\pm t)\dd t.
+\]
+Adding the two signs cancels the odd terms, and summing over $i$ proves \eqref{eq:waic:exact}.
+
+For the bound, take absolute values in \eqref{eq:waic:exact}, then expectations over the data. The integrand is nonnegative and continuous in $t$, so Tonelli's theorem exchanges $\E$ and $\int_0^1\dd t$; for each fixed $t$ the expectation of $\frac1n\sum_i\abs{\kappa_i^{(4)}(\pm t)}$ is at most the supremum over $\abs\alpha\le1$; and $\int_0^1(1-t)^3/6\dd t=1/24$. Hence
+\[
+\E\abs{\waicLOO-\WAIC}\le\frac2{24}\sup_{\abs\alpha\le1}\E\Bigl[\frac1n\sum_{i=1}^n\abs{\kappa_i^{(4)}(\alpha)}\Bigr].
+\]
+\Cref{lem:waic:tilted} with $c=\ell_i(w_0)=\log p_0(X_i)$, for which $\ell_i(w)-c=-f(X_i,w)$, bounds each $\abs{\kappa_i^{(4)}(\alpha)}$ by $32\,\waicEt{\alpha}{f(X_i,w)^4}$, and $32/12=8/3$. Under \cref{ass:waic:moments} the right side is at most $8C/(3n^2)$, and Markov's inequality turns the bound in mean into $O_p(n^{-2})$.
+\end{proof}
+
+Three remarks place the theorem.\sidenote{The bound is in mean, which is stronger than the statement in probability of Watanabe's Corollary~1; it needs the assumption only in the averaged form \eqref{eq:waic:moments}.}
+
+\emph{Where the assumption comes from.} \Cref{ass:waic:moments} is the case $k=4$ of \textcite[Lemma~1(2), eq.~(14)]{Watanabe2010}, which bounds $\limsup_nn^{k/2}M_k(n)$ for $k\le4$, where $M_k(n)$ is the supremum over $\abs\alpha\le1+\beta$ of the expected average of $\Ew{\abs f^ke^{\alpha f}}/\Ew{e^{\alpha f}}$. Since $e^{\alpha f}=(p_0/p)^\alpha$, these are our tilted moments with the tilt $-\alpha$, and the range $\abs\alpha\le2$ contains ours. Watanabe states the lemma under the hypotheses of \cref{thm:waic:main} and refers its proof to eq.~(32) of \textcite{Watanabe2010a} and eq.~(6.59) of \textcite{Watanabe2009} for realizable singular models, where an analogous remainder is bounded, to \textcite{Watanabe2010b} for regular unrealizable models, and to \textcite{Watanabe2010d} for singular unrealizable ones. His proof of Theorem~1 writes the Taylor remainder at an intermediate point that depends on the data; the integral form used here keeps the supremum over $\alpha$ outside the expectation, where eq.~(14) has it.
+
+\emph{Other temperatures and the leading term.} At inverse temperature $\beta$ the third cumulants no longer cancel, and $\waicLOO-\WAIC=\frac{\beta-\beta^2}2Y_3+O_p(n^{-2})$ with $Y_3=\frac1n\sum_i\kappa_i'''(0)=O_p(n^{-3/2})$ \parencite[Corollary~1]{Watanabe2010}; see \cref{ex:waic:beta}. At $\beta=1$, with sixth moments bounded in the same way, the argument gives $\waicLOO-\WAIC=\frac1{12}Y_4+O(n^{-3})$ in mean, $Y_4=\frac1n\sum_i\kappa_i^{(4)}(0)$, the form of Watanabe's Corollary~1.
+
+\emph{Gaussian posteriors do better.} For the regular line \cref{comp:waic:regular} gives $n^{-3}$: a Gaussian posterior makes the fourth cumulant of $\ell_i$ smaller than the bound by a further factor $1/n$.
+
+The assumption can be checked by hand for the product model, so that \cref{thm:waic:loo} is completely proved there.
+
+\begin{proposition}[The product model satisfies the assumption]\label{prop:waic:product}
+For $y=abx+\varepsilon$ with $x,\varepsilon\sim\Normal(0,1)$, the truth $ab=0$ and the uniform prior on $[-1,1]^2$, \cref{ass:waic:moments} holds with $n_0=18$. Consequently $\E\abs{\waicLOO-\WAIC}=O(n^{-2})$.
+\end{proposition}
+
+\begin{proof}
+The plan is to reduce to the coefficient $c=ab$, to show that the tilted posteriors of $c$ are Gaussians weighted by $\rho$, to bound their moments by Gaussian moments, and to average over the data. Write $s_i=x_iy_i$, $t_i=x_i^2$, $S=\sum_jt_j$, $S_{xy}=\sum_js_j$, and for each $i$ let $S^{(i)}=S-t_i$ and $U_i=S_{xy}-s_i$ be the sums without the $i$-th observation.
+
+\emph{Reduction.} The density of $x$ is common to model and truth, so $f(X_i,w)=\log\phi(y_i)-\log\phi(y_i-cx_i)=-cs_i+\tfrac12c^2t_i$, and $f^4\le8(c^4s_i^4+\tfrac1{16}c^8t_i^4)$. The likelihood and $f$ depend on $w$ only through $c$, whose prior density is $\rho(c)=\tfrac12\log\frac1{\abs c}$ on $[-1,1]$. Multiplying $\exp(cS_{xy}-\tfrac12c^2S)$ by $\exp(\alpha(cs_i-\tfrac12c^2t_i))$ and completing the square shows that under $\E^{(i,\alpha)}_w$ the coefficient $c$ has density proportional to $\rho(c)\exp(-\tfrac12S_\alpha(c-m_\alpha)^2)$ on $[-1,1]$, with $S_\alpha=S+\alpha t_i$ and $m_\alpha=(S_{xy}+\alpha s_i)/S_\alpha$. For $\abs\alpha\le1$ we have $S_\alpha\ge S^{(i)}$ and $\abs{m_\alpha}\le(2\abs{s_i}+\abs{U_i})/S^{(i)}$.
+
+\emph{Moments of a Gaussian weighted by $\rho$.} Let $\sigma\le1$, $m\in\R$, $k\in\{2,4\}$, and let $\pi$ have density proportional to $\rho(c)e^{-(c-m)^2/(2\sigma^2)}$ on $[-1,1]$. We claim $\E_\pi[c^{2k}]\le3\cdot2^{2k-1}\bigl(m^{2k}+(2k-1)!!\,\sigma^{2k}\bigr)$. Let $\gamma$ be $\Normal(m,\sigma^2)$ conditioned on $[-1,1]$. Under $\gamma$, $\rho(c)$ is a nonincreasing and $c^{2k}$ a nondecreasing function of $\abs c$, and for two such functions $g,h$ of one random variable $(g(u)-g(v))(h(u)-h(v))\le0$, whose expectation over two independent copies gives $\E[gh]\le\E[g]\E[h]$, \term{Chebyshev's association inequality}\index{Chebyshev's association inequality}. Hence $\E_\pi[c^{2k}]=\E_\gamma[\rho c^{2k}]/\E_\gamma[\rho]\le\E_\gamma[c^{2k}]$. If $\abs m>1$, then $\E_\gamma[c^{2k}]\le1<m^{2k}$. If $\abs m\le1$, then $[-1,1]$ contains $[m-1,m]$ or $[m,m+1]$, each of $\Normal(m,\sigma^2)$-probability at least $\Prob(0\le Z\le1)>\tfrac13$; so $\E_\gamma[c^{2k}]\le3\,\E[(m+\sigma Z)^{2k}]\le3\cdot2^{2k-1}(m^{2k}+\sigma^{2k}\E Z^{2k})$, and $\E Z^{2k}=(2k-1)!!$.
+
+\emph{Averaging.} On the event $\{S^{(i)}\ge1\}$ the claim applies with $\sigma^2=1/S_\alpha\le1/S^{(i)}$ and gives, uniformly in $\abs\alpha\le1$,
+\[
+\waicEt{\alpha}{f^4}\le192\,s_i^4\Bigl[\frac{(2\abs{s_i}+\abs{U_i})^4}{(S^{(i)})^4}+\frac3{(S^{(i)})^2}\Bigr]+192\,t_i^4\Bigl[\frac{(2\abs{s_i}+\abs{U_i})^8}{(S^{(i)})^8}+\frac{105}{(S^{(i)})^4}\Bigr];
+\]
+on its complement $c^2\le1$ gives $\waicEt{\alpha}{f^4}\le8s_i^4+\tfrac12t_i^4$. Now take expectations. The observation $(x_i,y_i)$ is independent of $(S^{(i)},U_i)$; $S^{(i)}$ has the $\chi^2_{n-1}$ distribution; and given the inputs, $U_i\sim\Normal(0,S^{(i)})$, so $\E[U_i^{2k}\mid x]=(2k-1)!!\,(S^{(i)})^k$. After $(2\abs s+\abs U)^{2k}\le2^{2k-1}((2s)^{2k}+U^{2k})$, every term is a finite moment of $(x_i,y_i)$ times $\E[(\chi^2_{n-1})^{-r}]=2^{-r}\Gamma(\tfrac{n-1}2-r)/\Gamma(\tfrac{n-1}2)$ with $r\in\{2,4,8\}$, finite for $n\ge18$ and of order $n^{-r}$. The terms with $r=2$, namely $s_i^4U_i^4/(S^{(i)})^4$ and $s_i^4/(S^{(i)})^2$, are of order $n^{-2}$; all others are of order $n^{-4}$ or smaller. The complement has probability $\Prob(\chi^2_{n-1}<1)\le(e/(n-1))^{(n-1)/2}$. The resulting bound does not depend on $i$ or $\alpha$, which proves \eqref{eq:waic:moments}; \cref{thm:waic:loo} applies because $\abs{c}\le1$ makes $\log p(x\mid w)$ bounded.
+\end{proof}
+
+\section{The theorem: what WAIC estimates}\label{sec:waic:main}
+
+\Cref{thm:waic:loo} is deterministic algebra plus a moment bound; it says nothing yet about the generalization loss. The connection is \cref{lem:waic:importance}, $\E[\waicLOO]=\E[G_{n-1}]$, together with Watanabe's equations of state (\cref{thm:generalization:main}). The statement collects Watanabe's hypotheses.
+
+\begin{theorem}[WAIC and leave-one-out estimate the generalization loss; \textcite{Watanabe2010}, Lemma~1, Corollary~1, Lemma~3 and Theorem~2]\label{thm:waic:main}
+Let $W=\{\pi_1\ge0,\dots,\pi_k\ge0\}\subset\R^d$ be compact with nonempty interior, the $\pi_j$ analytic; let $\varphi=\varphi_1\varphi_2$ with $\varphi_1\ge0$ analytic and $\varphi_2>0$ of class $C^\infty$; let $L$ attain its minimum on $W$, all minimizers giving the same density $p_0$; let $w\mapsto f(\cdot,w)$ be an analytic map into $L^s(q)$ for some $s\ge8$; and let $K(w)\ge c\,\E_X[f(X,w)^2]$ for some $c>0$ whenever $K(w)\le\eps$ (\term{relatively finite variance}\index{relatively finite variance}). Let $\beta=1$, let $\lambda$ be the learning coefficient, $L_0=L(w_0)$, and $\nu$ the singular fluctuation of \cref{ch:generalization}. Then:
+\begin{enumerate}
+\item $\E[\waicLOO]=\E[G_{n-1}]$ for every $n\ge2$, and $\E[\WAIC]=\E[G_n]+o(1/n)$;
+\item $\waicLOO=\WAIC+O_p(n^{-2})$;
+\item $n(\E[G_n]-L_0)\to\lambda$, $n(\E[T_n]-L_0)\to\lambda-2\nu$, and $\E[V_n]\to2\nu$;
+\item $(G_n-L_0)+(\waicLOO-L_n(w_0))=\frac{2\lambda}n+o_p(\frac1n)$, and the same with $\WAIC$ in place of $\waicLOO$.
+\end{enumerate}
+Realizability is not assumed.
+\end{theorem}
+
+\begin{proofsketch}
+Part~(i), first half, is \cref{lem:waic:importance}. Part~(ii) is \cref{thm:waic:loo}, whose assumption is Watanabe's Lemma~1(2), and whose boundedness hypothesis holds almost surely: analyticity into $L^s(q)$ makes $\sup_{w\in W}\abs{f(x,w)}$ finite for $q$-almost every $x$. Part~(iii) is Lemma~3 of \textcite{Watanabe2010}: $n\E[G_n-L_0]$ and $n\E[T_n-L_n(w_0)]$ converge to $\lambda$ and $\lambda-2\nu$, where $2\nu=\lim\E[V_n]$ defines $\nu$, and $\E[L_n(w_0)]=L_0$. Adding, $n(\E[\WAIC]-L_0)\to\lambda-2\nu+2\nu=\lambda$, which with the first limit is the second half of~(i). For~(iv), Lemma~3 also states $n(G_n-L_0)+n(T_n-L_n(w_0))+V_n\to2\lambda$ in probability, and by~(ii) $\waicLOO-L_n(w_0)=T_n-L_n(w_0)+V_n/n+O_p(n^{-2})$. What this sketch omits is the content of Watanabe's Lemmas~1 and~3: that the rescaled errors converge in law with their expectations, and the equations of state. Their proofs, in \textcite{Watanabe2010a} for realizable models, \textcite{Watanabe2010b} for regular unrealizable ones and \textcite{Watanabe2010d} for singular unrealizable ones, use resolution of singularities and the empirical process on the resolved space (\cref{thm:toolkit:empirical}); \cref{ch:generalization} sketches them.
+\end{proofsketch}
+
+The product model satisfies every hypothesis: $W=[-1,1]^2$ is cut out by $1-a^2$ and $1-b^2$, the prior is constant, $f=-abxy+\tfrac12a^2b^2x^2$ is a polynomial in $(a,b)$ with coefficients in every $L^s(q)$, and a realizable truth has relatively finite variance and a unique optimal density. The mixture does not satisfy the analyticity hypothesis, as \cref{sec:waic:byhand} showed; for it \cref{thm:waic:main} is a prediction, which \cref{sec:waic:measure} tests.\sidenote{Watanabe treats mixtures separately in \textcite{Watanabe2021}; we have not used that paper.}
+
+Three consequences deserve words.
+
+\paragraph{WAIC estimates the learning curve at the sample size in hand.} By part~(i), the bias of leave-one-out cross-validation as an estimate of $\E[G_n]$ is $\E[G_{n-1}]-\E[G_n]$, the decrease of the learning curve in one step, and WAIC differs from it by $O(n^{-2})$. If $\E[G_n]-L_0=\lambda/n-(m-1)/(n\log n)+\cdots$ is smooth in $n$, that decrease is about $\lambda/n^2$: WAIC tracks the finite-$n$ learning curve, slowly converging corrections included, and never needs $\lambda$. This is the precise sense of the chapter's title. (The smoothness is an assumption here; the identity is exact.)
+
+\paragraph{WAIC is anticorrelated with the error it estimates.} Part~(iv) is a statement about each data set. For the product model $n(G_n-S)\approx\tfrac12\mu^2$ and $n(\waicLOO-S_n)\approx1-\tfrac12\mu^2$ with the same $\mu\sim\Normal(0,1)$ (\cref{comp:waic:product}): a data set on which the predictive generalizes badly is one on which WAIC reports a small error, and the correlation of the two errors tends to $-1$. WAIC estimates what the posterior does on average over data sets, $\E[G_n]$, not what it did on the data set at hand.\sidenote{\textcite{Watanabe2010} reports, for a three-layer $\tanh$ network with $n=200$ and $100$ data sets sampled by Metropolis, correlations $-0.854$ between the generalization error and the importance-sampling leave-one-out error, $-0.873$ with WAIC, and $0.996$ between leave-one-out and WAIC.} As an estimate of the realized $G_n$, WAIC is worse than the constant $\E[G_n]$ would be, if one knew it.
+
+\paragraph{The penalty is $2\nu$, not $2\lambda$.} The functional variance estimates $2\nu$, and $\nu$ is a second invariant, distinct from $\lambda$ in general. In the product model and the mixture the coefficient's limit posterior is Gaussian and $\nu=\lambda=\tfrac12$. In the cusp model $y=ab^2x$ the limit posterior of $\sqrt n\,c$ is proportional to $\abs t^{-1/2}e^{-(t-\mu)^2/2}$, and a one-dimensional quadrature gives $2\nu\approx0.697$ against $2\lambda=\tfrac12$ (\cref{ex:waic:cusp}). WAIC's penalty is therefore not a function of $\lambda$, and a criterion that replaced $V_n$ by $2\lambda$ would be biased.
+
+\subsection{WAIC in practice}\label{sec:waic:practice}
+
+Three practical points. First, scales: \textcite{GelmanEtAl2014} put WAIC on the deviance scale, $-2(\mathrm{lppd}-p_{\mathrm{WAIC}})$, with $\mathrm{lppd}=\sum_i\log p^*(X_i)=-nT_n$ and the recommended penalty $p_{\mathrm{WAIC}2}=\sum_i\Var_w[\ell_i]=V_n$; so their WAIC is $2n\WAIC$, and the ``effective number of parameters'' is the functional variance, which for our running models tends to $1$, not to $d=2$.\index{deviance scale} \textcite{VehtariEtAl2017} report $\mathrm{elpd}_{\mathrm{loo}}=\sum_i\log p(X_i\mid X^n_{-i})=-n\,\waicLOO$ and $\mathrm{elpd}_{\mathrm{waic}}=-n\WAIC$. Second, with posterior draws in place of exact averages, \cref{lem:waic:importance} becomes an importance-sampling estimate whose weights $1/p(X_i\mid w_s)$ can have heavy tails; \term{Pareto-smoothed importance sampling}\index{Pareto-smoothed importance sampling} fits a generalized Pareto distribution to the largest weights, and its estimated shape $\hat k$ flags observations whose estimate cannot be trusted \parencite{VehtariEtAl2017,VehtariEtAl2024}. Third, the deviance information criterion \parencite{SpiegelhalterEtAl2002} plugs the posterior mean into the likelihood; in a singular model that mean need not lie near the true parameters, and its expectation then differs from the Bayes generalization loss \parencite[Section~5.3]{Watanabe2010}.
+
+\section{Measuring it}\label{sec:waic:measure}
+
+The scripts compute every quantity of \cref{def:waic:criteria} exactly, up to quadrature error, for $500$ independent data sets at each sample size, and report means with Student-$t$ $95\%$ intervals. Because $\E[S_n]=S$, the bias of an estimate $\widehat G$ of $G_n$ equals $\E[(\widehat G-S_n)-(G_n-S)]$; working with these differences of errors removes the fluctuation of $S_n-S$, of order $n^{-1/2}$, which is common to all estimates and to all models fitted to the same data.\sidenote{With real data $S_n$ is unknown, but it cancels when two models fitted to the same data are compared by their WAIC.}
+
+For the mixture (\texttt{figures/scripts/10-waic-mixture.py}; data seeds $1000+n$) the posterior is computed by midpoint quadrature on a $96\times192$ grid in $(\tau,\eta)$ with $a=\tau^3$, $b=\eta^3$, which is dense near the set $\{a=0\}\cup\{b=0\}$ where the posterior lives. The posterior averages of $e^{\pm g}$, $g$ and $g^2$, smooth functions of the one number $x_i$, are computed at $96$ Chebyshev nodes on $[-7,7]$ and interpolated to the data, which agrees with direct evaluation to $10^{-9}$. Doubling the grid to $192\times384$ changes $n\E[G_n-S]$, $\E[V_n]$ and the other errors by at most $7\times10^{-4}$, and $n^2(\waicLOO-\WAIC)$ by at most $4\times10^{-3}$. For the product model (\texttt{10-waic-product.py}; seeds $2000+n$) the posterior of $c$ is handled exactly, by Gauss--Legendre quadrature in $c$ for $n\le300$ and above that by closed forms through $h_0(\mu)=\E\log\abs{\mu+Z}$ (the two agree to $4\times10^{-8}$); on one data set with $n=10^3$, $20{,}000$ draws from the kit's exact sampler give $V_n=0.754$ against the exact $0.762$, within Monte Carlo error. The regular line uses the formulas of \cref{comp:waic:regular}. The runs take about two minutes each.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=5mm,yticklabels at=edge left},
+  splot,width=0.53\linewidth,height=0.4\linewidth,xmode=log,xmin=60,xmax=1.7e5,ymin=-0.4,ymax=1.5,
+  xtick={1e2,1e3,1e4,1e5},xlabel={sample size $n$},title style={yshift=-1ex}]
+\nextgroupplot[title={mixture},ylabel={$n\,\E[\text{estimate}-G_n]$}]
+\addplot[theory,domain=60:1.7e5,samples=2] {1};
+\addplot[theory,domain=60:1.7e5,samples=2,forget plot] {0};
+\addplot[regularpred,domain=60:1.7e5,samples=2] {0};
+\addplot[measured3,ebars] table[x expr=\thisrow{n}/1.18,y=ab,y error plus=abp,y error minus=abm] {figures/data/10-waic-mixture.dat};
+\addplot[measured2,ebars] table[x expr=\thisrow{n}*1.18,y=ak,y error plus=akp,y error minus=akm] {figures/data/10-waic-mixture.dat};
+\addplot[measured,ebars] table[x=n,y=w,y error plus=wp,y error minus=wm] {figures/data/10-waic-mixture.dat};
+\nextgroupplot[title={product model},legend to name=waiclegendbias,legend columns=3,
+  legend style={/tikz/every even column/.append style={column sep=3mm}}]
+\addplot[theory,domain=60:1.7e5,samples=2] {1};
+\addplot[theory,domain=60:1.7e5,samples=2,forget plot] {0};
+\addplot[regularpred,domain=60:1.7e5,samples=2] {0};
+\addplot[measured3,ebars] table[x expr=\thisrow{n}/1.18,y=ab,y error plus=abp,y error minus=abm] {figures/data/10-waic-product.dat};
+\addplot[measured2,ebars] table[x expr=\thisrow{n}*1.18,y=ak,y error plus=akp,y error minus=akm] {figures/data/10-waic-product.dat};
+\addplot[measured,ebars] table[x=n,y=w,y error plus=wp,y error minus=wm] {figures/data/10-waic-product.dat};
+\addplot[theory2,domain=80:1.5e5,samples=40] {1+1/ln(x)};
+\legend{singular: $0$ (WAIC) and $d-2\nu$ ($T_n+d/n$),regular: $0$ (both AIC),$T_n+2/n$,AIC: $L_n(\hat w)+2/n$,WAIC,first order: $1+1/\log n$}
+\end{groupplot}
+\end{tikzpicture}\par\smallskip
+\pgfplotslegendfromname{waiclegendbias}
+\end{fullwidth}
+\caption{The bias of three estimates of the Bayes generalization loss, times $n$: WAIC (dots), the training loss with AIC's penalty, $T_n+d/n$ (squares, drawn slightly left), and Akaike's AIC $L_n(\hat w)+d/n$ (circles, drawn slightly right), with $d=2$, for the mixture (left) and the product model (right) at their singular truths. Means over $500$ data sets per sample size (seeds $1000+n$ and $2000+n$) with Student-$t$ $95\%$ intervals. Bronze: the singular prediction, $0$ for WAIC (\cref{thm:waic:main}) and $d-2\nu=1$ for $T_n+d/n$ (\cref{comp:waic:product}); dotted: the first-order correction $2-\E[V_n]\approx1+1/\log n$ for the product model. Slate dashed: the regular prediction, $0$ for both AIC estimates. Scripts \texttt{10-waic-mixture.py} and \texttt{10-waic-product.py}.}\label{fig:waic:bias}
+\end{figure}
+
+\Cref{fig:waic:bias} is the chapter's answer in one picture. At every sample size, for both models, the bias of WAIC is zero within its interval: $n\,\E[\WAIC-G_n]$ ranges from $-0.08\pm0.12$ to $+0.01\pm0.10$ for the mixture and from $-0.07\pm0.12$ to $+0.06\pm0.11$ for the product model. This holds at $n=100$, where $n\E[G_n-S]$ is only $0.33$ (mixture) and $0.32$ (product) against its limit $\lambda=\tfrac12$: WAIC follows the learning curve, not its limit. The regular recipe $T_n+2/n$ overestimates $G_n$ by $1.02$ to $1.19$ units of $1/n$, close to the singular prediction $(d-2\nu)/n=1/n$ plus the first-order excess $1/\log n$, and far from the regular prediction $0$. Akaike's own criterion does no better: its bias is $0.84$ to $1.01$ units for the mixture and $1.03$ to $1.16$ for the product model. The bias of the regular recipe is exactly $(d-\E[V_n])/n$ plus that of WAIC, so the measured $\E[V_n]$ tells the same story more precisely: it rises from $0.77$ to $0.94$ for the mixture and from $0.77$ to $0.91$ for the product model as $n$ goes from $10^2$ to $10^4$ and $10^5$, and for the product model it agrees with $1-1/\log n$ to within $0.02$ at every $n$ (\cref{tab:waic:numbers}).
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}llS[table-format=1.3]S[table-format=1.3]S[table-format=1.3]S[table-format=-1.4]@{}}
+\toprule
+model & $n$ & {$n\,\E[G_n-S]$} & {$\E[V_n]$} & {$n\,\E[\text{err}_G+\text{err}_{\mathrm{LOO}}]$} & {$\mathrm{corr}$}\\
+\midrule
+mixture & $10^2$ & 0.334 & 0.773 & 0.601 & -0.9975\\
+        & $10^3$ & 0.402 & 0.902 & 0.728 & -0.9982\\
+        & $10^4$ & 0.413 & 0.943 & 0.793 & -0.9989\\
+\midrule
+product & $10^2$ & 0.319 & 0.767 & 0.598 & -0.9834\\
+        & $10^3$ & 0.398 & 0.863 & 0.733 & -0.9970\\
+        & $10^4$ & 0.431 & 0.896 & 0.793 & -0.9997\\
+        & $10^5$ & 0.390 & 0.912 & 0.834 & -1.0000\\
+\midrule
+\multicolumn{2}{@{}l}{limit (\cref{thm:waic:main})} & 0.5 & 1 & 1 & -1\\
+\bottomrule
+\end{tabular}
+\caption{The singular quantities behind \cref{fig:waic:bias}: the generalization error, the functional variance, the sum of the generalization error $\text{err}_G=G_n-S$ and the leave-one-out error $\text{err}_{\mathrm{LOO}}=\waicLOO-S_n$, and the correlation of the two errors, over $500$ data sets. The $95\%$ half-widths are about $0.055$ for $n\E[G_n-S]$, $0.005$ to $0.023$ for $\E[V_n]$, and $0.001$ to $0.017$ for the sum. The limits are $\lambda$, $2\nu$, $2\lambda$ and $-1$.}\label{tab:waic:numbers}
+\end{table}
+
+\Cref{tab:waic:numbers} shows how slowly the $\lambda$-dependent limits arrive. The sum of the two errors in part~(iv) of \cref{thm:waic:main} concentrates sharply, its standard deviation across data sets being $0.04$ (mixture) and $0.02$ (product) at $n=10^4$, but around $0.79$, not $2\lambda=1$. Since leave-one-out is unbiased, the mean of the sum is about $2n\E[G_n-S]$; and since $p^*(X_{n+1})$ is the ratio of the marginal likelihoods of $n+1$ and $n$ observations, $\E[G_n]=\E[F_{n+1}]-\E[F_n]$ exactly. The product model's free energy $\tfrac12\log n-\log\log n+O_p(1)$ (\cref{thm:coefficient:free}) then suggests $n\E[G_n-S]\approx\tfrac12-1/\log n$ and a sum of $1-2/\log n=0.78$; this is an expansion, since the differences of the bounded remainder are not controlled. The correlation of the two errors is below $-0.996$ from $n=10^3$ on. \Cref{fig:waic:scatter} shows the $500$ pairs at $n=10^4$ for both models: they lie on a line of slope $-1$, parallel to the singular prediction and far from the regular one.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,xlabel={$n(G_n-S)$},ylabel={$n(\waicLOO-S_n)$},xmin=-0.15,xmax=6.6,ymin=-6.2,ymax=2.3,
+  legend style={at={(0.98,0.98)},anchor=north east}]
+\addplot[regularpred,domain=-0.15:6.6,samples=2] {2-x};
+\addplot[theory,domain=-0.15:6.6,samples=2] {1-x};
+\addplot[theory2,domain=-0.15:6.6,samples=2] {1-2/ln(10000)-x};
+\addplot[draws] table[x=bg,y=cv] {figures/data/10-waic-mixture-scatter.dat};
+\addplot[only marks,mark=square,mark size=0.8pt,color=regular,mark options={line width=0.25pt}] table[x=bg,y=cv] {figures/data/10-waic-product-scatter.dat};
+\legend{regular: sum $=d$,singular: sum $=2\lambda$,first order: $2\lambda-2/\log n$,mixture,product model}
+\end{axis}
+\end{tikzpicture}
+\caption{The generalization error and the leave-one-out error of the same $500$ data sets at $n=10^4$, for the mixture (bronze dots) and the product model (slate squares); the WAIC errors are indistinguishable at this scale. Lines are where $n(G_n-S)+n(\waicLOO-S_n)$ equals $d=2$ (slate dashed, regular), $2\lambda=1$ (bronze, \cref{thm:waic:main}) and its first-order value $1-2/\log n$ (dotted; see the text). Seeds $1000+n$ and $2000+n$.}\label{fig:waic:scatter}
+\end{figure}
+
+\Cref{fig:waic:loo} tests \cref{thm:waic:loo} itself. For the regular line $n^2\E[\waicLOO-\WAIC]$ falls like $15/n$, as \cref{comp:waic:regular} predicts. For the product model, where \cref{prop:waic:product} proves the bound, it stays below $0.2$ and drifts down, from $0.18\pm0.03$ at $n=10^2$ to $0.06\pm0.01$ at $n=10^5$, consistent with the theorem's $O(n^{-2})$; the drift is the slow approach of the posterior of $\sqrt n\,c$ to a Gaussian. For the mixture it rises over the whole range, from $0.05\pm0.01$ at $n=10^2$ to $0.76\pm0.10$ at $n=10^4$. The script locates the cause. At $n=10^4$ the contribution of one observation to $n^2(\waicLOO-\WAIC)$, as a function of its value $x$, grows by a factor of $15$ to $40$ per unit of $x$ between $x=3$ and $x=5$, and the one percent of observations with the largest $\abs x$ supply $84\%$ of the sum (median over data sets). This is the unbounded likelihood ratio $e^{bx}$ again, the same feature that destroys analyticity: the average over the data is dominated by rare observations. The rise is not an artifact of sampling them: averaging the same function of $x$ over $x\sim\Normal(0,1)$ gives $0.08$ at $n=10^2$ and $0.62$ at $n=10^4$, and the share of $\abs x>4$ in it grows from $3\%$ to $25\%$. Whether $n^2\E\abs{\waicLOO-\WAIC}$ stays bounded for the mixture is not decided by these runs; at $n=10^4$ the difference itself is $8\times10^{-9}$, far below everything else in the problem.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,xmode=log,ymode=log,xlabel={sample size $n$},ylabel={$n^2\,\E[\waicLOO-\WAIC]$},
+  xmin=60,xmax=1.7e5,ymin=8e-5,ymax=3,xtick={1e2,1e3,1e4,1e5},legend style={at={(0.02,0.02)},anchor=south west}]
+\addplot[regularpred,domain=80:1.4e5,samples=2] {15/x};
+\addplot[measured3,ebars] table[x=n,y expr=\thisrow{d3}/\thisrow{n},y error plus expr=\thisrow{d3p}/\thisrow{n},y error minus expr=\thisrow{d3m}/\thisrow{n}] {figures/data/10-waic-regline.dat};
+\addplot[measured2,ebars] table[x=n,y=dl,y error plus=dlp,y error minus=dlm] {figures/data/10-waic-product.dat};
+\addplot[measured,ebars] table[x=n,y=dl,y error plus=dlp,y error minus=dlm] {figures/data/10-waic-mixture.dat};
+\legend{regular line: $15/n$ (\cref{comp:waic:regular}),regular line,product model,mixture}
+\end{axis}
+\end{tikzpicture}
+\caption{Leave-one-out minus WAIC, times $n^2$, at $\beta=1$: means over $500$ data sets with $95\%$ intervals (all values are positive). \Cref{thm:waic:loo} bounds $n^2\E\abs{\waicLOO-\WAIC}$ under \cref{ass:waic:moments}, which \cref{prop:waic:product} proves for the product model; the mixture does not meet the analyticity hypothesis under which Watanabe states the assumption. Slate dashed: the exact leading term $15/n$ for the regular line, whose posterior is Gaussian.}\label{fig:waic:loo}
+\end{figure}
+
+Two cautions. The bias of WAIC expected at finite $n$, about $\lambda/n^2$, is $0.005$ units at $n=100$, a twentieth of our interval; the runs cannot see it. And the mixture's agreement with \cref{thm:waic:main} is an observation about a model that the theorem does not cover.
+
+\section{The ledger}\label{sec:waic:ledger}
+
+The chapter established that the generalization loss of a Bayesian posterior can be estimated from the data and the posterior alone, without the learning coefficient, the singular fluctuation, or the multiplicity. Leave-one-out cross-validation estimates $\E[G_{n-1}]$ exactly; it can be computed from one posterior by importance sampling; and it equals $\WAIC=T_n+V_n/n$ up to $O(n^{-2})$ in mean, which we proved completely for the product model and under Watanabe's moment bound in general. With the equations of state, WAIC is unbiased to $o(1/n)$ (\cref{thm:waic:main}). Its penalty is the functional variance, an estimate of $2\nu$; for our running models $2\nu=1$ where AIC charges $d=2$. The price is variance: the error of WAIC mirrors the generalization error, with correlation tending to $-1$, so WAIC measures the expected performance of the posterior, not its performance on the data set in hand.
+
+\ledgercard{estimating the Bayes generalization loss $G_n$ from the training data and one posterior}
+{AIC: $T_n+\tfrac dn$ or $L_n(\hat w)+\tfrac dn$, unbiased to $o(\tfrac1n)$; leave-one-out agrees with AIC}
+{$\E[\WAIC]=\E[G_n]+o(\tfrac1n)$, $\waicLOO=\WAIC+O_p(n^{-2})$, penalty $V_n/n$ with $\E[V_n]\to2\nu$, and $(G_n-L_0)+(\waicLOO-L_n(w_0))=\tfrac{2\lambda}n+o_p(\tfrac1n)$ (\cref{thm:waic:main,thm:waic:loo})}
+{mixture and $y=abx$ at the singular truth: $2\nu=2\lambda=1$, so AIC's penalty $2/n$ overstates the optimism by $1/n$}
+{bias of WAIC $0$ within $\pm0.13/n$ for $10^2\le n\le10^5$; bias of $T_n+2/n$ between $1.02/n$ and $1.19/n$; $\E[V_n]=0.94$ (mixture) and $0.91$ (product) at $n=10^4$, $10^5$; correlation of the errors below $-0.996$ from $n=10^3$}
+{exact posterior averages at $\beta=1$; independent data; compactness, analyticity (which the mixture violates), $s\ge8$ moments, relatively finite variance}
+
+\section{Where the theory stops}\label{sec:waic:stops}
+
+\paragraph{What was assumed.} Exact posterior averages at $\beta=1$: our scripts compute them by quadrature, while a network's posterior is sampled, by Markov chain Monte Carlo or stochastic-gradient Langevin dynamics, whose bias enters $V_n$ and the importance weights directly; \textcite[Section~5.2]{Watanabe2010} warns that leave-one-out from separate posteriors, its importance-sampling form, and WAIC can then disagree. Independent data: the exact identity of \cref{lem:waic:importance} is exchangeability. A fixed model as $n$ grows, compact $W$, and an analytic log-likelihood ratio with $s\ge8$ moments; the chapter's own mixture violates analyticity, and so do the $\tanh$ neuron with Gaussian inputs and networks with ReLU units. Relatively finite variance, which holds for realizable and for regular truths but can fail for truths that are neither.
+
+\paragraph{Where it breaks.} Watanabe's non-renormalizable example shows what happens without relatively finite variance \parencite[Section~5]{Watanabe2010d}. Let $q=\Normal(0,I_2)$ on $(x,y)$ and $p(x,y\mid a)=\Normal\bigl((a,\sqrt{a^4-a^2+1}),I_2\bigr)$. Then $K(a)=L(a)-L_0=a^4/2$, while the log density ratio $f=-ax-(\sqrt{a^4-a^2+1}-1)y+a^4/2$ has $\E_q[f^2]\approx a^2$: the fluctuation is not bounded by the mean. The posterior concentrates near $\abs a\approx n^{-1/6}$ with width $n^{-1/3}$, the learning curve is of order $n^{-2/3}$ instead of $1/n$, and $\E[V_n]$ grows like $n^{1/3}$ instead of converging to $2\nu$. Watanabe derives these orders by a sketch, and states that the equations of state still hold at order $n^{-2/3}$. Carrying out the sketch, we find $\E[G_n]-L_0\approx-c\,n^{-2/3}$ and $\E[V_n]\approx4c\,n^{1/3}$ with $c=\Gamma(\tfrac76)/(2^{5/3}\sqrt\pi)\approx0.165$ (\cref{ex:waic:nonrenorm}).\sidenote{At $\beta=1$ the source prints $\E[B_g]\cong L_0-\frac Q2n^{-2/3}$ and $\E[Y_t]\cong2Q\,n^{-2/3}$ (its $Y_t$ is our $V_n/n$), with $Q=\E\abs{\xi_1}^{4/3}=2^{7/3}c$: both are $2^{4/3}$ times our values. With its own minimizer $a_*=(\xi_1/2\sqrt n)^{1/3}$, the Gibbs error $\E[a_*^4/2]$ is $c\,n^{-2/3}$, where the source prints $\frac Q2n^{-2/3}$. The simulation of \cref{tab:waic:nonrenorm} agrees with $c$.} The generalization loss is below $L_0$: the predictive, a mixture of members of the model, approximates $q$ better than every member does. \Cref{tab:waic:nonrenorm} confirms both rates and shows WAIC still unbiased at the new order; what breaks is the universal law $\lambda/n$, the convergence of $V_n$, and the rate of \cref{thm:waic:loo}: the median of $n^2\abs{\waicLOO-\WAIC}$ grows from $0.7$ to $8.7$ over $10^2\le n\le10^4$. Leverage points break importance sampling: \textcite{Peruggia1997} gives necessary and sufficient conditions, in terms of leverage and influence, for the case-deletion weights of the Bayesian linear model to have finite variance, with real data sets that violate them, and \textcite{EpifaniEtAl2008} give conditions for a central limit theorem; with a leverage point, leave-one-out and WAIC also move apart. When the inputs of a regression are fixed or dependent, leave-one-out does not estimate the conditional generalization loss and WAIC does \parencite{Watanabe2018,Watanabe2021b}; \textcite{Watanabe2024} summarizes both points.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}rS[table-format=-1.3]@{${}\pm{}$}S[table-format=1.3]S[table-format=1.3]@{${}\pm{}$}S[table-format=1.3]S[table-format=1.3]@{${}\pm{}$}S[table-format=1.3,table-number-alignment=left]@{}}
+\toprule
+$n$ & \multicolumn{2}{c}{$n^{2/3}\E[G_n-L_0]$} & \multicolumn{2}{c}{$\E[V_n]/n^{1/3}$} & \multicolumn{2}{c@{}}{$n^{2/3}\E[\WAIC-G_n]$}\\
+\midrule
+$10^2$ & -0.102 & 0.029 & 0.600 & 0.032 & 0.024 & 0.090\\
+$3\cdot10^2$ & -0.127 & 0.032 & 0.634 & 0.040 & 0.037 & 0.094\\
+$10^3$ & -0.134 & 0.035 & 0.635 & 0.044 & 0.010 & 0.098\\
+$3\cdot10^3$ & -0.175 & 0.044 & 0.676 & 0.063 & 0.094 & 0.120\\
+$10^4$ & -0.168 & 0.059 & 0.674 & 0.087 & 0.047 & 0.155\\
+\midrule
+limit & \multicolumn{2}{c}{$-0.165$} & \multicolumn{2}{c}{$0.659$} & \multicolumn{2}{c@{}}{$0$}\\
+\bottomrule
+\end{tabular}
+\caption{The non-renormalizable example of \textcite{Watanabe2010d}, with the uniform prior on $[-1.5,1.5]$: means with $95\%$ half-widths over $400$ data sets ($300$ at $n=3\cdot10^3$, $200$ at $n=10^4$; seeds $4000+n$), posterior by Gauss--Legendre quadrature. The limits are $-c$, $4c$ and $0$ with $c=\Gamma(\tfrac76)/(2^{5/3}\sqrt\pi)$. Script \texttt{10-waic-nonrenorm.py}.}\label{tab:waic:nonrenorm}
+\end{table}
+
+\paragraph{Open problems.} Is $\E\abs{\waicLOO-\WAIC}=O(n^{-2})$ for models such as the mixture, whose log-likelihood ratio is smooth but not analytic, and whose likelihood ratio grows exponentially in the data? How do the errors of an approximate sampler propagate into $V_n$ and into importance-sampling leave-one-out, so that WAIC computed from stochastic-gradient Langevin samples of a network comes with a guarantee? What replaces \cref{thm:waic:main} without relatively finite variance? \textcite{Watanabe2010d} suggests that a more general universal law covers both the renormalizable and the non-renormalizable case. And since WAIC is anticorrelated with the error it estimates, which estimators of $G_n$ have smaller variance at the same bias? \textcite{Watanabe2023} proposes an adjusted cross-validation that combines leave-one-out with hold-out validation for this purpose, and compares its variance with that of leave-one-out only for regular models, leaving the singular case open.
+
+\begin{exercises}
+\item\label{ex:waic:beta}\consolidation Let the posterior have inverse temperature $\beta$. Show that leave-one-out is $\frac1n\sum_i[\kappa_i(-\beta)-\kappa_i(1-\beta)]$ and WAIC is $-\frac1n\sum_i\kappa_i(1)+\beta V_n/n$, with $\kappa_i$ now defined by the tempered posterior. Expand both to third order and derive $\waicLOO-\WAIC=\frac{\beta-\beta^2}2Y_3+O_p(n^{-2})$, $Y_3=\frac1n\sum_i\kappa_i'''(0)$, under a fourth-moment bound for tilts with $\abs\alpha\le1+\beta$. Why does the third cumulant cancel only at $\beta=1$? \hint{at $\beta$, the posterior without $X_i$ is the posterior tilted by $p(X_i\mid w)^{-\beta}$.}
+\item\consolidation Show that $\abs{\kappa_4}\le2\mu_4$ is sharp: for $Y=\pm1$ with probability $\tfrac12$ each, $\kappa_4=-2$ and $\mu_4=1$. For which distributions is $\kappa_4=\mu_4$?
+\item\consolidation For the regular line, carry out the expansions behind the last step of \cref{comp:waic:regular}: show $T_n=L_n(\hat a)+O_p(n^{-3/2})$, $\WAIC=\AIC+O_p(n^{-3/2})$, and $n^3\,\E[\waicLOO-\WAIC]\to15$.
+\item\consolidation Gelman, Hwang and Vehtari's mean-based penalty is $p_{\mathrm{WAIC}1}=2\sum_i(\log\Ew{p(X_i\mid w)}-\Ew{\ell_i})$. Show that $p_{\mathrm{WAIC}1}=2\sum_i[\kappa_i(1)-\kappa_i'(0)]=V_n+O_p(n^{-1/2})$ under \cref{ass:waic:moments}, and that $p_{\mathrm{WAIC}1}=2n(G_{\mathrm t}-T_n)$, with $G_{\mathrm t}=-\frac1n\sum_i\Ew{\ell_i}$ the Gibbs training loss.
+\item\byhand For the Gaussian mean $x_i\sim\Normal(\theta,1)$ with the prior $\theta\sim\Normal(0,\tau^2)$, compute $T_n$, $V_n$ and $\waicLOO$ exactly. Show that they are the formulas of \cref{comp:waic:regular} with every leverage equal to $h=1/(n+\tau^{-2})$ and $r_i=x_i-\Ew{\theta}$, that $V_n\to1$, and that $n^3\E[\waicLOO-\WAIC]\to1$.
+\item\label{ex:waic:dawson}\byhand Let $h_0(\mu)=\E\log\abs{\mu+Z}$ with $Z\sim\Normal(0,1)$. Show that $h_0(0)=-\tfrac12(\gamma+\log2)$, that $h_0'(\mu)=\sqrt2\,D(\mu/\sqrt2)$ as a principal value $\E[1/(\mu+Z)]$, that $h_0''=1-\mu h_0'$, and that $\E_\mu[h_0''(\mu)]=\tfrac12$ for $\mu\sim\Normal(0,1)$. Deduce the first-order formula $\E[V_n]\approx1-1/\log n$ of \cref{comp:waic:product}. \hint{$h_0''(\mu)=\E[(Z^2-1)\log\abs{\mu+Z}]$; for the average, condition on $\mu+Z$.}
+\item\byhand For the chain $y=a_1a_2a_3x$ at the truth $0$, the coefficient density is $\tfrac14(\log\frac1{\abs c})^2$. Show that the posterior of $t=\sqrt n\,c$ still tends to $\Normal(\mu,1)$, so $V_n\to1$, and that to first order $\E[V_n]\approx1-2/\log n$: the multiplicity $m=3$ doubles the correction.
+\item\label{ex:waic:cusp}\byhand For the cusp $y=ab^2x$ at the truth $0$ the coefficient density is $\tfrac12(\abs c^{-1/2}-1)$ (\cref{ch:coefficient}). Show that the posterior of $t=\sqrt n\,c$ tends to the density proportional to $\abs t^{-1/2}e^{-(t-\mu)^2/2}$, and compute numerically $2\nu=\lim\E[V_n]=\E_\mu[\Var(t)]\approx0.697$. Conclude that WAIC's penalty is about $0.70/n$, while $2\lambda/n=0.5/n$ and $d/n=2/n$, and check with the same quadrature that $\E_\mu[(\E t)^2]/2=\lambda=\tfrac14$.
+\item\variation Take the product model at the generic truth $ab=\tfrac12$. Predict the limits of $\E[V_n]$, $n\E[G_n-S]$ and $n\E[T_n+2/n-G_n]$, and explain why the approach to them is faster than at the singular truth.
+\item\label{ex:waic:nonrenorm}\variation\hard In the non-renormalizable example, approximate $nK_n(a)$ near its minimum $a_*=(\xi_1/(2\sqrt n))^{1/3}$, where $\xi_1=n^{-1/2}\sum_ix_i\sim\Normal(0,1)$, by a quadratic with curvature $6na_*^2$. Derive $\E[K(a_*)]\approx c\,n^{-2/3}$ and $\E[V_n]\approx4c\,n^{1/3}$ with $c=\Gamma(\tfrac76)/(2^{5/3}\sqrt\pi)$, and $\E[G_n]-L_0\approx-c\,n^{-2/3}$. \hint{$\E\abs{\xi}^{4/3}=2^{2/3}\Gamma(\tfrac76)/\sqrt\pi$ and $\E\abs\xi^{-2/3}=2^{-1/3}\Gamma(\tfrac16)/\sqrt\pi$; at order $n^{-2/3}$, $G_n-L_0\approx\Ew{K(a)}-\tfrac12\E_X\Var_w[\log p(X\mid a)]$.}
+\item\measurement Replace the exact averages for the product model at $n=10^3$ by $S$ posterior draws from \texttt{sk.sample\_product\_posterior}; compute $\WAIC$ with \texttt{sk.waic}, and importance-sampling leave-one-out from the same draws by \cref{lem:waic:importance}. How large must $S$ be before the Monte Carlo error of $\waicLOO-\WAIC$ is smaller than the exact value, about $10^{-7}$? What does this say about checking \cref{thm:waic:loo} with a sampler?
+\item\research Prove or refute $\E\abs{\waicLOO-\WAIC}=O(n^{-2})$ for the mixture of this chapter, whose log-likelihood ratio is not analytic at $a=0$. A first step is to bound the tilted moments $\waicEt{\alpha}{f^4}$ through the size of $a(e^{bx-b^2/2}-1)$, which for $\abs b\le1$ grows like $e^{\abs x}$.
+\end{exercises}
+
+\notesandrefs
+
+The widely applicable information criterion was introduced by Watanabe in the paper on the equations of states, posted in 2007 and published as \textcite{Watanabe2010a}, where it appears in two forms built from the Bayes and Gibbs training errors; Section~8.3 of \textcite{Watanabe2009} is titled ``Widely applicable information criteria''. The form with the functional variance is already in \textcite{Watanabe2010a,Watanabe2010b}; its asymptotic equivalence with Bayes leave-one-out cross-validation as random variables is proved in \textcite{Watanabe2010}, whose Theorem~1, Corollary~1 and Theorem~2 this chapter follows; \textcite{Watanabe2018b} carries the comparison to higher order, the second book has a chapter on information criteria \parencite[Chapter~8]{Watanabe2018}, and the review \textcite{Watanabe2024} restates the results at $\beta=1$. The proof of \cref{thm:waic:loo} is Watanabe's, with the Taylor remainder written in integral form; \cref{prop:waic:product} and the first-order computations of \cref{comp:waic:product} are the book's own.
+
+Cross-validation grew up alongside the information criteria: the predictive sample reuse of \textcite{Geisser1975}, and the theorem of \textcite{Stone1977} that leave-one-out with maximum-likelihood fits chooses models as AIC \parencite{Akaike1974} does. The deviance information criterion \parencite{SpiegelhalterEtAl2002} is an older Bayesian criterion (\cref{sec:waic:practice}).
+
+\textcite{GelmanEtAl2014} compared WAIC with AIC, DIC and cross-validation on the deviance scale, and \textcite{VehtariEtAl2017} argued that Pareto-smoothed importance-sampling leave-one-out is more robust than WAIC in finite samples with weak priors or influential observations, and implemented both in the R package \texttt{loo}; the smoothing method is analyzed in \textcite{VehtariEtAl2024}.
+
+The renormalizable condition and the non-renormalizable example are from \textcite{Watanabe2010d}; the regular unrealizable case, where WAIC reduces to Takeuchi's criterion, is \textcite{Watanabe2010b}. \Textcite{Watanabe2021} treats WAIC and WBIC for mixture models.
+
+\paragraph{Translating the literature.} \textcite{Watanabe2010} writes $\mathrm{BgL}(n)$, $\mathrm{BtL}(n)$, $\mathrm{CvL}(n)$, $V(n)$ and $\mathrm{WAIC}(n)=\mathrm{BtL}(n)+\beta V(n)/n$ for our $G_n$, $T_n$, $\waicLOO$, $V_n$ and $\WAIC$, and the errors $\mathrm{Bg}(n)=\mathrm{BgL}(n)-L_0$, $\mathrm{Bt}(n)=\mathrm{BtL}(n)-L_n$ and $\mathrm{Cv}(n)=\mathrm{CvL}(n)-L_n$, where his $L_n$ is the empirical loss of the optimal density, our $L_n(w_0)$. His generating function $F(\alpha)$ is our $\frac1n\sum_i\kappa_i(\alpha)$, his functional cumulants are $Y_k(n)=F^{(k)}(0)$, his $E^{(i)}_w$ is our $\E^{(-i)}_w$, the tilted posterior with $\alpha=-1$, and his real log canonical threshold $\lambda$ is our learning coefficient, the same number. \textcite{Watanabe2010a} uses the errors $B_g,B_t,G_g,G_t$, with $q$ in place of $p_0$. \Textcite{Watanabe2010d} uses the same letters for the losses (its $B_g$, $B_t$ are our $G_n$, $T_n$), $Y_t$ for our $V_n/n$; its $Q$ is $\E\abs{\xi_1}^{4/3}=2^{7/3}c$. \textcite{Watanabe2024} and, as far as we know, \textcite{Watanabe2018} write $G_n,T_n,C_n,W_n$ for our $G_n,T_n,\waicLOO,\WAIC$ and $V_\theta$ for $\Var_w$. The notation of \textcite{GelmanEtAl2014} and \textcite{VehtariEtAl2017}, with $p_{\mathrm{WAIC}2}=p_{\mathrm{waic}}=V_n$, is translated in \cref{sec:waic:practice}.
+
+\printchapterbib
+\end{refsection}

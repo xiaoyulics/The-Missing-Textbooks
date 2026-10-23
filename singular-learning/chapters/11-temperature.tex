@@ -1,0 +1,450 @@
+% Chapter 11 of Singular Learning Theory for the Rest of Us: temperature, WBIC, and the
+% thermodynamics of the posterior.
+\newcommand{\temperatureE}{\mathcal{E}}   % dimensionless mean energy s E_{mu_s}[K]
+\newcommand{\temperatureC}{\mathcal{C}}   % heat capacity s^2 Var_{mu_s}(K)
+\newcommand{\temperatureZ}{\mathcal{Z}}   % partition function int e^{-sK} phi
+\newcommand{\temperaturekQ}{\kappa_{\mathrm{Q}}}
+\pgfplotsset{temperaturemcmc/.style={only marks,mark=x,mark size=2.3pt,color=singulardeep,
+    mark options={line width=0.7pt}}}
+
+\sltchapter{Temperature}{WBIC and the thermodynamics of the posterior}{$y=ax_1+b^2x_2$}{ch:temperature}
+\newtonfoot{0/4,2/0}{4/3}{\tfrac34}{a^2+b^4}
+\begin{refsection}[chapters/11-temperature.bib]
+
+\begin{chaptersummary}
+A sampler sees posterior averages, not the free energy; but the derivative of the free energy in the inverse temperature $\beta$ is a posterior average, the mean energy $\Ewb{nL_n}$. By hand, the quartic model $y=ax_1+b^2x_2$ holds mean energy $\frac{3}{4\beta}$, not the $\frac1\beta$ of equipartition, and the product model $\frac{1}{2\beta}-\frac{1}{\beta(\log n\beta+\gamma+\log 2)}$. We prove that the population mean energy is $\frac\lambda\beta-\frac{m-1}{\beta\log(n\beta)}$ up to smaller terms, that one temperature reproduces the free energy exactly, and, completely for linear models, Watanabe's theorem that WBIC, the mean energy at $\beta=1/\log n$, is the free energy up to $O_p(\sqrt{\log n})$, with the $\sqrt{\log n}$ term computed and shown to vanish under a sign symmetry. Two-temperature estimates of $\lambda$ follow the predictions for four models up to $n=10^8$, including a bias of $-1/\log n$ in the product model and a $\sqrt{\log n}$ response of WBIC to the noise in the quartic model. Everything rests on exact tempered posteriors and on corrections of relative size $1/\log n$, which no practical $n$ makes small.
+\end{chaptersummary}
+
+\section{The question: what a sampler can see of the free energy}\label{sec:temperature:question}
+
+Suppose two networks are candidates for the same data, one with three hidden units and one with four, and we want to compare their marginal likelihoods, as \cref{ch:freeenergy} recommends. A marginal likelihood is a normalizing constant, and its negative logarithm is the free energy $F_n$. A Markov chain Monte Carlo sampler, the tool we have for the posteriors of models with more than a few parameters, produces draws $w_1,w_2,\dots$ from the posterior and with them posterior averages $\frac1T\sum_tf(w_t)\approx\Ew{f}$. It does not produce the normalizing constant: multiplying the integrand by a constant changes neither the posterior nor the draws.
+
+Temperature makes the constant visible. For $\beta\ge0$ let
+\[
+F_n(\beta)=-\log\int_W\varphi(w)\,e^{-\beta nL_n(w)}\dd w ,
+\]
+the free energy at \term{inverse temperature}\index{inverse temperature} $\beta$, with $F_n(1)=F_n$; its normalized integrand is the \term{tempered posterior}\index{tempered posterior}, with expectations $\Ewb{\cdot}$. At $\beta=1$ it is the posterior; for $\beta<1$ it is hotter and wider, for $\beta>1$ colder. Since $\varphi$ is a probability density, $F_n(0)=0$, and differentiating under the integral sign (\cref{lem:temperature:identities}) gives
+\begin{equation}\label{eq:temperature:ti}
+F_n'(\beta)=\Ewb{nL_n},\qquad F_n=\int_0^1\Ewb{nL_n}\dd\beta .
+\end{equation}
+The right side is an integral of posterior means, each of which a sampler run at its own temperature estimates. This is \term{thermodynamic integration}\index{thermodynamic integration}, and the vocabulary is that of statistical physics: $nL_n(w)$ is the energy of the configuration $w$, the tempered posterior is the Gibbs measure\index{Gibbs measure} at inverse temperature $\beta$, $\Ewb{nL_n}$ is the \term{mean energy}\index{mean energy}, and $\beta^2\Var^\beta_w(nL_n)=-\beta^2F_n''(\beta)$ is the heat capacity\index{heat capacity}.\sidenote{In physics the heat capacity is the derivative of the mean energy with respect to the temperature $1/\beta$, which is $\beta^2$ times the variance of the energy when Boltzmann's constant is $1$.}
+
+What should the mean energy be? For a regular model the physicist's answer is the equipartition theorem.\index{equipartition}
+
+\begin{regularanswer}[equipartition]
+If the model is regular, the tempered posterior is asymptotically normal with covariance $(n\beta J)^{-1}$, each of the $d$ coordinates holds mean energy $\frac1{2\beta}$, and for each fixed $\beta>0$, $\Ewb{nL_n}=nL_n(\hat w)+\frac d{2\beta}+o_p(1)$ by Laplace's method (as in \cref{thm:regular:laplace}). At $\beta=1/\log n$ this is BIC, $nL_n(\hat w)+\frac d2\log n$ \parencite{Schwarz1978}, up to $o_p(1)$ \parencite[Theorem~5]{Watanabe2013}.
+\end{regularanswer}
+
+Integrated over $\beta$ by \eqref{eq:temperature:ti}, equipartition returns the classical free energy: the energy $\frac d{2\beta}$ holds from $\beta=1$ down to about $\beta=1/n$, where the posterior meets the prior, and its integral is $\frac d2\log n$. For a singular model none of this survives. The posterior of the product model $y=abx$ at its singular truth is not normal but spreads over all scales along the cross $ab=0$ (\cref{thm:singular:scales}), and its mean energy with the noise removed, computed below, is $\frac1{2\beta}-\frac1{\beta(\log n\beta+\gamma+\log2)}$: about half of what two parameters should hold, less a term that decays only like $1/\log(n\beta)$. The quartic model $y=ax_1+b^2x_2$, the running model of this chapter, holds $\frac3{4\beta}$. So: what does the mean energy measure in a singular model? Can one temperature replace the integral in \eqref{eq:temperature:ti}, so that one run of a sampler estimates the free energy? And can two temperatures give the learning coefficient without knowing the truth?
+
+\section{By hand: the mean energy of the running models}\label{sec:temperature:byhand}
+
+We first replace the empirical energy $nK_n=nL_n-nL_n(w_0)$ by its average $nK$, as \cref{ch:volume} did for the free energy. For $s>0$ let $\mu_s$ be the probability measure with density proportional to $e^{-sK(w)}\varphi(w)$, the \emph{population} tempered posterior at $s=n\beta$. Its mean energy is
+\begin{equation}\label{eq:temperature:dimless}
+\E_{\mu_{n\beta}}[nK]=\frac{\temperatureE(n\beta)}{\beta},\qquad
+\temperatureE(s)\defeq s\,\E_{\mu_s}[K]=\frac{s\int_WK\,e^{-sK}\varphi\,\dd w}{\int_We^{-sK}\varphi\,\dd w}.
+\end{equation}
+We call $\temperatureE$ the dimensionless mean energy. It depends on $n$ and $\beta$ only through their product, so heating the posterior by a factor of ten has the same effect as discarding nine tenths of the data. Equipartition says $\temperatureE(s)\to\frac d2$.
+
+\begin{computation}{The mean energy of the quartic model}\label{comp:temperature:quartic}
+\step The loss is $K=\frac12(a^2+b^4)$ and the prior is uniform on $[-1,1]^2$, so $\mu_s$ is the product of a law for $a$, with density proportional to $e^{-sa^2/2}$ on $[-1,1]$, and a law for $b$, with density proportional to $e^{-sb^4/2}$. Hence $\temperatureE(s)=s\E[\frac{a^2}2]+s\E[\frac{b^4}2]$.
+\step For $a$ put $t=sa^2/2$; on $a\in[0,1]$, $\dd a\propto t^{-1/2}\dd t$, so $t$ has density proportional to $t^{1/2-1}e^{-t}$ on $[0,s/2]$, a Gamma law with shape $\frac12$, truncated at $s/2$. For $b$ put $t=sb^4/2$; then $\dd b\propto t^{-3/4}\dd t$, and $t$ is Gamma with shape $\frac14$, truncated at $s/2$. A Gamma law with shape $\alpha$ has mean $\alpha$, and conditioning on $[0,T]$ lowers it by $T^\alpha e^{-T}/\int_0^Tt^{\alpha-1}e^{-t}\dd t$ (integrate by parts): \texttt{11-temperature-energy.py} gives $\temperatureE(10)=0.7387$, $\temperatureE(30)=0.749999$, and $\temperatureE(100)=0.75$ to ten digits.
+\step Hence $\E_{\mu_{n\beta}}[nK]=\frac{3}{4\beta}$ once $n\beta\gtrsim30$, not the $\frac{2}{2\beta}$ of equipartition: $a$ holds $\frac1{2\beta}$, the quartic coordinate $b$ only $\frac1{4\beta}$.
+\step Thermodynamic integration of the population energy, \eqref{eq:temperature:ti} with $K$ in place of $K_n$, gives the population free energy as an area: $\bar F(n)=\int_0^1\E_{\mu_{n\beta}}[nK]\dd\beta=\int_0^n\temperatureE(s)\frac{\dd s}s=\int_{-\infty}^{\log n}\temperatureE(e^x)\dd x$. The integrand is about $\frac{4s}{15}$ for $s\ll1$ (the prior mean of $K$ is $\frac4{15}$) and $\frac34$ for $s\gtrsim30$, so $\bar F(n)=\frac34\log n+O(1)$. Directly, $\bar F(n)=-\log\bigl(\frac12\int_{-1}^1e^{-na^2/2}\dd a\cdot\frac12\int_{-1}^1e^{-nb^4/2}\dd b\bigr)=\frac34\log n+\frac12\log\frac2\pi-\frac14\log2-\log\Gamma(\frac54)$ up to $O(e^{-n/2})$, that is, $\frac34\log n-0.3008$; the script evaluates both sides, which agree to ten digits at $n=10^2,10^4,10^6$.
+\end{computation}
+
+What one had to notice is that the population posterior factorizes and that each factor becomes a Gamma law in the variable $t=s\times(\text{the coordinate's loss})$. A coordinate whose loss grows like $\abs{w_j}^{2k}$ holds $\frac1{2k\beta}$ (\cref{ex:temperature:equipartition}): equipartition is a statement about quadratic losses. In \cref{fig:temperature:energy} each curve rises from $0$, where the posterior is the prior, to a plateau at the learning coefficient, and the area under it up to $\log n$ is the population free energy: the plateau's height is $\lambda$ and its length is $\log n$. Three plateaus are reached by $s\approx30$; the product model's is not reached at $s=10^{12}$.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,height=0.41\linewidth,xmode=log,xmin=0.1,xmax=1e12,ymin=0,ymax=1.08,
+  xlabel={$s=n\beta$},ylabel={$\temperatureE(s)=\beta\,\E_{\mu_{n\beta}}[nK]$},
+  xtick={1,1e3,1e6,1e9,1e12},ytick={0,0.25,0.5,0.75,1}]
+\addplot[theory] table[x=s,y=quartic] {figures/data/11-temperature-energy.dat};
+\addplot[theory] table[x=s,y=regular] {figures/data/11-temperature-energy.dat};
+\addplot[theory] table[x=s,y=sextic] {figures/data/11-temperature-energy.dat};
+\addplot[theory] table[x=s,y=product] {figures/data/11-temperature-energy.dat};
+\addplot[regularpred] coordinates {(0.1,1) (1e12,1)};
+\addplot[guide] coordinates {(0.1,0.5) (1e12,0.5)};
+\node[font=\footnotesize,anchor=north] at (axis cs:1e5,0.985) {regular plane};
+\node[font=\footnotesize,anchor=south] at (axis cs:1e9,0.75) {quartic};
+\node[font=\footnotesize,anchor=north] at (axis cs:1e9,0.665) {sextic};
+\node[font=\footnotesize,anchor=north] at (axis cs:1e6,0.41) {product};
+\end{axis}
+\end{tikzpicture}
+\caption{The dimensionless mean energy $\temperatureE(s)=s\,\E_{\mu_s}[K]$ of the population tempered posterior for four running models with $d=2$ and the uniform prior on $[-1,1]^2$, computed exactly (incomplete Gamma functions; adaptive quadrature over $c=ab$ for the product model; script \texttt{11-temperature-energy.py}). Solid: the exact curves, whose plateaus are the learning coefficients $1,\frac34,\frac23$; the product model approaches $\lambda=\frac12$ (gray) like $\frac12-1/(\log s+\gamma+\log2)$. Dashed: equipartition, $\frac d2=1$. Against the logarithmic axis, the area under a curve up to $s=n$ is the population free energy $\bar F(n)$.}\label{fig:temperature:energy}
+\end{figure}
+
+\begin{computation}{The mean energy of the product model}\label{comp:temperature:product}
+\step The loss of $y=abx$ is $K=\frac12c^2$ with $c=ab$, and the prior density of $c$ is $\rho(c)=\frac12\log\frac1{\abs c}$ on $[-1,1]$ (\cref{ch:coefficient}). So $\temperatureE(s)=s\int\frac{c^2}2e^{-sc^2/2}\rho(c)\dd c\big/\!\int e^{-sc^2/2}\rho(c)\dd c$.
+\step Substitute $u=\sqrt s\,c$ and put $\Lambda=\frac12\log s$, so that $\rho(u/\sqrt s)=\frac12(\Lambda-\log\abs u)$. Extending the range $\abs u\le\sqrt s$ to the whole line changes both integrals by amounts exponentially small in $s$, and $\temperatureE(s)=\frac12\E[Z^2(\Lambda-\log\abs Z)]/\E[\Lambda-\log\abs Z]$ with $Z\sim\Normal(0,1)$.
+\step Differentiating $\E\abs Z^p=2^{p/2}\Gamma(\frac{p+1}2)/\sqrt\pi$ in $p$ gives $\E[\abs Z^p\log\abs Z]=\E\abs Z^p\cdot\frac12\bigl(\log2+\psi(\frac{p+1}2)\bigr)$, with $\psi=\Gamma'/\Gamma$. Since $\psi(\frac12)=-\gamma-2\log2$ and $\psi(\frac32)=\psi(\frac12)+2$, with Euler's constant $\gamma=0.5772$, we get $\E\log\abs Z=-\kappa$ and $\E[Z^2\log\abs Z]=1-\kappa$, where $\kappa=\frac12(\gamma+\log2)=0.6352$.
+\step Therefore $\temperatureE(s)=\frac12\cdot\frac{\Lambda-1+\kappa}{\Lambda+\kappa}=\frac12-\frac1{2\Lambda+2\kappa}=\frac12-\frac1{\log s+\gamma+\log2}$, up to exponentially small terms.
+\step Numbers: $\temperatureE(10^3)=0.3777$, $\temperatureE(10^6)=0.4337$, $\temperatureE(10^{12})=0.4654$, equal to the quadrature of the first step to ten digits. In terms of $n$ and $\beta$, $\E_{\mu_{n\beta}}[nK]=\frac1{2\beta}-\frac1{\beta(\log n\beta+\gamma+\log2)}$.
+\end{computation}
+
+The leading coefficient $\frac12$ is the learning coefficient of $y=abx$.\sidenote{The digamma function $\psi=\Gamma'/\Gamma$ satisfies $\psi(x+1)=\psi(x)+\frac1x$, $\psi(1)=-\gamma$ and $\psi(\frac12)=-\gamma-2\log2$; these give every constant of this chapter that involves $\gamma$.} The deficit $1/\log s$ is its multiplicity at work: $m-1=1$, and it comes from the factor $\log\frac1{\abs c}$ in the prior density of $c$, the trace of the cross. Equipartition fails twice here, in the plateau and in the slowness of the approach: at $s=10^6$ the product model still holds $13\%$ less than $\frac1{2\beta}$.
+
+With data the energy is $nK_n$, which differs from $nK$ by a fluctuation of order $\sqrt{nK}$ (\cref{ch:freeenergy}), that is, of order $\sqrt{\log n}$ at the temperature $1/\log n$ of WBIC (\cref{sec:temperature:wbic}). Whether it survives the posterior average depends on a sign.
+
+\begin{computation}{Where WBIC feels the noise: the quartic model with data}\label{comp:temperature:wbic}
+\step Take data from the truth $(a,b)=(0,0)$, so $y_i=\varepsilon_i$, with $x\sim\Normal(0,I_2)$; let $Z_n=(Z_{n,1},Z_{n,2})=n^{-1/2}\sum_i\varepsilon_ix_i$, approximately $\Normal(0,I_2)$, and treat $\frac1n\sum_ix_ix_i^\top$ as the identity (\cref{thm:temperature:wbiclinear} handles its fluctuation). Expanding the squares in $\sum_i[(y_i-ax_{i1}-b^2x_{i2})^2-y_i^2]/2$ gives $nK_n=\frac n2(a^2+b^4)-\sqrt n(aZ_{n,1}+b^2Z_{n,2})$.
+\step So the tempered posterior is $\mu_s$, $s=n\beta$, tilted by $e^\tau$ with $\tau=\beta\sqrt n(aZ_{n,1}+b^2Z_{n,2})$: $\Ewb{f}=\E_{\mu_s}[fe^\tau]/\E_{\mu_s}[e^\tau]$. Under $\mu_s$ the variables $\sqrt s\,a$ and $\sqrt s\,b^2$ are of order one, so $\tau=\sqrt\beta(\sqrt s\,aZ_{n,1}+\sqrt s\,b^2Z_{n,2})$ is of order $\sqrt\beta$, small at $\beta=1/\log n$. To first order in $\tau$, $\Ewb{f}=\E_{\mu_s}[f]+\Cov_{\mu_s}(f,\tau)$.
+\step Apply this to $\beta nK_n=s(a^2+b^4)/2-\tau$ and divide by $\beta$. The terms in $a$ vanish because $\mu_s$ is symmetric under $a\mapsto-a$, and $\WBIC-nS_n=\Ewb{nK_n}\approx\E_{\mu_s}[nK]+\sqrt n\bigl[\beta\Cov_{\mu_s}(nK,b^2)-\E_{\mu_s}[b^2]\bigr]Z_{n,2}$.
+\step With $t=sb^4/2$, Gamma with shape $\frac14$: $\sqrt n\,b^2=\sqrt{2t/\beta}$, and $\beta\Cov_{\mu_s}(nK,b^2)=\Cov(t,b^2)$ because $a$ and $b$ are independent. Since $\E\sqrt t=\Gamma(\frac34)/\Gamma(\frac14)$ and $\Cov(t,\sqrt t)=\E t^{3/2}-\E t\,\E\sqrt t=(\frac34-\frac14)\Gamma(\frac34)/\Gamma(\frac14)$, the bracket times $\sqrt n$ is $\sqrt{2/\beta}\,\bigl(\Cov(t,\sqrt t)-\E\sqrt t\bigr)=-\Gamma(\frac34)/(\Gamma(\frac14)\sqrt{2\beta})$.
+\step With $\E_{\mu_s}[nK]=\frac34\log n$ and $\temperaturekQ=\Gamma(\frac34)/\Gamma(\frac14)=0.3380$, at $\beta=1/\log n$: $\WBIC-nS_n=\frac34\log n-\temperaturekQ\sqrt{\tfrac12\log n}\,Z_{n,2}+O_p(1)$. The coefficient of the noise is $-0.513$ at $n=10^2$, $-0.725$ at $10^4$, $-1.026$ at $10^8$.
+\step The free energy has no such term: $F_n-nS_n=\frac34\log n+O_p(1)$ (\cref{thm:freeenergy:linear}, with $m=1$). So $F_n-\WBIC=\temperaturekQ\sqrt{\frac12\log n}\,Z_{n,2}+O_p(1)$, a gap whose standard deviation grows like $\sqrt{\log n}$.
+\end{computation}
+
+What one had to notice is that $b^2\ge0$: the hot posterior gives $b^2$ a positive mean of order $\sqrt{\log n/n}$, so the noise $Z_{n,2}$ enters the average loss linearly, with a gain of order $\sqrt{\log n}$. In $c_2=b^2$ the quartic model is the regular model $y=ax_1+c_2x_2$ restricted to $c_2\ge0$, with the truth on the boundary.\sidenote{\Textcite[\S7.3]{Watanabe2013} makes this observation about a model with a parameter restricted to $c\ge0$ and the unrestricted model with $c=b^2$, and conjectures that his ``even'' models are related to restricted ones.} In the product model and in the sextic model $y=ax_1+b^3x_2$ the corresponding means vanish, because $ab$ and $b^3$ change sign with $a$ or $b$, and so does the $\sqrt{\log n}$ term.
+
+\section{The theorem: the mean energy and the optimal temperature}\label{sec:temperature:mean}
+
+Thermodynamic integration needs only a bounded energy.
+
+\begin{lemma}[Thermodynamic identities]\label[lemma]{lem:temperature:identities}
+Let the data be fixed, let $\varphi$ be a probability density on $W$, and suppose that $nL_n$ is bounded on $W$ (as it is for continuous losses on a compact $W$). Then $F_n(\beta)$ is infinitely differentiable on $\R$, $F_n(0)=0$, and for every $\beta$,
+\[
+F_n'(\beta)=\Ewb{nL_n},\qquad F_n''(\beta)=-\Var^\beta_w(nL_n).
+\]
+In particular $F_n=\int_0^1\Ewb{nL_n}\dd\beta$.
+\end{lemma}
+
+\begin{proof}
+Write $H=nL_n$, $M=\sup_W\abs H$, and $\temperatureZ(\beta)=\int_W\varphi e^{-\beta H}\dd w$. For $\abs\beta\le b$ the $k$-th derivative in $\beta$ of the integrand, $(-H)^k\varphi e^{-\beta H}$, is bounded by $M^ke^{bM}\varphi$, which is integrable; by dominated convergence $\temperatureZ$ is infinitely differentiable with $\temperatureZ^{(k)}(\beta)=\int(-H)^k\varphi e^{-\beta H}\dd w$. Since $\temperatureZ>0$, the function $F_n=-\log\temperatureZ$ is infinitely differentiable too, $F_n'=-\temperatureZ'/\temperatureZ=\Ewb{H}$, and $F_n''=-\temperatureZ''/\temperatureZ+(\temperatureZ'/\temperatureZ)^2=-(\Ewb{H^2}-\Ewb{H}^2)$. Finally $\temperatureZ(0)=\int\varphi=1$, so $F_n(0)=0$, and the last identity is the fundamental theorem of calculus.
+\end{proof}
+
+\begin{theorem}[The optimal temperature; {\textcite[Theorem~3]{Watanabe2013}}]\label{thm:temperature:optimal}\index{optimal inverse temperature}
+Under the hypotheses of \cref{lem:temperature:identities}, suppose that $nL_n$ is not constant $\varphi$-almost everywhere. Then $\beta\mapsto\Ewb{nL_n}$ is strictly decreasing, and there is exactly one $\beta^*\in(0,1)$ with
+\[
+F_n=\E^{\beta^*}_w[nL_n].
+\]
+\end{theorem}
+
+\begin{proof}
+The plan is to show that $F_n(\beta)$ is strictly concave and to apply the mean value theorem. The tempered posterior has density proportional to $\varphi e^{-\beta nL_n}$, which is positive exactly where $\varphi$ is, so the two measures have the same null sets. Since $nL_n$ is not $\varphi$-almost everywhere constant, it is not almost surely constant under the tempered posterior, and its variance is positive. By \cref{lem:temperature:identities}, $F_n''<0$ on $\R$, so $F_n'=\Ewb{nL_n}$ is strictly decreasing. By the mean value theorem there is $\beta^*\in(0,1)$ with $F_n'(\beta^*)=F_n(1)-F_n(0)=F_n$, and it is unique because $F_n'$ is injective.
+\end{proof}
+
+Watanabe states the hypothesis as ``$L_n$ is not a constant function''; the proof uses the almost-everywhere version. The theorem does not locate $\beta^*$; the rest of the chapter asks how far it is from $1/\log n$.
+
+For the population mean energy we need one more term than the volume asymptotics of \cref{lem:volume:abelian} provide.
+
+\begin{assumption}[Volume expansion]\label[assumption]{ass:temperature:volume}\index{volume expansion}
+For the loss $K\ge0$ and the prior $\varphi$, the volume $V(\eps)=\varphi\{w:K(w)<\eps\}$ satisfies, for some $\lambda>0$, an integer $m\ge1$, a polynomial $P(x)=\sum_{j=0}^{m-1}p_jx^j$ with $p_{m-1}>0$, and constants $\eta,B,\eps_0>0$,
+\begin{equation}\label{eq:temperature:volexp}
+\Bigl\lvert V(\eps)-\eps^\lambda P\bigl(\log\tfrac1\eps\bigr)\Bigr\rvert\le B\,\eps^{\lambda+\eta}\qquad(0<\eps\le\eps_0).
+\end{equation}
+\end{assumption}
+
+The expansion implies $V(\eps)\sim p_{m-1}\eps^\lambda(\log\frac1\eps)^{m-1}$; and if $K$ is bounded, the expansion inserted into the Mellin formula of \cref{thm:volume:zeta} continues $\zeta$ meromorphically to $\Re z>-\lambda-\eta$, where its only pole is $-\lambda$, of order $m$. So $\lambda$ and $m$ are the learning coefficient and its multiplicity; as an invariant of $K$ and $\varphi$, $\lambda$ is the real log canonical threshold, the same number. For $\eps\le\frac12$ the running models satisfy \eqref{eq:temperature:volexp} with no remainder: $V(\eps)=\frac\pi2\eps$ for the regular plane, $1.4699\,\eps^{3/4}$ for the quartic model,\sidenote{The region $\{a^2+b^4<2\eps\}$ has area $2(2\eps)^{3/4}\int_{-1}^1(1-u^4)^{1/2}\dd u$, and with the prior density $\frac14$ this gives $V(\eps)=2^{-5/4}B(\frac14,\frac32)\,\eps^{3/4}$, with Euler's Beta function $B$.} and $\sqrt2\,\eps^{1/2}(\frac12\log\frac1\eps+1-\frac12\log2)$ for the product model. When $K$ is analytic and $\varphi$ satisfies Watanabe's conditions, the state density $V'$ has an asymptotic expansion in the functions $t^{\lambda_k-1}(\log\frac1t)^j$ read off from the poles of the zeta function \parencite[Chapter~4]{Watanabe2009}, and integrating it gives \eqref{eq:temperature:volexp}.
+
+\begin{proposition}[The tempered mean energy]\label[proposition]{prop:temperature:mean}\index{mean energy}
+Under \cref{ass:temperature:volume}, let
+\[
+Q(x)=\sum_{j=0}^{m-1}p_j\sum_{i=0}^j\binom ji(-1)^i\,\Gamma^{(i)}(\lambda+1)\,x^{j-i},
+\]
+a polynomial of degree $m-1$ with leading coefficient $p_{m-1}\Gamma(\lambda+1)>0$, and write $x=\log s$. As $s\to\infty$, the dimensionless mean energy \eqref{eq:temperature:dimless} and the heat capacity $\temperatureC(s)\defeq s^2\Var_{\mu_s}(K)$ satisfy
+\begin{equation}\label{eq:temperature:QQ}
+\temperatureE(s)=\lambda-\frac{Q'(x)}{Q(x)}+O(s^{-\eta}),\qquad
+\temperatureC(s)=\lambda-\frac{Q'(x)}{Q(x)}+\Bigl(\frac{Q'}{Q}\Bigr)'(x)+O(s^{-\eta}).
+\end{equation}
+Consequently, as $n\beta\to\infty$,
+\begin{align}
+\E_{\mu_{n\beta}}[nK]&=\frac\lambda\beta-\frac{m-1}{\beta\log(n\beta)}+O\Bigl(\frac1{\beta\log^2(n\beta)}\Bigr),\label{eq:temperature:mean}\\
+\beta^2\Var_{\mu_{n\beta}}(nK)&=\lambda-\frac{m-1}{\log(n\beta)}+O\Bigl(\frac1{\log^2(n\beta)}\Bigr),\notag
+\end{align}
+and when $m=1$ the remainders are $O((n\beta)^{-\eta}/\beta)$ and $O((n\beta)^{-\eta})$.
+\end{proposition}
+
+\begin{proof}
+The plan is to write $\temperatureE$ and $\temperatureC$ through Laplace transforms of the volume, to compute those transforms exactly for the model function $t^\lambda P(\log\frac1t)$, and to show that the remainder in \eqref{eq:temperature:volexp} changes them by a relative $O(s^{-\eta})$.
+
+\emph{Laplace transforms.} Let $\temperatureZ(s)=\int e^{-sK}\varphi$, $N(s)=\int Ke^{-sK}\varphi$, and $M(s)=\int K^2e^{-sK}\varphi$, so that $\temperatureE=sN/\temperatureZ$ and $\temperatureC=s^2M/\temperatureZ-\temperatureE^2$. For every $k\ge0$,
+\begin{gather*}
+e^{-sk}=\int_k^\infty se^{-st}\dd t,\qquad ke^{-sk}=\int_k^\infty(st-1)e^{-st}\dd t,\\
+k^2e^{-sk}=\int_k^\infty(st^2-2t)e^{-st}\dd t,
+\end{gather*}
+as one checks by differentiating $-e^{-st}$, $-te^{-st}$ and $-t^2e^{-st}$. Insert $k=K(w)$, integrate against $\varphi$, and exchange the integrals, which Fubini's theorem allows because the absolute values of the integrands have finite integrals over $W\times(0,\infty)$ (for instance $\int_0^\infty(st+1)e^{-st}\dd t=2/s$). Since $\int_W\ind\{K(w)<t\}\varphi(w)\dd w=V(t)$,
+\begin{equation}\label{eq:temperature:laplace}
+\begin{gathered}
+\temperatureZ(s)=s\int_0^\infty e^{-st}V(t)\dd t,\qquad N(s)=\int_0^\infty(st-1)e^{-st}V(t)\dd t,\\
+M(s)=\int_0^\infty(st^2-2t)e^{-st}V(t)\dd t.
+\end{gathered}
+\end{equation}
+
+\emph{The model function.} Let $V_P(t)=t^\lambda P(\log\frac1t)$ for $t>0$ and define $\temperatureZ_P,N_P,M_P$ by \eqref{eq:temperature:laplace} with $V_P$ in place of $V$. Substituting $t=u/s$, so that $\log\frac1t=\log s-\log u$, expanding $(\log s-\log u)^j$ by the binomial theorem, and using $\Gamma^{(i)}(\lambda+1)=\int_0^\infty u^\lambda(\log u)^ie^{-u}\dd u$ (\cref{def:toolkit:gamma}) gives $\temperatureZ_P(s)=s^{-\lambda}Q(\log s)$. Differentiating \eqref{eq:temperature:laplace} under the integral sign gives $N_P=-\temperatureZ_P'$ and $M_P=\temperatureZ_P''$, and differentiating $s^{-\lambda}Q(\log s)$ gives
+\begin{gather*}
+sN_P(s)=s^{-\lambda}\bigl(\lambda Q-Q'\bigr)(x),\\
+s^2M_P(s)=s^{-\lambda}\bigl(\lambda(\lambda+1)Q-(2\lambda+1)Q'+Q''\bigr)(x).
+\end{gather*}
+Dividing by $\temperatureZ_P$ and using $(Q'/Q)'=Q''/Q-(Q'/Q)^2$, the model function has dimensionless mean energy $\lambda-Q'/Q$ and heat capacity $\lambda(\lambda+1)-(2\lambda+1)Q'/Q+Q''/Q-(\lambda-Q'/Q)^2=\lambda-Q'/Q+(Q'/Q)'$, both at $x$.
+
+\emph{The remainder.} The difference $R=V-V_P$ satisfies $\abs{R(t)}\le Bt^{\lambda+\eta}$ on $(0,\eps_0]$; on $(\eps_0,\infty)$, $\abs{\log\frac1t}\le\log\frac1{\eps_0}+t$, so $\abs{R(t)}\le1+\abs{V_P(t)}\le C(1+t)^{\lambda+m}$, and for $s\ge1$ its contributions to the three integrals, multiplied by $1$, $s$ and $s^2$, are at most $C'e^{-s\eps_0/4}$. On $(0,\eps_0]$ we use $\int_0^\infty(st)^ae^{-st}t^{\lambda+\eta}\dd t=\Gamma(\lambda+\eta+a+1)s^{-\lambda-\eta-1}$ for $a=0,1,2$. Together,
+\[
+\abs{\temperatureZ-\temperatureZ_P}+s\abs{N-N_P}+s^2\abs{M-M_P}\le C''s^{-\lambda-\eta}\qquad(s\ge1).
+\]
+
+\emph{The ratios.} Since $Q$ has a positive leading coefficient, there are $c,x_0>0$ with $Q(x)\ge c\,x^{m-1}\ge c$ for $x\ge x_0$, while $\lambda Q-Q'$ and $\lambda(\lambda+1)Q-(2\lambda+1)Q'+Q''$ are $O(x^{m-1})$. Dividing the last display by $s^{-\lambda}Q(x)$ shows $\temperatureZ=s^{-\lambda}Q(x)(1+O(s^{-\eta}))$, $sN=s^{-\lambda}((\lambda Q-Q')(x)+O(s^{-\eta}))$, and the same for $s^2M$, whence \eqref{eq:temperature:QQ}. If $m\ge2$, write $Q(x)=q_{m-1}x^{m-1}+q_{m-2}x^{m-2}+\dots$; then $Q'/Q=(m-1)/x+O(x^{-2})$ and $(Q'/Q)'=O(x^{-2})$, and \eqref{eq:temperature:mean} follows from $\E_{\mu_{n\beta}}[nK]=\temperatureE(n\beta)/\beta$ and $\beta^2\Var_{\mu_{n\beta}}(nK)=\temperatureC(n\beta)$. If $m=1$, $Q$ is a positive constant and both corrections vanish.
+\end{proof}
+
+For the product model, $P(x)=\frac{\sqrt2}2x+\sqrt2(1-\frac12\log2)$, so $Q(x)=\Gamma(\frac32)\bigl(p_1x+p_0-p_1\psi(\frac32)\bigr)$ and $Q'/Q=1/(x+\gamma+\log2)$, which is \cref{comp:temperature:product} again; for a regular model, $\lambda=\frac d2$ and $m=1$, which is equipartition. The proposition is the derivative in $\beta$ of the population free energy $\lambda\log(n\beta)-(m-1)\log\log(n\beta)+O(1)$ of \cref{lem:volume:abelian}, but asymptotic formulas cannot be differentiated term by term, and this one cannot under the hypothesis of that lemma alone (\cref{ex:temperature:oscillation}).
+
+\section{The theorem: WBIC}\label{sec:temperature:wbic}
+
+\begin{definition}[WBIC; {\textcite{Watanabe2013}}]\label[definition]{def:temperature:wbic}\index{WBIC}
+The \term{widely applicable Bayesian information criterion} is the mean energy of the tempered posterior at inverse temperature $1/\log n$:
+\[
+\WBIC=\E^{\beta}_w[nL_n(w)],\qquad\beta=\frac1{\log n}.
+\]
+\end{definition}
+
+It costs one run of a sampler at one temperature.\sidenote{The paper was submitted to the \emph{Journal of Machine Learning Research} in August 2012, revised in February 2013 and published in March 2013, according to its header.} \Cref{thm:temperature:optimal} says that some $\beta^*$ reproduces $F_n$ exactly; WBIC bets that $\beta^*\approx1/\log n$, and Watanabe's theorem, under his ``fundamental conditions'', says how good the bet is.
+
+\begin{theorem}[WBIC; {\textcite[Theorem~4 and Corollaries~1--3]{Watanabe2013}}]\label{thm:temperature:wbic}
+Assume that $W\subset\R^d$ is compact with nonempty interior and $W=\{\pi_1\ge0,\dots,\pi_k\ge0\}$ for analytic $\pi_j$; that $\varphi=\varphi_1\varphi_2$ with $\varphi_1\ge0$ analytic and $\varphi_2>0$ smooth; that the map $w\mapsto f(\cdot,w)=\log(p_0/p(\cdot\mid w))$ extends to an analytic map, on an open set containing $W$, into the functions with finite sixth moment under $q$; that $\E_X[f(X,w)]\ge c\,\E_X[f(X,w)^2]$ whenever $K(w)\le\eps$, for some $c,\eps>0$ (relatively finite variance); and that $L$ has a minimizer $w_0$ in the interior of $W$ and all its minimizers give the same distribution $p_0$. Let $\beta=\beta_0/\log n$ with a constant $\beta_0>0$. Then:
+\begin{enumerate}
+\item there are random variables $U_n$ with $\E[U_n]=0$, converging in law to a Gaussian random variable, such that
+\[
+\Ewb{nL_n}=nL_n(w_0)+\frac{\lambda\log n}{\beta_0}+U_n\sqrt{\frac{\lambda\log n}{2\beta_0}}+O_p(1),
+\]
+and $\E[U_n^2]<1$ if the truth is realizable, $q=p_0$;
+\item if the parity of the model is odd, then $U_n=0$;
+\item the optimal temperature of \cref{thm:temperature:optimal} satisfies $\beta^*\log n=1+U_n/\sqrt{2\lambda\log n}+o_p(1/\sqrt{\log n})$;
+\item for $\beta_j=\beta_{0j}/\log n$ with constants $\beta_{01}\ne\beta_{02}$,
+\[
+\hat\lambda\defeq\frac{\E^{\beta_1}_w[nL_n]-\E^{\beta_2}_w[nL_n]}{1/\beta_1-1/\beta_2}\longrightarrow\lambda\quad\text{in probability.}
+\]
+\end{enumerate}
+In particular $\WBIC=nL_n(w_0)+\lambda\log n+U_n\sqrt{\lambda\log n/2}+O_p(1)$, and with \cref{thm:freeenergy:main},
+\begin{equation}\label{eq:temperature:gap}
+F_n-\WBIC=-(m-1)\log\log n-U_n\sqrt{\tfrac12\lambda\log n}+O_p(1)=O_p\bigl(\sqrt{\log n}\bigr).
+\end{equation}
+\end{theorem}
+
+The \term{parity}\index{parity} is defined on a resolution of singularities $w=g(u)$ (\cref{thm:toolkit:hironaka}) that puts $K$ and the prior in the normal-crossing form $K(g(u))=u^{2k}$, $\varphi(g(u))\abs{g'(u)}=b(u)\abs{u^h}$: it is odd if some resolution has, in every chart attaining $\lambda$ with multiplicity $m$, a coordinate $u_j$ attaining $\lambda$ with $k_j$ odd and with the $u_j$-axis near $0$ in the support of the prior, and even otherwise \parencite[eq.~(17)]{Watanabe2013}. Regular models with a prior positive at the truth are odd \parencite[Lemma~3]{Watanabe2013}, and so is reduced-rank regression for every truth and prior \parencite[\S6.1]{Watanabe2013}. The product model is odd: $K=\frac12a^2b^2$ is already in normal-crossing form with $k=(1,1)$. The quartic model is even: a coordinate attaining $\lambda=\frac34=\frac{h_j+1}{2k_j}$ has $3k_j=2(h_j+1)$, so $k_j$ is even in every resolution (the weighted blow-up $(a,b)=(uv^2,v)$ of \cref{ch:blowups} gives $K=\frac12v^4(1+u^2)$). When the truth is realizable the parity does not depend on the resolution \parencite[Lemma~2]{Watanabe2013}.
+
+For linear models the theorem can be proved with the tools of \cref{ch:freeenergy}, and the proof shows where $U_n$ comes from.
+
+\begin{assumption}[Linear models]\label[assumption]{ass:temperature:linear}
+\begin{enumerate}
+\item The pairs $(x_i,y_i)$ are independent and identically distributed, $x_i\in\R^k$ with $\Sigma=\E[xx^\top]$ positive definite and $\E\norm x^4<\infty$, and $y_i=g(w_0)^\top x_i+\varepsilon_i$ with $\varepsilon_i\sim\Normal(0,1)$ independent of $x_i$.
+\item The model is $y=g(w)^\top x+\Normal(0,1)$ noise, with $w$ in a compact set $W\subset\R^d$ that contains $w_0$, $g$ continuous, and a bounded prior density $\varphi$. Write $\delta(w)=g(w)-g(w_0)$ and $K(w)=\frac12\delta(w)^\top\Sigma\,\delta(w)$.
+\item $K$ and $\varphi$ satisfy \cref{ass:temperature:volume}.
+\end{enumerate}
+\end{assumption}
+
+These hypotheses contain those of \cref{thm:freeenergy:linear}. The losses are conditional on the inputs, $L_n(w)=-\frac1n\sum_i\log p(y_i\mid x_i,w)$, so $nL_n(w_0)=nS_n$, and the data enter through $\Sigma_n=\frac1n\sum_ix_ix_i^\top$ and $Z_n=n^{-1/2}\sum_i\varepsilon_ix_i$.
+
+\begin{lemma}[Moments of the population posterior]\label[lemma]{lem:temperature:moments}
+Under \cref{ass:temperature:volume}, let $T=sK$ under $\mu_s$. For every integer $j\ge0$ and $\theta\in[0,1)$, $\E_{\mu_s}[T^je^{\theta T}]$ is bounded for $s\ge1$, and $T$ converges in law, as $s\to\infty$, to the Gamma distribution with shape $\lambda$ and scale $1$.
+\end{lemma}
+
+\begin{proof}
+The proof of \cref{prop:temperature:mean} shows $\temperatureZ(s)=s^{-\lambda}Q(\log s)(1+o(1))$, so $\temperatureZ(as)/\temperatureZ(s)\to a^{-\lambda}$ for each fixed $a>0$. Put $\theta'=\frac12(1+\theta)<1$. Since $T^je^{\theta T}\le C_{j,\theta}e^{\theta'T}$, we get $\E_{\mu_s}[T^je^{\theta T}]\le C_{j,\theta}\temperatureZ((1-\theta')s)/\temperatureZ(s)$, which is continuous in $s$ and converges to $C_{j,\theta}(1-\theta')^{-\lambda}$, hence is bounded on $[1,\infty)$. For $u\ge0$, $\E_{\mu_s}[e^{-uT}]=\temperatureZ((1+u)s)/\temperatureZ(s)\to(1+u)^{-\lambda}$, the Laplace transform of the Gamma law with shape $\lambda$, and convergence of the Laplace transforms of nonnegative random variables implies convergence in law.
+\end{proof}
+
+\begin{theorem}[WBIC for linear models]\label{thm:temperature:wbiclinear}
+Under \cref{ass:temperature:linear}, let $\beta=\beta_0/\log n$ with a constant $\beta_0>0$, put $s=n\beta$, and define the deterministic vector
+\[
+c_n=\beta\Cov_{\mu_s}\bigl(nK,\sqrt n\,\delta\bigr)-\E_{\mu_s}\bigl[\sqrt n\,\delta\bigr]\in\R^k .
+\]
+\begin{enumerate}
+\item $\Ewb{nL_n}=nL_n(w_0)+\dfrac{\lambda\log n}{\beta_0}+c_n^\top Z_n+O_p(1)$.
+\item $\E[c_n^\top Z_n]=0$ and $\Var(c_n^\top Z_n)=c_n^\top\Sigma c_n=O(\log n)$.
+\item If a measurable map $\iota\colon W\to W$ carries the prior distribution to itself and $\delta\circ\iota=-\delta$, then $c_n=0$.
+\item If, under $\mu_s$, the pair $(sK,\vartheta)$ with $\vartheta=\Sigma^{1/2}\delta/\norm{\Sigma^{1/2}\delta}$ converges in law to the product of the Gamma law with shape $\lambda$ and a law $\nu$ on the unit sphere, then $U_n\defeq c_n^\top Z_n/\sqrt{\lambda\log n/(2\beta_0)}$ converges in law to $\Normal(0,\sigma^2)$ and $\E[U_n^2]\to\sigma^2$, where
+\[
+\sigma^2=\Bigl(\frac{\Gamma(\lambda+\frac12)}{\Gamma(\lambda)}\Bigr)^2\frac{\norm{\bar\vartheta}^2}{\lambda}<1,\qquad\bar\vartheta=\int\vartheta\,\nu(\dd\vartheta).
+\]
+\end{enumerate}
+In particular, for $\beta_0=1$ and by \cref{thm:freeenergy:linear}, $F_n-\WBIC=-(m-1)\log\log n-c_n^\top Z_n+O_p(1)$.
+\end{theorem}
+
+\begin{proof}
+The plan is to write the tempered posterior as the population posterior $\mu_s$ tilted by a factor $e^\tau$ with $\tau$ small, to expand to first order in $\tau$, and to read off the deterministic term from \cref{prop:temperature:mean}. Write $\mu=\mu_s$, $T=sK$, $v=\Sigma^{1/2}\delta$ (so $\norm v^2=2K$), $\zeta_n=\Sigma^{-1/2}Z_n$, and $D_n=\Sigma^{-1/2}\Sigma_n\Sigma^{-1/2}-I$. By the central limit theorem and Chebyshev's inequality, $\zeta_n=O_p(1)$ and $\norm{D_n}=O_p(n^{-1/2})$.
+
+\emph{The tilt.} Expanding the squares as in \cref{comp:temperature:wbic}, $nK_n=\frac n2\delta^\top\Sigma_n\delta-\sqrt n\,\delta^\top Z_n=nK-A_n$ with
+\[
+A_n=\sqrt n\,v^\top\zeta_n-\tfrac n2v^\top D_nv,\qquad\abs{A_n}\le\sqrt{2nK}\,\norm{\zeta_n}+nK\norm{D_n}.
+\]
+Hence the tempered posterior has density proportional to $e^{-T+\tau}$ with respect to $\varphi$, where $\tau=\beta A_n$, and $\Ewb{f}=\E_\mu[fe^\tau]/\E_\mu[e^\tau]$.
+
+\emph{Bounds.} Let $\rho_n=\sqrt\beta\,\norm{\zeta_n}+\norm{D_n}$, which is $O_p((\log n)^{-1/2})$, and work on the event $\{\norm{D_n}\le\frac14\}$, whose probability tends to one. There $\abs\tau\le\sqrt{2\beta T}\norm{\zeta_n}+T\norm{D_n}\le\sqrt2(1+T)\rho_n$, and since $\sqrt{2\beta T}\norm{\zeta_n}\le\frac T4+2\beta\norm{\zeta_n}^2$, also $\abs\tau\le\frac T2+2\beta\norm{\zeta_n}^2$. With \cref{lem:temperature:moments} for $\theta=\frac12$ this gives, for all $j,k\ge0$,
+\[
+\E_\mu\bigl[T^j\abs\tau^ke^{\abs\tau}\bigr]\le C_{j,k}\,e^{2\beta\norm{\zeta_n}^2}\rho_n^k=O_p(\rho_n^k).
+\]
+
+\emph{First order.} By Taylor's theorem $e^\tau=1+\tau+R$ with $\abs R\le\frac12\tau^2e^{\abs\tau}$. For $f$ equal to $T$ or $\tau$ put $\Delta_f=\Cov_\mu(f,R)-\Cov_\mu(f,\tau)\,\E_\mu[\tau+R]$; expanding numerator and denominator gives the identity
+\[
+\Ewb{f}-\E_\mu[f]-\Cov_\mu(f,\tau)=\frac{\Delta_f}{\E_\mu[e^\tau]}.
+\]
+By the bounds, $\Delta_T=O_p(\rho_n^2)$ and $\Delta_\tau=O_p(\rho_n^3)$, while $\E_\mu[e^\tau]\ge e^{-\E_\mu\abs\tau}$ by Jensen's inequality is bounded below in probability; and $\Cov_\mu(\tau,\tau)=O_p(\rho_n^2)$. Therefore
+\[
+\Ewb{T}=\E_\mu[T]+\Cov_\mu(T,\tau)+O_p(\rho_n^2),\qquad\Ewb{\tau}=\E_\mu[\tau]+O_p(\rho_n^2).
+\]
+
+\emph{Assembly.} Since $\beta nK_n=T-\tau$, dividing by $\beta$ gives $\Ewb{nK_n}=\E_\mu[nK]+\Cov_\mu(T,A_n)-\E_\mu[A_n]+O_p(\rho_n^2/\beta)$, and $\rho_n^2/\beta\le2\norm{\zeta_n}^2+2\norm{D_n}^2\log n/\beta_0=O_p(1)$. In $A_n$, the term with $D_n$ satisfies $\abs{\frac n2v^\top D_nv}\le\norm{D_n}T/\beta$, so its contribution to $\Cov_\mu(T,A_n)-\E_\mu[A_n]$ is $O_p(\norm{D_n}\log n)=o_p(1)$. The term with $\zeta_n$ contributes $\bigl(\Cov_\mu(T,\sqrt n\,v)-\E_\mu[\sqrt n\,v]\bigr)^\top\zeta_n=(\Sigma^{1/2}c_n)^\top\Sigma^{-1/2}Z_n=c_n^\top Z_n$. Hence $\Ewb{nK_n}=\E_\mu[nK]+c_n^\top Z_n+O_p(1)$.
+
+\emph{The deterministic term.} By \cref{prop:temperature:mean}, $\E_\mu[nK]=\frac1\beta\bigl(\lambda-\frac{m-1}{\log s}+O(\log^{-2}s)\bigr)$, and $\log s=\log n-\log\log n+\log\beta_0\ge\frac12\log n$ for large $n$, so $\E_\mu[nK]=\frac{\lambda\log n}{\beta_0}+O(1)$. Adding $nL_n(w_0)$ to $\Ewb{nK_n}$ proves (i).
+
+\emph{(ii)--(iv).} The mean and the covariance of $Z_n$ are $0$ and $\Sigma$, which gives the first two claims of (ii). Next, $\sqrt n\,v=\sqrt{2T/\beta}\,\vartheta$, so
+\[
+\sqrt\beta\,\Sigma^{1/2}c_n=\Cov_\mu\bigl(T,\sqrt{2T}\vartheta\bigr)-\E_\mu\bigl[\sqrt{2T}\vartheta\bigr]=\E_\mu\bigl[\sqrt{2T}\,\vartheta\,(T-\E_\mu T-1)\bigr],
+\]
+whose norm is bounded by \cref{lem:temperature:moments}; hence $c_n^\top\Sigma c_n=O(1/\beta)=O(\log n)$. For (iii), $K\circ\iota=K$, so $\mu$ is invariant under $\iota$; then $\E_\mu[\delta]=\E_\mu[\delta\circ\iota]=-\E_\mu[\delta]$, likewise $\E_\mu[K\delta]=-\E_\mu[K\delta]$, both vanish, and so does $c_n$. For (iv), the variables in the last display are uniformly integrable by \cref{lem:temperature:moments}, and $\E_\mu T\to\lambda$, so the display converges to $\sqrt2\,\E[\sqrt t(t-\lambda-1)]\,\bar\vartheta$ with $t$ Gamma with shape $\lambda$. Since $\E t^{3/2}=(\lambda+\frac12)\E\sqrt t$ and $\E\sqrt t=\Gamma(\lambda+\frac12)/\Gamma(\lambda)$, the limit is $\gamma_\infty=-\Gamma(\lambda+\frac12)\bar\vartheta/(\sqrt2\,\Gamma(\lambda))$. Now $U_n=\sqrt{2/\lambda}\,(\sqrt\beta\,\Sigma^{1/2}c_n)^\top\zeta_n$, where $\zeta_n$ converges in law to $\Normal(0,I)$ and has covariance $I$; Slutsky's lemma gives the limit law $\Normal(0,2\norm{\gamma_\infty}^2/\lambda)=\Normal(0,\sigma^2)$, and $\E[U_n^2]=\frac2\lambda\norm{\sqrt\beta\,\Sigma^{1/2}c_n}^2\to\sigma^2$. Finally, the Cauchy--Schwarz inequality for $t^{(\lambda-1)/2}e^{-t/2}$ and $t^{\lambda/2}e^{-t/2}$, which are not proportional, gives $\Gamma(\lambda+\frac12)^2<\Gamma(\lambda)\Gamma(\lambda+1)=\lambda\Gamma(\lambda)^2$, and since $\norm{\bar\vartheta}\le1$, it follows that $\sigma^2\le\Gamma(\lambda+\frac12)^2/(\lambda\Gamma(\lambda)^2)<1$. The last sentence of the theorem combines (i) with \cref{thm:freeenergy:linear}, whose hypotheses \cref{ass:temperature:linear} contains.
+\end{proof}
+
+The symmetry of (iii) holds for the product model ($\iota(a,b)=(-a,b)$), the sextic model and the regular plane ($\iota(w)=-w$), and the chain; there $U_n=0$, as odd parity predicts. In the quartic model $\vartheta$ is a function of the sign of $a$ and of $X/(X+Y)$, with $X=sa^2/2$ and $Y=sb^4/2$ independent Gamma variables in the limit, so $\vartheta$ is independent of $T=X+Y$ and (iv) applies,\sidenote{For independent Gamma variables $X$ and $Y$ with a common scale, $X+Y$ and $X/(X+Y)$ are independent: the change of variables $(X,Y)\mapsto(X+Y,X/(X+Y))$ factors their joint density.} with $c_n=-\temperaturekQ e_2/\sqrt{2\beta}$ up to exponentially small terms, as in \cref{comp:temperature:wbic}, and $\E[U_n^2]\to\frac43\temperaturekQ^2=0.152$ (\cref{ex:temperature:bound}).
+
+\begin{corollary}[Learning coefficients from temperatures]\label[corollary]{cor:temperature:estimators}\index{learning coefficient!estimation}
+Under \cref{ass:temperature:linear}, let $\beta_j=\beta_{0j}/\log n$ with constants $\beta_{01}\ne\beta_{02}$, and let $\hat\lambda$ be the two-temperature estimator of \cref{thm:temperature:wbic}.
+\begin{enumerate}
+\item $\hat\lambda=\lambda+O_p((\log n)^{-1/2})$, and $\hat\lambda=\lambda+O_p(1/\log n)$ if the vectors $c_n$ of both temperatures vanish.
+\item The heat-capacity estimator $\hat\lambda_{\mathrm C}\defeq\beta_1^2\Var^{\beta_1}_w(nL_n)$ satisfies $\hat\lambda_{\mathrm C}=\lambda+O_p((\log n)^{-1/2})$.
+\item Their population versions, with $\E_{\mu_{n\beta_j}}$ in place of $\E^{\beta_j}_w$ and $K$ in place of $K_n$, equal $\lambda-\frac{m-1}{\log n}+O\bigl(\frac{\log\log n}{\log^2n}\bigr)$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+The plan is to subtract or to square the expansions of the theorem. For (i), subtract the expansions of \cref{thm:temperature:wbiclinear}(i) at $\beta_1$ and $\beta_2$ and divide by $1/\beta_1-1/\beta_2=(1/\beta_{01}-1/\beta_{02})\log n$: the terms $nL_n(w_0)$ cancel, the leading terms give $\lambda$, the terms $c_n^\top Z_n$ give $O_p((\log n)^{1/2})/\log n$, and the remainders $O_p(1)/\log n$. For (ii), $\beta_1^2\Var^{\beta_1}_w(nL_n)=\Var^{\beta_1}_w(T-\tau)$ in the notation of the last proof. For every $f$, $\Ewb{f}-\E_\mu[f]=\Cov_\mu(f,e^\tau-1)/\E_\mu[e^\tau]$ and $\abs{e^\tau-1}\le\abs\tau e^{\abs\tau}$, so the bounds of that proof give $\Ewb{f}=\E_\mu[f]+O_p(\rho_n)$ for $f=(T-\tau)^2$ and $f=T-\tau$; hence $\Var^{\beta_1}_w(T-\tau)=\Var_\mu(T-\tau)+O_p(\rho_n)=\Var_\mu(T)+O_p(\rho_n)$, and $\Var_\mu(T)=\temperatureC(s)=\lambda+O(1/\log s)$ by \cref{prop:temperature:mean}. For (iii), insert $\log(n\beta_j)=\log n-\log\log n+\log\beta_{0j}$ into \eqref{eq:temperature:mean}: then $1/(\beta_j\log(n\beta_j))=\frac{\log n}{\beta_{0j}}\bigl(\frac1{\log n}+O(\frac{\log\log n}{\log^2n})\bigr)$, and both estimators become $\lambda-\frac{m-1}{\log n}+O(\frac{\log\log n}{\log^2n})$.
+\end{proof}
+
+The bias $-(m-1)/\log n$ of (iii)\index{multiplicity!bias of estimators} belongs to the population: it remains when the sampler is perfect and the noise is averaged away. For the product model at $n=10^3$ it is $-0.145$ to leading order, and the exact population value of $\hat\lambda$ with $\beta_{01}=1$ and $\beta_{02}=1.5$, from \cref{comp:temperature:product}, is $0.320$ instead of $\frac12$. The heat-capacity estimator was proposed by \textcite{Imai2019a}, in a preprint, with a consistency argument that differentiates Watanabe's expansion in $\beta$; part (ii) proves it for linear models.
+
+\begin{proofsketch}[Proof sketch of \cref{thm:temperature:wbic}]
+The plan is that of \cref{thm:temperature:wbiclinear}, with a resolution of singularities in place of linearity; we follow \textcite[\S5]{Watanabe2013} and omit the empirical-process estimates. After localizing to $\{K<n^{-r}\}$, $r<\frac12$ (his Lemma~1), a resolution gives $K(g(u))=u^{2k}$, $f(x,g(u))=u^ka(x,u)$ and $\varphi\,\dd w=b(u)\abs{u^h}\dd u$ (his Theorem~1; relatively finite variance makes $f$ divisible by $u^k$), so $nK_n(g(u))=nu^{2k}-\sqrt n\,u^k\xi_n(u)$ with an empirical process $\xi_n$ that converges in law to a Gaussian process. As $t\to0$ the measure $\delta(t-u^{2k})\abs{u^h}\dd u$ behaves like $t^{\lambda-1}(\log\frac1t)^{m-1}\dd u^*$ for a measure $\dd u^*$ on the set where the coordinates attaining $\lambda$ vanish (his Lemma~4). With $t=n\beta u^{2k}$ the tilt is $e^{\pm\sqrt{\beta t}\,\xi_n(u)}=1\pm\sqrt{\beta t}\,\xi_n(u)+O_p(\beta)$, with the sign of $u^k$: our expansion with $\xi_n(u)$ in place of $\sqrt2\,\vartheta^\top\zeta_n$, and the Gamma moments give $\Ewb{nK_n}=\frac\lambda\beta-\frac{\Theta\,\Gamma(\lambda+\frac12)}{2\sqrt\beta\,\Gamma(\lambda)}+O_p(1)$, with $\Theta$ the $\dd u^*$-average of $\xi_n$ times the signs of $u^k$, a sum that odd parity makes vanish. In the realizable case $\E[\xi_n(u)^2]=2$ where $u^{2k}=0$, so $\E[\Theta^2]\le2$, and $\E[U_n^2]<1$ by the Gamma inequality above. The general proof adds Hironaka's theorem, the empirical process on the resolved manifold, and non-Gaussian data; analyticity provides the volume expansion.
+\end{proofsketch}
+
+\section{Measuring it}\label{sec:temperature:measuring}
+
+The script \texttt{11-temperature-lambda.py} measures $\hat\lambda$ (with $\beta_{01}=1$, $\beta_{02}=1.5$, as in Watanabe's experiment), the heat-capacity estimate, and $F_n-\WBIC$ for four running models at the truth $w_0=0$: the regular plane ($\lambda=1$), the quartic model ($\frac34$), the sextic model ($\frac23$) and the product model ($\frac12$, $m=2$), all with $\frac d2=1$. For each model and each $n=10^2,10^3,\dots,10^8$ it draws $200$ data sets, which enter only through $S=\sum_ix_ix_i^\top$ and $r=\sum_ix_iy_i$, sampled exactly,\sidenote{$S$ has the Wishart distribution with $n$ degrees of freedom, sampled by Bartlett's decomposition into chi-square and normal variables, and $r$ given $S$ is $\Normal(0,S)$; so $n=10^8$ costs no more than $n=10^2$.} and it integrates the tempered posteriors by quadrature (in closed form over $a$, by Gauss--Legendre nodes over $b$ or $c=ab$), which agrees with the kit's $2000\times2000$ grid to six digits. It runs in about a minute.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,height=0.43\linewidth,xmode=log,xmin=50,xmax=3e8,ymin=0.1,ymax=1.1,
+  xlabel={sample size $n$},ylabel={$\hat\lambda$ (two temperatures)},
+  xtick={1e2,1e4,1e6,1e8},ytick={0.25,0.5,0.75,1}]
+\addplot[regularpred] coordinates {(50,1) (3e8,1)};
+\addplot[theory] coordinates {(50,0.75) (3e8,0.75)};
+\addplot[theory,forget plot] coordinates {(50,0.666667) (3e8,0.666667)};
+\addplot[theory,forget plot] table[x=n,y=prodlampop] {figures/data/11-temperature-lambda-curves.dat};
+\addplot[guide,forget plot] coordinates {(50,0.5) (3e8,0.5)};
+\addplot[measured,ebars] table[x=n,y=quarticlam,y error plus=quarticlamhi,y error minus=quarticlamlo] {figures/data/11-temperature-lambda.dat};
+\addplot[measured,ebars,forget plot] table[x=n,y=regularlam,y error plus=regularlamhi,y error minus=regularlamlo] {figures/data/11-temperature-lambda.dat};
+\addplot[measured,ebars,forget plot] table[x=n,y=sexticlam,y error plus=sexticlamhi,y error minus=sexticlamlo] {figures/data/11-temperature-lambda.dat};
+\addplot[measured,ebars,forget plot] table[x=n,y=productlam,y error plus=productlamhi,y error minus=productlamlo] {figures/data/11-temperature-lambda.dat};
+\addplot[temperaturemcmc] table[x expr=1.8*\thisrow{n},y=quarticmc] {figures/data/11-temperature-lambda-mcmc.dat};
+\addplot[temperaturemcmc,forget plot] table[x expr=1.8*\thisrow{n},y=regularmc] {figures/data/11-temperature-lambda-mcmc.dat};
+\addplot[temperaturemcmc,forget plot] table[x expr=1.8*\thisrow{n},y=sexticmc] {figures/data/11-temperature-lambda-mcmc.dat};
+\addplot[temperaturemcmc,forget plot] table[x expr=1.8*\thisrow{n},y=productmc] {figures/data/11-temperature-lambda-mcmc.dat};
+\node[font=\footnotesize,anchor=north] at (axis cs:3e3,0.98) {regular plane};
+\node[font=\footnotesize,anchor=south] at (axis cs:3e7,0.75) {quartic};
+\node[font=\footnotesize,anchor=north] at (axis cs:3e7,0.66) {sextic};
+\node[font=\footnotesize,anchor=north] at (axis cs:3e3,0.3) {product};
+\end{axis}
+\end{tikzpicture}
+\caption{Two-temperature estimates $\hat\lambda$ ($\beta_1=1/\log n$, $\beta_2=1.5/\log n$) for four models with $d=2$ at the truth $0$. Dots: means over $200$ data sets per $n$ (seed $11000+100\times$model$+\log_{10}n$), by quadrature, with Student-$t$ $95\%$ intervals (most are smaller than the dots). Crosses (shifted right): means of random-walk Metropolis estimates on $(a,b)$ for $40$ other data sets at $n=10^2,10^4,10^6$ (seed $21000+100\times$model$+\log_{10}n$). Solid: the learning coefficients $\frac34$ and $\frac23$ (for the regular plane $\lambda=1$ is the dashed line), and for the product model the population value of $\hat\lambda$ (\cref{comp:temperature:product}), which tends to $\frac12$ (gray) like $\frac12-1/\log n$. Dashed: the regular prediction $\frac d2=1$. Script: \texttt{11-temperature-lambda.py}.}\label{fig:temperature:lambda}
+\end{figure}
+
+In \cref{fig:temperature:lambda} the regular plane gives $\hat\lambda=1.000$ at every $n\ge10^3$: its posterior is Gaussian, and equipartition holds exactly. The quartic model gives $\lambda$ within its interval at every $n$ ($0.745$ $[0.738,0.752]$ at $n=10^2$, $0.750$ $[0.746,0.754]$ at $10^8$): $m=1$ and its volume is an exact power. The sextic model lies just above $\frac23$, by $0.0045$ at $n=10^2$ and $0.0003$ at $10^8$, outside its narrow intervals: the $O_p(1/\log n)$ error of \cref{cor:temperature:estimators}(i), from the data, not the population. The product model sits far below $\frac12$, at $0.324$ for $n=10^3$ and $0.438$ for $10^8$, and for $n\ge10^3$ its means follow the population curve to within $0.004$ ($0.320$ and $0.438$; $0.013$ at $n=10^2$): the shortfall is the multiplicity's $-(m-1)/\log n$, not noise. The heat-capacity estimator gives $0.317$ and $0.437$, against $0.314$ and $0.437$. Single estimates scatter as \cref{thm:temperature:wbiclinear} predicts: in the quartic model with standard deviation $0.132/\sqrt{\log n}$ (\cref{ex:temperature:pairs}), $0.043$ at $n=10^4$ and $0.031$ at $10^8$, against measured $0.039$ and $0.029$; in the odd product model only $0.0051$ at $n=10^4$.
+
+The crosses are the same estimates computed as for a model without sufficient statistics: random-walk Metropolis on $(a,b)$ at $\beta_1$, with $16$ chains per data set started from the prior, $2000$ adaptation steps toward acceptance rate $0.3$, then $8000$ steps thinned by $4$, and $\E^{\beta_2}_w$ obtained by reweighting the draws \parencite[eq.~(20)]{Watanabe2013}. On the same data sets the paired difference from quadrature is at most $0.006$ in size in eleven of the twelve cases ($95\%$ half-widths $0.002$ to $0.008$); one of them, $-0.004$ $[-0.006,-0.001]$ for the product model at $n=10^4$, excludes zero. In the twelfth, the product model at $n=10^6$, Metropolis overestimates $\hat\lambda$ by $0.010$ $[0.007,0.013]$: its chains move along the arms of the cross in steps of the arms' width and spend too little time near the center, where the factor $\log\frac1{\abs c}$ behind the multiplicity correction lives ($7.1\%$ of their draws have $\max(\abs a,\abs b)<0.05$, against $8.2\%$ of exact draws). Chains four times as long reach $8.0\%$ and an overestimate of $0.003$ $[0.001,0.006]$. A sampler that does not explore a singular set biases $\hat\lambda$, here toward the value of a regular model with one parameter.\index{Metropolis algorithm}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},
+  splot,width=0.5\linewidth,height=0.40\linewidth,xmode=log,xmin=50,xmax=2e8,
+  xlabel={sample size $n$},xtick={1e2,1e4,1e6,1e8}]
+\nextgroupplot[ylabel={$\E[F_n-\WBIC]$},ymin=-1.65,ymax=0.2,title={(a) the mean gap}]
+\addplot[regularpred,forget plot] table[x=n,y=regFW] {figures/data/11-temperature-lambda-curves.dat};
+\addplot[theory,forget plot] table[x=n,y=prodFW] {figures/data/11-temperature-lambda-curves.dat};
+\addplot[measured,ebars] table[x=n,y=regulardF,y error plus=regulardFhi,y error minus=regulardFlo] {figures/data/11-temperature-lambda-wbic.dat};
+\addplot[measured,ebars] table[x=n,y=quarticdF,y error plus=quarticdFhi,y error minus=quarticdFlo] {figures/data/11-temperature-lambda-wbic.dat};
+\addplot[measured,ebars] table[x=n,y=sexticdF,y error plus=sexticdFhi,y error minus=sexticdFlo] {figures/data/11-temperature-lambda-wbic.dat};
+\addplot[measured,ebars] table[x=n,y=productdF,y error plus=productdFhi,y error minus=productdFlo] {figures/data/11-temperature-lambda-wbic.dat};
+\node[font=\footnotesize,anchor=south] at (axis cs:1e5,-0.22) {quartic, sextic};
+\node[font=\footnotesize,anchor=north] at (axis cs:3e6,-0.5) {regular plane};
+\node[font=\footnotesize,anchor=north east] at (axis cs:1e6,-1.2) {product};
+\nextgroupplot[ylabel={coefficient of $Z_{n,2}$ in $\WBIC$},ymin=-1.2,ymax=0.15,title={(b) the response to the noise}]
+\addplot[regularpred,forget plot] coordinates {(50,0) (2e8,0)};
+\addplot[theory,forget plot] table[x=n,y=quarticslope] {figures/data/11-temperature-lambda-curves.dat};
+\addplot[theory2,forget plot] table[x=n,y=quarticexact] {figures/data/11-temperature-lambda-curves.dat};
+\addplot[measured,ebars] table[x=n,y=quarticslope,y error plus=quarticslopeci,y error minus=quarticslopeci] {figures/data/11-temperature-lambda-wbic.dat};
+\addplot[measured,ebars] table[x=n,y=sexticslope,y error plus=sexticslopeci,y error minus=sexticslopeci] {figures/data/11-temperature-lambda-wbic.dat};
+\addplot[measured,ebars] table[x=n,y=productslope,y error plus=productslopeci,y error minus=productslopeci] {figures/data/11-temperature-lambda-wbic.dat};
+\addplot[measured,ebars] table[x=n,y=regularslope,y error plus=regularslopeci,y error minus=regularslopeci] {figures/data/11-temperature-lambda-wbic.dat};
+\node[font=\footnotesize,anchor=north east] at (axis cs:1e6,-0.95) {quartic};
+\node[font=\footnotesize,anchor=north] at (axis cs:1e5,-0.06) {the three odd models};
+\end{groupplot}
+\end{tikzpicture}
+\caption{WBIC against the free energy, over the data sets of \cref{fig:temperature:lambda}, with $95\%$ intervals. (a) The mean of $F_n-\WBIC$. Dashed: the regular limit $\log\frac2\pi$ of the regular plane. Solid: $-\log\log n+\frac12\log\frac8\pi+1$ for the product model. (b) The coefficient of $Z_{n,2}$ in a least-squares fit of $\WBIC-nS_n$ on $1$, $Z_{n,2}$, $Z_{n,2}^2$ and $Z_{n,1}^2$ (for the product model, whose noise is one variable, on $1$, $Z_n$ and $Z_n^2$), with intervals from heteroscedasticity-consistent (HC3) standard errors. Solid: the leading term $-\temperaturekQ\sqrt{\frac12\log n}$ of \cref{comp:temperature:wbic}; dotted: the average slope computed by quadrature with $\Sigma_n=I$ and Gauss--Hermite averaging over the noise; dashed: $0$, the value for every odd model.}\label{fig:temperature:wbic}
+\end{figure}
+
+\Cref{fig:temperature:wbic}(a) shows the mean of $F_n-\WBIC$. For the regular plane it converges to $\log\frac2\pi=-0.452$: $\WBIC=\BIC+o_p(1)$ \parencite[Theorem~5]{Watanabe2013}, and $F_n$ differs from BIC by $-\frac d2\log2\pi+\frac12\log\det J-\log\varphi(w_0)$ (\cref{thm:regular:laplace}), here $-\log2\pi+\log4$. For the quartic and sextic models it stays near $-0.31$ ($m=1$, $\E[U_n]=0$). For the product model it falls like $-\log\log n$: $-0.55$ at $n=10^3$ and $-1.43$ at $10^8$, against $-0.47$ and $-1.45$ from $-\log\log n+\frac12\log\frac8\pi+1$. The constant combines the limit $\frac12\log\frac8\pi-\frac12Z^2$ of $F_n-nS_n-\frac12\log n+\log\log n$ (\cref{ch:coefficient}) with the limit $-1-\frac12Z^2$ of $\WBIC-nS_n-\frac12\log n$, whose $-1$ comes from \cref{comp:temperature:product} and whose $-\frac12Z^2$ is the second-order term of a Gaussian posterior in $c=ab$ (argued, not proved here).
+
+\Cref{fig:temperature:wbic}(b) isolates the $\sqrt{\log n}$ term; the squares in the fit absorb the $O_p(1)$ terms of \cref{thm:temperature:wbiclinear}, which are even in the noise to leading order. For the three odd models the coefficient of $Z_{n,2}$ is below $0.04$ in size at every $n$ (below $0.02$ for $n\ge10^3$), as part (iii) of the theorem says. For the quartic model it grows from $-0.56$ at $n=10^2$ to $-1.06$ at $10^8$, against the leading term $-0.51$ to $-1.03$. The dotted curve keeps all orders; it differs from the leading term by $0.08$ at $n=10^2$ and $0.04$ at $10^8$, shrinking like $(\log n)^{-1/2}$, and for $n\ge10^3$ every measured coefficient lies on it within its interval. The $\sqrt{\log n}$ term of Watanabe's theorem is real and belongs to single data sets: it has mean zero, so it does not show in panel (a).
+
+\section{The ledger}\label{sec:temperature:ledger}
+
+The free energy is the integral over the inverse temperature of the posterior mean energy, which for the population posterior is $\frac\lambda\beta-\frac{m-1}{\beta\log n\beta}$: $\lambda$ replaces equipartition's $\frac d2$, and the multiplicity enters as a slowly vanishing correction (\cref{prop:temperature:mean}). One temperature, $1/\log n$, recovers the free energy's leading term, with an error of order $\sqrt{\log n}$ unless a sign symmetry kills it (\cref{thm:temperature:wbiclinear}); two temperatures, or the heat capacity at one, estimate $\lambda$ with a bias $-(m-1)/\log n$ (\cref{cor:temperature:estimators}).
+
+\ledgercard{the mean energy $\Ewb{nL_n}$ of the tempered posterior; WBIC, its value at $\beta=1/\log n$; $\hat\lambda$, its slope in $1/\beta$}
+{equipartition, $nL_n(\hat w)+\frac{d}{2\beta}$; $\WBIC=\BIC+o_p(1)$; $\hat\lambda\to\frac d2$}
+{population mean energy $\frac\lambda\beta-\frac{m-1}{\beta\log n\beta}+\dots$ (\cref{prop:temperature:mean}); $F_n-\WBIC=-(m-1)\log\log n+O_p(\sqrt{\log n})$, the $\sqrt{\log n}$ term zero under odd parity (\cref{thm:temperature:wbic,thm:temperature:wbiclinear})}
+{quartic model: $\frac3{4\beta}$, and WBIC's noise term $-0.338\sqrt{\frac12\log n}\,Z_{n,2}$ (even parity); product model: $\frac1{2\beta}-\frac1{\beta(\log n\beta+\gamma+\log 2)}$, none}
+{$\hat\lambda$ at $n=10^8$: quartic $0.750$, sextic $0.667$, regular plane $1.000$, product $0.438$ (population $0.438$; at $n=10^3$, $0.324$ against $0.320$); WBIC's coefficient on $Z_{n,2}$: $-0.56$ to $-1.06$ (leading term $-0.51$ to $-1.03$)}
+{exact tempered posteriors; the volume expansion; realizable linear models with Gaussian noise (complete proof); Watanabe's conditions (general theorem)}
+
+\section{Where the theory stops}\label{sec:temperature:stops}
+
+\paragraph{What was assumed.} Every result of this chapter is about integrals against $\varphi e^{-\beta nL_n}$, which we computed by quadrature; in practice they are Monte Carlo averages, and our Metropolis check showed the first way in which that fails. The population results need the volume expansion, which analytic models satisfy. The complete proof of the WBIC theorem is for realizable linear models with Gaussian noise and inputs with four moments, a compact parameter set, a fixed model and truth as $n$ grows, and fixed $\beta_0$; Watanabe's general theorem needs analyticity with six moments, relatively finite variance, an interior minimizer, and a unique optimal distribution. Networks with ReLU activations are not analytic, their posteriors are never computed exactly, and they grow with the data.
+
+\paragraph{Where it breaks.} The bias $-(m-1)/\log n$ does not disappear at practical sizes: in the product model $\hat\lambda$ is $0.32$ at $n=10^3$ and $0.44$ at $n=10^8$ for $\lambda=0.5$, and in Watanabe's experiment with reduced-rank regression ($n=500$) the three largest models gave means $14.80$, $15.72$ and $16.55$ for $\lambda=15$, $16$ and $17$, with $m=2$, $1$ and $2$, which he attributes to lower-order terms and, for $m=2$, to $\log\log n$ \parencite[Table~3 and \S6.2]{Watanabe2013}. With even parity the error of WBIC is in general of order $\sqrt{\log n}$ in a single data set, and its expectation differs from that of $F_n$ by $O(\log\log n)$ when $m>1$ \parencite[eq.~(32)]{Watanabe2013}. WBIC also drops the prior's contribution of order one: in a regular model it equals BIC up to $o_p(1)$, while $F_n$ contains $-\log\varphi(w_0)$. \Textcite{FrielEtAl2017} found that WBIC performs adequately with informative priors but can systematically overestimate the evidence, particularly for small samples; \textcite{Imai2019b}, in a preprint, identified the overestimating term. Unrealizable singular pairs can violate relatively finite variance \parencite{Watanabe2010d}, and then the theorem does not apply. When the tempered posterior moves between regions of different loss and learning coefficient as $\beta$ changes (\cref{ch:phases}), the mean energy changes abruptly and a sampler at one temperature mixes poorly; exchange Monte Carlo \parencite{HukushimaNemoto1996} runs all temperatures at once. Finally, the local learning coefficient of \textcite{LauEtAl2025} is this chapter's dimensionless mean energy at $\beta=1/\log n$, measured from a trained network $\wstar$ as $\beta\,\Ewb{nL_n-nL_n(\wstar)}$, localized near it and sampled by stochastic-gradient Langevin dynamics; it inherits the multiplicity bias of \cref{prop:temperature:mean} and adds those of its sampler and localization (\cref{ch:llc}).
+
+\paragraph{Open problems.} \Textcite[p.~875]{Watanabe2013} conjectures that the parity is a birational invariant for every truth; he proves it when the truth is realizable and reduces the general case to showing that every nonnegative analytic function is the Kullback--Leibler divergence of some truth and model. We found no resolution of the conjecture. Every error term in this chapter is a power of $1/\log n$ or $1/\sqrt{\log n}$ with unspecified constants; non-asymptotic bounds for WBIC and $\hat\lambda$, even for linear models, are open. As of 2026 we found no estimator of $\lambda$ with a proved error of smaller order than $1/\log n$ when $m\ge2$ is unknown; the estimators of \textcite{Imai2019a} and \textcite{TakioSuzuki2025}, both preprints, reduce bias or variance in experiments, and their analyses give consistency at the rate $(\log n)^{-1/2}$ but do not treat the bias $-(m-1)/\log n$ (\cref{ex:temperature:research}).
+
+\begin{exercises}
+\item \consolidation (Bounds from concavity.) Under the hypotheses of \cref{thm:temperature:optimal}, show that $\E^1_w[nL_n]<F_n<\E_\varphi[nL_n]$, where $\E_\varphi$ is the prior expectation. Show that the right inequality is Jensen's inequality for $-\log\int\varphi e^{-nL_n}$, and that the gap on the left, $F_n-\E^1_w[nL_n]$, is the Kullback--Leibler divergence of the posterior from the prior.\label{ex:temperature:bounds}
+
+\item \consolidation (Heat capacity.) Show that $\temperatureC(s)=\temperatureE(s)-s\,\temperatureE'(s)$. Deduce from \cref{comp:temperature:quartic} that $\temperatureC(s)=\frac34$ up to exponentially small terms for the quartic model (a Gamma law with shape $\alpha$ has variance $\alpha$), and from \cref{comp:temperature:product} that $\temperatureC(s)=\frac12-\frac1{x'}-\frac1{x'^2}$ with $x'=\log s+\gamma+\log2$ for the product model.\label{ex:temperature:heat}
+
+\item \consolidation (Signs.) Verify the symmetry of \cref{thm:temperature:wbiclinear}(iii) for the product, sextic and regular models and for the chain $y=a_1a_2a_3x$. For the quartic model, show that $c_n$ differs from $-\temperaturekQ e_2/\sqrt{2\beta}$ by an amount exponentially small in $s$, that $\E\sqrt{Y/(X+Y)}=4\Gamma(\frac34)^2/\Gamma(\frac14)^2$ for independent Gamma variables $X,Y$ with shapes $\frac12,\frac14$ \hint{a Beta law}, and that $\sigma^2=\frac43\temperaturekQ^2=0.152$. Check that this $U_n$ agrees with Watanabe's $U_n=-\Theta\Gamma(\lambda+\frac12)/(\sqrt{2\lambda}\Gamma(\lambda))$ in the chart $(a,b)=(uv^2,v)$, where $\dd u^*$ is proportional to $(1+u^2)^{-3/4}\dd u$.\label{ex:temperature:bound}
+
+\item \byhand (Generalized equipartition.) Let $K=\frac12\sum_{j=1}^dw_j^{2k_j}$ on $[-1,1]^d$ with prior density proportional to $\prod_j\abs{w_j}^{h_j}$. Show that $\temperatureE(s)=\sum_j\frac{h_j+1}{2k_j}$ up to exponentially small terms. Which learning coefficient does this give, and how does it compare with the rule for sums of functions of separate variables in \cref{prop:blowups:rules}?\label{ex:temperature:equipartition}
+
+\item \byhand (Thermodynamic integration for the regular line.) For $y=ax$ with $K=\frac12a^2$ and the uniform prior on $[-1,1]$, show that $\temperatureE(s)=\frac12-\sqrt{s/2}\,e^{-s/2}/(\sqrt\pi\operatorname{erf}\sqrt{s/2})$, and verify by differentiation that $\int_{-\infty}^{\log n}\temperatureE(e^x)\dd x=\frac12\log\frac{2n}\pi-\log\operatorname{erf}\sqrt{n/2}=\bar F(n)$. How large must $s$ be for $\temperatureE(s)$ to be within $10^{-4}$ of $\frac12$?
+
+\item \byhand (The cusp and the chain.) For $y=ab^2x$ the prior density of $c=ab^2$ is $\frac12(\abs c^{-1/2}-1)$ on $[-1,1]$. Show that $\temperatureE(s)=\frac14-\frac{r/4}{s^{1/4}-r}$ up to exponentially small terms, with $r=2^{1/4}\sqrt\pi/\Gamma(\frac14)=0.5814$, so that $\temperatureE(s)$ is within $1\%$ of $\lambda=\frac14$ only for $s\gtrsim1.2\times10^7$, and relate the speed of approach to the second term of the volume expansion. For the chain $y=a_1a_2a_3x$, whose density of $c$ is $\frac14(\log\frac1{\abs c})^2$, show that $\temperatureE(s)=\frac12-\frac{2x}{x^2+\pi^2/2}$ with $x=\log s+\gamma+\log2$ \hint{$\E[\log^2\abs Z]=\kappa^2+\frac{\pi^2}8$ and $\E[Z^2\log^2\abs Z]=(1-\kappa)^2+\frac{\pi^2}8-1$}.
+
+\item \variation (Jeffreys' prior.) Give $b$ the density $\abs b$ on $[-1,1]$, Jeffreys' prior of $y=b^2x_2$. Show that the quartic model then has $\temperatureE(s)\to1=\frac d2$, equipartition restored, but $c_n=-e_2/\sqrt{2\pi\beta}$: WBIC keeps its noise term.
+
+\item \variation (Temperature pairs.) In the quartic model, show that the leading fluctuation of $\hat\lambda$ is $-\temperaturekQ Z_{n,2}/\bigl(\sqrt{2\log n}\,(\beta_{01}^{-1/2}+\beta_{02}^{-1/2})\bigr)$, with standard deviation $0.132/\sqrt{\log n}$ for $(\beta_{01},\beta_{02})=(1,1.5)$. What limits the choice of small $\beta_{0j}$? For the product model, expand the population bias of $\hat\lambda$ to the order $\frac{\log\log n}{\log^2n}$ and compare it with \cref{fig:temperature:lambda}.\label{ex:temperature:pairs}
+
+\item \measurement (The optimal temperature.) Modify the script of \cref{sec:temperature:measuring} to compute $\beta^*$ for each data set by solving $\Ewb{nK_n}=F_n-nS_n$. For the quartic model at $n=10^3,10^6,10^9$ you should find means of $\beta^*\log n$ near $1.06$, $1.03$, $1.02$ and regression coefficients on $Z_{n,2}$ near $-0.02$, $-0.03$, $-0.03$, smaller than the $-0.12$, $-0.09$, $-0.07$ of \cref{thm:temperature:wbic}(iii). Explain why: $F_n$ depends on $Z_{n,2}$ at order one, with coefficient about $-0.59$.
+
+\item \measurement (An oscillation.) For $\eps<e^{-4}$ let
+\[
+V(\eps)=\eps^{1/2}\Bigl(1+\frac{\sin(\log\frac1\eps)}{2\log\log\frac1\eps}\Bigr).
+\]
+Show that $V$ is increasing there and $V(\eps)\sim\eps^{1/2}$. Compute $\temperatureE(s)-\frac12$ for $\log s$ between $20$ and $200$ by quadrature (substitute $t=u/s$ in \eqref{eq:temperature:laplace}), compare it with $1/\log s$, and explain with the Mellin transform why the oscillation survives. Then prove that $\temperatureE(s)\to\lambda$ under $V(\eps)\sim C\eps^\lambda(\log\frac1\eps)^{m-1}$ alone, by the argument of \cref{lem:volume:abelian} applied to $\dd V$ and to $t\,\dd V(t)$.\label{ex:temperature:oscillation}
+
+\item \research (Parity.) State Watanabe's conjecture that the parity is a birational invariant for every truth, and his reduction of it to the realization of every nonnegative analytic function as a Kullback--Leibler divergence \parencite[\S3]{Watanabe2013}. Show that a function $K=\sum_jf_j^2$ with analytic $f_j$ and a zero in $W$ is the Kullback--Leibler divergence of a realizable Gaussian regression model, so that the conjecture holds for it. We found no proof of the conjecture beyond such cases.
+
+\item \research (Removing the multiplicity bias.) Under \cref{ass:temperature:linear}, the mean energies at several temperatures $\beta_{0j}/\log n$ determine $\temperatureE$ at several values of $s$ up to the noise terms of \cref{thm:temperature:wbiclinear}. Propose an estimator of $(\lambda,m)$ from them, using \eqref{eq:temperature:QQ}, and analyze its bias and variance for the product model and the chain. Whether an estimator of $\lambda$ with error $o(1/\log n)$ exists when $m\ge2$ is, as far as we found, open, and so is its behavior with samples from stochastic-gradient Langevin dynamics.\label{ex:temperature:research}
+\end{exercises}
+
+\notesandrefs
+
+Thermodynamic integration came to statistics from physics: \textcite{GelmanMeng1998} presented it as path sampling, noting that numerical analysts call it Ogata's method \parencite{Ogata1989}, and \textcite{FrielPettitt2008} computed marginal likelihoods with tempered posteriors, their power posteriors\index{power posterior}.
+
+WBIC is due to \textcite{Watanabe2013}, who proves \cref{thm:temperature:optimal} (his Theorem~3), \cref{thm:temperature:wbic} (Theorem~4 with Corollaries~1--3) and the regular case (Theorem~5), introduces the parity, and illustrates WBIC on reduced-rank regression. Watanabe's textbook \parencite{Watanabe2018} has a chapter on information criteria, and \textcite{Suzuki2023a} works through WAIC and WBIC with exercises in R and Stan. \Textcite{FrielEtAl2017} studied the accuracy of WBIC; \textcite{Imai2019b} and \textcite{TakioSuzuki2025} (preprints) propose a correction and another estimator of $\lambda$. When the learning coefficients of submodels are known, the singular BIC of \textcite{DrtonPlummer2017} is an alternative for model selection (\cref{ch:freeenergy}).
+
+\Cref{prop:temperature:mean}, with its correction term and the polynomial $Q$, and \cref{thm:temperature:wbiclinear} with its proof are the book's own. The proof follows Watanabe's, with the population posterior and the linear structure of the model in place of a resolution; for the quartic model its $U_n$ agrees with Watanabe's formula (\cref{ex:temperature:bound}). The heat-capacity estimator is due to \textcite{Imai2019a}; \cref{cor:temperature:estimators}(ii) proves its consistency for linear models. The local learning coefficient of \textcite{LauEtAl2025} uses the temperature $1/\log n$ of WBIC (\cref{ch:llc}).
+
+\paragraph{Translating the literature.} \Textcite{Watanabe2013} uses our notation ($\E^\beta_w$, $L_n$, $K_n$, $\lambda$, $m$, $U_n$, $\beta^*$), with $F$ for our $F_n$ and $Q(K,\varphi)$ for the parity ($1$ for odd). \Textcite{Imai2019a} writes $t$ for $\beta$, $E^t_\theta$ and $V^t_\theta$ for the tempered mean and variance, and $\log L(M)$ for our $-F_n$; his $\mathrm{WBIC}(M)$ is our $-\WBIC$, and his $\hat\lambda^1_V$ our $\hat\lambda_{\mathrm C}$. \Textcite{FrielEtAl2017} write $t$ for $\beta$ and speak of powered posteriors. \Textcite{LauEtAl2025} write $\beta^*=1/\log n$ for the WBIC temperature, not for our optimal $\beta^*$.
+
+\printchapterbib
+\end{refsection}

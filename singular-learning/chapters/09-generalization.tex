@@ -1,0 +1,471 @@
+% Chapter 9 of Singular Learning Theory for the Rest of Us: the Bayes generalization error.
+\sltchapter{Generalization}{The error $\lambda/n$ and the equations of state}{$y=ab^3x$}{ch:generalization}
+\newtonfoot{2/6}{6}{\tfrac16}{a^2b^6}
+\begin{refsection}[chapters/09-generalization.bib]
+
+\begin{chaptersummary}
+The regular theory says that the Bayes predictive distribution of a model with $d$ parameters has expected test loss $\frac d{2n}$ above the entropy of the truth. For the cubic cusp $y=ab^3x$ we compute by hand that the excess is half the squared posterior mean of the rescaled coefficient, a shrinkage estimator whose mean square is exactly $\frac13$: the excess is $\frac1{6n}$, not $\frac1n$. Two integrations by parts, a virial identity in the parameter and Stein's identity in the noise, prove $n(\E[G_n]-S)\to\lambda$ for every one-coefficient regression with Gaussian inputs and noise, and three of the four limits in Watanabe's equations of state for these models; his general theorem rests on the same two integrations by parts. Exact quadrature over $1000$ data sets per sample size confirms $\lambda$ for three models and, for the product model with $m=2$, shows how slowly the limit is reached. All of this concerns the exact posterior average at a fixed truth.
+\end{chaptersummary}
+
+\section{The question: what the posterior costs at test time}\label{sec:generalization:question}
+
+A model trained on $n$ examples is judged on fresh ones, and when its output is a predictive distribution the natural score is the test cross-entropy, which no model can push below the entropy of the noise in the labels. How fast does the score approach that floor, and what sets the rate? For a Bayesian, who predicts with the posterior average of the models, the classical answer counts parameters. Whether that average is worth computing for neural networks is debated \parencite{WenzelEtAl2020,IzmailovEtAl2021}; this chapter asks what it buys in the simplest singular models, where it can be computed exactly.
+
+Fix a model $p(x\mid w)$, $w\in W$, a prior $\varphi$, and data $X^n$ from the truth $q$. The \term{predictive distribution}\index{predictive distribution} is $p^*(x)=\Ew{p(x\mid w)}$, and its \term{Bayes generalization loss}\index{generalization loss} and Bayes training loss are
+\[
+G_n=-\E_X\bigl[\log p^*(X)\bigr],\qquad T_n=-\frac1n\sum_{i=1}^n\log p^*(X_i),
+\]
+with $X$ a fresh draw from $q$. If the model realizes the truth, $q=p(\cdot\mid w_0)$, the \term{generalization error}\index{generalization error} $G_n-S=\KL(q\,\|\,p^*)$ is the Kullback--Leibler divergence from the truth to the predictive; in a regression $p(y\mid x,w)$ the input density cancels, and $G_n-S$ averages over a test input the divergence between the conditional laws of $y$. The function $n\mapsto\E[G_n]-S$ is the \term{learning curve}\index{learning curve}.
+
+\begin{regularanswer}[the generalization error]
+If the truth is regular for a model with $d$ parameters and the model realizes it, then the Bayes predictive distribution has $\E[G_n]-S=\frac d{2n}+o(\frac1n)$ (\cref{thm:regular:aic}) and $\E[T_n]-S=-\frac d{2n}+o(\frac1n)$ \parencite{Watanabe2010a}; the maximum-likelihood plug-in has the same two values \parencite{AmariMurata1993}. Their difference $\frac dn$ is the penalty of Akaike's criterion on the per-sample scale \parencite{Akaike1974}.
+\end{regularanswer}
+
+The model of this chapter is the \term{cubic cusp}\index{cubic cusp} $y=ab^3x+\varepsilon$, with inputs $x\sim\Normal(0,1)$, unit noise, the uniform prior on $[-1,1]^2$, and the truth $(a,b)=(0,0)$, so that $y$ is pure noise. It has two parameters, and the box predicts an error of $\frac1n$.\sidenote{Akaike's criterion is usually written $-2\log L+2d$, with $L$ the maximized likelihood. That is $2n$ times $-\frac1n\log L+\frac dn$: the per-sample training loss plus the penalty $\frac dn$.} Its distributions $\Normal(cx,1)$, $c=ab^3$, are those of the regular line $y=cx$, $\abs c\le1$, which has one parameter and the error $\frac1{2n}$. Neither answer is right: the error is $\frac1{6n}$. Four models with the same distributions have three different limits (\cref{cor:generalization:running}): with the uniform prior on $[-1,1]^d$, the coefficient $c$ has the density $\frac12$ for the regular line $y=ax$, $\frac12\log\frac1{\abs c}$ for the product model $y=abx$, $\frac12(\abs c^{-1/2}-1)$ for the cusp $y=ab^2x$, and $\frac14(\abs c^{-2/3}-1)$ for the cubic cusp, and the errors are $\frac1{2n}$, $\frac1{2n}$, $\frac1{4n}$ and $\frac1{6n}$, against $\frac d{2n}=\frac1{2n},\frac1n,\frac1n,\frac1n$. What tells them apart is the prior that each induces on $c$ near the truth $c_0=0$, where the densities of the cusps blow up like a power of $\abs c$, and the product model's only like a logarithm: the parametrization bets on the truth, and the posterior average collects the bet. How does the generalization error of a singular model depend on $n$, and through which property of the model and the prior? The answer is $\E[G_n]-S=\lambda/n+o(1/n)$ at the temperature $\beta=1$ of Bayes' rule, with a companion number $\nu$ for the training error and for other temperatures.
+
+\section{By hand: half the squared posterior mean}\label{sec:generalization:byhand}
+
+A \term{one-coefficient model}\index{one-coefficient model} is a regression $y=g(w)x+\varepsilon$ whose mean depends on the parameters only through one number $c=g(w)$. Its posterior is the posterior of $c$ under the prior density $\rho$ that $\varphi$ induces on $c$ (\cref{ch:coefficient}), and its predictive at an input $x$ is a mixture of Gaussians, $p^*(y\mid x)=\Ew{\phi(y-cx)}$, with $\phi$ the standard normal density.
+
+\begin{computation}{The divergence from the truth to the predictive}\label{comp:generalization:divergence}
+\step Fix the data and a test input $x$; write $u=(c-c_0)x$ for the error of a coefficient drawn from the posterior and $\varepsilon=y-c_0x\sim\Normal(0,1)$ for the test noise. Since $\phi(y-cx)/\phi(y-c_0x)=e^{u\varepsilon-u^2/2}$,
+\[
+D_x=\KL\bigl(q(\cdot\mid x)\,\|\,p^*(\cdot\mid x)\bigr)=-\E_\varepsilon\log\Ew{e^{u\varepsilon-u^2/2}}.
+\]
+\step The probabilists' Hermite polynomials $\mathrm{He}_0=1$, $\mathrm{He}_1(\varepsilon)=\varepsilon$, $\mathrm{He}_2(\varepsilon)=\varepsilon^2-1$, \dots{} have the generating function $e^{u\varepsilon-u^2/2}=\sum_{k\ge0}\mathrm{He}_k(\varepsilon)u^k/k!$, so $\Ew{e^{u\varepsilon-u^2/2}}=1+A(\varepsilon)$ with
+\[
+A(\varepsilon)=\Ew{u}\varepsilon+\tfrac12\Ew{u^2}(\varepsilon^2-1)+\tfrac16\Ew{u^3}\mathrm{He}_3(\varepsilon)+\cdots.
+\]
+\step The polynomials are orthogonal under $\Normal(0,1)$, with $\E[\mathrm{He}_j\mathrm{He}_k]=k!$ if $j=k$ and $0$ otherwise. So $\E A=0$, and $\E A^2=\sum_{k\ge1}\Ew{u^k}^2/k!$.
+\step Expanding $\log(1+A)=A-\frac12A^2+\frac13A^3-\cdots$, $D_x=\frac12\E A^2-\frac13\E A^3+\cdots=\frac12\Ew{u}^2+(\text{terms of degree }4\text{ in }u)$; terms of odd degree vanish because $\mathrm{He}_k(-\varepsilon)=(-1)^k\mathrm{He}_k(\varepsilon)$. The second moment $\Ew{u^2}$, which measures the spread of the posterior, multiplies $\mathrm{He}_2$, whose mean is $0$: the spread does not enter at second order.
+\step The data locate $c$ to within about $n^{-1/2}$, so the terms of degree $4$ are of order $n^{-2}$. Averaging over the test input, with $\E x^2=1$,
+\[
+G_n-S=\E_xD_x=\tfrac12\bigl(\Ew{c}-c_0\bigr)^2+O(n^{-2}).
+\]
+\end{computation}
+
+The generalization error is half the squared error of the posterior mean; a Gibbs predictor, which draws one coefficient from the posterior, pays $\frac12\Ew{(c-c_0)^2}$, the spread included. What made the computation possible was to read the likelihood ratio $e^{u\varepsilon-u^2/2}$ of a Gaussian shift as the generating function of an orthogonal family.
+
+\begin{computation}{The regular line, exactly}\label{comp:generalization:line}
+\step Take $y=ax$ with the flat prior on $\R$. With $S_{xx}=\sum_ix_i^2$ and $\hat c=\sum_ix_iy_i/S_{xx}$, the posterior of $c=a$ is $\Normal(\hat c,S_{xx}^{-1})$, and the predictive at $x$ is $\Normal(\hat cx,1+v)$ with $v=x^2/S_{xx}$, so
+\[
+D_x=\tfrac12\Bigl(\log(1+v)+\frac{1+(\hat c-c_0)^2x^2}{1+v}-1\Bigr).
+\]
+\step At the truth $Z_n=S_{xx}^{1/2}(\hat c-c_0)$ is standard normal and independent of $S_{xx}$ (\cref{lem:generalization:reduction}), and $(\hat c-c_0)^2x^2=Z_n^2v$. Averaging over $Z_n$ turns the fraction into exactly $1$, and $\E[D_x\mid S_{xx},x]=\frac12\log(1+v)$.
+\step The squares $x^2\sim\chi^2_1$ and $S_{xx}\sim\chi^2_n$ are independent, so $B=x^2/(x^2+S_{xx})$ has the Beta law with parameters $\frac12$ and $\frac n2$, and $1+v=1/(1-B)$. With $\E\log(1-B)=\psi(\frac n2)-\psi(\frac{n+1}2)$, $\psi$ the digamma function,
+\[
+\E[G_n]-S=\tfrac12\Bigl(\psi\bigl(\tfrac{n+1}2\bigr)-\psi\bigl(\tfrac n2\bigr)\Bigr)=\frac1{2n}+\frac1{4n^2}+O(n^{-3}),
+\]
+the regular answer with $d=1$; at $n=100$, $n(\E[G_n]-S)=0.50250$. The rule of \cref{comp:generalization:divergence} gives $\frac12\E[(\hat c-c_0)^2]=\frac1{2(n-2)}$, which agrees to first order (\cref{ex:generalization:fourth}).
+\end{computation}
+
+\begin{computation}{Shrinkage in the cubic cusp}\label{comp:generalization:cusp}
+\step For independent $a,b$ uniform on $[-1,1]$ and $0<s\le1$, $\Prob(\abs a\abs b^3\le s)=\int_0^1\min\bigl(1,(s/r)^{1/3}\bigr)\dd r=\frac32s^{1/3}-\frac12s$, so $c=ab^3$ has the density $\rho(c)=\frac14(\abs c^{-2/3}-1)$ on $[-1,1]$. Near $c_0=0$, $\rho(c)=\abs c^{-2/3}\ell(c)$ with $\ell(c)\to\frac14$, and the exponent $-\frac23=2\lambda-1$ gives the learning coefficient $\lambda=\frac16$ of $K=\frac12a^2b^6$.
+\step Rescale the coefficient by the data, $t=S_{xx}^{1/2}c$. The energy is $nK_n=\frac12t^2-tZ_n$ (\cref{lem:generalization:reduction}), so the posterior of $t$ is proportional to $e^{-(t-Z_n)^2/2}(\abs t^{-2/3}-S_{xx}^{-1/3})$ on $\abs t\le S_{xx}^{1/2}$, and as $n\to\infty$ it tends to the density proportional to $e^{-(t-Z)^2/2}\abs t^{-2/3}$: a Gaussian likelihood centred at the least-squares coordinate $Z$, times a prior that is infinite at the truth. By \cref{comp:generalization:divergence}, $n(G_n-S)\approx\frac12\bar t^2$, with $\bar t$ the posterior mean of $t$.
+\step For a Gaussian likelihood of unit variance and every prior weight $w$, \term{Tweedie's formula}\index{Tweedie's formula} \parencite{Robbins1956,Efron2011} gives the posterior mean $M(Z)=Z+h'(Z)/h(Z)$, with $h(Z)=\int e^{-(t-Z)^2/2}w(t)\dd t$ (\cref{thm:toolkit:stein}). For $w(t)=\abs t^{-2/3}$, expanding $e^{tZ}$ in $h(Z)=e^{-Z^2/2}\int\abs t^{-2/3}e^{-t^2/2+tZ}\dd t$, integrating term by term and applying Kummer's transformation give $h(Z)=2^{1/6}\Gamma(\frac16)\,{}_1F_1(\frac13;\frac12;-\frac{Z^2}2)$, with ${}_1F_1$ Kummer's confluent hypergeometric function, and therefore
+\[
+M(Z)=Z\Biggl(1-\frac23\,\frac{{}_1F_1\bigl(\frac43;\frac32;-\frac{Z^2}2\bigr)}{{}_1F_1\bigl(\frac13;\frac12;-\frac{Z^2}2\bigr)}\Biggr).
+\]
+\step The posterior pulls the least-squares coordinate toward the truth: $M(Z)\approx\frac13Z$ near $0$, where both functions ${}_1F_1$ equal $1$; $M(1)=0.412$, $M(2.5)=1.975$, $M(4)=3.804$; and $M(Z)=Z-\frac2{3Z}+O(Z^{-3})$ for large $\abs Z$. The posterior mean is a \term{shrinkage}\index{shrinkage} estimator of $Z$, strong near the truth and weak far from it.
+\step Quadrature over $Z\sim\Normal(0,1)$ gives $\E[M(Z)^2]=0.333333\ldots$, which is $\frac13$ to ten digits. Hence $n(\E[G_n]-S)\to\frac16$: the cubic cusp pays $\frac1{6n}$, against $\frac1n$ for two regular parameters and $\frac1{2n}$ for the regular line.
+\end{computation}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,height=0.36\linewidth,xmin=0,xmax=5,ymin=0,ymax=2.75,ytick={0,0.5,1,1.5,2},
+  xlabel={least-squares coordinate $Z$},ylabel={shrinkage factor $M(Z)/Z$},
+  legend columns=2,legend style={font=\scriptsize,at={(0.98,0.97)},anchor=north east}]
+\addplot[muted,line width=0.9pt,dashdotted] table[x=Z,y=S1] {figures/data/09-generalization-tweedie.dat};
+\addlegendentry{$\lambda=1$}
+\addplot[regularpred] table[x=Z,y=S12] {figures/data/09-generalization-tweedie.dat};
+\addlegendentry{$\lambda=\frac12$ (regular)}
+\addplot[theory2] table[x=Z,y=S14] {figures/data/09-generalization-tweedie.dat};
+\addlegendentry{$\lambda=\frac14$ (cusp)}
+\addplot[theory] table[x=Z,y=S16] {figures/data/09-generalization-tweedie.dat};
+\addlegendentry{$\lambda=\frac16$ (cubic cusp)}
+\end{axis}
+\end{tikzpicture}
+\caption{The shrinkage factor $M(Z)/Z$ of the mean of the limit posterior $\propto e^{-(t-Z)^2/2}\abs t^{2\lambda-1}$, by quadrature at $101$ values of $Z\ge0$ ($M$ is odd). It starts at $M'(0)=v(0)=2\lambda$ and tends to $1$: a prior weight that is infinite at the truth ($\lambda<\frac12$) shrinks the least-squares coordinate toward $0$, one that vanishes there ($\lambda=1$) pushes it away. In every case $\E[M(Z)^2]=2\lambda$ (\cref{lem:generalization:parts}). Script: \texttt{09-generalization-quartet.py}.}\label{fig:generalization:tweedie}
+\end{figure}
+
+Two things had to be noticed: at order $\frac1n$ only the posterior mean matters, and after the rescaling $t=S_{xx}^{1/2}(c-c_0)$ the problem forgets $n$, leaving a Gaussian location problem with one observation $Z$ and the prior weight $\abs t^{2\lambda-1}$ (\cref{fig:generalization:tweedie}). Why should the mean square of this shrinkage estimator be exactly $2\lambda$?\sidenote{Shrinkage estimators of a normal mean, and the identity used below to compute their risk, are the subject of \textcite{Stein1981}. Here the shrinkage is not designed: it is what the prior induced by the parametrization does, and it helps because the truth sits where that prior is singular.}
+
+\section{The theorem: \texorpdfstring{$\lambda/n$}{lambda/n} for one-coefficient models}\label{sec:generalization:onecoef}
+
+We prove the three facts the computation used, at every inverse temperature $\beta$, which \cref{sec:generalization:state} needs. At inverse temperature $\beta$ the posterior is proportional to $\varphi(w)e^{-n\beta L_n(w)}$, with expectations $\Ewb{\cdot}$, the predictive is $p^*_\beta(x)=\Ewb{p(x\mid w)}$, and $G_n(\beta)=-\E_X\log p^*_\beta(X)$, so that $G_n=G_n(1)$.
+
+\begin{assumption}[One-coefficient regression]\label{ass:generalization:onecoef}
+The data are independent pairs $(x_i,y_i)$, $i=1,\dots,n$, with $x_i\sim\Normal(0,1)$ and $y_i=c_0x_i+\varepsilon_i$, $\varepsilon_i\sim\Normal(0,1)$ independent of $x_i$. The model is $y=g(w)x+\varepsilon$, $\varepsilon\sim\Normal(0,1)$, for a measurable $g$ on $W\subseteq\R^d$ with $C_g=\sup_W\abs{g-c_0}<\infty$ and a prior probability density $\varphi$ on $W$; the truth is realizable, $c_0=g(w_0)$ for some $w_0\in W$. The law of $c=g(w)$ under $\varphi$ has a density $\rho$, and there are $\eta_0\in(0,1)$, $\lambda>0$, an integer $m\ge1$, and a function $\ell$ whose one-sided limits $\ell_\pm=\lim_{c\to c_0\pm}\ell(c)$ are both positive, such that
+\[
+\rho(c)=\abs{c-c_0}^{2\lambda-1}\Bigl(\log\frac1{\abs{c-c_0}}\Bigr)^{m-1}\ell(c)\qquad\text{for }0<\abs{c-c_0}<\eta_0.
+\]
+\end{assumption}
+
+The exponent $\alpha=2\lambda-1>-1$ is fixed from now on, and $\rho$ vanishes outside $[c_0-C_g,c_0+C_g]$. The form of $\rho$ is that of \cref{thm:coefficient:free}, except that the density may approach different constants on the two sides of the truth. The numbers $\lambda$ and $m$ are the learning coefficient and multiplicity of $K(w)=\frac12(g(w)-c_0)^2$: the volume $\int_{\abs{c-c_0}<\sqrt{2\eps}}\rho(c)\dd c$ is a constant times $\eps^\lambda(\log\frac1\eps)^{m-1}(1+o(1))$ (\cref{ch:volume}).\sidenote{The learning coefficient is the real log canonical threshold of $K$ with respect to $\varphi$: two names for one number.}
+
+\begin{lemma}[The data enter through two numbers]\label{lem:generalization:reduction}
+Under \cref{ass:generalization:onecoef} let $S_{xx}=\sum_ix_i^2$, $\kappa_n=S_{xx}^{1/2}$ and $Z_n=\kappa_n^{-1}\sum_ix_i\varepsilon_i$, and for $w\in W$ let $t=\kappa_n(g(w)-c_0)$.
+\begin{enumerate}[label=(\roman*),nosep]
+\item The variables $\kappa_n^2\sim\chi^2_n$ and $Z_n\sim\Normal(0,1)$ are independent.
+\item $nK_n(w)=\frac12t^2-tZ_n$ for every $w$.
+\item At inverse temperature $\beta$ the posterior law of $t$ has the density proportional to $e^{-\beta(t-Z_n)^2/2}\rho(c_0+t/\kappa_n)$.
+\item $G_n(\beta)-S=\E_x\bigl[D(\mu_x)\bigr]$, where $x\sim\Normal(0,1)$, $\mu_x$ is the posterior law of $u=(g(w)-c_0)x$, and for a probability distribution $\mu$ on $\R$ and $\varepsilon\sim\Normal(0,1)$
+\[
+D(\mu)=-\E_\varepsilon\log\int e^{u\varepsilon-u^2/2}\mu(\dd u).
+\]
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to condition on the inputs and expand the squares. (i) Given the inputs, $\sum_ix_i\varepsilon_i$ is Gaussian with mean $0$ and variance $S_{xx}$, so $Z_n$ is standard normal given the inputs; its conditional law does not depend on them, which makes $Z_n$ independent of the inputs, and of $\kappa_n$. (ii) With $c=g(w)$, $y_i-cx_i=\varepsilon_i-(c-c_0)x_i$; the normalizing constants cancel in $nK_n=nL_n(w)-nL_n(w_0)$, and
+\[
+nK_n(w)=\tfrac12\sum_i\bigl((\varepsilon_i-(c-c_0)x_i)^2-\varepsilon_i^2\bigr)=\tfrac12t^2-tZ_n .
+\]
+(iii) The posterior is proportional to $\varphi(w)e^{-n\beta K_n(w)}$, which depends on $w$ only through $c$. For bounded $F$ the definition of $\rho$ gives, with $t=\kappa_n(c-c_0)$,
+\[
+\int F(g(w))\,e^{-n\beta K_n(w)}\varphi(w)\dd w=\int F(c)\,e^{-\beta(t^2/2-tZ_n)}\rho(c)\dd c,
+\]
+and completing the square gives (iii). (iv) The input density cancels, and for a test pair with $\varepsilon=y-c_0x$, $\phi(y-cx)/\phi(y-c_0x)=e^{u\varepsilon-u^2/2}$, so $p^*_\beta(y\mid x)/q(y\mid x)=\int e^{u\varepsilon-u^2/2}\mu_x(\dd u)$, with $\varepsilon\sim\Normal(0,1)$ under the truth.
+\end{proof}
+
+The function $D(\mu)$ is the Kullback--Leibler divergence from $\Normal(0,1)$ to the mixture $\int\Normal(u,1)\,\mu(\dd u)$, and \cref{comp:generalization:divergence} becomes the following inequality.
+
+\begin{lemma}[The divergence to a Gaussian mixture]\label{lem:generalization:divergence}
+Let $\mu$ be a probability distribution on $[-a,a]$, $a>0$, with mean $\bar u$ and second moment $\gamma=\int u^2\mu(\dd u)$. Then
+\begin{enumerate}[label=(\roman*),nosep]
+\item $0\le D(\mu)\le\frac12\gamma$, and hence $\bigl\lvert D(\mu)-\frac12\bar u^2\bigr\rvert\le\frac12\gamma$;
+\item $\bigl\lvert D(\mu)-\frac12\bar u^2\bigr\rvert\le\frac14(1+a^2)^2e^{9a^2}\gamma^2$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to split off the Gaussian at the mean, $\Normal(\bar u,1)$, whose divergence from $\Normal(0,1)$ is exactly $\frac12\bar u^2$, and to bound the rest with a quadratic bound for the logarithm, after Jensen's inequality has kept the mixture away from $0$.
+
+(i) The divergence is nonnegative. By Jensen's inequality for the logarithm, $-\log\int e^{u\varepsilon-u^2/2}\dd\mu\le\int(\frac12u^2-u\varepsilon)\dd\mu$, whose mean over $\varepsilon$ is $\frac12\gamma$; and $0\le\frac12\bar u^2\le\frac12\gamma$.
+
+(ii) Write $r=u-\bar u$, so that $\int r\dd\mu=0$, $\gamma_0=\int r^2\dd\mu=\gamma-\bar u^2$, $\abs r\le2a$ and $\abs{\bar u}\le a$. Since $u\varepsilon-\frac12u^2=(\bar u\varepsilon-\frac12\bar u^2)+(r(\varepsilon-\bar u)-\frac12r^2)$,
+\[
+D(\mu)=\tfrac12\bar u^2+T,\qquad T=-\E_\varepsilon\log N(\varepsilon-\bar u),\qquad N(z)=\int e^{rz-r^2/2}\mu(\dd u).
+\]
+Jensen's inequality and $\int r\dd\mu=0$ give $N(z)\ge e^{-\gamma_0/2}$, and $N(z)\le e^{2a\abs z}$, so $T$ is finite. We use $\abs{e^y-1}\le\abs ye^{\abs y}$, $\abs{e^y-1-y}\le\frac12y^2e^{\abs y}$, $\abs{r\bar u}\le2a^2$, and $\abs{rr'}\le4a^2$ for an independent copy $r'$ of $r$.
+
+\emph{Lower bound.} Since $-\log N\ge1-N$ and $\E_\varepsilon e^{r(\varepsilon-\bar u)-r^2/2}=e^{-r\bar u}$ (Tonelli's theorem exchanges the integrals),
+\[
+T\ge-\int\bigl(e^{-r\bar u}-1+r\bar u\bigr)\dd\mu\ge-\tfrac12e^{2a^2}\bar u^2\gamma_0\ge-\tfrac18e^{2a^2}\gamma^2,
+\]
+because $\bar u^2\gamma_0\le\frac14(\bar u^2+\gamma_0)^2=\frac14\gamma^2$.
+
+\emph{Upper bound.} Taylor's theorem gives $-\log y=(1-y)+\frac{(1-y)^2}{2\xi^2}$ with $\xi$ between $y>0$ and $1$; for $y=N(z)$, $\xi\ge e^{-\gamma_0/2}$, so $-\log N\le(1-N)+\frac12e^{\gamma_0}(1-N)^2$. The mean of $1-N(\varepsilon-\bar u)$ is $1-\int e^{-r\bar u}\dd\mu\le0$ by Jensen's inequality, so $T\le\frac12e^{\gamma_0}\E_\varepsilon(N(\varepsilon-\bar u)-1)^2$, and expanding the square with $\E_\varepsilon e^{(r+r')(\varepsilon-\bar u)-(r^2+r'^2)/2}=e^{rr'-(r+r')\bar u}$,
+\[
+\E_\varepsilon(N-1)^2=\iint\bigl(e^{rr'}-1\bigr)e^{-(r+r')\bar u}\dd\mu\dd\mu+\Bigl(\int e^{-r\bar u}\dd\mu-1\Bigr)^2 .
+\]
+The part of the double integral with $rr'$ in place of $e^{rr'}-1$ is $\bigl(\int r(e^{-r\bar u}-1)\dd\mu\bigr)^2\le e^{4a^2}\bar u^2\gamma_0^2$; the rest of it is at most $\frac12\iint(rr')^2e^{\abs{rr'}+\abs{r\bar u}+\abs{r'\bar u}}\le\frac12e^{8a^2}\gamma_0^2$; the last square is at most $\frac14e^{4a^2}\bar u^4\gamma_0^2$. With $\bar u^2\le a^2$ the sum is at most $\gamma_0^2e^{8a^2}(\frac12+a^2+\frac14a^4)\le\frac12(1+a^2)^2e^{8a^2}\gamma_0^2$, and since $\gamma_0\le\gamma\le a^2$, $T\le\frac14(1+a^2)^2e^{9a^2}\gamma^2$.
+\end{proof}
+
+The next lemma controls the rescaled posterior of \cref{lem:generalization:reduction}(iii) uniformly in the data and identifies its limit.
+
+\begin{lemma}[The rescaled posterior]\label{lem:generalization:posterior}
+Under \cref{ass:generalization:onecoef} let $\beta>0$. For $\kappa>1$ and $z\in\R$ let $\pi_{\kappa,z}$ be the probability density proportional to $e^{-\beta(t-z)^2/2}\rho(c_0+t/\kappa)$, and $\pi_z$ the one proportional to $e^{-\beta(t-z)^2/2}w(t)$, with $w(t)=\ell_+t^\alpha$ for $t>0$ and $w(t)=\ell_-\abs t^\alpha$ for $t<0$. There are constants $\kappa_1$ and $C$ such that:
+\begin{enumerate}[label=(\roman*),nosep]
+\item $\int t^2\pi_z(t)\dd t\le C(1+z^2)$ for every $z$, a bound that uses only $\alpha>-1$ and $\ell_\pm>0$; and $\int t^2\pi_{\kappa,z}(t)\dd t\le C(1+z^2)$ whenever $\kappa\ge\kappa_1$ and $\abs z\le\sqrt\kappa-1$;
+\item for every $z$ and $k\in\{1,2\}$, $\int t^k\pi_{\kappa,z}(t)\dd t\to\int t^k\pi_z(t)\dd t$ as $\kappa\to\infty$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to rescale the prior density so that it converges to $w$, to bound it above and below on the scales that matter, and to compare the numerators and denominators of the posterior moments.
+
+\emph{The rescaled density.} Shrinking $\eta_0$, we may assume $\frac12\ell_\pm\le\ell(c)\le2\ell_\pm$ for $0<\pm(c-c_0)<\eta_0$; put $\bar\ell=2\max\ell_\pm$, $\underline\ell=\frac12\min\ell_\pm$, and $\rho_\kappa(t)=\kappa^\alpha(\log\kappa)^{1-m}\rho(c_0+t/\kappa)$, so that $\pi_{\kappa,z}$ is proportional to $e^{-\beta(t-z)^2/2}\rho_\kappa(t)$. For $0<\abs t<\eta_0\kappa$,
+\[
+\rho_\kappa(t)=\abs t^\alpha\Bigl(1-\frac{\log\abs t}{\log\kappa}\Bigr)^{m-1}\ell(c_0+t/\kappa).
+\]
+Let $\kappa\ge e$. The bracket lies between $1$ and $1+\log\frac1{\abs t}$ if $\abs t\le1$, in $(0,1]$ if $1\le\abs t<\eta_0\kappa$, and is at least $\frac12$ if $\abs t\le\sqrt\kappa$. Hence, with $\log^+y=\max(\log y,0)$,
+\begin{gather*}
+\rho_\kappa(t)\le\bar\ell\,\abs t^\alpha\bigl(1+\log^+\tfrac1{\abs t}\bigr)^{m-1}\qquad(0<\abs t<\eta_0\kappa),\\
+\rho_\kappa(t)\ge2^{1-m}\underline\ell\,\abs t^\alpha\qquad(0<\abs t\le\sqrt\kappa<\eta_0\kappa),\qquad
+\int_{\abs t\ge\eta_0\kappa}\rho_\kappa(t)\dd t\le\kappa^{1+\alpha}.
+\end{gather*}
+For each $t\ne0$, $\rho_\kappa(t)\to w(t)$ as $\kappa\to\infty$; and $w$ satisfies the two pointwise bounds for every $t\ne0$.
+
+\emph{Denominators.} Let $\abs z\le\sqrt\kappa-1$, let $\varsigma$ be $1$ if $z\ge0$ and $-1$ otherwise, and let $J$ be the interval between $z+\frac12\varsigma$ and $z+\varsigma$. On $J$, $\frac12(1+\abs z)\le\abs t\le1+\abs z\le\sqrt\kappa$ and $e^{-\beta(t-z)^2/2}\ge e^{-\beta/2}$, so
+\[
+\int e^{-\beta(t-z)^2/2}\rho_\kappa(t)\dd t\ge c_1(1+\abs z)^\alpha,\qquad c_1=\tfrac12e^{-\beta/2}2^{1-m-\abs\alpha}\underline\ell,
+\]
+and the same holds with $w$ in place of $\rho_\kappa$ for every $z$.
+
+\emph{Numerators.} Let $\kappa_1\ge e$ be so large that, for $\kappa\ge\kappa_1$, $\sqrt\kappa\le\frac12\eta_0\kappa$ and $\kappa^{1+\alpha}s^2e^{-\beta s^2/8}\le1$ for every $s\ge\eta_0\kappa$. On $\abs t<\eta_0\kappa$ the upper bound reduces the integral of $t^2e^{-\beta(t-z)^2/2}\rho_\kappa(t)$ to $\bar\ell I(z)$, where, splitting at $\abs t=1$,
+\begin{align*}
+I(z)&=\int\abs t^{2+\alpha}\bigl(1+\log^+\tfrac1{\abs t}\bigr)^{m-1}e^{-\beta(t-z)^2/2}\dd t\\
+&\le\int_{-1}^1\abs t^\alpha\bigl(1+\log\tfrac1{\abs t}\bigr)^{m-1}\dd t+\int\abs t^{2+\alpha}e^{-\beta(t-z)^2/2}\dd t\le C_2(1+\abs z)^{2+\alpha}
+\end{align*}
+for a constant $C_2$: the first integral is finite because $\alpha>-1$, and in the second $\abs t^{2+\alpha}\le2^{1+\alpha}(\abs z^{2+\alpha}+\abs{t-z}^{2+\alpha})$ by convexity, as $2+\alpha\ge1$. On $\abs t\ge\eta_0\kappa$, $\abs{t-z}\ge\frac12\abs t$ because $\abs z\le\frac12\eta_0\kappa$, and the integral is at most $1$.
+
+\emph{Conclusion of (i).} Dividing, $\int t^2\pi_{\kappa,z}\le\bigl(\bar\ell C_2(1+\abs z)^{2+\alpha}+1\bigr)/\bigl(c_1(1+\abs z)^\alpha\bigr)\le C(1+z^2)$, since $(1+\abs z)^{-\alpha}\le(1+\abs z)^2\le2(1+z^2)$. The same computation without the far part bounds the moments of $\pi_z$.
+
+\emph{Convergence.} Fix $z$; for large $\kappa$, $\abs z\le\frac12\eta_0\kappa$. For $k=0,1,2$ the integrand $t^ke^{-\beta(t-z)^2/2}\rho_\kappa(t)\ind\{\abs t<\eta_0\kappa\}$ converges to $t^ke^{-\beta(t-z)^2/2}w(t)$ for $t\ne0$ and is dominated by the integrable $\bar\ell\abs t^{k+\alpha}(1+\log^+\frac1{\abs t})^{m-1}e^{-\beta(t-z)^2/2}$, while the far part tends to $0$. By dominated convergence the three moment integrals converge, the zeroth to a positive limit, and so do the ratios.
+\end{proof}
+
+The weight of the limit posterior is homogeneous of degree $\alpha$, $w(st)=s^\alpha w(t)$ for $s>0$. Two integrations by parts compute the mean square of the posterior mean: one in the parameter, which uses the homogeneity and which we call the \term{virial identity}\index{virial identity}, after its counterpart in mechanics;\sidenote{The virial theorem averages $x\cdot\nabla H$ against a Gibbs measure. Here $H=-\log\pi_z$, and the average of $t\,\partial_tH=\beta t(t-z)-\alpha$ is $1$, by one integration by parts: that is (i) of \cref{lem:generalization:parts}.} and one in the noise, \term{Stein's identity}\index{Stein's identity} $\E[Zf(Z)]=\E[f'(Z)]$ for $Z\sim\Normal(0,1)$ and absolutely continuous $f$ with $\E\abs{f'(Z)}<\infty$ (\cref{thm:toolkit:stein}; \textcite{Stein1981}).
+
+\begin{lemma}[Two integrations by parts]\label{lem:generalization:parts}
+Let $\alpha>-1$, $\ell_\pm>0$, $\beta>0$, and let $\pi_z$ and $w$ be as in \cref{lem:generalization:posterior}, with mean $M(z)$ and variance $v(z)$. Then:
+\begin{enumerate}[label=(\roman*),nosep]
+\item (virial identity) $\beta\int t(t-z)\pi_z(t)\dd t=1+\alpha$ for every $z\in\R$;
+\item (Tweedie) $M$ is continuously differentiable and $M'(z)=\beta v(z)$;
+\item (Stein) for $Z\sim\Normal(0,1)$, $\E[ZM(Z)]=\beta\E[v(Z)]$, all terms being finite;
+\item $\E[M(Z)^2]=\frac{1+\alpha}\beta-(1-\beta)\E[v(Z)]$; in particular $\E[M(Z)^2]=1+\alpha=2\lambda$ at $\beta=1$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to integrate by parts in $t$ for (i), to differentiate under the integral sign for (ii), and to combine the two with Stein's identity. Write $\psi_z(t)=e^{-\beta(t-z)^2/2}$ and $h_k(z)=\int t^k\psi_z(t)w(t)\dd t$, finite for $k\ge0$ because $\alpha>-1$; then $M=h_1/h_0$ and $v=h_2/h_0-M^2$.
+
+(i) On $(0,\infty)$, $\beta(t-z)\psi_z=-\partial_t\psi_z$, and $tw(t)=\ell_+t^{1+\alpha}$ tends to $0$ as $t\downarrow0$, because $1+\alpha>0$, and has the derivative $(1+\alpha)w(t)$. Integrating by parts, the boundary terms vanish and
+\[
+\beta\int_0^\infty t(t-z)\psi_z(t)w(t)\dd t=(1+\alpha)\int_0^\infty\psi_z(t)w(t)\dd t .
+\]
+On $(-\infty,0)$, $tw(t)=-\ell_-\abs t^{1+\alpha}$ also has the derivative $(1+\alpha)w(t)$, and the same computation applies. Add the two halves and divide by $h_0(z)$.
+
+(ii) For $\abs z\le A$, $\abs{t-z}\psi_z(t)\le C_Ae^{-\beta t^2/8}$, because $(t-z)^2\ge\frac12t^2-A^2$; so the $h_k$ may be differentiated under the integral sign, with $h_k'=\beta(h_{k+1}-zh_k)$, and $M'=(h_1'h_0-h_1h_0')/h_0^2=\beta(h_2/h_0-h_1^2/h_0^2)=\beta v$, which is continuous. At $\beta=1$, $h_0'/h_0=M-z$ is Tweedie's formula.
+
+(iii) By \cref{lem:generalization:posterior}(i), $M(z)^2\le\int t^2\pi_z\le C(1+z^2)$ and $0\le v(z)\le C(1+z^2)$. So $\E\abs{M'(Z)}=\beta\E v(Z)<\infty$, and Stein's identity gives $\E[ZM(Z)]=\E[M'(Z)]=\beta\E[v(Z)]$.
+
+(iv) Since $\int t^2\pi_z=M^2+v$, (i) says $M(z)^2+v(z)-zM(z)=(1+\alpha)/\beta$ for every $z$. Put $z=Z$ and take expectations, which are finite by (iii); then (iii) gives
+\[
+\E[M(Z)^2]=\frac{1+\alpha}\beta-\E[v(Z)]+\E[ZM(Z)]=\frac{1+\alpha}\beta-(1-\beta)\E[v(Z)] .\qedhere
+\]
+\end{proof}
+
+For the symmetric weight $\abs t^\alpha$ at $\beta=1$, the virial identity is the heat-equation identity $h''=\alpha h-zh'$ of \cref{thm:toolkit:stein}(iv) in other words: with Tweedie's $M=z+r$, $r=h'/h$, both say $r'=\alpha-zr-r^2$ (\cref{ex:generalization:riccati}). The virial form needs neither the symmetry nor $\beta=1$.
+
+\begin{theorem}[$\lambda/n$ for one-coefficient models]\label{thm:generalization:onecoef}
+Under \cref{ass:generalization:onecoef}, at $\beta=1$:
+\begin{enumerate}[label=(\roman*),nosep]
+\item $n\bigl(\E[G_n]-S\bigr)\to\lambda$ as $n\to\infty$, the expectation being over the data;
+\item $n(G_n-S)$ converges in law to $\frac12M(Z)^2$, with $Z\sim\Normal(0,1)$ and $M$ the mean of the limit posterior $\pi_z$ of \cref{lem:generalization:posterior} at $\beta=1$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to replace the divergence by half the squared posterior mean (\cref{lem:generalization:divergence}), to control the posterior on an event of overwhelming probability (\cref{lem:generalization:posterior}), and to pass to the limit, where \cref{lem:generalization:parts} evaluates the mean square. The first three steps hold at every $\beta>0$, and we prove them so, for \cref{prop:generalization:quartet}. Write $\pi_n=\pi_{\kappa_n,Z_n}$ for the posterior of $t=\kappa_n(c-c_0)$ (\cref{lem:generalization:reduction}(iii)), $\bar t_n$ and $\Theta_n$ for its mean and second moment, and $M=M_\beta$.
+
+\emph{From the divergence to the posterior mean.} For a test input $x$, the posterior law $\mu_x$ of $u=tx/\kappa_n$ has mean $x\bar t_n/\kappa_n$ and second moment $x^2\Theta_n/\kappa_n^2$, and lives on $\abs u\le C_g\abs x$. Put $\Delta_x=\bigl\lvert D(\mu_x)-x^2\bar t_n^2/(2\kappa_n^2)\bigr\rvert$. \Cref{lem:generalization:divergence}(i) gives $\Delta_x\le x^2\Theta_n/(2\kappa_n^2)$ for every $x$, and part (ii) with $a=C_gK$ gives, for $\abs x\le K$,
+\[
+\Delta_x\le C_K\,\frac{x^4\Theta_n^2}{\kappa_n^4},\qquad C_K=\tfrac14(1+C_g^2K^2)^2e^{9C_g^2K^2}.
+\]
+Average over $x\sim\Normal(0,1)$, with $\E x^2=1$, $\E x^4=3$ and $e_K=\E[x^2\ind\{\abs x>K\}]$, and use \cref{lem:generalization:reduction}(iv):
+\begin{equation}\label{eq:generalization:step1}
+\Bigl\lvert n\bigl(G_n(\beta)-S\bigr)-\frac{n\bar t_n^2}{2\kappa_n^2}\Bigr\rvert\le3C_K\frac{n\Theta_n^2}{\kappa_n^4}+\frac{e_K}2\,\frac{n\Theta_n}{\kappa_n^2}.
+\end{equation}
+
+\emph{A good event.} Let $A_n$ be the event that $\kappa_n^2\ge n/2$ and $\abs{Z_n}\le(n/2)^{1/4}-1$. Chernoff's bound gives $\Prob(\chi^2_n<\frac n2)\le e^{n/4}\E e^{-\chi^2_n/2}=e^{n/4}2^{-n/2}\le e^{-n/11}$, and $\Prob(\abs{Z_n}>s)\le2e^{-s^2/2}$; so $n^2\Prob(A_n^c)\to0$. Let $n$ be so large that $\sqrt{n/2}\ge\kappa_1$. On $A_n$, $\kappa_n\ge\kappa_1$ and $\abs{Z_n}\le\sqrt{\kappa_n}-1$, so $\Theta_n\le C(1+Z_n^2)$ by \cref{lem:generalization:posterior}(i), while $n/\kappa_n^2\le2$; on every data set $\abs t\le C_g\kappa_n$ under $\pi_n$, so $\Theta_n\le C_g^2\kappa_n^2$. Therefore
+\begin{gather*}
+\E\Bigl[\frac{n\Theta_n}{\kappa_n^2}\Bigr]\le2C\,\E[1+Z^2]+nC_g^2\Prob(A_n^c)\to4C,\\
+\E\Bigl[\frac{n\Theta_n^2}{\kappa_n^4}\Bigr]\le\frac{4C^2}n\E\bigl[(1+Z^2)^2\bigr]+nC_g^4\Prob(A_n^c)\to0 .
+\end{gather*}
+Taking expectations in \eqref{eq:generalization:step1}, $\limsup_n\bigl\lvert n\E[G_n(\beta)-S]-\frac12\E[n\bar t_n^2/\kappa_n^2]\bigr\rvert\le2Ce_K$ for every $K$, and $e_K\to0$ as $K\to\infty$.
+
+\emph{The posterior mean converges.} Let $\bar t(\kappa,z)$ be the mean of $\pi_{\kappa,z}$, a deterministic function, and $\Psi(\kappa)=\int_{\abs z\le\sqrt\kappa-1}\bar t(\kappa,z)^2\phi(z)\dd z$. For $\kappa\ge\kappa_1$ the integrand is at most $C(1+z^2)\phi(z)$ by \cref{lem:generalization:posterior}(i), and it converges to $M(z)^2\phi(z)$ by part (ii); so $\Psi\le2C$ and $\Psi(\kappa)\to\E[M(Z)^2]$ by dominated convergence. Let $B_n\supseteq A_n$ be the event that $\kappa_n^2\ge n/2$ and $\abs{Z_n}\le\sqrt{\kappa_n}-1$. Since $Z_n\sim\Normal(0,1)$ independently of $\kappa_n$ (\cref{lem:generalization:reduction}(i)),
+\[
+\E\Bigl[\frac{n\bar t_n^2}{\kappa_n^2}\ind_{B_n}\Bigr]=\E\Bigl[\frac n{\kappa_n^2}\ind\{\kappa_n^2\ge n/2\}\,\Psi(\kappa_n)\Bigr].
+\]
+The variable on the right is at most $4C$ and converges in probability to $\E[M(Z)^2]$, because $\kappa_n^2/n\to1$ in probability by the law of large numbers; by bounded convergence the right side tends to $\E[M(Z)^2]$. Off $B_n$, $\bar t_n^2\le\Theta_n\le C_g^2\kappa_n^2$, and $nC_g^2\Prob(B_n^c)\to0$. With the previous step,
+\begin{equation}\label{eq:generalization:anybeta}
+n\bigl(\E[G_n(\beta)]-S\bigr)\to\tfrac12\E\bigl[M_\beta(Z)^2\bigr]\qquad\text{for every }\beta>0.
+\end{equation}
+
+\emph{Conclusion.} At $\beta=1$, \cref{lem:generalization:parts}(iv) gives $\frac12\E[M(Z)^2]=\frac12(1+\alpha)=\lambda$, which is (i). For (ii), the expectation of the left side of \eqref{eq:generalization:step1} has limit superior at most $2Ce_K$ for every $K$, so it tends to $0$; with $n/\kappa_n^2\to1$ in probability and $\bar t_n^2\le\Theta_n=O_p(1)$, $n(G_n-S)-\frac12\bar t_n^2\to0$ in probability. The function $\Xi(\kappa)=\int\min(1,\abs{\bar t(\kappa,z)-M(z)})\phi(z)\dd z$ tends to $0$ by \cref{lem:generalization:posterior}(ii) and bounded convergence, and by independence $\E\min(1,\abs{\bar t_n-M(Z_n)})=\E\,\Xi(\kappa_n)\to0$. So $n(G_n-S)-\frac12M(Z_n)^2\to0$ in probability, and $\frac12M(Z_n)^2$ has the law of $\frac12M(Z)^2$ for every $n$; Slutsky's lemma (\cref{def:toolkit:convergence}) gives (ii).
+\end{proof}
+
+\begin{corollary}[The running models]\label{cor:generalization:running}
+With inputs $\Normal(0,1)$, unit noise and the uniform prior on $[-1,1]^d$, at the truth $c_0=0$, $n(\E[G_n]-S)$ tends to $\frac12$ for the regular line $y=ax$, the product model $y=abx$ and the chain $y=a_1\cdots a_Lx$, to $\frac14$ for the cusp $y=ab^2x$, and to $\frac16$ for the cubic cusp $y=ab^3x$. At a truth with $0<\abs{c_0}<1$ it tends to $\frac12$ for all five.
+\end{corollary}
+
+\begin{proof}
+The densities of $c$, given in \cref{sec:generalization:question} and \cref{comp:generalization:cusp} and equal to $(\log\frac1{\abs c})^{L-1}/(2(L-1)!)$ for the chain (\cref{ch:coefficient}), have the form of \cref{ass:generalization:onecoef} at $c_0=0$ with $(\lambda,m)=(\frac12,1),(\frac12,2),(\frac12,L),(\frac14,1),(\frac16,1)$ and $\ell(0\pm)>0$; they are continuous and positive at every $c_0$ with $0<\abs{c_0}<1$, the form with $\lambda=\frac12$, $m=1$; and $\abs c\le1$.
+\end{proof}
+
+The multiplicity entered only through the factor $(1-\log\abs t/\log\kappa)^{m-1}$, which tends to $1$: the limit is $\lambda$ whatever $m$ is, but for $m\ge2$ the approach is slow (\cref{sec:generalization:measuring}). Gaussianity entered through the exact law of $\kappa_n$ and the independence of $Z_n$ and $\kappa_n$. The proof is the book's own, the one-coefficient case of the two integrations by parts in Watanabe's general proof (\cref{sec:generalization:state}).\sidenote{We have not found the argument in the literature. The chapter's script confirms $\E[M(Z)^2]=1+\alpha$ to ten digits for $\lambda=\frac16,\frac14,\frac12,\frac34,1$ and for asymmetric weights.}
+
+\section{The theorem: the equations of state}\label{sec:generalization:state}
+
+A Bayesian can score the posterior average (Bayes) or a single posterior draw (\term{Gibbs}\index{Gibbs error}), on test or training data: at inverse temperature $\beta$, besides $G_n(\beta)$, there are the Bayes training loss $T_n(\beta)=-\frac1n\sum_i\log p^*_\beta(X_i)$ and the Gibbs losses
+\[
+G_{n,\mathrm g}(\beta)=\Ewb{L(w)},\qquad T_{n,\mathrm g}(\beta)=\Ewb{L_n(w)} .
+\]
+In the realizable case the four errors are $G_n(\beta)-S$, $T_n(\beta)-S_n$, $G_{n,\mathrm g}(\beta)-S=\Ewb{K(w)}$ and $T_{n,\mathrm g}(\beta)-S_n=\Ewb{K_n(w)}$; only the training losses can be computed from the data alone. The \term{functional variance}\index{functional variance} is $V_n=\sum_i\Var^\beta_w[\log p(X_i\mid w)]$.
+
+\begin{proposition}[The four errors of a one-coefficient model]\label{prop:generalization:quartet}
+Under \cref{ass:generalization:onecoef}, let $\beta>0$, let $M$ and $v$ be the mean and variance of the limit posterior $\pi_z$ of \cref{lem:generalization:posterior}, and let $\nu(\beta)=\frac\beta2\E[v(Z)]$ with $Z\sim\Normal(0,1)$. As $n\to\infty$,
+\begin{gather*}
+n\E\bigl[G_n(\beta)-S\bigr]\to\frac{\lambda-\nu}\beta+\nu,\\
+n\E\bigl[G_{n,\mathrm g}(\beta)-S\bigr]\to\frac\lambda\beta+\nu,\qquad n\E\bigl[T_{n,\mathrm g}(\beta)-S_n\bigr]\to\frac\lambda\beta-\nu .
+\end{gather*}
+\end{proposition}
+
+\begin{proof}
+The plan is to read the three limits off the proof of \cref{thm:generalization:onecoef} and to evaluate them with \cref{lem:generalization:parts}. By \eqref{eq:generalization:anybeta} the first limit is $\frac12\E[M(Z)^2]$, and \cref{lem:generalization:parts}(iv) with $\E v=2\nu/\beta$ turns it into $\frac{1+\alpha}{2\beta}-\frac{(1-\beta)\nu}\beta=\frac{\lambda-\nu}\beta+\nu$. For the Gibbs errors, $K(w)=\frac12(c-c_0)^2\E x^2=t^2/(2\kappa_n^2)$ and $nK_n=\frac12t^2-tZ_n$ (\cref{lem:generalization:reduction}), so
+\[
+n\bigl(G_{n,\mathrm g}(\beta)-S\bigr)=\frac{n\Theta_n}{2\kappa_n^2},\qquad n\bigl(T_{n,\mathrm g}(\beta)-S_n\bigr)=\tfrac12\Theta_n-Z_n\bar t_n .
+\]
+The step ``the posterior mean converges'' of that proof, with $\int t^2\pi_{\kappa,z}$ and $z\,\bar t(\kappa,z)$ in place of $\bar t(\kappa,z)^2$, both at most a constant times $1+z^2$ for $\kappa\ge\kappa_1$ and $\abs z\le\sqrt\kappa-1$, shows that the expectations on the good event converge to $\frac12\E[M^2+v]$ and $\frac12\E[M^2+v]-\E[ZM]$. Off it, $n\Theta_n/\kappa_n^2\le nC_g^2$, $\Theta_n\le C_g^2\kappa_n^2$ and $\abs{Z_n\bar t_n}\le C_g\abs{Z_n}\kappa_n$, whose expectations on $A_n^c$ are at most $nC_g^2\Prob(A_n^c)$, $C_g^2(\E\kappa_n^4)^{1/2}\Prob(A_n^c)^{1/2}$ and $C_g\sqrt n\,\Prob(A_n^c)^{1/2}$ by the Cauchy--Schwarz inequality; they tend to $0$ because $\E\kappa_n^4=n^2+2n$ and $n^2\Prob(A_n^c)\to0$. Finally $\frac12\E[M^2+v]=\frac{\lambda-\nu}\beta+\nu+\frac\nu\beta=\frac\lambda\beta+\nu$, and $\E[ZM]=\beta\E v=2\nu$ by \cref{lem:generalization:parts}(iii).
+\end{proof}
+
+\begin{heuristic}[The Bayes training error]
+Write $\Lambda_i=\log\bigl(p(X_i\mid w)/q(X_i)\bigr)$, which is $(c-c_0)x_i\varepsilon_i-\frac12(c-c_0)^2x_i^2$. Then $n(T_n(\beta)-S_n)=-\sum_i\log\Ewb{e^{\Lambda_i}}$. The cumulant expansion $\log\Ewb{e^{\Lambda_i}}\approx\Ewb{\Lambda_i}+\frac12\Var^\beta_w(\Lambda_i)$, whose third-order terms total $O(n^{-1/2})$, gives $n(T_n(\beta)-S_n)\approx n(T_{n,\mathrm g}(\beta)-S_n)-\frac12V_n$, and $V_n\approx\Var^\beta_w(c)\sum_ix_i^2\varepsilon_i^2\approx\Var_{\pi_n}(t)$, which tends in law to $v(Z)$. So $n\E[T_n(\beta)-S_n]\to\frac\lambda\beta-\nu-\frac\nu\beta=\frac{\lambda-\nu}\beta-\nu$, and $\frac\beta2\E V_n\to\nu$: our $\nu$ is Watanabe's singular fluctuation in both of his definitions below.
+\end{heuristic}
+
+The four limits satisfy two linear relations that do not involve $\lambda$: the generalization errors exceed the training errors by $2\nu$, for the Bayes and for the Gibbs pair, which is $2\beta$ times the gap $\nu/\beta$ between the Gibbs and the Bayes training errors. These are Watanabe's \term{equations of state}\index{equations of state}, named so because they hold for every true distribution, model, prior and singularity; here they are Stein's identity. The sum $2\lambda/\beta$ of the Gibbs limits is the virial identity, the only relation in which the singularity appears. The \term{singular fluctuation}\index{singular fluctuation} $\nu$ is not determined by $\lambda$; \cref{tab:generalization:nu} lists it for prior densities $\propto\abs c^{2\lambda-1}$.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+prior density at the truth & $\lambda$ & $\nu(\frac12)$ & $\nu(1)$ & $\nu(2)$ & $\lambda-2\nu(1)$ & $\lambda+\nu(1)$\\
+\midrule
+$\abs c^{-2/3}$, cubic cusp & $\frac16$ & $0.2263$ & $0.2784$ & $0.3458$ & $-0.3901$ & $0.4450$\\
+$\abs c^{-1/2}$, cusp & $\frac14$ & $0.3075$ & $0.3487$ & $0.3967$ & $-0.4474$ & $0.5987$\\
+constant, regular line & $\frac12$ & $0.5$ & $0.5$ & $0.5$ & $-0.5$ & $1$\\
+$\abs c^{1/2}$ & $\frac34$ & $0.6500$ & $0.6099$ & $0.5727$ & $-0.4699$ & $1.3599$\\
+$\abs c^{-1}$ on $\R^2$, variant & $\frac12$ & $0.6157$ & $0.6997$ & $0.7976$ & $-0.8993$ & $1.1997$\\
+\bottomrule
+\end{tabular}
+\caption{The singular fluctuation $\nu(\beta)=\frac\beta2\E[v(Z)]$ of the limit posterior $\propto e^{-\beta(t-Z)^2/2}\abs t^{2\lambda-1}$, and the limits of $n$ times the Bayes training and Gibbs generalization errors at $\beta=1$ (the Bayes generalization limit is $\lambda$, the Gibbs training limit $\lambda-\nu$). The product model has the row of the regular line; the last row is the variant described in the text. Quadrature with $120$ Gauss--Hermite nodes in $Z$, under which the virial and Stein identities hold to $10^{-12}$ (for the variant, $160$ Gauss--Laguerre nodes in $\frac12\abs Z^2$). Script: \texttt{09-generalization-quartet.py}.}\label{tab:generalization:nu}
+\end{table}
+
+In the regular row $\nu=\lambda=\frac12$ at every temperature, and at $\beta=1$ the Gibbs error is twice the Bayes error. The product model has the same row, because the logarithm in its prior disappears in the limit: at the level of $\frac1n$ it is a regular one-parameter model, whose singularity shows only through $\lambda<\frac d2$ and the slow corrections of $m=2$. In the cusps $\nu\ne\lambda$: the cubic cusp generalizes at $\frac1{6n}$, but its training error lies $\frac{2\nu}n=\frac{0.557}n$ below, the gap that WAIC estimates (\cref{ch:waic}). And the Bayes error depends on $\beta$ through $\nu$: for the cusp its limits are $0.192$, $0.250$ and $0.323$ at $\beta=\frac12,1,2$ (\cref{ex:generalization:temperature}).
+
+The two integrations by parts also work in $\R^k$, where a weight homogeneous of degree $\alpha>-k$ gives $\lambda=\frac{k+\alpha}2$. The last row of \cref{tab:generalization:nu} is the variant $y=a\,(b^\top x)+\varepsilon$, $x\sim\Normal(0,I_2)$, with $a$ uniform on $[-1,1]$ and $b$ uniform on the unit disk: $ab$ has the density $\frac1\pi(\abs c^{-1}-1)$ on the disk, so $k=2$, $\alpha=-1$, $\lambda=\frac12$, $m=1$, and $\nu>\lambda$. We did not extend \cref{lem:generalization:posterior} to $\R^k$, so for this model the limits are argued, not proved.
+
+Watanabe's theorem states the same structure for analytic models. We quote it with the hypotheses of the paper that proves it.
+
+\begin{theorem}[Watanabe's generalization theorem and the equations of state]\label{thm:generalization:main}
+Let the model $p(x\mid w)$, the prior $\varphi$ and the truth $q$ satisfy the following conditions, with $f(x,w)=\log\bigl(q(x)/p(x\mid w)\bigr)$.
+\begin{enumerate}[label=(\roman*),nosep]
+\item $W$ is compact, the closure of an open set, and $W=\{w:\pi_1(w)\ge0,\dots,\pi_k(w)\ge0\}$ for analytic functions $\pi_j$; $\varphi=\varphi_0\varphi_1$ with $\varphi_0>0$ infinitely differentiable and $\varphi_1\ge0$ analytic.
+\item For some $s\ge6$, $w\mapsto f(\cdot,w)$ is an analytic map from an open set $W'\subset\C^d$ containing $W$ to $L^s(q)$.
+\item The truth is realizable, $W_0=\{w:p(\cdot\mid w)=q\}\ne\emptyset$; on an open set $W^*\subset\C^d$ containing $W$ the envelope $\bar f(x)=\sup_{W^*}\abs{f(x,w)}$ has $\E_X[\bar f(X)^s]<\infty$, and $\int\bar f(x)^2\sup_{K(w)\le\epsilon}p(x\mid w)\dd x<\infty$ for some $\epsilon>0$.
+\end{enumerate}
+Let $\beta>0$, let $\lambda$ be the learning coefficient, and write $B_{\mathrm g}=G_n(\beta)-S$, $B_{\mathrm t}=T_n(\beta)-S_n$, $G_{\mathrm g}=G_{n,\mathrm g}(\beta)-S$, $G_{\mathrm t}=T_{n,\mathrm g}(\beta)-S_n$. Then:
+\begin{enumerate}[label=(\alph*),nosep]
+\item $nB_{\mathrm g}$, $nB_{\mathrm t}$, $nG_{\mathrm g}$, $nG_{\mathrm t}$ converge in law to random variables $B_{\mathrm g}^*$, $B_{\mathrm t}^*$, $G_{\mathrm g}^*$, $G_{\mathrm t}^*$, and their expectations converge to those of the limits;
+\item (the equations of state) $\E B_{\mathrm g}^*-\E B_{\mathrm t}^*=2\beta(\E G_{\mathrm t}^*-\E B_{\mathrm t}^*)$ and $\E G_{\mathrm g}^*-\E G_{\mathrm t}^*=2\beta(\E G_{\mathrm t}^*-\E B_{\mathrm t}^*)$;
+\item $nG_{\mathrm g}+nG_{\mathrm t}\to2\lambda/\beta$ in probability, so $\E G_{\mathrm g}^*+\E G_{\mathrm t}^*=2\lambda/\beta$;
+\item with the singular fluctuation $\nu=\nu(\beta)=\beta(\E G_{\mathrm t}^*-\E B_{\mathrm t}^*)$,
+\[
+\E B_{\mathrm g}^*=\frac{\lambda-\nu}\beta+\nu,\quad\E B_{\mathrm t}^*=\frac{\lambda-\nu}\beta-\nu,\quad
+\E G_{\mathrm g}^*=\frac\lambda\beta+\nu,\quad\E G_{\mathrm t}^*=\frac\lambda\beta-\nu .
+\]
+\end{enumerate}
+In particular, at $\beta=1$, $\E[G_n]-S=\frac\lambda n+o(\frac1n)$.
+\end{theorem}
+
+This is Theorem~1, Theorem~2, Theorem~3 and Corollary~3 of \textcite{Watanabe2010a}, numbered as in its arXiv version, whose conditions (A.1)--(A.3) are our (i)--(iii); the value $\E B_{\mathrm g}^*=\lambda$ at $\beta=1$ ends his Corollary~2, which he says was first found in his papers of 1999 and 2001 \parencite{Watanabe1999,Watanabe2001a}. \Textcite[Lemma~3]{Watanabe2010} states the limits of (d) for the Bayes errors without realizability, with the proof for unrealizable singular truths in \textcite{Watanabe2010d}, under relatively finite variance (\cref{thm:freeenergy:main}), essential uniqueness and $s\ge8$, with $L(w_0)$, $L_n(w_0)$ in place of $S$, $S_n$ and $\nu=\lim_n\frac\beta2\E[V_n]$; at $\beta=1$ this is $\E[G_n]=L(w_0)+\frac\lambda n+o(\frac1n)$ and $\E[T_n]=L(w_0)+\frac{\lambda-2\nu}n+o(\frac1n)$ \parencite{Watanabe2024}.
+
+\begin{proofsketch}
+The plan is the proof of \cref{thm:generalization:onecoef} on a parameter space on which $K$ is a monomial, with the Gaussian observation $Z$ replaced by a Gaussian process. As in the proof of \cref{thm:freeenergy:main}, the posterior concentrates on $\{K<\epsilon\}$, Hironaka's theorem (\cref{thm:toolkit:hironaka}) gives local coordinates with $K=u^{2k}$ and $f=u^ka(x,u)$, and with $t=nu^{2k}$ the energy is $nK_n=t-\sqrt t\,\xi_n(u)$ up to the sign of $u^k$, where $\xi_n$ converges in law to a Gaussian process $\xi$ (\cref{thm:toolkit:empirical}). To leading order the posterior becomes the measure $t^{\lambda-1}e^{-\beta t+\beta\sqrt t\,\xi(u)}\dd t\,\dd u^*$, the analogue of $\pi_Z$, with averages $\langle\cdot\rangle$, and a cumulant expansion writes $n$ times each error as such an average up to $o_p(1)$ \parencite[\S5]{Watanabe2024}. The integration by parts $\int_0^\infty\partial_t(t^\lambda e^{-\beta t+\beta\sqrt t\,\xi})\dd t=0$ is the virial identity $\beta\langle t\rangle=\lambda+\frac\beta2\langle\sqrt t\,\xi\rangle$, which gives (c) since $nG_{\mathrm g}\approx\langle t\rangle$ and $nG_{\mathrm t}\approx\langle t-\sqrt t\,\xi\rangle$. Watanabe represents $\xi$ as the limit in law of $n^{-1/2}\sum_ia(X_i,u)g_i$ with independent standard Gaussian $g_i$, and Stein's identity in each $g_i$ gives (b); he writes that Theorems 2 and 3 are ``essentially proved by partial integration'' \parencite[\S5]{Watanabe2010a}. Then (d) is linear algebra, and moment bounds on $\sup_u\abs{\xi_n}$ give (a). Omitted are the resolution, the empirical processes on the resolved space and the moment bounds: \S4 and the appendix of \textcite{Watanabe2010a}, and Chapters~5 and~6 of \textcite{Watanabe2009}.
+\end{proofsketch}
+
+In a one-coefficient model the sketch's $t$ is our $\frac12t^2$ to leading order and its $\sqrt t\,\xi$ is our $tZ$. The free energy of \cref{ch:freeenergy} gives $\lambda$ by a different road, and predicts the slow convergence measured in \cref{sec:generalization:measuring}.
+
+\begin{heuristic}[From the free energy to the generalization error]
+Since $F_{n+1}-F_n=-\log p^*(X_{n+1})$, the mean over $X_{n+1}$ gives the exact identity $\E[G_n]=\E[F_{n+1}]-\E[F_n]$. Differencing the expansion $\E[F_n]-nS=\lambda\log n-(m-1)\log\log n+c+o(1)$ \parencite{Watanabe2024} term by term, which needs an unchecked regularity condition, gives $\E[G_n]-S\approx\frac\lambda n-\frac{m-1}{n\log n}$. In one-coefficient models a second argument agrees: to first order in $1/\log\kappa_n$ the rescaled weight $\abs t^\alpha(1-\log\abs t/\log\kappa_n)^{m-1}$ is $\abs t^{\alpha'}$ with $\alpha'=\alpha-(m-1)/\log\kappa_n$, and \cref{lem:generalization:parts}(iv) gives $\frac12(1+\alpha')\approx\lambda-\frac{m-1}{\log n}$.
+\end{heuristic}
+
+\section{Measuring it}\label{sec:generalization:measuring}
+
+The script \texttt{09-generalization-onecoef.py} computes the Bayes generalization error of the regular line, the product model, the cusp and the cubic cusp, data set by data set, without sampling. By \cref{lem:generalization:reduction} a data set enters only through the independent $\kappa_n^2\sim\chi^2_n$ and $Z_n\sim\Normal(0,1)$, so the script draws $1000$ independent data sets through these two statistics for each model and each $n\in\{10^2,10^3,\dots,10^6\}$ (seed $900+10j+\log_{10}n$, $j=0,\dots,3$ in the order just listed).\sidenote{Drawing the two statistics instead of $n$ pairs changes nothing in law, and at $n=10^6$ saves $2\times10^9$ Gaussian draws per model.} It computes $G_n-S=\E_x[D(\mu_x)]$ by $16$-point Gauss--Hermite rules in $x$ and $\varepsilon$, and composite Gauss--Legendre rules in $t$ after the substitution $t=\pm u^p$, $p=1,4,2,3$, which removes the singularity of $\rho$ at $0$. Tripling the rules changes $n(G_n-S)$ by less than $3\times10^{-9}$; on the regular line, with the uniform prior on $[-1,1]$, the result matches the flat-prior closed form of \cref{comp:generalization:line} to within $1.8\times10^{-7}$ on each of its $5000$ data sets. The run takes about a minute.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 2,horizontal sep=12mm,vertical sep=13mm},
+  splot,width=0.5\linewidth,height=0.33\linewidth,xmode=log,xmin=50,xmax=2e6,ymin=0,ymax=1.12,
+  xtick={1e2,1e3,1e4,1e5,1e6},ytick={0,0.25,0.5,0.75,1},yticklabels={$0$,$0.25$,$0.5$,$0.75$,$1$},
+  title style={font=\small,yshift=-0.6ex}]
+\nextgroupplot[title={regular line $y=ax$},ylabel={$n(\E[G_n]-S)$}]
+\addplot[regularpred,domain=50:2e6,samples=2] {0.5};
+\addplot[theory,domain=50:2e6,samples=2] {0.5};
+\addplot[theory2] table[x=n,y=line] {figures/data/09-generalization-pred.dat};
+\addplot[measured,ebars] table[x=n,y=line,y error plus=lineci,y error minus=lineci] {figures/data/09-generalization-onecoef.dat};
+\nextgroupplot[title={product model $y=abx$}]
+\addplot[regularpred,domain=50:2e6,samples=2] {1};
+\addplot[theory,domain=50:2e6,samples=2] {0.5};
+\addplot[theory2] table[x=n,y=product] {figures/data/09-generalization-pred.dat};
+\addplot[measured,ebars] table[x=n,y=product,y error plus=productci,y error minus=productci] {figures/data/09-generalization-onecoef.dat};
+\nextgroupplot[title={cusp $y=ab^2x$},ylabel={$n(\E[G_n]-S)$},xlabel={sample size $n$}]
+\addplot[regularpred,domain=50:2e6,samples=2] {1};
+\addplot[theory,domain=50:2e6,samples=2] {0.25};
+\addplot[theory2] table[x=n,y=cusp] {figures/data/09-generalization-pred.dat};
+\addplot[measured,ebars] table[x=n,y=cusp,y error plus=cuspci,y error minus=cuspci] {figures/data/09-generalization-onecoef.dat};
+\nextgroupplot[title={cubic cusp $y=ab^3x$},xlabel={sample size $n$},
+  legend style={font=\scriptsize,at={(0.97,0.55)},anchor=east}]
+\addplot[regularpred,domain=50:2e6,samples=2] {1};
+\addlegendentry{regular: $\frac d2$}
+\addplot[theory,domain=50:2e6,samples=2] {1/6};
+\addlegendentry{singular: $\lambda$}
+\addplot[theory2] table[x=n,y=cubic] {figures/data/09-generalization-pred.dat};
+\addlegendentry{finite $n$: $\frac12\E\,\bar t^{\,2}$}
+\addplot[measured,ebars] table[x=n,y=cubic,y error plus=cubicci,y error minus=cubicci] {figures/data/09-generalization-onecoef.dat};
+\addlegendentry{measured}
+\end{groupplot}
+\end{tikzpicture}
+\caption{The Bayes generalization error, times $n$, of four one-coefficient models at the truth $0$; inputs $\Normal(0,1)$, unit noise, uniform prior on $[-1,1]^d$. Dots: means over $1000$ independent data sets at each $n$, each by exact quadrature, with Student-$t$ $95\%$ intervals (seeds $900+10j+\log_{10}n$). Bronze: the limit $\lambda$ of \cref{thm:generalization:onecoef}. Dotted bronze: the finite-$n$ prediction $\frac12\E[\bar t(\sqrt n,Z)^2]$, half the mean square of the exact posterior mean of $t$ at $\kappa_n=\sqrt n$ (for the regular line, the closed form of \cref{comp:generalization:line}). Slate dashed: the regular prediction $\frac d2$, equal to $\lambda$ for the regular line. Script: \texttt{09-generalization-onecoef.py}.}\label{fig:generalization:measured}
+\end{figure}
+
+\Cref{fig:generalization:measured} shows the result. None of the three two-parameter models comes near the regular prediction $1$: at $n=10^6$ the cubic cusp measures $0.164\pm0.024$ against $\lambda=\frac16$ and the cusp $0.244\pm0.031$ against $\frac14$ (the product model is discussed below), while the one-parameter regular line measures $0.504\pm0.047$ against $\frac12$. Nineteen of the twenty intervals contain the dotted prediction; the twentieth, the regular line at $n=10^4$ with $0.561\pm0.049$ against the exact $0.50003$, is $2.5$ standard errors high, as one interval in twenty may be. Half the squared posterior mean accounts for nearly all of the error: its mean differs from the exact error by at most $0.009$ at $n=100$, $0.001$ at $n=1000$, and $10^{-4}$ from $n=10^4$ on, as an $O(n^{-2})$ remainder should.
+
+The singular models approach $\lambda$ slowly. The product model has $m=2$: its finite-$n$ prediction is $0.302$, $0.365$, $0.397$, $0.417$ and $0.430$ at $n=10^2,\dots,10^6$, close to the heuristic $\frac12-\frac1{\log n}$ ($0.283$, $0.355$, $0.391$, $0.413$, $0.428$), and the measured values $0.277\pm0.029$, $0.363\pm0.038$, $0.436\pm0.043$, $0.433\pm0.041$ and $0.422\pm0.038$ follow it; the prediction is still $0.4785$ at $n=10^{20}$ and $0.4957$ at $n=10^{100}$.\sidenote{At $n=10^{100}$ the product model is still $0.9\%$ below its limit, as $\frac12-\frac1{\log n}$ predicts.} The cusps have $m=1$ but a second term in their prior densities, the $-1$ in $\frac12(\abs c^{-1/2}-1)$, which multiplies the rescaled weight by $1-\abs t^{1/2}\kappa_n^{-1/2}$, and by $1-\abs t^{2/3}\kappa_n^{-2/3}$ for the cubic cusp. Their predictions approach $\lambda$ like $n^{-1/4}$ and $n^{-1/3}$: $\frac14-0.2303=0.0197$ at $n=10^4$ and $0.0059$ at $10^6$, and $\frac16-0.1648=0.0019$ at $10^6$. The second term is the next pole of the zeta function (\cref{ch:volume}), at $-\frac12$, and the rate is the distance between the poles; we know of no theorem that says this in general. A single data set's error does not concentrate: at $n=10^6$ its standard deviation is $0.75$, $0.51$ and $0.38$ for the regular line, the cusp and the cubic cusp, against $0.71$, $0.51$ and $0.42$ for the limit law (\cref{ex:generalization:law}).
+
+\section{The ledger}\label{sec:generalization:ledger}
+
+The expected generalization error of the Bayes predictive distribution is $\lambda/n$, not $\frac d{2n}$. For one-coefficient regressions with Gaussian inputs and noise this is proved here completely, for every learning coefficient and multiplicity: the divergence to the predictive is half the squared posterior mean, the rescaled posterior tends to a Gaussian location posterior with a homogeneous prior weight, and two integrations by parts show that the mean square of its mean is $2\lambda$. At other temperatures the same proof gives $(\frac{\lambda-\nu}\beta+\nu)\frac1n$, and the Gibbs errors take the values of Watanabe's equations of state, which in these models are Stein's identity (the Bayes training error is argued); Watanabe's theorem proves all four for analytic models. The cubic cusp generalizes three times better than one regular parameter; the product model, at the level of $\frac1n$, exactly as well as one.
+
+\ledgercard{the Bayes generalization error $\E[G_n]-S$, the expected divergence from the truth to the predictive}{$\frac d{2n}+o(\frac1n)$ (\cref{thm:regular:aic}); training error $-\frac d{2n}$; Gibbs error $\frac dn$}{$\frac\lambda n+o(\frac1n)$ at $\beta=1$: proved for one-coefficient models (\cref{thm:generalization:onecoef}), Watanabe's theorem in general (\cref{thm:generalization:main}); $(\frac{\lambda-\nu}\beta+\nu)\frac1n$ at temperature $\beta$; training error $(\lambda-2\nu)\frac1n$}{the cubic cusp $y=ab^3x$: $\frac1{6n}$ against $\frac1n$ for $d=2$; the error is half the mean square of the posterior mean $M(Z)$, and $\E M^2=\frac13$; $\nu(1)=0.278$}{$n(\E[G_n]-S)$ at $n=10^6$: $0.164\pm0.024$ (cubic cusp), $0.244\pm0.031$ (cusp), $0.504\pm0.047$ (regular line), $0.422\pm0.038$ (product model, $m=2$, approaching $\frac12$ like $\frac12-\frac1{\log n}$)}{the exact posterior average at $\beta=1$; a fixed realizable truth as $n\to\infty$; one coefficient, Gaussian inputs and noise (the proof); analyticity, compactness, and realizability or relatively finite variance (Watanabe)}
+
+\section{Where the theory stops}\label{sec:generalization:stops}
+
+\paragraph{What was assumed.} The theorems describe the exact posterior average at $\beta=1$. A point estimate does not inherit $\lambda/n$: for the cubic cusp the maximum-likelihood estimate, also the maximum a posteriori estimate under the uniform prior on $(a,b)$, has error $\frac1{2n}$, three times the Bayes error (\cref{ex:generalization:mle}), and for analytic models the maximum-likelihood error is governed by the supremum of a Gaussian process over the true parameters \parencite{Watanabe2024}. The truth is fixed as $n$ grows: at a truth $c_0\ne0$ of the cubic cusp, $\lambda=\frac12$ and the gain disappears. For a truth at distance $\delta$ from the singularity, the limit posterior with its truth moved to $\sqrt n\,\delta$ gives an error of about $\frac1{6n}$ while $n\delta^2$ is small and $\frac1{2n}$ once it is large, but $0.77/n$ at $\sqrt n\,\delta=2.8$: near the singularity the bet is lost, in a crossover like those of \cref{ch:phases}. Our proof used one coefficient and Gaussian inputs and noise; Watanabe's theorem needs analyticity, which ReLU networks lack, a compact parameter set, moments of order $6$, and a prior of the form $\varphi_0\varphi_1$: with a smooth but non-analytic prior factor $e^{-1/\norm w^2}$ at the only true parameter the errors need not be proportional to $\frac1n$ \parencite[\S2]{Watanabe2010a}. And the theorem is about the mean over data sets: under the limit law of \cref{thm:generalization:onecoef}(ii), a data set of the cubic cusp still has an error above $\frac1{2n}$ with probability $0.084$.
+
+\paragraph{Where it breaks.} The $o(\frac1n)$ term can be large at every practical sample size: the product model's prediction is $0.430$ at $n=10^6$ against its limit $\frac12$, and a second term in the prior slows the cusps to $n^{-1/4}$ and $n^{-1/3}$. In unrealizable pairs without relatively finite variance the theorem fails: for Watanabe's non-renormalizable example, whose free energy \cref{ch:freeenergy} measures, he argues that the learning curve is of order $n^{-2/3}$ \parencite{Watanabe2010d}. The theorem says nothing when $d$ is comparable to $n$, and trained networks are not posterior averages (\cref{ch:sgd}). In Bayesian deep learning, \textcite{WenzelEtAl2020} found carefully sampled posterior predictives worse than SGD point estimates and improved by cold posteriors, $\beta>1$,\sidenote{Cold means a temperature $T=1/\beta$ below $1$: the likelihood is raised to the power $\beta>1$, as though each observation were counted $\beta$ times.} while \textcite{IzmailovEtAl2021} found tempering unnecessary and attribute the effect largely to data augmentation. Even in a one-coefficient model the best temperature depends on where the prior puts its mass (\cref{prop:generalization:quartet}); whether $\nu$ has anything to do with the cold-posterior effect has, as far as we know, not been tested.
+
+\paragraph{Open problems.} Our computations suggest a remainder $-\frac{m-1}{n\log n}$ when $m\ge2$, and of order $n^{-1-(\lambda_2-\lambda)}$ when the next pole of the zeta function is at $-\lambda_2$; we know of no general theorem on the rate of the $o(\frac1n)$ term. The singular fluctuation is not determined by $\lambda$: Watanabe conjectured that it is governed by a generalized Fisher information on the set of true parameters \parencite[\S5]{Watanabe2010a}, and we know of no closed form for $\nu$ even for the power-law class of \cref{tab:generalization:nu}. Non-asymptotic bounds on $\E[G_n]-S$ for singular models, and the learning curve when $d$ grows with $n$, are open.
+
+\begin{exercises}
+\item \consolidation (The fourth order.) Continue \cref{comp:generalization:divergence} to degree $4$: with $\bar u$ and $\gamma_0$ the posterior mean and variance of $u$, show that $D_x=\frac12\bar u^2+\frac14\gamma_0^2-\frac12\bar u^2\gamma_0+O(u^6)$. Check it against \cref{comp:generalization:line} expanded in $v$, and show that its mean, $-\frac3{4n^2}+O(n^{-3})$, is the difference between the exact $\frac1{2n}+\frac1{4n^2}$ and $\frac1{2(n-2)}$. \hint{the terms of degree $4$ come from $\frac12\E A^2$, $\frac13\E A^3$ and $\frac14\E A^4$; $\E[\varepsilon^2\mathrm{He}_2(\varepsilon)]=2$.}\label{ex:generalization:fourth}
+
+\item \consolidation (The Riccati equation.) For the weight $\abs t^\alpha$ at $\beta=1$ let $r=h'/h$, so that $M=z+r$. Show that $r'=\alpha-zr-r^2$ (\cref{thm:toolkit:stein}(iv)) is \cref{lem:generalization:parts}(i) rewritten with $M'=v$, and derive $\E[M(Z)^2]=1+\alpha$ by applying Stein's identity to $r$.\label{ex:generalization:riccati}
+
+\item \consolidation (Gibbs and Bayes on the regular line.) The limit posterior of the regular line at inverse temperature $\beta$ is $\Normal(Z,1/\beta)$. Compute the four limits of \cref{thm:generalization:main}(d) directly, $\frac12$, $-\frac12$, $\frac12+\frac1{2\beta}$ and $\frac1{2\beta}-\frac12$, and check the equations of state with $\nu=\frac12$.\label{ex:generalization:regular}
+
+\item \consolidation (One data set.) From \cref{thm:generalization:onecoef}(ii), show that the limit law of $n(G_n-S)$ has standard deviation $\frac1{\sqrt2}$ for the regular line ($0.423$ for the cubic cusp, numerically), and that the limit probability of $n(G_n-S)>\frac12$ is $2\Prob(Z>z_*)$ with $M(z_*)=1$: $0.084$ for the cubic cusp, where $z_*=1.730$, against $0.317$ for the regular line.\label{ex:generalization:law}
+
+\item \byhand (A one-sided coefficient.) For $y=a^2x$ with $a$ uniform on $[-1,1]$ and the truth $0$, show that $c=a^2$ has the density $\frac1{2\sqrt c}$ on $(0,1]$, that $\lambda=\frac14$, and that the virial identity holds for the one-sided weight $t^{-1/2}\ind\{t>0\}$, so that $\E[M(Z)^2]=\frac12$. \hard{} Adapt the denominator bound of \cref{lem:generalization:posterior}, which must allow a factor $e^{-z^2/2}$ for $z<0$, and prove $n(\E[G_n]-S)\to\frac14$. \hint{for $z<0$, integrate over $0<t<1/(1+\abs z)$.}\label{ex:generalization:onesided}
+
+\item \byhand (Maximum likelihood against Bayes.) For the cubic cusp at the truth $0$, show that the maximum-likelihood estimate of $c=ab^3$, clipped to $[-1,1]$, is also the maximum a posteriori estimate under the uniform prior on $(a,b)$, and that $n\E[\KL(q\,\|\,p(\cdot\mid\hat w))]\to\frac12$. For which $\lambda$ in the power-law class is the Bayes predictive worse?\label{ex:generalization:mle}
+
+\item \byhand (The chain.) For $y=a_1a_2a_3x$ with the uniform prior on $[-1,1]^3$ and the truth $0$, $\rho(c)=\frac14(\log\frac1{\abs c})^2$. Show that the effective-exponent argument gives $n(\E[G_n]-S)\approx\frac12-\frac2{\log n}$, and compare with the finite-$n$ predictions $0.303$, $0.363$, $0.396$ at $n=10^4,10^6,10^8$.\label{ex:generalization:chain}
+
+\item \variation (Temperature.) For the weight $\abs t^\alpha$, show that $\pi_z$ at inverse temperature $\beta$ is the law of $\beta^{-1/2}t'$, with $t'$ from the limit posterior at $\beta=1$ given the observation $\sqrt\beta z$. Deduce $\lim_nn\E[G_n(\beta)-S]=\frac1{2\beta}\E[M_1(\sqrt\beta Z)^2]$, which tends to $2\lambda^2$ as $\beta\to0$ and to $\frac12$ as $\beta\to\infty$. Which temperature is best for the cusp at its singular truth, and which for $\lambda=\frac34$?\label{ex:generalization:temperature}
+
+\item \variation (An asymmetric prior.) Let $\ell_+\ne\ell_-$ in \cref{ass:generalization:onecoef}. Explain why the limit of \cref{thm:generalization:onecoef} does not depend on $\ell_+/\ell_-$ while $\nu$ does; compute $\nu(1)$ for $\lambda=\frac14$ and $\ell_-/\ell_+=0.2$ (answer: $0.3065$, against $0.3487$).\label{ex:generalization:asymmetric}
+
+\item \measurement (The training error.) Extend the script of \cref{sec:generalization:measuring} to the Bayes training error of the cubic cusp, on simulated data sets of size $n=10^3$ and $10^4$ (the training points are now needed). Compare $n\E[T_n-S_n]$ with $\lambda-2\nu=-0.390$ and $\frac12\E[V_n]$ with $\nu=0.278$.\label{ex:generalization:training}
+
+\item \research\hard (Rates.) Show that for the cusp $n(\E[G_n]-S)-\frac14$ is of exact order $n^{-1/4}$. Conjecture the rate in terms of the first two poles of the zeta function and their orders, test it on the cubic cusp, the chain, and the density $\frac3{16}\abs c^{-1/2}(1+\abs c)$ on $[-1,1]$, whose second pole is at $-\frac34$, and find what the literature proves.\label{ex:generalization:rates}
+\end{exercises}
+
+\notesandrefs
+For regular models the learning curve $\frac d{2n}$ is classical: with the training error $-\frac d{2n}$ it makes up Akaike's penalty $\frac dn$ \parencite{Akaike1974}, and \textcite{AmariMurata1993} proved the entropic errors $H_0\pm\frac m{2t}$ of a faithful regular model with $m$ parameters and $t$ examples for maximum likelihood, with similar relations for Bayes and Gibbs learning. Summed over $n$, the learning curve is the redundancy of the Bayes mixture, $\frac d2\log n$ plus an explicit constant \parencite{ClarkeBarron1990}.
+
+For singular models Watanabe obtained $\lambda/n$ first as the increase of the free energy \parencite{Watanabe1999,Watanabe2001a}. The equations of state, posted in 2007 and published as \textcite{Watanabe2010a}, prove it directly; the 2009 book counts them among its four main formulas \parencite{Watanabe2009}. \Textcite{Watanabe2010} states the Bayes limits for unrealizable truths and proves WAIC asymptotically equivalent to cross-validation (\cref{ch:waic}); \textcite{Watanabe2024} reviews the theory at $\beta=1$, and the 2018 textbook \parencite{Watanabe2018} develops it with exercises.
+
+Tweedie's formula was first published by \textcite{Robbins1956}, who credits personal correspondence with Maurice Kenneth Tweedie \parencite{Efron2011}; Efron bases empirical Bayes corrections for selection bias on it and gives the second-order form, our $M'=\beta v$. The proofs of \cref{thm:generalization:onecoef} and \cref{prop:generalization:quartet} are the book's own. The local learning coefficient of \textcite{LauEtAl2025} estimates $\lambda$ near a trained network (\cref{ch:llc}); its link to that network's test loss runs through a posterior average that SGD does not compute (\cref{ch:sgd}).
+
+\paragraph{Translating the literature.} \Textcite{Watanabe2010a} writes $E_w$ for our $\Ewb{\cdot}$; his Bayes and Gibbs errors $B_g$, $B_t$, $G_g$, $G_t$ are our $G_n(\beta)-S$, $T_n(\beta)-S_n$, $G_{n,\mathrm g}(\beta)-S$, $T_{n,\mathrm g}(\beta)-S_n$, his $B_g^*$ is the limit in law of $nB_g$, and his losses $BL_g$, $BL_t$, $GL_g$, $GL_t$ are our $G_n(\beta)$, $T_n(\beta)$, $G_{n,\mathrm g}(\beta)$, $T_{n,\mathrm g}(\beta)$. \Textcite{Watanabe2010} writes $BgL(n)$ and $BtL(n)$ for our $G_n(\beta)$ and $T_n(\beta)$, $Bg(n)=BgL(n)-L(w_0)$, and $V(n)$ for our $V_n$. \Textcite{Watanabe2024} works at $\beta=1$ with $\theta$ and $\pi(\theta)$ for our $w$ and $\varphi(w)$, and $\langle\cdot\rangle$ for the renormalized posterior. \Textcite{Efron2011} writes $z\mid\mu\sim\Normal(\mu,\sigma^2)$ and $l=\log f$ for the log marginal density: his $z$, $\mu$, $\sigma^2$ and $f$ are our $Z$, $t$, $1/\beta$ and $h$ up to a constant factor.
+
+\printchapterbib
+\end{refsection}
