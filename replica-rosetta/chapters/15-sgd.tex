@@ -1,0 +1,453 @@
+% Chapter 15 of The Replica Rosetta Stone: online SGD -- teacher-student networks, plateaus and the
+% information exponent.
+\rstchapter{Online SGD}{Teacher--student networks, plateaus and the information exponent}{order-parameter equations\dict concentration of summary statistics}{ch:sgd}
+\stonefoot{proved}
+\begin{refsection}[chapters/15-sgd.bib]
+
+\newcommand{\sgdeg}{\varepsilon_{\mathrm g}}
+\newcommand{\sgdsym}{\mathrm{sym}}
+\newcommand{\sgdHe}{\mathrm{He}}
+\newcommand{\sgdesc}{t_{\mathrm{esc}}}
+\newcommand{\sgdPi}{\Pi_B}
+\newcommand{\sgdK}{\mathcal K}
+
+\begin{chaptersummary}
+A student network learns a teacher network by stochastic gradient descent on one fresh Gaussian sample per step. In 1995 Biehl and Schwarze, and Saad and Solla, reduced the dynamics to differential equations for a few overlaps, as the dimension $d$ grows with the number of samples proportional to $d$, and Saad and Solla described a plateau on which the student units stay interchangeable. We derive the equations, the plateau and its escape rate, and prove that the overlaps follow the equations within $O(d^{-1/2})$ on every fixed horizon, by a martingale decomposition and Grönwall's lemma; so a random start cannot specialize on a fixed horizon, while exact simulations place the escape at $c+(\ln d)/(2\varrho)$, with the spread the linearized dynamics predicts, a law not proved. For a single neuron the analogous search phase is governed by the information exponent $k$: vanilla online SGD needs about $d$, $d\log d$ or $d^{k-1}$ samples, up to logarithms (Ben Arous, Gheissari and Jagannath), a cost that smoothing and sample reuse beat.
+\end{chaptersummary}
+
+\section{The question: learning from one sample at a time}\label{sec:sgd:question}
+
+In a \term{teacher--student} problem\index{teacher--student setup} a teacher network with fixed, unknown weights labels random inputs, and a student network with the same architecture adjusts its weights to imitate it. In \term{online stochastic gradient descent}\index{online SGD}, or one-pass SGD, the student takes one gradient step on each example and never sees it again, so the number of steps equals the number of samples. How fast does the student's error fall, why does it stall, and how many samples does a random start cost?
+
+The networks are \term{soft committee machines}\index{soft committee machine}: two-layer networks with $K$ hidden units for the student, $M$ for the teacher, and output weights fixed to one.\sidenote{A committee machine adds the votes of its hidden units with equal weights; in the soft version the votes are smooth functions of the fields rather than signs.} For an input $x\in\R^d$ the fields and outputs of the student, with weights $w_k\in\R^d$, and of the teacher, with weights $w^*_n\in\R^d$, are
+\[
+\lambda_k=\frac{\ip{w_k}x}{\sqrt d},\qquad\nu_n=\frac{\ip{w^*_n}x}{\sqrt d},\qquad\hat y=\sum_{k=1}^Kg(\lambda_k),\qquad y=\sum_{n=1}^Mg(\nu_n),
+\]
+with the sigmoid $g(z)=\mathrm{erf}(z/\sqrt2)=2\Phi(z)-1$, $g'(z)=\sqrt{2/\pi}\,e^{-z^2/2}$, and independent $\Normal(0,I_d)$ inputs $x^1,x^2,\dots$. The gradient of the loss $\frac12(\hat y-y)^2$ of one example in $w_k$ is $(\hat y-y)g'(\lambda_k)x/\sqrt d$, so a step of size $\eta$ on the $(\mu+1)$st example reads
+\begin{equation}\label{eq:sgd:step}
+w_k^{\mu+1}=w_k^\mu+\frac\eta{\sqrt d}\,\Delta_k\,x^{\mu+1},\qquad\Delta_k=g'(\lambda_k)\,(y-\hat y),
+\end{equation}
+with the fields, the outputs and $\Delta_k$ computed from $w^\mu$ and the new input $x^{\mu+1}$. As everywhere in the book, $\eta$ is the learning rate and time is the number of samples divided by $d$, $t=\mu/d$.
+
+The student enters the error only through its \term{overlaps}\index{order parameters!overlaps}, the physicist's order parameters and the statistician's summary statistics,
+\[
+Q_{ik}=\frac{\ip{w_i}{w_k}}d,\qquad R_{in}=\frac{\ip{w_i}{w^*_n}}d,\qquad T_{nm}=\frac{\ip{w^*_n}{w^*_m}}d.
+\]
+We collect $Q_{ik}$, $i\le k$, and $R_{in}$ in $\Omega=(Q,R)\in\R^p$, $p=K(K+1)/2+KM$; the teacher's overlaps $T$ are fixed. For an input independent of the weights, $(\lambda,\nu)$ is centered Gaussian with covariance
+\begin{equation}\label{eq:sgd:cov}
+C(\Omega)=\begin{pmatrix}Q&R\\R^\top&T\end{pmatrix},
+\end{equation}
+so the \term{generalization error}\index{generalization error}, the student's population risk, is a function of the overlaps:
+\[
+\sgdeg(\Omega)=\tfrac12\E\Bigl(\sum_kg(\lambda_k)-\sum_ng(\nu_n)\Bigr)^2,\qquad(\lambda,\nu)\sim\Normal\bigl(0,C(\Omega)\bigr).
+\]
+
+\begin{physicsbox}[Saad and Solla 1995; Biehl, Riegler and Wöhler 1996]
+Let $d\to\infty$ with $t=\mu/d$ fixed. The overlaps concentrate on the solution of
+\begin{equation}\label{eq:sgd:ode}
+\frac{\dd R_{in}}{\dd t}=\eta\,\E[\Delta_i\nu_n],\qquad\frac{\dd Q_{ik}}{\dd t}=\eta\,\E[\Delta_i\lambda_k+\Delta_k\lambda_i]+\eta^2\,\E[\Delta_i\Delta_k],
+\end{equation}
+where $(\lambda,\nu)\sim\Normal(0,C(\Omega))$ and $\Delta_i=g'(\lambda_i)\bigl(\sum_ng(\nu_n)-\sum_jg(\lambda_j)\bigr)$, and the learning curve is $\sgdeg(\Omega(t))$. If $K=M\ge2$ and the teacher units are orthonormal, then a student started at random is trapped near a fixed point at which every student unit has the same overlap with every teacher unit: the \emph{plateau}, with error
+\[
+\varepsilon_\star=\frac K\pi\Bigl(\frac\pi6-K\arcsin\frac1{2K}\Bigr)\quad\text{as }\eta\to0,
+\]
+which is $0.011611$ for $K=2$. It leaves the plateau, each student unit specializing to one teacher unit, after a time that grows like $\ln d$.
+\end{physicsbox}
+
+\textcite{BiehlSchwarze1995} wrote such equations for on-line gradient descent in a single sigmoidal unit and in committee machines. \Textcite{SaadSolla1995a,SaadSolla1995b} solved them for general $K$ and $M$, in realizable, over-realizable and unrealizable cases; they studied the role of the learning rate and the phase in which the student units are not yet specialized, which produces the plateau. \textcite{BiehlRieglerWohler1996} described analytically how the length of the plateau depends on the initial conditions; a random start, with overlaps of order $d^{-1/2}$, gives the $\ln d$. We compute $\varepsilon_\star$ and its escape rate in \cref{comp:sgd:plateau}, and have not checked whether the 1995 papers state these closed forms.\sidenote{Biehl and Schwarze's paper appeared in February 1995; Saad and Solla's letter, received in October 1994, appeared in May 1995.}
+
+The plateau is one face of a problem that every random start in high dimension faces: a random unit vector has overlap of order $d^{-1/2}$ with the vector to be learned, and where the population loss is flat near zero overlap, the student must first find the signal. For a single neuron the flatness is measured by the \term{information exponent}\index{information exponent} of \textcite{BenArousGheissariJagannath2021}, the order $k$ of the first nonvanishing derivative of the population loss at zero overlap; for a single-index model $y=h(\ip\theta x)$ it is the index of the first nonzero Hermite coefficient of $h$. How many samples does online SGD need as a function of $k$? And for all three questions: how do physicists derive the answers, and what is proved?
+
+\section{The physics: closing the equations on the overlaps}\label{sec:sgd:physics}
+
+\subsection{From weights to overlaps}
+
+Taking inner products of \eqref{eq:sgd:step} with $w_k^{\mu+1}$ and $w^*_n$, and recalling that $\lambda_k$ is the inner product of the new input with $w_k^\mu$ divided by $\sqrt d$, gives exact updates:
+\begin{equation}\label{eq:sgd:update}
+\begin{aligned}
+R^{\mu+1}_{in}&=R^\mu_{in}+\frac\eta d\,\Delta_i\nu_n,\\
+Q^{\mu+1}_{ik}&=Q^\mu_{ik}+\frac\eta d\,(\Delta_i\lambda_k+\Delta_k\lambda_i)+\frac{\eta^2}d\,\frac{\abs{x^{\mu+1}}^2}d\,\Delta_i\Delta_k.
+\end{aligned}
+\end{equation}
+Each step moves the overlaps by $O(1/d)$, and one unit of time by $O(1)$. The last term, of second order in $\eta$, carries the fluctuation of the gradient: it is nonnegative on the diagonal on average, and makes the students' norms grow even where the average gradient vanishes.
+
+\begin{heuristic}[Self-averaging (Saad and Solla)]
+Sum \eqref{eq:sgd:update} over a window of $L$ steps, $1\ll L\ll d$. The overlaps change by $O(L/d)$ in the window, so to leading order all $L$ increments are taken at the same $\Omega$. The new input is independent of the weights, so the fields are jointly Gaussian with covariance $C(\Omega)$, by the central limit theorem (exactly so for Gaussian inputs), and $\abs x^2/d\approx1$. The increments are then independent, with mean $f(\Omega)/d$, where $f$ collects the right sides of \eqref{eq:sgd:ode}, and size $O(1/d)$; their sum is $Lf(\Omega)/d$ plus fluctuations of order $\sqrt L/d$. With $\delta t=L/d$,
+\[
+\frac{\Omega(t+\delta t)-\Omega(t)}{\delta t}=f(\Omega)+O\bigl(L^{-1/2}\bigr)+O(\delta t),
+\]
+and both errors are small: the overlaps are \term{self-averaging}\index{self-averaging}, and $\Omega'=f(\Omega)$. For erf the averages are explicit (\cref{comp:sgd:averages}).
+\end{heuristic}
+
+The derivation assumes what it needs: that the fluctuations of successive windows are negligible, which is the concentration of the overlaps; that $\abs x^2/d$ may be replaced by one inside an average that also contains the fields, which depend on $x$; and that the solution stays where the equations make sense. It then uses the equations at all times, including the long times at which plateaus are analyzed, although the window controls errors only for $t$ of order one: the limits $d\to\infty$ and $t\to\infty$ are exchanged without comment.
+
+\subsection{Gaussian averages for erf}
+
+The activation $\mathrm{erf}(z/\sqrt2)$ is chosen because its Gaussian averages are explicit; three of them close the equations.
+
+\begin{computation}{Gaussian averages for $g(z)=\mathrm{erf}(z/\sqrt2)$}\label{comp:sgd:averages}
+\step \emph{An average of signs.} Let $(u,v,w,z)$ be centered Gaussian with covariance $(c_{ab})$. For $\zeta\sim\Normal(0,1)$ independent of $u$, $\E[\sgn(u-\zeta)\mid u]=2\Phi(u)-1=g(u)$, so with $\zeta,\zeta'$ independent standard normals independent of $(u,v)$, $\E[g(u)g(v)]=\E[\sgn(u-\zeta)\sgn(v-\zeta')]$.
+\step \emph{Sheppard's formula.} A centered Gaussian pair with correlation $\rho$ is $(\ip aG,\ip bG)$ with $G$ standard Gaussian in $\R^2$ and unit vectors $a$, $b$ at the angle $\theta=\arccos\rho$; the signs differ when the direction of $G$ falls in two opposite sectors of total angle $2\theta$, so $\E[\sgn\ip aG\sgn\ip bG]=1-2\theta/\pi=\frac2\pi\arcsin\rho$. With the variances $1+c_{11}$, $1+c_{22}$ and covariance $c_{12}$ of $(u-\zeta,v-\zeta')$,
+\[
+I_2(u,v)=\E[g(u)g(v)]=\frac2\pi\arcsin\frac{c_{12}}{\sqrt{(1+c_{11})(1+c_{22})}}.
+\]
+\step \emph{Derivatives in the covariance.} By \cref{lem:toolkit:interpolation}, the derivative of $\E F(u,w)$ in $c_{13}$ is $\E[\partial_u\partial_wF]$ and in $c_{11}$ it is $\frac12\E[\partial_u^2F]$. Differentiating $I_2(u,w)$, with $\Lambda=(1+c_{11})(1+c_{33})-c_{13}^2$,
+\[
+\E[g'(u)g'(w)]=\frac2{\pi\sqrt\Lambda},\qquad\E[g''(u)g(w)]=-\frac{2c_{13}}{\pi(1+c_{11})\sqrt\Lambda}.
+\]
+\step \emph{Three points.} Gaussian integration by parts (\cref{thm:toolkit:gaussianibp}) in $v$ gives $\E[g'(u)vg(w)]=c_{12}\E[g''(u)g(w)]+c_{23}\E[g'(u)g'(w)]$, that is,
+\[
+I_3(u,v,w)=\E[g'(u)\,v\,g(w)]=\frac2{\pi\sqrt\Lambda}\Bigl(c_{23}-\frac{c_{12}c_{13}}{1+c_{11}}\Bigr).
+\]
+\step \emph{Four points.} The factor $g'(u)g'(v)=\frac2\pi e^{-(u^2+v^2)/2}$ tilts the Gaussian law. For nonsingular $c$, completing the square gives $\E[g'(u)g'(v)F(w,z)]=\frac2\pi\det(I+c_{uv})^{-1/2}\E'F(w,z)$, where $c_{uv}$ is the covariance of $(u,v)$ and, under $\E'$, $(w,z)$ is centered Gaussian with covariance $c'=c_{wz}-c_{wz,uv}(I+c_{uv})^{-1}c_{uv,wz}$. By step 2, and by continuity for singular $c$,
+\[
+\begin{aligned}
+I_4(u,v,w,z)&=\E[g'(u)g'(v)g(w)g(z)]\\
+&=\frac4{\pi^2\sqrt{\det(I+c_{uv})}}\arcsin\frac{c'_{wz}}{\sqrt{(1+c'_{ww})(1+c'_{zz})}}.
+\end{aligned}
+\]
+\step \emph{The equations.} Each expectation in \eqref{eq:sgd:ode} is a sum of such terms over the units, for instance $\E[\Delta_i\nu_n]=\sum_mI_3(\lambda_i,\nu_n,\nu_m)-\sum_jI_3(\lambda_i,\nu_n,\lambda_j)$, and $\sgdeg$ is a sum of $I_2$ terms.
+\end{computation}
+
+The script \texttt{15-sgd-ode.py} checks $I_2$, $I_3$ and $I_4$, including terms with repeated units, against tensor Gauss--Hermite quadrature: the largest error is $7\times10^{-17}$.\sidenote{\Textcite{Sheppard1899} computed the probability that a bivariate normal pair falls in a quadrant, which is step~2 of \cref{comp:sgd:averages}.}\index{Sheppard's formula}
+
+\subsection{The plateau}
+
+Take $K=M\ge2$ and orthonormal teacher units, $T=I_K$. Relabeling the student units, or the teacher units, maps the equations to themselves. A random start $w_k^0=\sqrt{q_0}\,g_k$, $g_k\sim\Normal(0,I_d)$, has $Q(0)=q_0I+O(d^{-1/2})$ and $R(0)=O(d^{-1/2})$, which in the limit is invariant under all relabelings, and so is the solution. Every student unit then has the same overlap with every teacher unit, the same norm and the same overlap with the other students: the solution stays in a three-dimensional subspace $\cS$ on which no student unit can align with one teacher unit more than with another, and settles near a fixed point, the \term{plateau}\index{plateau}.
+
+\begin{computation}{The plateau and its escape rate as $\eta\to0$}\label{comp:sgd:plateau}
+\step \emph{Gradient flow.} Since $\nabla_{w_k}\sgdeg=-\E[\Delta_kx]/\sqrt d$, the terms of \eqref{eq:sgd:ode} linear in $\eta$ are the overlaps of the population gradient flow $\dd w_k/\dd t=-\eta d\,\nabla_{w_k}\sgdeg$, and the overlaps of a critical point of $\sgdeg$ are a fixed point of these terms.
+\step \emph{The symmetric line.} Try all student vectors equal to $w=s\sum_nw^*_n$, $s>0$. By Gaussian integration by parts $\E[\Delta_kx]$ is a combination of the $w_j$ and $w^*_n$; it is the same for every $k$ and unchanged when the teacher units are permuted, so it is a multiple of $\sum_nw^*_n$. The point is critical if and only if the error $\varepsilon(s)$ along the line has $\varepsilon'(s)=0$.
+\step \emph{The error on the line.} There $\lambda_k=s\sum_n\nu_n$, so $Q_{ik}=Ks^2=:q$ and $R_{kn}=s$, and since $\frac2\pi\arcsin\frac12=\frac13$,
+\[
+\varepsilon(s)=\frac1\pi\Bigl[K^2\arcsin\frac q{1+q}-2K^2\arcsin\frac s{\sqrt{2(1+q)}}+\frac{K\pi}6\Bigr].
+\]
+\step \emph{The critical point.} With $a=q/(1+q)$ and $b=s/\sqrt{2(1+q)}$, $\varepsilon'(s)=0$ reads $a'/\sqrt{1-a^2}=2b'/\sqrt{1-b^2}$, where $a'=2Ks/(1+q)^2$ and $b'=2/(2(1+q))^{3/2}$. At $s_\star^2=1/(K(2K-1))$, $1+q=2K/(2K-1)$, so $a=b=1/(2K)$, and $a'=2b'$ because $4K^2s_\star^2=2(1+q)$.
+\step \emph{The plateau.} Since $a=b$ at $s_\star$, $\varepsilon_\star=\varepsilon(s_\star)=\frac K\pi\bigl(\frac\pi6-K\arcsin\frac1{2K}\bigr)$, at $Q_{ik}=1/(2K-1)$ and $R_{kn}=s_\star$. For $K=2$: $Q_{ik}=\frac13$, $R_{kn}=1/\sqrt6$, $\varepsilon_\star=\frac2\pi(\frac\pi6-2\arcsin\frac14)=0.011611$.
+\step \emph{The escape rate.} Perturb $R=s_\star J+\epsilon E$, with $J$ the all-ones matrix and $E=I-J/K$, keeping $Q$. With $A=2(1+q)-s_\star^2=(2K+1)/K$, differentiating the $I_3$ terms changes the $\eta$-linear part of $\dd R_{in}/\dd t$ by
+\[
+\frac{2\eta\epsilon}\pi\,E_{in}\Bigl(s_\star A^{-3/2}-\frac{Ks_\star A^{-1/2}}{1+q}+\frac{Kq}{(1+q)\sqrt{1+2q}}\Bigr)+O(\epsilon^2),
+\]
+whose last two terms cancel, while $\dd Q/\dd t$ does not change at first order because the rows of $E$ sum to zero. So $E$ is an unstable direction, with the rate
+\[
+\varrho=\frac{2K\eta}{\pi\sqrt{2K-1}\,(2K+1)^{3/2}}+O(\eta^2),
+\]
+which is $4\sqrt{15}\,\eta/(75\pi)=0.06575\,\eta$ for $K=2$ and $6\sqrt{35}\,\eta/(245\pi)=0.04612\,\eta$ for $K=3$.
+\end{computation}
+
+At this plateau the student units are identical, each equal to $s_\star\sum_nw^*_n$: the network has learned the teacher's average direction and nothing more. Numerically, at small $\eta$ the other eigenvalues of the linearization are negative or of order $\eta^2$, and the largest, divided by $\eta$, tends to $0.0657498$ for $K=2$. A finite learning rate adds one feature (\cref{tab:sgd:plateau}). The identical-student point persists as a fixed point A, but the term in $\eta^2$ makes it unstable in two more directions, in which the students separate; the solution from a random start settles instead at a nearby fixed point B, where the students have the same overlaps with the teacher but different components orthogonal to it. A and B coincide as $\eta\to0$; their errors differ by $6\times10^{-7}$ at $\eta=0.1$ and $5\times10^{-4}$ at $\eta=1$, where B has the single unstable direction $E$, with $\varrho=0.05914$.
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\small
+\begin{tabular}{@{}lcS[table-format=1.6]S[table-format=1.6]S[table-format=1.6]S[table-format=1.7]S[table-format=1.6]c@{}}
+\toprule
+{$\eta$} & {point} & {$Q_{11}$} & {$Q_{12}$} & {$R_{in}$} & {$\sgdeg$} & {$\varrho$} & {unstable directions}\\
+\midrule
+{$\to0$} & {A$=$B} & 0.333333 & 0.333333 & 0.408248 & 0.011611 & {$0.065750\,\eta$} & 1\\
+0.1 & A & 0.334297 & 0.334297 & 0.408543 & 0.0120858 & 0.006621 & 3\\
+0.1 & B & 0.338824 & 0.332031 & 0.409235 & 0.0120852 & 0.006532 & 1\\
+0.5 & A & 0.339579 & 0.339579 & 0.410158 & 0.0146770 & 0.034341 & 3\\
+0.5 & B & 0.367720 & 0.325386 & 0.414394 & 0.0146448 & 0.031618 & 1\\
+1 & A & 0.352963 & 0.352963 & 0.414234 & 0.0211565 & 0.074807 & 3\\
+1 & B & 0.435085 & 0.310213 & 0.426138 & 0.0206565 & 0.059140 & 1\\
+\bottomrule
+\end{tabular}
+\end{fullwidth}
+\caption{Symmetric fixed points of \eqref{eq:sgd:ode} for $K=M=2$, $T=I$: the overlaps (all $R_{in}$ are equal), the error, the largest eigenvalue $\varrho$ of the linearization, and the number of positive eigenvalues among seven. A has identical students; B is the limit of the solution from the random start. The row $\eta\to0$ is \cref{comp:sgd:plateau}. Script: \texttt{figures/scripts/15-sgd-ode.py}.}\label{tab:sgd:plateau}
+\end{table}
+
+\subsection{Leaving the plateau}
+
+\begin{heuristic}[The length of the plateau]
+Near the plateau, the coordinate $s=\frac12(R_{11}+R_{22}-R_{12}-R_{21})$ along $E$ (for $K=2$) grows like $e^{\varrho t}$. A random start gives $s$ of order $d^{-1/2}$, and the approach to the plateau, linear in such small perturbations, carries it to $Ad^{-1/2}$ at some time $t_{\mathrm p}$, where $A$ collects the projections on $E$ of the initial overlaps and of the fluctuations of SGD, both of order $d^{-1/2}$, and has a law that does not depend on $d$. The student leaves the plateau when $s$ is of order one, at
+\begin{equation}\label{eq:sgd:escape}
+\sgdesc\approx t_{\mathrm p}+\frac1\varrho\ln\frac{\sqrt d}{\abs A}=c+\frac{\ln d}{2\varrho}-\frac{\ln\abs A}\varrho.
+\end{equation}
+If $A$ is Gaussian, as a linear functional of Gaussian initial overlaps and nearly Gaussian noise, then $\sgdesc-\E\sgdesc$ has the law of $-(\ln\abs Z-\E\ln\abs Z)/\varrho$ with $Z\sim\Normal(0,1)$, whose standard deviation is $\pi/(2\sqrt2\,\varrho)$.
+\end{heuristic}
+
+The $\ln d$ is the classical prediction; the law of the \term{escape time}\index{plateau!escape time} carries the same linearization one step further, and we have not found it in the sources cited here. The derivation linearizes over a time of order $\ln d$, lets the noise act only through $A$, and ignores the nonlinear part of the escape. For $\eta=1$ it predicts a slope $1/(2\varrho)=8.45$ in $\ln d$ and a spread $18.8$ (\cref{sec:sgd:measuring}). The equations themselves, started at $R(0)=\delta_0I$, escape at $\sgdesc=\varrho^{-1}\ln(1/\delta_0)+c(\delta_0)$ with $c=2.88$, $3.84$, $4.37$ for $\delta_0=10^{-2}$, $10^{-3}$, $3\times10^{-5}$.\sidenote{Integrated in floating point at $\eta=1$, the solution from the symmetric start leaves $\cS$ near $t=600$: rounding errors of order $10^{-16}$ grow like $e^{\varrho t}$ along $E$, a numerical shadow of the escape.}
+
+\subsection{The search phase of a single neuron}
+
+For a single unit the same mechanism acts at the start. \Textcite{BenArousGheissariJagannath2021} run SGD on the sphere, $w\leftarrow(w-\frac\delta d\nabla\ell)/\abs{w-\frac\delta d\nabla\ell}$, with $\nabla$ the spherical gradient of the loss $\ell$ of one sample and a step-size parameter $\delta$, for a population loss $\phi(m)$ of the overlap $m=\ip w\theta$ with the unit vector $\theta$ to be learned; the information exponent is the $k$ with $\phi^{(j)}(0)=0$ for $j<k$ and $\phi^{(k)}(0)<0$, for $\phi$ with a bounded derivative of order $k+1$. For $y=\sgdHe_k(\ip\theta x)/\sqrt{k!}$ and the correlation loss $\ell=-y\,\sgdHe_k(\ip wx)/\sqrt{k!}$, with $\sgdHe_k$ the monic Hermite polynomial of degree $k$,\sidenote{The Hermite polynomials $\sgdHe_1=z$, $\sgdHe_2=z^2-1$, $\sgdHe_3=z^3-3z$ satisfy $\E\,\sgdHe_j(X)\sgdHe_k(Y)=k!\,m^k\delta_{jk}$ for a standard Gaussian pair with correlation $m$ (\cref{sec:toolkit:numerics}).} $\phi(m)=-m^k$.\index{Hermite polynomials}\index{search phase}
+
+\begin{heuristic}[The search phase, after Ben Arous, Gheissari and Jagannath]
+With $u=\ip wx$ and $x_1=\ip\theta x$, the normalized step expanded to second order in $\delta/d$ gives the drift per unit time
+\begin{equation}\label{eq:sgd:drift}
+\frac{\dd m}{\dd t}=\delta k\,m^{k-1}(1-m^2)-\frac{\delta^2}2\,\E[a^2]\,m,\qquad a=-\frac{\sgdHe_k(x_1)\sgdHe_k'(u)}{k!},
+\end{equation}
+whose last term is the retraction caused by the normalization, with $\E[a^2]=k$ at $m=0$. From $m\approx d^{-1/2}$: for $k=1$, $m$ reaches $\frac12$ in a time of order one, $n\asymp d$; for $k=2$ the drift is linear with rate $r=\delta(2-\delta)$, and the time is $(\ln d)/(2r)$, $n\asymp d\ln d$; for $k\ge3$ the drift beats the retraction only if $\delta\lesssim m^{k-2}\approx d^{-(k-2)/2}$, and then $t\approx m_0^{2-k}/\delta\approx d^{k-2}$, $n\asymp d^{k-1}$.
+\end{heuristic}
+
+Started at $m=0$, \eqref{eq:sgd:drift} predicts no learning for $k\ge2$: zero overlap is a fixed point, as $\cS$ is invariant for the committee machine, and the escape is driven by the fluctuations that the equation discards. The erf committee machine has information exponent one in this sense, since $\E[Zg(Z)]=\E g'(Z)=1/\sqrt\pi\ne0$; its plateau is a second search with a linear instability, as for $k=2$, hence the $\ln d$.
+
+\section{The stone}\label{sec:sgd:stone}
+
+\begin{stone}{Saad and Solla's equations}{concentration of the overlaps}
+\stonestep{Reduce}{The state of the network is the overlaps $Q$, $R$, $T$, and the error depends on them alone.}{The same summary statistics. For Gaussian inputs they form an exact Markov chain, which depends on $d$ only through a $\chi^2$ variable (\cref{lem:sgd:markov}): rotation invariance replaces the typical input.}
+\stonestep{Average}{The fields of a fresh input are Gaussian by the central limit theorem, with covariance $C(\Omega)$; average the update.}{Given the past, the fields are exactly $\Normal(0,C(\Omega^\mu))$ (\cref{lem:sgd:step}); the drift $f$ is a Gaussian expectation, Lipschitz on bounded sets by Gaussian interpolation (\cref{lem:sgd:lipschitz}).}
+\stonestep{Self-average}{Fluctuations of the increments are $O(1/d)$ and average out over a window of $1\ll L\ll d$ steps.}{Drift plus martingale: Doob's inequality bounds the martingale by $O(d^{-1/2})$ uniformly on $[0,\bar t]$, and $\abs x^2/d-1$ costs a bias of order $d^{-1/2}$.}
+\stonestep{Close}{Integrate the averaged increments; the solution is assumed to exist and to stay physical.}{A discrete Grönwall inequality up to a stopping time gives $e^{L_B\bar t}O(d^{-1/2})$; existence, positivity and uniqueness for the equations are inherited from SGD (\cref{thm:sgd:ode}).}
+\stonestep{Plateau}{An unstable symmetric fixed point, with error $\varepsilon_\star$ and escape rate $\varrho$.}{The symmetric subspace is invariant, and on every fixed horizon SGD from a random start follows the symmetric solution: no specialization (\cref{cor:sgd:plateau}).}
+\stonestep{Escape}{The asymmetry grows like $e^{\varrho t}$ from $d^{-1/2}$, so $\sgdesc\approx c+(\ln d)/(2\varrho)$.}{No counterpart for the committee machine: the bound $e^{L_B\bar t}/\sqrt d$ is useless at $\bar t\asymp\ln d$, and we know of no proof as of 2026.}
+\stonestep{Search}{For a single neuron $\dd m/\dd t\propto m^{k-1}$ from $m\approx d^{-1/2}$: $n\asymp d$, $d\ln d$, $d^{k-1}$.}{\Textcite{BenArousGheissariJagannath2021}: sufficiency up to $\log^2d$ and necessity under step-size conditions, for online SGD only; smoothing reaches $d^{k/2}$, and reuse beats both (\cref{thm:sgd:bgj}).}
+\end{stone}
+
+On fixed horizons the proof follows the derivation step by step: the typical input becomes a conditional Gaussian law, self-averaging becomes Doob's inequality, the window becomes a discrete Grönwall inequality. It adds what the physics does not ask for: control of the region the overlaps visit, and the well-posedness of the equations, which it takes from SGD itself. The routes part at long times, where the physicist puts the fluctuations of order $d^{-1/2}$ back by hand and the theorem stops. For single neurons the mathematicians went beyond the horizon, controlling the martingale at the scale $d^{-1/2}$ over times of order $\ln d$ and $d^{k-2}$; for the committee machine that step has not been taken.
+
+\section{The proof: concentration of the overlaps on fixed horizons}\label{sec:sgd:proof}
+
+We prove the equations of the box on every fixed horizon, with the rate $d^{-1/2}$, for general $K$, $M$ and $T$, noiseless labels, and activations that include erf.
+
+\begin{assumption}\label[assumption]{ass:sgd:model}
+\leavevmode
+\begin{enumerate}
+\item The activation $g$ is three times continuously differentiable, $g,g',g'',g'''$ are bounded, and $G_\star=\sup_z\abs{zg'(z)}<\infty$.
+\item For each $d$ the teacher vectors $w^*_1,\dots,w^*_M\in\R^d$ have overlaps $T_{nm}=\ip{w^*_n}{w^*_m}/d$ given by a fixed positive semidefinite $M\times M$ matrix $T$. The inputs $x^1,x^2,\dots$ are independent $\Normal(0,I_d)$ vectors, and SGD runs as in \eqref{eq:sgd:step} with the labels $y=\sum_ng(\nu_n)$.
+\item The initial student vectors are deterministic, and $\max_kQ^0_{kk}\le B_0$.
+\end{enumerate}
+\end{assumption}
+
+For erf, $G_\star=\sqrt{2/\pi}\,e^{-1/2}=0.484$; tanh and the logistic function also qualify, the rectified linear unit does not. Write $G_r=\sup_z\abs{g^{(r)}(z)}$, $D=(K+M)G_0G_1$, which bounds $\abs{\Delta_k}$, $\tau_T=\max_nT_{nn}$, and $\cF_\mu=\sigma(x^1,\dots,x^\mu)$. Let $\sgdK$ be the set of $\Omega$ with $C(\Omega)$ positive semidefinite and $\sgdK_B=\{\Omega\in\sgdK:\max_kQ_{kk}\le B\}$, a closed, bounded and convex set, because $C(\Omega)$ is affine in $\Omega$ and $\abs{Q_{ik}}\le B$, $R_{in}^2\le B\tau_T$ on it. Every $\Omega^\mu$ lies in $\sgdK$, since $C(\Omega^\mu)$ is the Gram matrix of the vectors $w^\mu_k/\sqrt d$ and $w^*_n/\sqrt d$. For $z=(\lambda,\nu)\in\R^{K+M}$ let $h(z)\in\R^p$ have the components $h_{R,in}=\eta\Delta_i\nu_n$ and $h_{Q,ik}=\eta(\Delta_i\lambda_k+\Delta_k\lambda_i)+\eta^2\Delta_i\Delta_k$, with $\Delta_i=\Delta_i(z)$ as in the box, and let $f(\Omega)=\E h(Z)$, $Z\sim\Normal(0,C(\Omega))$: the right side of \eqref{eq:sgd:ode}.
+
+\begin{lemma}[one step]\label{lem:sgd:step}
+Under \cref{ass:sgd:model}, for every $\mu\ge0$:
+\begin{enumerate}
+\item given $\cF_\mu$, the fields $Z^{\mu+1}=(\lambda,\nu)$ of the new input are $\Normal(0,C(\Omega^\mu))$, and $d(\Omega^{\mu+1}-\Omega^\mu)=h(Z^{\mu+1})+\eta^2(\abs{x^{\mu+1}}^2/d-1)\,v(Z^{\mu+1})$, where $v_{Q,ik}=\Delta_i\Delta_k$ and $v_{R,in}=0$;
+\item $\E[d(\Omega^{\mu+1}-\Omega^\mu)\mid\cF_\mu]=f(\Omega^\mu)+b^\mu$ with $\abs{b^\mu}\le\beta/\sqrt d$, $\beta=\eta^2D^2\sqrt{K(K+1)}$;
+\item $\E[\abs{d(\Omega^{\mu+1}-\Omega^\mu)}^2\mid\cF_\mu]\le c_2(1+\max_kQ^\mu_{kk})$, with $c_2$ depending only on $\eta$, $K$, $M$, $G_0$, $G_1$ and $T$;
+\item $\abs{Q^{\mu+1}_{kk}-Q^\mu_{kk}}\le\frac{c_1}d\bigl(1+\abs{x^{\mu+1}}^2/d\bigr)$ for every $k$, with $c_1=2\eta G_\star(K+M)G_0+\eta^2D^2$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to read off the identities from \eqref{eq:sgd:update} and to use that the new input is independent of the past. Writing $\abs x^2/d=1+(\abs x^2/d-1)$ in \eqref{eq:sgd:update} gives the identity of (i). Given $\cF_\mu$ the weights $w^\mu$ are fixed and $x^{\mu+1}\sim\Normal(0,I_d)$ is independent of them, so $Z^{\mu+1}$ is a linear image of a standard Gaussian vector, centered, with $\E[\lambda_i\lambda_k\mid\cF_\mu]=\ip{w_i^\mu}{w_k^\mu}/d=Q^\mu_{ik}$ and likewise for the other entries. For (ii), $\E[h(Z^{\mu+1})\mid\cF_\mu]=f(\Omega^\mu)$ by (i), and $b^\mu=\eta^2\E[(\abs{x^{\mu+1}}^2/d-1)v(Z^{\mu+1})\mid\cF_\mu]$; each of the $K(K+1)/2$ nonzero components of $v$ is at most $D^2$, and $\E\abs{\abs x^2/d-1}\le(\Var\abs x^2/d)^{1/2}=(2/d)^{1/2}$. For (iii), $(\eta\Delta_i\nu_n)^2\le\eta^2D^2\nu_n^2$, and by $(a+b+c)^2\le3(a^2+b^2+c^2)$ the squared $Q$-components are at most $3\eta^2D^2(\lambda_k^2+\lambda_i^2)+3\eta^4D^4(\abs x^2/d)^2$; take conditional expectations, with $\E[\nu_n^2\mid\cF_\mu]=T_{nn}$, $\E[\lambda_k^2\mid\cF_\mu]=Q^\mu_{kk}$ and $\E(\abs x^2/d)^2=1+2/d\le3$. For (iv), \eqref{eq:sgd:update} gives $d(Q^{\mu+1}_{kk}-Q^\mu_{kk})=2\eta g'(\lambda_k)\lambda_k(y-\hat y)+\eta^2(\abs x^2/d)\Delta_k^2$, with $\abs{g'(\lambda_k)\lambda_k}\le G_\star$, $\abs{y-\hat y}\le(K+M)G_0$ and $\Delta_k^2\le D^2$.
+\end{proof}
+
+Part (iv) is the only use of $G_\star$: a student's norm changes by $O(1/d)$ in every step, whatever the input, because the first-order term contains $g'(\lambda_k)\lambda_k$. Part (i) says more than its statement uses, and the simulations of \cref{sec:sgd:measuring} rest on the stronger form.
+
+\begin{lemma}[exact reduction]\label{lem:sgd:markov}
+Under \cref{ass:sgd:model}, let $r$ be the rank of $C(\Omega^\mu)$ and $C^+$ its pseudoinverse. Given $\cF_\mu$, $\abs{x^{\mu+1}}^2=(Z^{\mu+1})^\top C^+Z^{\mu+1}+\xi$ with $\xi\sim\chi^2_{d-r}$ independent of $Z^{\mu+1}$. Consequently the conditional law of $\Omega^{\mu+1}$ given $\cF_\mu$ depends only on $\Omega^\mu$: the overlaps form a time-homogeneous Markov chain, which depends on $d$ only through the factor $1/d$ in \eqref{eq:sgd:update} and the degrees of freedom of $\xi$.
+\end{lemma}
+
+\begin{proof}
+Let $V$ be the $d\times(K+M)$ matrix with columns $w_k^\mu/\sqrt d$ and $w^*_n/\sqrt d$, so that $Z^{\mu+1}=V^\top x$ for $x=x^{\mu+1}$ and $V^\top V=C(\Omega^\mu)$. The orthogonal projection onto the range of $V$ is $P=VC^+V^\top$. Given $\cF_\mu$, $Px$ and $x-Px$ are independent centered Gaussian vectors, $\abs{x-Px}^2\sim\chi^2_{d-r}$, and $\abs{Px}^2=x^\top VC^+V^\top x=(Z^{\mu+1})^\top C^+Z^{\mu+1}$. By \eqref{eq:sgd:update} the increment is a fixed function of $\Omega^\mu$, $Z^{\mu+1}$ and $\abs{x^{\mu+1}}^2$, whose joint conditional law depends only on $\Omega^\mu$.
+\end{proof}
+
+\begin{lemma}[the drift is Lipschitz]\label{lem:sgd:lipschitz}
+Under (i) of \cref{ass:sgd:model}, for every $B>0$ there are constants $F_B$ and $L_B$, depending only on $B$, $\eta$, $K$, $M$, $G_0,\dots,G_3$ and $T$, such that $\abs{f(\Omega)}\le F_B$ and $\abs{f(\Omega)-f(\Omega')}\le L_B\abs{\Omega-\Omega'}$ for all $\Omega,\Omega'\in\sgdK_B$. The same holds for $\sgdeg$.
+\end{lemma}
+
+\begin{proof}
+The plan is to compare two Gaussian expectations by the interpolation lemma, which needs second derivatives of $h$ and no square root of the covariance. Each $\Delta_i$ is a sum of at most $K+M$ terms $\pm g'(\lambda_i)g(z_c)$, so $\Delta_i$ and its partial derivatives of first and second order are bounded by a constant $A_0$ depending on $G_0,\dots,G_3$ and $K+M$. Since $\partial_a\partial_b(\Delta_iz_e)=z_e\partial_a\partial_b\Delta_i+\delta_{ae}\partial_b\Delta_i+\delta_{be}\partial_a\Delta_i$, every component $h_c$ is twice continuously differentiable with $\abs{h_c(z)}+\max_{a,b}\abs{\partial_a\partial_bh_c(z)}\le A(1+\abs z)$ for a constant $A$. For $\Omega\in\sgdK_B$, $\E\abs Z\le(\tr C(\Omega))^{1/2}\le(KB+\tr T)^{1/2}=:s_B$, so $\abs{f(\Omega)}\le\sqrt pA(1+s_B)=:F_B$. Now let $\Omega,\Omega'\in\sgdK_B$, and let $X\sim\Normal(0,C(\Omega))$ and $Y\sim\Normal(0,C(\Omega'))$ be independent. The vector $Z_s=\sqrt sX+\sqrt{1-s}\,Y$ has covariance $C(\Omega_s)$ with $\Omega_s=s\Omega+(1-s)\Omega'\in\sgdK_B$, by convexity, so $\E\abs{\partial_a\partial_bh_c(Z_s)}\le A(1+s_B)$. Each entry of $\Omega$ appears at most twice in $C(\Omega)$, so $\sum_{a,b}\abs{C(\Omega)_{ab}-C(\Omega')_{ab}}\le2\sqrt p\,\abs{\Omega-\Omega'}$, and \cref{lem:toolkit:interpolation} gives
+\[
+\abs{\E h_c(X)-\E h_c(Y)}\le\frac{A(1+s_B)}2\sum_{a,b}\abs{C(\Omega)_{ab}-C(\Omega')_{ab}}\le A(1+s_B)\sqrt p\,\abs{\Omega-\Omega'}.
+\]
+Over the $p$ components, $L_B=pA(1+s_B)$. For $\sgdeg$ the integrand $\frac12(\sum_kg(\lambda_k)-\sum_ng(\nu_n))^2$ is bounded with bounded derivatives of order two, and the same argument applies.
+\end{proof}
+
+\begin{theorem}[the ODE limit on fixed horizons]\label{thm:sgd:ode}
+Let \cref{ass:sgd:model} hold, fix $\bar t>0$, and put $B=B_0+2c_1\bar t+1$. Then the equations \eqref{eq:sgd:ode} with $\Omega(0)=\Omega^0$ have a unique solution $\Omega\colon[0,\bar t]\to\sgdK$; it stays in $\sgdK_{B-1/2}$; and there is a constant $C$, depending only on $g$, $K$, $M$, $\eta$, $T$, $B_0$ and $\bar t$, such that for every $d\ge1$
+\[
+\E\max_{0\le\mu\le d\bar t}\abs{\Omega^\mu-\Omega(\mu/d)}\le\frac C{\sqrt d}.
+\]
+In particular $\sup_{t\le\bar t}\abs{\sgdeg(\Omega^{\lfloor dt\rfloor})-\sgdeg(\Omega(t))}\to0$ in $L^1$ as $d\to\infty$.
+\end{theorem}
+
+\begin{proof}
+The plan is to compare SGD with the solution of a globally Lipschitz extension of the equations, splitting each step into drift, bias and a martingale increment, bounding the martingale by Doob's inequality and the rest by a discrete Grönwall inequality, up to the first time the overlaps leave $\sgdK_B$; a priori bounds place this time beyond the horizon with high probability, and the same bounds show that the extension solves the original equations. Write $n=\lfloor d\bar t\rfloor$.
+
+\emph{Step 1: an extension.} Let $\sgdPi$ be the Euclidean projection onto the closed convex set $\sgdK_B$, which is $1$-Lipschitz, and $f_B=f\circ\sgdPi$. By \cref{lem:sgd:lipschitz}, $f_B$ is bounded by $F_B$ and $L_B$-Lipschitz on $\R^p$, so $\Omega'=f_B(\Omega)$ has a unique solution $\tilde\Omega$ on $[0,\infty)$ with $\tilde\Omega(0)=\Omega^0$, and $\abs{\tilde\Omega(s)-\tilde\Omega(s')}\le F_B\abs{s-s'}$.
+
+\emph{Step 2: a priori bounds.} Let $S=\sum_{\nu=1}^n\abs{x^\nu}^2$, a $\chi^2$ variable with $nd\le d^2\bar t$ degrees of freedom. Summing (iv) of \cref{lem:sgd:step}, for every $\mu\le n$ and every $k$,
+\begin{equation}\label{eq:sgd:apriori}
+Q^\mu_{kk}\le B_0+c_1\bar t+c_1S/d^2.
+\end{equation}
+On the event $G=\{S\le d^2\bar t+d^2/(2c_1)\}$, therefore, $\Omega^\mu\in\sgdK_{B-1/2}$ for all $\mu\le n$. Since $\E S=nd$ and $\Var S=2nd\le2d^2\bar t$, Chebyshev's inequality gives $\Prob(G^c)\le8c_1^2\bar t/d^2$.
+
+\emph{Step 3: a decomposition up to a stopping time.} Let $\tau=\min\{\mu:\Omega^\mu\notin\sgdK_B\}$, with $\min\emptyset=\infty$, a stopping time for $(\cF_\mu)$, and $\xi^{\nu+1}=d(\Omega^{\nu+1}-\Omega^\nu)-f(\Omega^\nu)-b^\nu$. By (ii) of \cref{lem:sgd:step}, $\E[\xi^{\nu+1}\mid\cF_\nu]=0$, and by (iii), $\E[\ind\{\nu<\tau\}\abs{\xi^{\nu+1}}^2\mid\cF_\nu]\le c_2(1+B)$, a conditional variance being at most the conditional second moment. So $M_\mu=\sum_{\nu<\mu}\ind\{\nu<\tau\}\xi^{\nu+1}$ is a square-integrable martingale. For $\mu\le\tau\wedge n$ every $\Omega^\nu$ with $\nu<\mu$ lies in $\sgdK_B$, where $f=f_B$, and summing the steps gives
+\[
+\Omega^\mu=\Omega^0+\frac1d\sum_{\nu<\mu}\bigl(f_B(\Omega^\nu)+b^\nu\bigr)+\frac{M_\mu}d.
+\]
+
+\emph{Step 4: Grönwall.} Subtract $\tilde\Omega(\mu/d)=\Omega^0+\sum_{\nu<\mu}\int_{\nu/d}^{(\nu+1)/d}f_B(\tilde\Omega(s))\dd s$ and let $e_\mu=\abs{\Omega^\mu-\tilde\Omega(\mu/d)}$. The three differences are bounded in turn: $\abs{f_B(\Omega^\nu)-f_B(\tilde\Omega(\nu/d))}\le L_Be_\nu$; $\int_{\nu/d}^{(\nu+1)/d}\abs{f_B(\tilde\Omega(\nu/d))-f_B(\tilde\Omega(s))}\dd s\le L_BF_B/(2d^2)$; and $\abs{b^\nu}\le\beta/\sqrt d$. With $M^*=\max_{\mu\le n}\abs{M_\mu}$ and $a_d=\bar tL_BF_B/(2d)+\bar t\beta/\sqrt d$, and since $\mu\le n\le d\bar t$,
+\[
+e_\mu\le\frac{L_B}d\sum_{\nu<\mu}e_\nu+a_d+\frac{M^*}d\qquad(\mu\le\tau\wedge n).
+\]
+Since $e_0=0$, induction on $\mu$ gives $e_\mu\le(a_d+M^*/d)(1+L_B/d)^\mu\le(a_d+M^*/d)\,e^{L_B\bar t}$ for $\mu\le\tau\wedge n$.
+
+\emph{Step 5: the martingale.} The norm of a vector martingale is a nonnegative submartingale, so Doob's maximal inequality and the orthogonality of martingale increments give $\E(M^*)^2\le4\E\abs{M_n}^2=4\sum_{\nu<n}\E[\ind\{\nu<\tau\}\abs{\xi^{\nu+1}}^2]\le4nc_2(1+B)$. Hence
+\[
+\E\max_{\mu\le\tau\wedge n}e_\mu\le e^{L_B\bar t}\Bigl(a_d+2\sqrt{\bar tc_2(1+B)/d}\Bigr).
+\]
+
+\emph{Step 6: the bad event.} On $G$, $\tau>n$ by Step~2, so $\max_{\mu\le n}e_\mu=\max_{\mu\le\tau\wedge n}e_\mu$ there. On $\sgdK$, $\abs{Q_{ik}}\le\max_jQ_{jj}$ and $\abs{R_{in}}\le(Q_{ii}+T_{nn})/2$, so $\abs{\Omega^\mu}\le c_3(1+\max_kQ^\mu_{kk})$ and $e_\mu\le\abs{\Omega^\mu}+\abs{\Omega^0}+F_B\bar t$. By \eqref{eq:sgd:apriori} and $\E S^2\le2d^2\bar t+d^4\bar t^2$, $\E\max_{\mu\le n}e_\mu^2\le c_4$ with $c_4$ independent of $d$, and the Cauchy--Schwarz inequality gives $\E[\ind_{G^c}\max_{\mu\le n}e_\mu]\le(8c_4c_1^2\bar t)^{1/2}/d$. Adding Steps 5 and 6, and using $d\ge1$, gives $\E\max_{\mu\le n}\abs{\Omega^\mu-\tilde\Omega(\mu/d)}\le C/\sqrt d$.
+
+\emph{Step 7: the extension solves the equations.} Steps 1--6 use the initial vectors only through $B_0$, so their conclusion holds in every dimension $d'\ge K+M$ for initial vectors with overlaps exactly $\Omega^0$, which exist because $C(\Omega^0)$ is positive semidefinite of size $K+M\le d'$. Fix $t\le\bar t$ and let $\mu'=\lfloor d't\rfloor$. In dimension $d'$, on $G$ we have $\Omega^{\mu'}\in\sgdK_{B-1/2}$, so the distance from $\tilde\Omega(t)$ to $\sgdK_{B-1/2}$ is at most $\E\abs{\tilde\Omega(t)-\Omega^{\mu'}}/\Prob(G)\le(C/\sqrt{d'}+F_B/d')/\Prob(G)$, which tends to zero as $d'\to\infty$. Hence $\tilde\Omega(t)\in\sgdK_{B-1/2}$ for $t\le\bar t$, so $f_B(\tilde\Omega)=f(\tilde\Omega)$ and $\tilde\Omega$ solves \eqref{eq:sgd:ode}. If $\hat\Omega$ is another solution in $\sgdK$ with the same start, let $t_1$ be the supremum of the times up to which $\hat\Omega=\tilde\Omega$. If $t_1<\bar t$, then by continuity $\hat\Omega$ stays in $\sgdK_B$ for a while after $t_1$, where it solves $\Omega'=f_B(\Omega)$, and uniqueness for $f_B$ contradicts the choice of $t_1$. So $\Omega=\tilde\Omega$, and the bound holds. Finally, $\sgdeg$ is Lipschitz on $\sgdK_B$ by \cref{lem:sgd:lipschitz} and bounded on $\sgdK$, and $\Prob(G^c)\to0$, which gives the last claim.
+\end{proof}
+
+The constant is $C=e^{L_B\bar t}\bigl(\bar tL_BF_B/2+\bar t\beta+2\sqrt{\bar tc_2(1+B)}\bigr)+(8c_4c_1^2\bar t)^{1/2}$. It grows exponentially with the horizon, which is why the theorem says nothing at times of order $\ln d$.\sidenote{The norm of a vector martingale is a submartingale by Jensen's inequality, and Doob's inequality bounds $\E\max_{\mu\le n}\abs{M_\mu}^2$ by $4\E\abs{M_n}^2$ \parencite{Durrett2019}.}\index{Doob's inequality}\index{Grönwall's inequality}
+
+\begin{corollary}[no specialization on fixed horizons]\label{cor:sgd:plateau}
+Let $K=M\ge2$, $T=I_K$, and $w_k^0=\sqrt{q_0}\,g_k$ with $g_1,\dots,g_K$ independent $\Normal(0,I_d)$ vectors, independent of the inputs. Let $\Omega_\sgdsym$ solve \eqref{eq:sgd:ode} with $\Omega_\sgdsym(0)=(q_0I_K,0)$. Then:
+\begin{enumerate}
+\item for every $t\ge0$, $\Omega_\sgdsym(t)$ lies in $\cS=\{\Omega:Q_{ii}=Q_{11},\ Q_{ik}=Q_{12}\ (i\ne k),\ R_{in}=R_{11}\text{ for all }i,k,n\}$;
+\item for every $\bar t>0$ there is a constant $C'$ with $\E\min\{1,\max_{\mu\le d\bar t}\abs{\Omega^\mu-\Omega_\sgdsym(\mu/d)}\}\le C'/\sqrt d$.
+\end{enumerate}
+In particular, for every $\bar t$ and $\epsilon>0$, the probability that two overlaps $R^\mu_{in}$ and $R^\mu_{jm}$ with $\mu\le d\bar t$ differ by more than $\epsilon$ tends to zero: on no fixed horizon do the student units specialize.
+\end{corollary}
+
+\begin{proof}
+The plan is to deduce (i) from the symmetry of the equations and the uniqueness in \cref{thm:sgd:ode}, and (ii) from the theorem, applied given the initialization, and Grönwall's inequality in the initial condition. For (i), let $P$ and $P'$ be $K\times K$ permutation matrices and $\Gamma(Q,R)=(PQP^\top,PRP'^\top)$. If $(\lambda,\nu)\sim\Normal(0,C(\Omega))$, then $(P\lambda,P'\nu)\sim\Normal(0,C(\Gamma\Omega))$, because $P'TP'^\top=T$; and $h(P\lambda,P'\nu)=\Gamma h(\lambda,\nu)$, because $\hat y$ and $y$ are symmetric functions of the fields, which are merely relabeled. Hence $f(\Gamma\Omega)=\Gamma f(\Omega)$, and $\Gamma\Omega_\sgdsym$ solves the equations with the same start, since $\Gamma(q_0I,0)=(q_0I,0)$; it stays in $\sgdK$, as $C(\Gamma\Omega)$ is $C(\Omega)$ conjugated by a permutation matrix. By uniqueness $\Gamma\Omega_\sgdsym=\Omega_\sgdsym$ for every $\Gamma$, and the points fixed by every $\Gamma$ form $\cS$. For (ii), let $E_d$ be the event $\max_kQ^0_{kk}\le2q_0$; since $dQ^0_{kk}/q_0\sim\chi^2_d$, Chebyshev's inequality gives $\Prob(E_d^c)\le2K/d$. On $E_d$, \cref{thm:sgd:ode} with $B_0=2q_0$, applied given $g_1,\dots,g_K$, bounds the conditional mean of $\max_{\mu\le d\bar t}\abs{\Omega^\mu-\Omega(\mu/d;\Omega^0)}$ by $C/\sqrt d$, where $\Omega(\cdot\,;\Omega^0)$ is the solution from $\Omega^0$. That solution and $\Omega_\sgdsym$ stay in $\sgdK_B$ on $[0,\bar t]$, where $f$ is $L_B$-Lipschitz, so Grönwall's inequality gives $\abs{\Omega(t;\Omega^0)-\Omega_\sgdsym(t)}\le e^{L_B\bar t}\abs{\Omega^0-(q_0I,0)}$, and the moments of Gaussian vectors give
+\[
+\E\abs{\Omega^0-(q_0I,0)}^2=\frac{2Kq_0^2+\frac12K(K-1)q_0^2+K^2q_0}d.
+\]
+The three bounds give (ii). Since all $R_{in}$ are equal on $\cS$, $\abs{R^\mu_{in}-R^\mu_{jm}}\le2\abs{\Omega^\mu-\Omega_\sgdsym(\mu/d)}$, and Markov's inequality applied to (ii) gives the last claim.
+\end{proof}
+
+So for every fixed $t$, $\lim_{d\to\infty}\sgdeg(\Omega^{\lfloor dt\rfloor})=\sgdeg(\Omega_\sgdsym(t))$ in probability. Numerically $\Omega_\sgdsym(t)$ converges to B, so $\lim_{t\to\infty}\lim_{d\to\infty}\sgdeg=\varepsilon_\star(\eta)>0$, while at each finite $d$ the student escapes: the plateau is the statement that the two limits do not commute, and the corollary is its rigorous half. \Textcite{VeigaEtAl2022} remark the same of the equations: started uncorrelated with the teacher, they never specialize.\index{specialization}
+
+\paragraph{What the general theorems add.} \Textcite[Theorem~1.1]{GoldtEtAl2020a} state $\max_\mu\E\abs{\Omega^\mu-\Omega(\mu/d)}\le C(\bar t)/\sqrt d$ for activations bounded with two bounded derivatives, with label noise and trained second-layer weights. \Textcite{VeigaEtAl2022} write that their proof fixes ``a number of holes'' in that argument, in particular in bounding the students' norms, and prove (their Theorem~3.1) a bound for Lipschitz activations with a Lipschitz vector field, with constants that track the width and the scaling of the learning rate, the basis of their phase diagram. Our hypothesis $G_\star<\infty$ makes the norm bound pathwise. \Textcite[Theorem~2.3]{BenArousGheissariJagannath2024} prove ballistic and diffusive limits for summary statistics that are localizable and asymptotically closable, with a critical step size at which a correction appears, the term in $\eta^2$.
+
+\paragraph{Beyond the horizon: the information exponent.} For single neurons the search phase was treated rigorously. Write $a_d\ll b_d$ for $a_d/b_d\to0$.
+
+\begin{theorem}[Ben Arous, Gheissari and Jagannath 2021, Theorems 1.3 and 1.4; stated]\label{thm:sgd:bgj}
+Let the population loss be $\phi(m)$, with $\phi'<0$ on $(0,1)$ and information exponent $k$, let the sample-wise errors satisfy the moment bounds of their Assumption~B, and run spherical online SGD with step-size parameter $\delta$, from the uniform distribution on $\{m\ge0\}$, for $n=td$ steps, $t$ growing at most polynomially in $d$.
+\begin{enumerate}
+\item If $t^{-1}\ll\delta\ll t^{-1/2}$ and $t\gg1$ ($k=1$), $t\gg(\log d)^2$ ($k=2$), or $t\gg d^{k-2}(\log d)^2$ ($k\ge3$), then $m(w^n)\to1$ in probability.
+\item If $t\ll1$, $t\ll\log d$ or $t\ll d^{k-2}$ for $k=1$, $2$ or $k\ge3$, with $\delta=O(1)$ for $k\le2$ and $\delta=O(d^{-1/2})$ for $k\ge3$, then $\max_{\mu\le n}\abs{m(w^\mu)}\to0$ in probability.
+\end{enumerate}
+\end{theorem}
+
+So $n\gg d$, $d\log^2d$, $d^{k-1}\log^2d$ samples suffice and $n\ll d$, $d\log d$, $d^{k-1}$ do not; for $k\ge2$ almost all samples are spent in the search phase (their Theorem~1.5), and the authors expect the thresholds to be sharp without the logarithms. The bound $d^{k-1}$ belongs to vanilla online SGD, not to gradient methods: online SGD on a smoothed correlation loss reaches population loss $\epsilon$ with $n\asymp d^{k/2}+d/\epsilon$ samples up to polylogarithmic factors, for $k\ge3$ and an initial overlap of order $d^{-1/2}$ \parencite[Theorem~1]{DamianEtAl2023}, matching the lower bound $d^{k/2}$ for correlational statistical queries; a two-layer network trained by an SGD-based algorithm that reuses minibatches learns polynomial single-index targets with $n\simeq d\,\mathrm{polylog}\,d$ \parencite{LeeEtAl2024}; and two passes over a batch find directions that one pass cannot \parencite{DandiEtAl2024b}.
+
+\section{Measuring it}\label{sec:sgd:measuring}
+
+The committee machine has $K=M=2$, orthonormal teacher units, $\eta=1$ and the random start $w^0_k=g_k/2$, so $q_0=\frac14$. Direct simulation in $\R^d$ costs $O(d)$ per step; \cref{lem:sgd:markov} reduces it to $O(1)$, exactly in law: given $\Omega^\mu$, draw independent $\nu,\zeta\sim\Normal(0,I_2)$, set $\lambda=R\nu+L\zeta$ with $LL^\top=Q-RR^\top$ and $\abs x^2=\abs\nu^2+\abs\zeta^2+\chi^2_{d-4}$, and apply \eqref{eq:sgd:update}. Against direct SGD in $\R^{200}$ ($200$ runs) the chain ($400$ runs) agrees on all seven overlaps at $t=2,4,6,8$ within $1.91$ standard errors. The single neuron reduces to a chain for $m$ in the same way. The four scripts have fixed seeds and compute for $20$ to $65$ seconds each.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=80mm,height=54mm]
+\nextgroupplot[ymode=log,xmin=0,xmax=150,ymin=1e-5,ymax=0.8,xlabel={time $t=\mu/d$},ylabel={error $\sgdeg$},
+  title={(a) learning curves},legend pos=north east,legend style={font=\scriptsize}]
+\addplot[physpred] table[x=t,y=eg] {figures/data/15-sgd-ode-curve.dat};
+\addplot[guide] table[x=t,y=eg] {figures/data/15-sgd-ode-plateau.dat};
+\addplot[measured2,ebars] table[x=t,y=eg125,y error plus=ci125,y error minus=ci125] {figures/data/15-sgd-plateau-curves.dat};
+\addplot[measured,ebars] table[x=t,y=eg1000,y error plus=ci1000,y error minus=ci1000] {figures/data/15-sgd-plateau-curves.dat};
+\legend{{equations, symmetric start},{plateau B},{SGD, $d=125$},{SGD, $d=1000$}}
+\nextgroupplot[xmode=log,xmin=90,xmax=5500,ymin=0,ymax=2.3,xlabel={dimension $d$},
+  ylabel={$\sqrt d\;\E\max_t\abs{\Omega^{dt}-\Omega(t)}$},title={(b) the rate $d^{-1/2}$},
+  legend pos=south east,legend style={font=\scriptsize},xtick={125,250,500,1000,2000,4000},
+  xticklabels={125,250,500,1000,2000,4000},xminorticks=false]
+\addplot[proofpred,forget plot] table[x=d,y=own] {figures/data/15-sgd-rate-fit.dat};
+\addplot[proofpred,forget plot] table[x=d,y=sym] {figures/data/15-sgd-rate-fit.dat};
+\addplot[measured,ebars] table[x=d,y=own,y error plus=ownci,y error minus=ownci] {figures/data/15-sgd-rate.dat};
+\addplot[measured2,ebars] table[x=d,y=sym,y error plus=symci,y error minus=symci] {figures/data/15-sgd-rate.dat};
+\legend{{from the run's own $\Omega^0$},{from the limit $(q_0I,0)$}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Online SGD for the soft committee machine ($K=M=2$, erf, $T=I$, $\eta=1$, $q_0=\frac14$), simulated exactly in law through \cref{lem:sgd:markov}. (a) Mean error over $100$ runs at $d=125$ (hollow) and $d=1000$ (filled), with Student-$t$ $95\%$ intervals (seed $1515$), against the solution of \eqref{eq:sgd:ode} from the random-start limit $(q_0I,0)$ (carnelian), which \cref{cor:sgd:plateau} proves to be the limit on every fixed horizon, and the error $0.020657$ of the fixed point B (dashed). (b) $\sqrt d$ times the mean, over $40$ runs per $d$ (seed $2026$), of $\max_t\abs{\Omega^{dt}-\Omega(t)}$ over $t=0.2,0.4,\dots,10$, with $95\%$ intervals, for the solution from each run's own initial overlaps (filled; \cref{thm:sgd:ode}) and from $(q_0I,0)$ (hollow; \cref{cor:sgd:plateau}); lapis dashed: the rate $C/\sqrt d$, with $C$ the mean over $d$. Scripts: \texttt{15-sgd-plateau.py}, \texttt{15-sgd-rate.py}, \texttt{15-sgd-ode.py}.}\label{fig:sgd:curves}
+\end{figure}
+
+\paragraph{The equations on fixed horizons.} In \cref{fig:sgd:curves}(a) both dimensions follow the solution from the random-start limit down to the plateau (at $t=10$, $0.02126$ and $0.02136$ against $0.02130$); then the simulations leave it, the smaller dimension first, while the equations, by \cref{cor:sgd:plateau} the correct limit at every fixed time, reach $0.02066$, the error of B, and stay. In \cref{fig:sgd:curves}(b) the largest deviation on $[0,10]$ falls from $0.109$ at $d=125$ to $0.020$ at $d=4000$, and $\sqrt d$ times it stays between $1.17$ and $1.31$, every interval containing the average $1.25$: the rate of \cref{thm:sgd:ode}. From the symmetric limit, which misses the $d^{-1/2}$ asymmetry of the start, the constant is $1.56$ to $1.73$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=80mm,height=54mm]
+\nextgroupplot[xmode=log,xmin=100,xmax=1300,ymin=45,ymax=95,xlabel={dimension $d$},ylabel={escape time $\sgdesc$},
+  title={(a) leaving the plateau},legend pos=north west,legend style={font=\scriptsize},
+  xtick={125,250,500,1000},xticklabels={125,250,500,1000},xminorticks=false]
+\addplot[physpred] table[x=d,y=tesc] {figures/data/15-sgd-plateau-line.dat};
+\addplot[measured,ebars] table[x=d,y=mean,y error plus=ci,y error minus=ci] {figures/data/15-sgd-plateau-escape.dat};
+\addplot[measured2,error bars/y dir=both,error bars/y explicit,error bars/error bar style={line width=0.5pt}] table[x expr=1.06*\thisrow{d},y=median,y error plus=hi,y error minus=lo] {figures/data/15-sgd-plateau-escape.dat};
+\legend{{$c+\ln d/(2\varrho)$},{mean},{median}}
+\nextgroupplot[xmode=log,ymode=log,xmin=24,xmax=11000,ymin=60,ymax=2e5,xlabel={dimension $d$},
+  ylabel={samples to reach $m=\frac12$},title={(b) the search phase},legend pos=south east,legend style={font=\scriptsize}]
+\addplot[physpred] table[x=d,y=pred] {figures/data/15-sgd-exponent-k1.dat};
+\addplot[physpred,forget plot] table[x=d,y=pred] {figures/data/15-sgd-exponent-k2.dat};
+\addplot[physpred,forget plot] table[x=d,y=pred] {figures/data/15-sgd-exponent-k3.dat};
+\addplot[measured,ebars] table[x=d,y=median,y error plus=hi,y error minus=lo] {figures/data/15-sgd-exponent-k1.dat};
+\addplot[measured2,ebars] table[x=d,y=median,y error plus=hi,y error minus=lo] {figures/data/15-sgd-exponent-k2.dat};
+\addplot[measured3,ebars] table[x=d,y=median,y error plus=hi,y error minus=lo] {figures/data/15-sgd-exponent-k3.dat};
+\legend{{deterministic equation},{$k=1$},{$k=2$},{$k=3$}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{(a) Time at which online SGD for the committee machine of \cref{fig:sgd:curves} leaves the plateau, the first time on a grid of spacing $0.4$ with $\sgdeg<\varepsilon_\star/2$, $\varepsilon_\star=0.020657$; $100$ runs per $d$ (seed $1515$), all escaped before $t=180$: means with Student-$t$ $95\%$ intervals (filled) and medians with distribution-free $95\%$ intervals from binomial order statistics (hollow, drawn $6\%$ to the right). Carnelian: the heuristic \eqref{eq:sgd:escape}, $c+\ln d/(2\varrho)$ with $\varrho=0.05914$ from B and $c$ fitted to the means. (b) Median number of samples until spherical online SGD reaches overlap $\frac12$ for $y=\sgdHe_k(\ip\theta x)/\sqrt{k!}$ with the correlation loss, information exponent $k=1$, $2$, $3$, step sizes $\delta=\frac12$ for $k\le2$ and $\delta=1/(2\sqrt d)$ for $k=3$; $200$ runs per $d$ (seeds $301$--$303$), distribution-free $95\%$ intervals. Carnelian: the deterministic equation \eqref{eq:sgd:drift} from the median initial overlap $0.674/\sqrt d$. Scripts: \texttt{15-sgd-plateau.py}, \texttt{15-sgd-exponent.py}.}\label{fig:sgd:escape}
+\end{figure}
+
+\paragraph{The escape.} In \cref{fig:sgd:escape}(a) the mean escape times at $d=125$, $250$, $500$, $1000$ are $61.6$, $68.9$, $79.0$, $82.1$ ($\pm3.4$ to $\pm4.5$); a line in $\ln d$ fits them with slope $10.3\pm2.7$ ($95\%$), against $1/(2\varrho)=8.45$, and the medians give $9.7\pm2.4$. At $t=40$, on the plateau, $\sqrt d\,\E\abs s$ is $2.86$, $3.02$, $2.82$, $3.14$: the asymmetry is of order $d^{-1/2}$, as assumed. The pooled standard deviation of the escape times is $19.1$, against $\pi/(2\sqrt2\varrho)=18.8$, and the $10\%$, $25\%$, $50\%$, $75\%$, $90\%$ quantiles of the centered times are $-19.3$, $-13.7$, $-4.5$, $7.9$, $24.0$, against $-19.2$, $-13.1$, $-4.1$, $8.6$, $24.3$ for $-(\ln\abs Z-\E\ln\abs Z)/\varrho$. A factor eight in $d$ cannot separate $\ln d$ from a small power of $d$; the slope, the spread and the shape of the law together are the evidence.
+
+\paragraph{The search phase.} In \cref{fig:sgd:escape}(b) the fitted exponents of $d$ are $1.03$, $1.17$, $1.90$ for $k=1$, $2$, $3$. For $k=1$ the samples divided by $d$ rise from $1.06$ to $1.17$ toward $1.192$, the time at which the limiting equation from $m=0$ reaches $\frac12$, and the deterministic equation from the median start is within $1.5\%$. For $k=2$ they grow linearly in $\ln d$ with slope $0.71\pm0.04$, against $1/(2r)=0.667$, and the deterministic equation overestimates them by $8$ to $25\%$: at the scale $d^{-1/2}$ the noise, the directional error martingale of \textcite{BenArousGheissariJagannath2021}, is as large as the drift. For $k=3$ the median divided by $d^2$ stays between $0.84$ and $1.07$; $7$ to $14\%$ of the runs are still short of $\frac12$ after $4d^2$ steps. Our step sizes satisfy part (ii) of \cref{thm:sgd:bgj}, not the window of part (i): the experiment illustrates the scaling, not the theorem.
+
+\section{The status board}\label{sec:sgd:status}
+
+On fixed horizons the physicists' equations are a theorem, for activations such as erf and with the rate $d^{-1/2}$; the plateau is an exact fixed point of the equations, and a randomly started student provably cannot specialize on a fixed horizon. The $\ln d$ length of the plateau is a heuristic that the measurements support. For single neurons the thresholds of online SGD are proved up to logarithms; they belong to one algorithm and are not lower bounds for gradient methods.
+
+\begin{statusboard}
+\statusrow{Saad--Solla equations on fixed horizons, erf-type activations, rate $d^{-1/2}$}{\proved}{\textcite[Thm.~1.1]{GoldtEtAl2020a}, with gaps fixed by \textcite[Thm.~3.1]{VeigaEtAl2022}; \cref{thm:sgd:ode} for $G_\star<\infty$}
+\statusrow{Plateau as $\eta\to0$: $\varepsilon_\star=\frac K\pi(\frac\pi6-K\arcsin\frac1{2K})$, escape rate $\frac{2K\eta}{\pi\sqrt{2K-1}(2K+1)^{3/2}}$}{\proved}{fixed point and eigenvalue of the equations (\cref{comp:sgd:plateau}, this book)}
+\statusrow{No specialization on a fixed horizon from a random start}{\proved}{\cref{cor:sgd:plateau} (this book); noted for the equations by \textcite{VeigaEtAl2022}}
+\statusrow{Plateau length $(\ln d)/(2\varrho)+O(1)$, spread $\pi/(2\sqrt2\varrho)$}{\heuristicstatus}{\textcite{BiehlRieglerWohler1996} for the dependence on the start; observed here ($d\le1000$): slope $10.3\pm2.7$ against $8.45$, spread $19.1$ against $18.8$}
+\statusrow{Online SGD from a random start needs $n\asymp d$, $d\log d$, $d^{k-1}$ samples ($k=1,2,\ge3$), up to $\log^2d$}{\proved}{\textcite[Thms.~1.3--1.4]{BenArousGheissariJagannath2021}, spherical SGD, step-size conditions}
+\statusrow{The same thresholds without logarithmic factors}{\conjectured}{expected by \textcite{BenArousGheissariJagannath2021}; observed here: exponents $1.03$, $1.17$, $1.90$}
+\statusrow{$d^{k/2}$ samples suffice for online SGD on a smoothed loss ($k\ge3$)}{\proved}{\textcite[Thm.~1]{DamianEtAl2023}, up to polylogarithmic factors}
+\statusrow{$d^{k-1}$ samples are necessary for every gradient method}{\knownfalse}{smoothing \parencite{DamianEtAl2023}; reuse of minibatches gives $d\,\mathrm{polylog}\,d$ for polynomial single-index targets \parencite{LeeEtAl2024}}
+\statusrow{Ballistic and diffusive limits of summary statistics, critical step size}{\provedunder}{localizability and asymptotic closability \parencite[Thm.~2.3]{BenArousGheissariJagannath2024}}
+\end{statusboard}
+
+\section{Where the translation fails}\label{sec:sgd:fails}
+
+\paragraph{What was assumed.} The theorem uses exactly Gaussian inputs, through the conditional law of the fields, where the physics needs a central limit theorem; for other inputs the overlaps are not a Markov chain. It uses fresh samples; with reuse, memory appears (\cref{ch:dmft}). It fixes $K$, $M$ and $\eta$ as $d\to\infty$, the classical scaling, outside which other limits hold \parencite{VeigaEtAl2022,ArnaboldiEtAl2023}. It needs a bounded activation with three bounded derivatives and $G_\star<\infty$, which excludes the rectified linear unit, whose vector field is not Lipschitz at degenerate overlaps \parencite{VeigaEtAl2022}, and the Hermite targets of the search phase; noiseless labels (\cref{ex:sgd:noise}); a start independent of the data; and a fixed horizon. The model is idealized: isotropic Gaussian inputs, a teacher of the student's architecture, $K$ fixed.
+
+\paragraph{Where the physics is wrong, or not yet right.} The equations are deterministic, and at the plateau the dynamics is governed by the fluctuations of order $d^{-1/2}$ that they discard: from a symmetric start they describe a student that never learns, the correct limit at fixed $t$ (\cref{cor:sgd:plateau}) and wrong at every finite $d$ at times of order $\ln d$. The physicist seeds the asymmetry by hand, and its size, $d^{-1/2}$ times a random factor that includes the noise of SGD, too. At a finite learning rate the natural guess for the plateau, identical students, is the wrong fixed point: the term in $\eta^2$ destabilizes it, and the dynamics visits B.\sidenote{The research digest of this volume computed the identical-student point A at finite $\eta$. Its error exceeds that of B by $6\times10^{-7}$ at $\eta=0.1$ and by $5\times10^{-4}$ at $\eta=1$.} For the search phase the deterministic equation gets the exponent right and the constant wrong, by up to $25\%$ for $k=2$. The cost $d^{k-1}$ belongs to vanilla online SGD, not to the problem: smoothing gives $d^{k/2}$, reuse beats the information exponent \parencite{DamianEtAl2023,LeeEtAl2024,DandiEtAl2024b}, and the lower bounds for statistical-query and low-degree algorithms, $d^{k_\star/2}$ with the generative exponent $k_\star\le k$, are in the unrefereed preprint of \textcite{DamianEtAl2024}. On the rigorous side, the proof of \textcite{GoldtEtAl2020a} had gaps that \textcite{VeigaEtAl2022} repaired.
+
+\paragraph{Open problems.} A proof, for the soft committee machine from a random start, that $\sgdesc-(\ln d)/(2\varrho)$ converges in law, to the law of $c-\varrho^{-1}\ln\abs A$ of \eqref{eq:sgd:escape}; \textcite[Section~3]{VeigaEtAl2022} leave the extra $\log d$ time scale of two-layer networks open, and \textcite{ArnaboldiEtAl2023b} give prefactors for $d\log d$ in a related problem in an unrefereed preprint. Whether the symmetric solution converges to B for every learning rate below the critical one, which we see only numerically. \Cref{thm:sgd:ode} without $G_\star<\infty$, for the rectified linear unit through degenerate overlaps, and for non-Gaussian inputs. The thresholds of \cref{thm:sgd:bgj} without logarithmic factors.
+
+\begin{exercises}
+\item \consolidation (The updates.) Derive \eqref{eq:sgd:update} from \eqref{eq:sgd:step}. Show that two student units that are equal at some step remain equal at every later step, so that a student started with identical units never specializes, at every $d$.\label{ex:sgd:update}
+
+\item \consolidation (Linear networks.) For $K=M=1$, $T=1$ and $g(z)=z$, show that the equations read $\dd R/\dd t=\eta(1-R)$ and $\dd Q/\dd t=2\eta(R-Q)+\eta^2(1-2R+Q)$, and that $\sgdeg=\frac12(Q-2R+1)$ satisfies $\dd\sgdeg/\dd t=-\eta(2-\eta)\sgdeg$: the error decays for $\eta<2$, fastest at $\eta=1$, and grows for $\eta>2$. Which hypothesis of \cref{ass:sgd:model} fails, and where does the proof of \cref{thm:sgd:ode} use it?\label{ex:sgd:linear}
+
+\item \consolidation (Larger committees.) Evaluate \cref{comp:sgd:plateau} for $K=3$: $Q_{ik}=\frac15$, $R_{kn}=1/\sqrt{15}$, $\varepsilon_\star=0.020297$, $\varrho=0.04612\,\eta$. Show that $\varepsilon_\star=(\frac\pi6-\frac12)\frac K\pi-\frac1{48\pi K}+O(K^{-3})$: the plateau error grows linearly with the number of units.\label{ex:sgd:largeK}
+
+\item \consolidation (Symmetry.) For $K=M$ and $T=I$, show that the overlaps invariant under relabeling student and teacher units by the same permutation form a four-dimensional subspace that the equations leave invariant, that it contains $\cS$, and that the specialized point $Q=R=I$ lies in it but not in $\cS$.\label{ex:sgd:symmetry}
+
+\item \byhand (The four-point average.) Carry out step 5 of \cref{comp:sgd:averages}, and check it for $u=v=w=z\sim\Normal(0,c)$, where it reads $\E[g'(u)^2g(u)^2]=4\arcsin(c/(1+3c))/(\pi^2\sqrt{1+2c})$, equal to $0.059125$ at $c=1$.\label{ex:sgd:four}
+
+\item \byhand (The escape rate.) Carry out step 6 of \cref{comp:sgd:plateau} for general $K$: differentiate the $I_3$ terms of $\dd R_{in}/\dd t$ along $E$, show that the last two terms cancel and that $\dd Q/\dd t$ is unchanged at first order. \hint{The rows of $E$ sum to zero; at the plateau $A=(2K+1)/K$, $1+q=2K/(2K-1)$ and $1+2q=(2K+1)/(2K-1)$.}\label{ex:sgd:escape}
+
+\item \byhand (Label noise.) For labels $y=\sum_ng(\nu_n)+\sigma_\varepsilon\varepsilon$ with $\varepsilon\sim\Normal(0,1)$ independent of everything else, show that the only change in \eqref{eq:sgd:ode} is the term $\eta^2\sigma_\varepsilon^2\E[g'(\lambda_i)g'(\lambda_k)]$ in $\dd Q_{ik}/\dd t$, and that perfect learning is then not a fixed point. Which bounds of \cref{lem:sgd:step} fail when $\Delta_k$ is unbounded, and what replaces them?\label{ex:sgd:noise}
+
+\item \byhand (The search phase.) Derive \eqref{eq:sgd:drift} by expanding the normalized step to second order, and show that $\E[a^2]=1$ for $k=1$ and $2+8m^2$ for $k=2$. For $k=1$ and $\delta=\frac12$, show that the solution from $m=0$ reaches $\frac12$ at $t=1.1919$; for $k=2$, solve $\dd m/\dd t=m(r-cm^2)$, $r=\delta(2-\delta)$, $c=2\delta+4\delta^2$, in closed form.\label{ex:sgd:search}
+
+\item \translate (Self-averaging as Doob's inequality.) The physical derivation uses a window of $L$ steps with $1\ll L$ and $L\ll d$. Identify the steps of the proof of \cref{thm:sgd:ode} that do the work of each inequality, and explain why the proof needs no window.\label{ex:sgd:window}
+
+\item \translate\hard (Beyond Gaussian inputs.) For inputs with independent uniform $\pm1$ coordinates, show by an example with $K=1$ that the conditional law of $\lambda_1$ given the past is not a function of $Q_{11}$, so that the overlaps are not a Markov chain. Which step of the proof of \cref{thm:sgd:ode} fails, and what must a quantitative central limit theorem for the fields provide?\label{ex:sgd:rademacher}
+
+\item \measurement (A smaller learning rate.) Run \texttt{15-sgd-plateau.py} with $\eta=\frac12$, after changing the plateau error and the escape rate to those of B in \cref{tab:sgd:plateau}. Compare the slope of the mean escape time with $1/(2\varrho)=15.8$ and the spread with $\pi/(2\sqrt2\varrho)=35.1$, and explain why the horizon of the simulation must grow.\label{ex:sgd:measure}
+
+\item \research (The plateau length.) Prove that for $K=M=2$, erf, $T=I$ and a random start, $\sgdesc-(\ln d)/(2\varrho)$ converges in law, and identify the limit. \hint{Combine \cref{thm:sgd:ode} up to a time at which the solution is close to B with a linearization at B controlled at the scale $d^{-1/2}$, as \textcite{BenArousGheissariJagannath2021} control the search phase for $k=2$.}\label{ex:sgd:research}
+\end{exercises}
+
+\notesandrefs
+
+For multilayer networks the order-parameter equations of on-line gradient descent were written in 1995. \textcite{BiehlSchwarze1995} treated single sigmoidal units and committee machines, finding exponential convergence at small learning rates and a critical rate beyond which perfect learning is impossible; \textcite{SaadSolla1995a,SaadSolla1995b} solved the case of $K$ student and $M$ teacher units; \textcite{RieglerBiehl1995} made the hidden-to-output weights adaptive; and \textcite{BiehlRieglerWohler1996} analyzed the transient dynamics, with several fixed points, cascades of plateaus, and plateau lengths that depend on the initial conditions. \Textcite[Chapters~9 and~13]{EngelVandenBroeck2001} give the textbook account.
+
+The ODE method of stochastic approximation \parencite{Ljung1977,KushnerYin1997} treats a fixed dimension and a vanishing step; here the dimension grows and each overlap moves by $O(1/d)$ per sample, so the method applies to the overlaps, not to the weights. \Textcite{WangMattinglyLu2017} proved scaling limits for online regularized regression and principal component analysis, in an unrefereed preprint; \textcite{GoldtEtAl2020a} proved the equations of Saad and Solla with the rate $d^{-1/2}$ and used them for over-parameterized students; \textcite{VeigaEtAl2022} repaired the proof and drew the phase diagram in the width and the learning rate; \textcite{ArnaboldiEtAl2023} unified the classical, high-dimensional and mean-field regimes; \textcite{BenArousGheissariJagannath2024} developed effective dynamics with a critical step size; and \textcite{CollinsWoodfinEtAl2024} gave deterministic equivalents of streaming SGD for generalized linear models with general covariance. For several passes over the same data dynamical mean-field theory takes over (\cref{ch:dmft}): \textcite{GerbelotEtAl2024} prove it for SGD with extensive batches over a finite number of steps, and \textcite{CelentanoChengMontanari2021}, in an unrefereed preprint, for gradient flow (\cref{thm:dmft:fixedhorizon}).
+
+\Textcite{BenArousGheissariJagannath2021} introduced the information exponent and proved \cref{thm:sgd:bgj}. \Textcite{DamianEtAl2023} reached $d^{k/2}$ by smoothing; \textcite{LeeEtAl2024} and \textcite{DandiEtAl2024b} showed that reuse beats the information exponent, the latter with a proof through dynamical mean-field theory; and the generative exponent of \textcite{DamianEtAl2024} sets the lower bounds for statistical-query and low-degree methods.
+
+\Cref{thm:sgd:ode} is this book's arrangement of the argument of \textcite{GoldtEtAl2020a} and \textcite{VeigaEtAl2022}: the hypothesis $G_\star<\infty$, which makes the bound on the norms pathwise, and the derivation of well-posedness from SGD through the projected equations are ours. So are the exact reduction of \cref{lem:sgd:markov} and its use for simulation, \cref{cor:sgd:plateau}, the escape rate of \cref{comp:sgd:plateau}, the attracting plateau B at finite learning rates, and the law of the escape time in \eqref{eq:sgd:escape}; the older literature, which we did not check line by line, may contain some of the closed forms.
+
+\paragraph{Translating the literature.} \Textcite{GoldtEtAl2020a} write $N$ for our $d$, use our $\lambda$, $\nu$, $Q$, $R$ and $T$, measure time by $\mu/N$, and add second-layer weights and label noise. \Textcite{VeigaEtAl2022} write $p$ for the number of hidden units and $\gamma$ for the learning rate, and collect $Q$, $R$ and $T$ in one overlap matrix $\Omega$, of which our $\Omega$ is the part that moves. \Textcite{BenArousGheissariJagannath2021} write $N$ for the dimension, $M$ for the number of samples, $\alpha=M/N$ for our time $t$, $X_t$ for the iterate, $\theta_N$ for the vector to be learned, $m_N(x)=x\cdot\theta_N$ for our overlap $m$, $\delta_N/N$ for our step $\delta/d$, and $\phi$ for the population loss as a function of the overlap; their thresholds $\alpha_c(N,k)=1$, $\log N$, $N^{k-2}$ are thresholds in our $t$. \Textcite{DamianEtAl2023} write $k^\star$ for the information exponent and $\lambda$ for the smoothing parameter. Physicists say order parameters and generalization error where probabilists say summary statistics and population risk.
+
+\printchapterbib
+\end{refsection}

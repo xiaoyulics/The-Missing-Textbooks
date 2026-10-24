@@ -1,0 +1,475 @@
+% Chapter 11 of The Replica Rosetta Stone: logistic regression and max-margin classifiers.
+\newcommand{\classificationh}{h_{\mathrm{MLE}}}
+\newcommand{\classificationa}{\alpha_{\mathrm{MLE}}}
+\newcommand{\classificationerr}{\mathrm{Err}}
+\newcommand{\classificationprox}{\operatorname{prox}}
+\newcommand{\classificationones}{\mathbf{1}}
+
+\rstchapter{Logistic Regression and Max-Margin Classifiers}{The capacity problem with a teacher}{Gardner with a teacher\dict the CGMT}{ch:classification}
+\stonefoot{proved}
+\begin{refsection}[chapters/11-classification.bib]
+
+\begin{chaptersummary}
+Logistic regression with $n$ examples in $d$ dimensions has no maximum-likelihood estimate when the data are linearly separable. For Gaussian inputs labeled by a teacher of signal strength $r$ this happens exactly when $n/d<\classificationa(r)=1/\min_t\E(Z-tV)_+^2$, which is Cover's $2$ when the labels are random. Physics derives this curve, the largest margin of separable data and the error of the max-margin classifier from Gardner's volume of solutions, sliced by the overlap with the teacher; we prove all three for isotropic Gaussian inputs with the one-sided Gordon inequality, applied to the primal problem and to its dual. Beyond the threshold the estimate exists but is inflated, by factors that Sur and Candès derived and proved before the first replica computation of them. Linear programs, Newton's method and support vector machines agree with the predictions; open are non-Gaussian inputs and the negative margins of non-separable data.
+\end{chaptersummary}
+
+\section{The question: when do labeled data stop being separable?}\label{sec:classification:question}
+
+Logistic regression is the first model a statistician fits to binary labels. Given examples $(x_i,y_i)$ with $x_i\in\R^d$ and $y_i\in\{-1,+1\}$, the maximum-likelihood estimate (MLE) minimizes\index{logistic regression}
+\[
+L_n(b)=\sum_{i=1}^n\ell\bigl(y_i\ip{x_i}{b}\bigr),\qquad\ell(t)=\log\bigl(1+e^{-t}\bigr).
+\]
+When $n$ is much larger than $d$, the MLE is consistent and asymptotically normal, and the likelihood-ratio statistic of a null coefficient is asymptotically $\chi^2_1$. When $d$ is a fixed fraction of $n$ all three statements fail. The MLE may not exist: if some $\theta$ has $y_i\ip{x_i}{\theta}>0$ for all $i$, then $L_n(s\theta)\to0=\inf L_n$ as $s\to\infty$.\sidenote{\Textcite{AlbertAnderson1984} characterized existence: the logistic MLE exists if and only if the data are separated neither completely nor quasi-completely (with weak inequalities). For Gaussian inputs the boundary case has probability zero, because it makes some $k\le d$ of the vectors $y_ix_i$ linearly dependent.} When it exists it overestimates the coefficients, and the $\chi^2_1$ calibration makes $p$-values too small. For labels independent of the inputs, \textcite{Cover1965} computed the probability of separability through the origin exactly, $2^{1-n}\sum_{k<d}\binom{n-1}{k}$, which tends to $1$ or to $0$ as $n/d$ tends to $\alpha<2$ or to $\alpha>2$ (the Prologue). Labels from a teacher are easier to separate, and the threshold moves: this is Gardner's capacity problem with a teacher.
+
+\begin{definition}[The teacher model]\label{def:classification:model}
+The dimension $d$ tends to infinity, and $n=n_d$ with $n/d\to\alpha\in(0,\infty)$. The inputs $x_1,\dots,x_n$ are independent $\Normal(0,I_d)$ vectors. A fixed vector $\beta^*=\beta^*_d\in\R^d$ of norm $r\ge0$, the teacher, and a measurable link $f\colon\R\to[0,1]$ generate labels $y_i\in\{-1,+1\}$ that are conditionally independent given the inputs, with $\Prob(y_i=1\mid x_i)=f(\ip{x_i}{\beta^*})$.
+\end{definition}
+
+Three links recur: the logistic link $f(t)=1/(1+e^{-t})$, for which logistic regression is well specified; the noiseless link $f(t)=\ind\{t>0\}$, the teacher perceptron of physics; and $r=0$, random labels. For separability and the MLE, a covariance $\Sigma$ reduces to the identity by $x\mapsto\Sigma^{-1/2}x$, with $r=\ip{\beta^*}{\Sigma\beta^*}^{1/2}$; the maximal margin does not, since the map changes lengths. Let $U\sim\Normal(0,1)$ stand for the teacher's field $\ip{x}{\beta^*}/r$ of a fresh input, $Y$ for a label with $\Prob(Y=1\mid U)=f(rU)$, and $Z\sim\Normal(0,1)$ for a variable independent of both, and let $V=YU$ be the \term{signed teacher field}\index{signed teacher field}, positive when the teacher agrees with the label.
+
+The data are \term{strictly separable}\index{separability} if some $\theta$ has $y_i\ip{x_i}{\theta}>0$ for all $i$. Their \term{maximal margin}\index{margin}, Gardner's stability,
+\[
+\kappa_n=\max_{\norm\theta=1}\ \min_{i\le n}\ y_i\ip{x_i}{\theta},
+\]
+is positive exactly for strictly separable data, and its maximizer $\hat\theta_n$ is the \term{max-margin classifier}\index{max-margin classifier}, the perceptron of optimal stability and the hard-margin support vector machine through the origin, to which gradient descent on the logistic loss converges in direction on separable data \parencite{SoudryEtAl2018}.\index{implicit bias} With $e^*=\beta^*/r$, the test error of a unit vector $\theta$ on an independent fresh pair $(x,y)$ is
+\[
+\classificationerr(\theta)=\Prob\bigl(y\ne\sgn\ip{x}{\theta}\bigr)=\cE\bigl(\ip{\theta}{e^*}\bigr),\qquad\cE(c)=\Prob\bigl(cV+\sqrt{1-c^2}\,Z<0\bigr),
+\]
+which is $\arccos(c)/\pi$ for the noiseless teacher (\cref{thm:classification:margin}).
+
+\begin{physicsbox}[Gardner 1988, with a teacher]
+For Gaussian inputs labeled by a teacher of signal strength $r$, with $n=\alpha d$ examples:
+\begin{enumerate}
+\item the data are separable when $\alpha<\classificationa(r)$ and not when $\alpha>\classificationa(r)$, where
+\begin{equation}\label{eq:classification:threshold}
+\classificationa(r)=\frac1{\classificationh(r)},\qquad\classificationh(r)=\inf_{t\in\R}\E\bigl[(Z-tV)_+^2\bigr];
+\end{equation}
+so the logistic MLE exists exactly when $\alpha>\classificationa(r)$, and $\classificationa(0)=2$;
+\item when $\alpha<\classificationa(r)$, the maximal margin tends to the largest $\kappa$ with
+\begin{equation}\label{eq:classification:margin}
+\max_{\abs c\le1}\bigl[(1-c^2)-\alpha\,\E\bigl(\kappa-cV-\sqrt{1-c^2}\,Z\bigr)_+^2\bigr]\ge0,
+\end{equation}
+the max-margin classifier has the maximizing overlap $c_*$ with the teacher, and its error is $\cE(c_*)$.
+\end{enumerate}
+\end{physicsbox}
+
+For the logistic link the threshold is $2.2782$, $2.8991$, $3.0714$ and $5.4039$ at $r=1$, $2$, $\sqrt5$ and $5$, and $\classificationa(r)/r\to0.985$ as $r\to\infty$ (\cref{ex:classification:larger}); the probit link $f=\Phi$, steeper at the origin, gives $2.6953$ at $r=1$ and $4.5174$ at $r=\sqrt5$ (\texttt{figures/scripts/11-classification-threshold.py}). The order of discovery is not the box's. Its second statement is, for the noiseless teacher, the replica computation of \textcite{OpperEtAl1990}, and for random labels Gardner's formula \parencite{Gardner1988}. Its first was found without physics: at $\beta^*=0$ it is Cover's count, and \textcite{CandesSur2020} derived and proved the curve by conic integral geometry (arXiv, 2018); we know of no physics paper that computed it before them, and the derivation in \cref{sec:classification:physics} is the book's. Beyond the threshold, too, \textcite{SurCandes2019} derived and proved the bias and variance of the MLE before the replica computation was written for convex losses with a teacher \parencite{AubinEtAl2020}. How does a physicist derive these predictions, and how much of the derivation survives as a proof? For isotropic Gaussian inputs, all of it.
+
+\section{The physics: Gardner's volume, sliced by the teacher}\label{sec:classification:physics}
+
+Gardner's question is geometric. With the labeled inputs $z_i=y_ix_i$ and a margin $\kappa$, the \term{version space}\index{version space} $\Omega_\kappa=\{\theta\in S^{d-1}:\ip{z_i}{\theta}\ge\kappa\text{ for }i\le n\}$ is the set of unit weight vectors that classify every example with margin at least $\kappa$; the maximal margin is the largest $\kappa$ for which it is not empty. \Textcite{Gardner1988} computed the typical value of $\frac1d\log\sigma(\Omega_\kappa)$, with $\sigma$ the uniform probability on the sphere, and located the capacity where it tends to $-\infty$.\sidenote{Gardner treated random patterns and labels. The teacher--student version of her method is the subject of the book of \textcite{EngelVandenBroeck2001}, who write $R$ for the overlap with the teacher.}
+
+\paragraph{Slices.} Let $V_i=y_i\ip{x_i}{e^*}$, a copy of $V$, and $\tilde z_i=y_i(x_i-\ip{x_i}{e^*}e^*)$, a standard Gaussian vector in the orthogonal complement of $e^*$, independent of $V_i$ (\cref{lem:classification:rotation}). A unit vector $\theta=c\,e^*+\sqrt{1-c^2}\,\omega$, with $\omega\perp e^*$ a unit vector, has $\ip{z_i}{\theta}=cV_i+\sqrt{1-c^2}\,\ip{\tilde z_i}{\omega}$. So the slice of $\Omega_\kappa$ at teacher overlap $c$ is the version space of a spherical perceptron in $d-1$ dimensions with quenched random margins
+\begin{equation}\label{eq:classification:sitemargins}
+\kappa_i(c)=\frac{\kappa-cV_i}{\sqrt{1-c^2}},
+\end{equation}
+of both signs: easy where the teacher agrees strongly with the label, hard where it disagrees. The slice has measure proportional to $(1-c^2)^{(d-3)/2}\dd c$, so on the exponential scale $\frac1d\log\sigma(\Omega_\kappa)\approx\max_c[\frac12\log(1-c^2)+s(c)]$, with $s(c)$ the typical log-volume per dimension of the slice relative to its own sphere: the largest slice wins.
+
+\begin{heuristic}[Replicas for one slice]
+Fix $c$, let $X$ be the relative volume of the slice, and use $\E\log X=\lim_{m\to0}(\E X^m-1)/m$. For integer $m$, $\E X^m$ is the probability that $m$ independent uniform points $\omega^a$ of the slice's sphere all satisfy the constraints; given their overlaps $Q_{ab}=\ip{\omega^a}{\omega^b}$ the fields $\ip{\tilde z_i}{\omega^a}$ are $\Normal(0,Q)$, independently over $i$, so with $\lambda\sim\Normal(0,Q)$
+\[
+\E X^m=\int\exp\Bigl\{d\Bigl[\tfrac12\log\det Q+\alpha\log\Prob\bigl(\lambda^a\ge\kappa_1(c),\ a\le m\bigr)\Bigr]+o(d)\Bigr\}\dd Q,
+\]
+the probability including the average over $V_1$ and $\frac12\log\det Q$ being the entropy of $m$-tuples with Gram matrix $Q$. Laplace's method selects a saddle point, and the replica-symmetric ansatz $Q_{ab}=q$ ($a\ne b$) makes it explicit: the eigenvalues of $Q$ are $1-q$, $m-1$ times, and $1-q+mq$, so $\frac12\log\det Q=\frac m2[\log(1-q)+\frac q{1-q}]+O(m^2)$; and with $\lambda^a=\sqrt q\,z+\sqrt{1-q}\,\xi_a$ for independent standard normals, the probability is $\E[H((\kappa_1-\sqrt q\,z)/\sqrt{1-q})^m]=1+m\E\log H(\cdot)+O(m^2)$, with $H(x)=\Prob(Z>x)$. As $m\to0$,
+\begin{equation}\label{eq:classification:slicers}
+s(c)=\min_{0\le q<1}\Bigl[\tfrac12\log(1-q)+\frac q{2(1-q)}+\alpha\,\E\log H\Bigl(\frac{\kappa_1(c)-\sqrt q\,Z}{\sqrt{1-q}}\Bigr)\Bigr],
+\end{equation}
+the expectation being over $Z$ and $V$: Gardner's formula with random margins (\cref{ex:classification:entropy} writes it with the overlap of two whole weight vectors). The extremum in $q$ is a minimum, as in her computation: the typical log-volume lies below its average over the fields with the margins fixed, which is the value at $q=0$.
+\end{heuristic}
+
+\begin{heuristic}[The capacity of a slice]
+As the load grows, the typical solutions of a slice approach each other and the minimizing $q$ tends to $1$. Since $\log H(x)=-\frac{x^2}2+O(\log x)$ as $x\to+\infty$ and $\log H(x)\to0$ as $x\to-\infty$, the bracket of \eqref{eq:classification:slicers} is $[1-\alpha\E(\kappa_1(c)-Z)_+^2+o(1)]/(2(1-q))$ as $q\to1$. If $\alpha\E(\kappa_1(c)-Z)_+^2<1$, the minimum sits at some $q<1$ and the slice has a finite log-volume; if it is larger than $1$, the minimum is $-\infty$ and the slice is empty. By \eqref{eq:classification:sitemargins} the \term{capacity of the slice}\index{slice capacity} is
+\begin{equation}\label{eq:classification:slicecap}
+\alpha_\kappa(c)=\frac1{\E(\kappa_1(c)-Z)_+^2}=\frac{1-c^2}{\E\bigl(\kappa-cV-\sqrt{1-c^2}\,Z\bigr)_+^2},
+\end{equation}
+and the version space is not empty while $\alpha<\max_c\alpha_\kappa(c)$, which is \eqref{eq:classification:margin}. \qedhere
+\end{heuristic}
+
+Three readings give the physicsbox. For random labels, $cV+\sqrt{1-c^2}Z$ is standard normal for every $c$, the best slice is $c=0$, and the capacity is Gardner's $1/\E(Z+\kappa)_+^2$ (\cref{ch:gordon}). For a teacher and $\kappa=0$, dividing by $1-c^2$ and putting $t=c/\sqrt{1-c^2}$ gives $\alpha_0(c)=1/\E(-tV-Z)_+^2=1/\E(Z-tV)_+^2$, and maximizing over $c$ is minimizing over $t$: this is \eqref{eq:classification:threshold}. For $\kappa>0$, the largest margin the load allows, with its best slice $c_*$, is the second statement, and for the noiseless teacher the computation of \textcite{OpperEtAl1990}.
+
+\paragraph{A check by counting.} At the threshold the best slice shrinks to one direction, which $d$ active constraints pin down, so about $d$ examples should lie on the margin. Gaussian integration by parts in $Z$ (\cref{thm:toolkit:gaussianibp}) gives $\E[Z(Z-tV)_+]=\Prob(Z>tV)$, hence
+\[
+\E(Z-tV)_+^2=\Prob(Z>tV)-t\,\E\bigl[V(Z-tV)_+\bigr],
+\]
+and the last expectation is $-\frac12$ times the derivative of $\E(Z-tV)_+^2$ in $t$, which vanishes at the minimizer $t_{\mathrm{MLE}}$. So $\classificationh=\Prob(Z>t_{\mathrm{MLE}}V)$: the fraction of examples on the margin is $1/\classificationa$, and their number is $d$. The threshold is \term{isostatic}\index{isostaticity}, the boundary case of the perceptron viewed as a model of jamming, which has fewer contacts than dimensions at positive margin and is \enquote{isostatic and critical} at negative margin \parencite{FranzParisi2016}.
+
+\begin{heuristic}[Zero-temperature replicas for the MLE]
+When $\alpha>\classificationa(r)$ the MLE exists, and the Gibbs measure $e^{-\beta L_n(b)}\dd b$ concentrates on it as $\beta\to\infty$. Its replicas have the order parameters $a=\ip{b}{e^*}$, $Q_0=\norm b^2$ and $q=\ip{b^1}{b^2}$; replica symmetry at zero temperature means $q\to Q_0$ with the \term{susceptibility}\index{susceptibility} $\chi=\beta(Q_0-q)$ fixed, and $\tau^2=q-a^2$ tends to the squared norm of the part of $b$ orthogonal to the teacher. The labeled field of a fresh example under replica $b^a$ is $aV+\tau Z+\sqrt{\chi/\beta}\,\xi_a$, so the energy term is a Laplace integral,
+\[
+\alpha\,\E\log\int e^{-\beta\ell(aV+\tau Z+\sqrt{\chi/\beta}\,\xi)}\,\mathrm D\xi=-\alpha\beta\,\E\,e_\ell(aV+\tau Z;\chi)+o(\beta),
+\]
+with the Moreau envelope $e_\ell(x;\chi)=\min_v[\ell(v)+(v-x)^2/(2\chi)]$; the entropy term, from the eigenvalues of the Gram matrix of the parts orthogonal to the teacher as before, is $\frac12\log\frac\chi\beta+\frac{\beta\tau^2}{2\chi}$. The minimal loss per example is the stationary value of
+\begin{equation}\label{eq:classification:Psi}
+\Psi(a,\tau,\chi)=\E\,e_\ell(aV+\tau Z;\chi)-\frac{\tau^2}{2\alpha\chi}.
+\end{equation}
+Let $p=\classificationprox_{\chi\ell}(aV+\tau Z)$ be the minimizer in $e_\ell$, the \term{proximal map}\index{proximal map}; then $\partial_xe_\ell=\ell'(p)$, $\partial_\chi e_\ell=-\frac12\ell'(p)^2$ and $\partial_xp=1/(1+\chi\ell''(p))$, and with Gaussian integration by parts for the derivative in $\tau$, the stationarity conditions in $a$, $\chi$ and $\tau$ are
+\begin{equation}\label{eq:classification:sc}
+\E\bigl[V\ell'(p)\bigr]=0,\qquad\tau^2=\alpha\chi^2\,\E\bigl[\ell'(p)^2\bigr],\qquad1=\alpha\chi\,\E\Bigl[\frac{\ell''(p)}{1+\chi\ell''(p)}\Bigr].\qedhere
+\end{equation}
+\end{heuristic}
+
+This is the system (5)--(7) of \textcite{SurCandes2019} in the book's units, with their $(\alpha_\star,\sigma_\star,\lambda_\star)$ our $(a/r,\tau\sqrt\alpha,\chi)$ (\cref{ex:classification:surcandes}). The MLE is $\mu\beta^*$ plus a vector of norm $\tau$ orthogonal to $\beta^*$, with the \term{bias factor}\index{bias factor} $\mu=a/r>1$: the zero-temperature student is overconfident. The equations read as a cavity computation: the margin of example $i$ under the fit without it is Gaussian, $aV+\tau Z$, its fitted margin is the proximal map of that, and $\chi$ measures how far an example pulls the fit toward itself (\cref{ex:classification:cavity}).\index{leave-one-out}
+
+\paragraph{What was not controlled.} The derivations take five steps that a mathematician would not: the continuation of integer moments to $m\to0$; the exchange of $m\to0$ with $d\to\infty$; the replica-symmetric ansatz; the choice of the extremum, a minimum in $q$ and a maximum over slices; and the limit $q\to1$ inside the replica-symmetric formula. The slices add a sixth: their margins take both signs, and for the spherical perceptron with negative margin replica symmetry is wrong (\cref{ch:gordon}).
+
+\section{The stone}\label{sec:classification:stone}
+
+The proof follows the derivation slice by slice, but it never computes a volume.
+
+\begin{stone}{Gardner's volume with a teacher}{Gordon's inequality, primal and dual}
+\stonestep{Slice by the teacher}{Cut the version space by the overlap $c$ with the teacher: each slice is a spherical perceptron with quenched margins $(\kappa-cV_i)/\sqrt{1-c^2}$.}{Rotate the teacher to $e_1$ and condition on $V$; the rest of the data is Gaussian (\cref{lem:classification:rotation}). In place of a volume, the smallest violation $\norm{(\kappa\classificationones-Z\theta)_+}$ at angles in a set $T$.}
+\stonestep{Replicate, and let the volume shrink to a point}{$\E X^m$, Gaussian fields with covariance $Q_{ab}$, Laplace's method, $Q_{ab}=q$ and $m\to0$ give \eqref{eq:classification:slicers}; as $q\to1$ the coefficient of $1/(1-q)$ changes sign at the slice capacity $\alpha_\kappa(c)$.}{No replicas, no ansatz, no temperature: Gordon's comparison (\cref{lem:classification:primal}), the auxiliary problem in closed form (\cref{comp:classification:ao}) and its limit $\Gamma_\kappa(c)$ (\cref{lem:classification:lln}), positive exactly when $\alpha>\alpha_\kappa(c)$; then the slice is empty.}
+\stonestep{Pick the best slice}{The version space is not empty while $\alpha<\max_c\alpha_\kappa(c)$; the best slice gives $\kappa_*$ and $c_*$.}{Gordon's inequality is one-sided; duality gives the other side, Gordon's inequality for the distance from the origin to the convex hull of the $z_i$ at the best slice (\cref{lem:classification:deterministic,lem:classification:dual}): the scalar problem of Montanari, Ruan, Sohn and Yan.}
+\stonestep{Trust replica symmetry}{Assumed for every slice, although the margins take both signs.}{Not needed: the primal bound holds for every slice; the best slice is unique by strict convexity (\cref{lem:classification:scalar}).}
+\stonestep{Beyond the threshold: the cavity field}{Zero temperature, $\chi=\beta(Q_0-q)$ fixed; the fitted margin is $\classificationprox_{\chi\ell}$ of the Gaussian cavity margin $aV+\tau Z$; stationarity of $\Psi$.}{Sur and Candès: message passing with fixed point \eqref{eq:classification:sc}, and leave-one-out (\cref{thm:classification:surcandes}); or the CGMT, whose auxiliary problem reduces to $\Psi$ \parencite{SalehiAbbasiHassibi2019}.}
+\end{stone}
+
+\paragraph{What the translation shows.} Both sides compute the same numbers: the slice capacity $\alpha_\kappa(c)$ is where $\Gamma_\kappa(c)$, the limit of Gordon's auxiliary problem, changes sign. The proof justifies the replica-symmetric capacity of every slice as an upper bound, with no stability analysis, and replaces the choice of the largest slice by duality, the one place where convexity enters. The routes part beyond the threshold, where the maximal margin is negative and the problem is not convex: Gordon's inequality gives only a bound there, and replica symmetry is expected to fail (\cref{sec:classification:fails}).
+
+\section{The proof: Gordon's inequality, primal and dual}\label{sec:classification:proof}
+
+This section proves the physicsbox for the teacher model: the threshold (\cref{thm:classification:mle}), and the maximal margin with the error of the max-margin classifier (\cref{thm:classification:margin}). The tool is the one-sided half of the convex Gaussian min--max theorem (CGMT) of \cref{ch:gordon}; the arrangement, applying it once to the primal problem and once to its dual, follows \textcite{Stojnic2013a} for the perceptron and \textcite{MontanariEtAl2025} for the max-margin classifier.
+
+\subsection{Reductions}
+
+\begin{lemma}[The labeled inputs]\label{lem:classification:rotation}
+In the teacher model, let $e^*=\beta^*/r$ (a fixed unit vector if $r=0$) and $z_i=y_ix_i$. Then $z_i=V_ie^*+\tilde z_i$, where $V_1,\dots,V_n$ are independent copies of $V$, the vectors $\tilde z_i$ are independent $\Normal(0,I_d-e^*e^{*\top})$, and the two families are independent. The density of $V$ is $(f(rv)+1-f(-rv))\phi(v)\le2\phi(v)$, and $\E V^2=1$.
+\end{lemma}
+
+\begin{proof}
+Write $x_i=U_ie^*+Px_i$ with $U_i=\ip{x_i}{e^*}$ and $P=I_d-e^*e^{*\top}$. The Gaussian variables $U_i$ and $Px_i$ are uncorrelated, hence independent, and $y_i$ depends on $x_i$ only through $U_i$ and independent randomness; so given $(U_i,y_i)$ both $Px_i$ and $\tilde z_i=y_iPx_i$ are $\Normal(0,P)$, and $\tilde z_i$ is independent of $V_i=y_iU_i$. The density follows from $\Prob(V\in B)=\E[\ind\{U\in B\}f(rU)]+\E[\ind\{-U\in B\}(1-f(rU))]$, and $V^2=U^2$.
+\end{proof}
+
+\begin{lemma}[Separability, the MLE and the maximal margin]\label{lem:classification:deterministic}
+Let $z_1,\dots,z_n\in\R^d$, $\kappa_n=\max_{\norm\theta=1}\min_i\ip{z_i}{\theta}$, $\cS_n=\{\lambda\in\R^n:\lambda\ge0,\ \sum_i\lambda_i=1\}$, $D_n=\min_{\lambda\in\cS_n}\norm{\sum_i\lambda_iz_i}$, the distance from the origin to the convex hull of the $z_i$, and $L_n(b)=\sum_i\ell(\ip{z_i}{b})$. Then $(\kappa_n)_+=D_n$. If $\kappa_n>0$, then $L_n$ has no minimizer. If $\kappa_n<0$, then $L_n$ has a minimizer, which is unique if the $z_i$ span $\R^d$.
+\end{lemma}
+
+\begin{proof}
+The plan is to compare $\kappa_n$ with $D_n$ by averaging and by the nearest point of the hull, and to follow $L_n$ along rays. For every unit $\theta$ and $\lambda\in\cS_n$, $\min_i\ip{z_i}{\theta}\le\sum_i\lambda_i\ip{z_i}{\theta}\le\norm{\sum_i\lambda_iz_i}$, so $\kappa_n\le D_n$. If $D_n>0$, let $p$ be the point of the compact convex hull $K$ nearest to the origin. For $k\in K$ and $s\in(0,1]$, $\norm{p+s(k-p)}^2\ge\norm p^2$; dividing by $s$ and letting $s\downarrow0$ gives $\ip pk\ge\norm p^2$, so $\theta=p/\norm p$ has $\ip{z_i}{\theta}\ge D_n$ for all $i$, and $\kappa_n\ge D_n$. Hence $(\kappa_n)_+=D_n$. If $\kappa_n>0$ with maximizer $\hat\theta_n$, then $L_n(s\hat\theta_n)\le n\ell(s\kappa_n)\to0$ as $s\to\infty$, while $L_n>0$. If $\kappa_n<0$, every $b$ has $\min_i\ip{z_i}{b}\le\kappa_n\norm b$, and since $\ell$ is decreasing with $\ell(t)\ge-t$, $L_n(b)\ge\abs{\kappa_n}\norm b$: the continuous function $L_n$ is coercive and has a minimizer. Its Hessian $\sum_i\ell''(\ip{z_i}{b})z_iz_i^\top$ is positive definite when the $z_i$ span $\R^d$, because $\ell''>0$, and the minimizer is then unique.
+\end{proof}
+
+When $\kappa_n>0$ the maximizer $\hat\theta_n$ is unique: the normalized average of two maximizers would have a larger margin.
+
+\subsection{Gordon's inequality and the primal bound}
+
+We use the CGMT of \cref{thm:gordon:cgmt} only in its one-sided form, which needs no convexity, writing $\cP$ and $\cA$ for the values that \textcite{ThrampoulidisAbbasiHassibi2018} call $\Phi$ and $\phi$, letters we keep for the Gaussian distribution function and density.
+
+\begin{theorem*}[The one-sided CGMT]
+Let $G\in\R^{m\times p}$, $g\in\R^m$ and $h\in\R^p$ have independent standard normal entries, let $S_w\subset\R^p$ and $S_u\subset\R^m$ be non-empty compact sets, and let $\psi$ be continuous on $S_w\times S_u$. Let
+\begin{gather*}
+\cP(G)=\min_{w\in S_w}\max_{u\in S_u}\bigl[u^\top Gw+\psi(w,u)\bigr],\\
+\cA(g,h)=\min_{w\in S_w}\max_{u\in S_u}\bigl[\norm w\,g^\top u+\norm u\,h^\top w+\psi(w,u)\bigr].
+\end{gather*}
+Then $\Prob(\cP(G)<s)\le2\Prob(\cA(g,h)\le s)$ for every $s\in\R$.
+\end{theorem*}
+
+This is Gordon's comparison inequality \parencite{Gordon1985} in the form of \textcite[Theorem~6.1(i)]{ThrampoulidisAbbasiHassibi2018}.\index{convex Gaussian min--max theorem!one-sided} We apply it conditionally on $V=(V_1,\dots,V_n)$, which is independent of the Gaussian parts, with a function $\psi$ that depends on $V$.
+
+Let $Z$ be the $n\times d$ matrix with rows $z_i^\top$ and $\classificationones\in\R^n$ the vector of ones. For $\kappa\in\R$ and a closed set $T\subset[0,\pi]$ of angles, the smallest violation of the margin $\kappa$ by a unit vector at an angle in $T$ from the teacher, and its auxiliary counterpart, are
+\begin{gather*}
+\Delta_T(\kappa)=\min\Bigl\{\norm{(\kappa\classificationones-Z\theta)_+}:\ \norm\theta=1,\ \arccos\ip{\theta}{e^*}\in T\Bigr\},\\
+\delta_T(\kappa)=\min_{t\in T}\Bigl(\norm{(\kappa\classificationones+\sin t\,g-\cos t\,V)_+}-\sin t\,\norm h\Bigr)_+,
+\end{gather*}
+with $g\sim\Normal(0,I_n)$ and $h\sim\Normal(0,I_{d-1})$ independent of each other and of $V$. The violation $\Delta_T(\kappa)$ vanishes exactly when some unit vector at an angle in $T$ has margin at least $\kappa$.
+
+\begin{lemma}[The primal bound]\label{lem:classification:primal}
+In the teacher model, $\Prob(\Delta_T(\kappa)<s)\le4\Prob(\delta_T(\kappa)\le s)$ for all $\kappa,s\in\R$ and every closed set $T\subset[0,\pi]$.
+\end{lemma}
+
+\begin{proof}
+The plan is to write each half of $\Delta_T(\kappa)$ as a Gaussian min--max. Rotate so that $e^*=e_1$; then $Z=[V\mid\tilde Z]$ with $\tilde Z\in\R^{n\times(d-1)}$ standard Gaussian and independent of $V$ (\cref{lem:classification:rotation}). Split $T$ into $T_+=T\cap[0,\frac\pi2]$ and $T_-=T\cap[\frac\pi2,\pi]$, so that $\Delta_T=\min(\Delta_{T_+},\Delta_{T_-})$, a minimum over the empty set being $+\infty$. A unit vector at an angle in $T_+$ is $\theta=(\sqrt{1-\norm w^2},w)$ with $w$ in the compact set $W_+=\{w:\norm w\in\sin T_+\}$, as $\sin$ is one-to-one on $[0,\frac\pi2]$. With $\cU=\{u\in\R^n:u\ge0,\ \norm u\le1\}$ and $\max_{u\in\cU}u^\top a=\norm{a_+}$ (step~2 of \cref{comp:classification:ao}),
+\[
+\norm{(\kappa\classificationones-Z\theta)_+}=\max_{u\in\cU}\Bigl[u^\top(-\tilde Z)w+\kappa\,u^\top\classificationones-\sqrt{1-\norm w^2}\,u^\top V\Bigr].
+\]
+So $\Delta_{T_+}(\kappa)=\cP(-\tilde Z)$ with $S_w=W_+$, $S_u=\cU$ and a continuous $\psi$, and $\Prob(\Delta_{T_+}<s)\le2\Prob(\cA\le s)$, where $\cA$ is the minimum over $T_+$ in $\delta_T(\kappa)$ by \cref{comp:classification:ao}. The half over $T_-$ is the same with $\theta_1=-\sqrt{1-\norm w^2}$. Both auxiliary halves are at least $\delta_T$, and adding the bounds for the two halves gives the factor~$4$.
+\end{proof}
+
+\begin{computation}{The auxiliary problem of the margin constraints}\label{comp:classification:ao}
+\step The auxiliary problem of the half over $T_+$ is $\min_{w\in W_+}\max_{u\in\cU}[\norm w\,g^\top u+\norm u\,h^\top w+\kappa\,u^\top\classificationones-\sqrt{1-\norm w^2}\,u^\top V]$. Fix $w$ with $\norm w=\sin t$, $t\in T_+$, and put $a=\kappa\classificationones+\sin t\,g-\cos t\,V$ and $b=h^\top w$; the objective is $u^\top a+\norm u\,b$.
+\step Write $u=\rho\bar u$ with $\rho\in[0,1]$ and $\bar u\ge0$ a unit vector. If $a$ has a positive entry, $\bar u^\top a\le\bar u^\top a_+\le\norm{a_+}$, with equality at $\bar u=a_+/\norm{a_+}$; otherwise $\max_{\bar u}\bar u^\top a=\max_ia_i\le0$. Calling this maximum $a^\sharp$, the maximum over $\rho$ is $(a^\sharp+b)_+$.
+\step Over the sphere $\norm w=\sin t$, $b$ takes every value in $[-\sin t\norm h,\sin t\norm h]$ and $(a^\sharp+b)_+$ is nondecreasing in $b$, so the minimum is $(a^\sharp-\sin t\norm h)_+=(\norm{a_+}-\sin t\norm h)_+$, in both cases of step~2.
+\step Minimizing over $t\in T_+$ gives the half of $\delta_T(\kappa)$ over $T_+$; the half over $T_-$ is the same with $\cos t\le0$.
+\end{computation}
+
+\subsection{The limit, and the dual bound}
+
+The limit of the auxiliary problem is the replica criterion for an empty slice. For $\kappa\in\R$ and $c\in[-1,1]$ let
+\begin{equation}\label{eq:classification:Gamma}
+\Gamma_\kappa(c)=\Bigl(\E\bigl(\kappa-cV-\sqrt{1-c^2}\,Z\bigr)_+^2\Bigr)^{1/2}-\sqrt{\frac{1-c^2}\alpha};
+\end{equation}
+by \eqref{eq:classification:slicecap}, $\Gamma_\kappa(c)>0$ exactly when $\alpha>\alpha_\kappa(c)$.
+
+\begin{lemma}[The auxiliary problem concentrates]\label{lem:classification:lln}
+For every $\kappa\in\R$, the supremum over $t\in[0,\pi]$ of $\bigl|n^{-1/2}\bigl(\norm{(\kappa\classificationones+\sin t\,g-\cos t\,V)_+}-\sin t\,\norm h\bigr)-\Gamma_\kappa(\cos t)\bigr|$ tends to $0$ in probability. Consequently $n^{-1/2}\delta_T(\kappa)\to\min_{t\in T}\Gamma_\kappa(\cos t)_+$ in probability, for every closed set $T\subset[0,\pi]$.
+\end{lemma}
+
+\begin{proof}
+The plan is the law of large numbers at each angle and a Lipschitz bound for uniformity. Call the normalized difference $A_n(t)$. For fixed $t$, $\frac1n\norm{(\kappa\classificationones+\sin t\,g-\cos t\,V)_+}^2$ is an average of $n$ independent copies of $(\kappa+\sin t\,Z-\cos t\,V)_+^2$, so by the law of large numbers it tends to $\E(\kappa-\cos t\,V-\sin t\,Z)_+^2$ (replace $Z$ by $-Z$), and $\norm h^2/n\to1/\alpha$; so $A_n(t)\to\Gamma_\kappa(\cos t)$. Since $\abs{\norm{x_+}-\norm{y_+}}\le\norm{x-y}$, $A_n$ is Lipschitz with constant $L_n=(\norm g+\norm V+\norm h)/\sqrt n\to2+\alpha^{-1/2}$, and by Minkowski's inequality $t\mapsto\Gamma_\kappa(\cos t)$ is $(2+\alpha^{-1/2})$-Lipschitz. On a grid of mesh $\varepsilon$, with probability tending to one $L_n\le3+\alpha^{-1/2}$ and $\abs{A_n-\Gamma_\kappa(\cos\cdot)}\le\varepsilon$ at the grid points, and then everywhere $\abs{A_n-\Gamma_\kappa(\cos\cdot)}\le(6+2\alpha^{-1/2})\varepsilon$. The minimum over $T$ and the positive part are $1$-Lipschitz in the supremum norm.
+\end{proof}
+
+The primal bound can show that no unit vector has margin $\kappa$, never that one has. For that we use $(\kappa_n)_+=D_n$: a lower bound on the minimum $D_n$ is again a statement about a lower tail.
+
+\begin{lemma}[The dual bound]\label{lem:classification:dual}
+In the teacher model, fix $c\in(-1,1)$, let $R=\sqrt{1-c^2}$, let $g\sim\Normal(0,I_{d-1})$ and $h\sim\Normal(0,I_n)$ be independent of each other and of $V$, and put
+\[
+\varkappa_n(c)=\max\Bigl\{\kappa\in\R:\ \norm{(\kappa\classificationones-Rh-cV)_+}\le R\norm g\Bigr\}.
+\]
+Then $\Prob(D_n<s)\le2\Prob(\varkappa_n(c)\le s)$ for every $s\in\R$, and $\varkappa_n(c)\to\varkappa(c)$ in probability, where $\varkappa(c)$ is the unique $\kappa$ with $\Gamma_\kappa(c)=0$.
+\end{lemma}
+
+\begin{proof}
+The plan is to restrict the inner maximum in $D_n$ to the slice at $c$ and to bound the auxiliary problem below. Rotate so that $e^*=e_1$. Since $\norm{Z^\top\lambda}=\max_{\norm\theta\le1}\lambda^\top Z\theta$ and every $\theta=(c,w)$ with $\norm w\le R$ has norm at most one, $D_n\ge\min_{\lambda\in\cS_n}\max_{\norm w\le R}[w^\top\tilde Z^\top\lambda+c\,\lambda^\top V]$, which is $\cP(\tilde Z^\top)$ with $S_w=\cS_n$, $S_u=\{w:\norm w\le R\}$ and $\psi(\lambda,w)=c\lambda^\top V$. The maximum over $w$ in its auxiliary problem is attained along $g$ at norm $R$ or at $w=0$, so
+\[
+\cA=\min_{\lambda\in\cS_n}\Bigl[R\bigl(\norm g\norm\lambda+h^\top\lambda\bigr)_++c\lambda^\top V\Bigr].
+\]
+Let $\kappa=\varkappa_n(c)$ and $\lambda\in\cS_n$. Since $\sum_i\lambda_i=1$, $\lambda\ge0$ and $x\le x_+$, Cauchy--Schwarz gives
+\begin{align*}
+R\norm g\norm\lambda+\lambda^\top(Rh+cV)&=\kappa+R\norm g\norm\lambda-\lambda^\top(\kappa\classificationones-Rh-cV)\\
+&\ge\kappa+\norm\lambda\bigl(R\norm g-\norm{(\kappa\classificationones-Rh-cV)_+}\bigr)\ge\kappa,
+\end{align*}
+so $\cA\ge\varkappa_n(c)$, and the one-sided CGMT gives the inequality. For the limit, $k(\kappa)=\E(\kappa-cV-RZ)_+^2$ is continuous and strictly increasing, since $\Prob(\kappa-cV-RZ>0)>0$ for every $\kappa$, with limits $0$ and $\infty$, so the root $\varkappa(c)$ of $k(\kappa)=R^2/\alpha$ is unique. For $\kappa'<\varkappa(c)<\kappa''$, the law of large numbers gives $\frac1n\norm{(\kappa'\classificationones-Rh-cV)_+}^2\to k(\kappa')<R^2/\alpha$, the same for $\kappa''$ with the limit $k(\kappa'')>R^2/\alpha$, and $R^2\norm g^2/n\to R^2/\alpha$; the norm being nondecreasing in $\kappa$, $\kappa'\le\varkappa_n(c)<\kappa''$ with probability tending to one.
+\end{proof}
+
+\subsection{The scalar problem and the theorems}
+
+\begin{lemma}[The scalar problem]\label{lem:classification:scalar}
+In the teacher model, let $M(\kappa)=\min_{\abs c\le1}\Gamma_\kappa(c)$ and $F_\kappa(t)=\E\bigl(\kappa\sqrt{1+t^2}-tV-Z\bigr)_+^2$.
+\begin{enumerate}
+\item For $\abs c<1$ and $t=c/\sqrt{1-c^2}$, $\Gamma_\kappa(c)=\sqrt{1-c^2}\,\bigl(F_\kappa(t)^{1/2}-\alpha^{-1/2}\bigr)$; and $F_0(t)=\E(Z-tV)_+^2$.
+\item For $\kappa\ge0$, $F_\kappa$ is strictly convex; for $\kappa>0$, $F_\kappa(t)\to\infty$ as $\abs t\to\infty$.
+\item If $\alpha>\classificationa(r)$, then $M(0)>0$.
+\item If $\alpha<\classificationa(r)$, there is a unique $\kappa_*>0$ with $M(\kappa_*)=0$; $M<0$ on $[0,\kappa_*)$ and $M>0$ on $(\kappa_*,\infty)$. The function $\Gamma_{\kappa_*}$ is nonnegative and vanishes at exactly one point $c_*=t_*/\sqrt{1+t_*^2}$, where $t_*$ is the minimizer of $F_{\kappa_*}$; and $F_{\kappa_*}(t_*)=1/\alpha$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to pass from the overlap $c$ to the slope $t$, where convexity is visible. For (i), $(\kappa-cV-\sqrt{1-c^2}Z)/\sqrt{1-c^2}=\kappa\sqrt{1+t^2}-tV-Z$; square the positive parts and take expectations, and for $F_0$ replace $Z$ by $-Z$.
+
+For (ii), $A(t)=\kappa\sqrt{1+t^2}-tV-Z$ is convex in $t$ when $\kappa\ge0$, and $x\mapsto x_+^2$ is convex and nondecreasing, so for $t_0\ne t_1$ and $t_s=(1-s)t_0+st_1$ with $s\in(0,1)$,
+\[
+A(t_s)_+^2\le\bigl((1-s)A(t_0)+sA(t_1)\bigr)_+^2\le(1-s)A(t_0)_+^2+sA(t_1)_+^2.
+\]
+The second inequality is strict when $A(t_0)\ne A(t_1)$ and $\max(A(t_0),A(t_1))>0$, by the strict convexity of $x^2$ if both are positive and because $s^2<s$ and $(1-s)^2<1-s$ if one is not; this event has positive probability, because $A(t_0)-A(t_1)$ is a nonconstant affine function of $V$, which has a density, and $Z$ is unbounded below given $V$. If $\kappa>0$ and $t\to+\infty$, then $A(t)\ge t(\kappa-V)-Z\to\infty$ on the event $\{V<\kappa/2\}$, of positive probability since $\abs V=\abs U$, and Fatou's lemma gives $F_\kappa(t)\to\infty$; $t\to-\infty$ is the same with $\{V>-\kappa/2\}$.
+
+For (iii), if $\Prob(V<0)=0$, then $V>0$ almost surely and $\E(Z-tV)_+^2\to0$ as $t\to\infty$, so $\classificationa=\infty$; likewise if $\Prob(V>0)=0$. So $\alpha>\classificationa$ forces $V$ to take both signs; then $\Gamma_0(\pm1)=(\E(\mp V)_+^2)^{1/2}>0$, and for $\abs c<1$, by (i), $\Gamma_0(c)$ has the sign of $F_0(t)-1/\alpha\ge\classificationh-1/\alpha>0$. As $\Gamma_0$ is continuous on $[-1,1]$, $M(0)>0$.
+
+For (iv), by Minkowski's inequality $\Gamma_\kappa(c)$ is $1$-Lipschitz and nondecreasing in $\kappa$, so $M$ is continuous and nondecreasing. For $\kappa>0$, $\Prob(\kappa-cV-\sqrt{1-c^2}Z>0)>0$ for every $c$ (for $c=\pm1$ because $\Prob(\abs V<\kappa)=\Prob(\abs U<\kappa)>0$), so $\Gamma_\kappa(c)$ is strictly increasing in $\kappa\ge0$; with $c'$ a minimizer at $\kappa'>\kappa\ge0$, $M(\kappa')=\Gamma_{\kappa'}(c')>\Gamma_\kappa(c')\ge M(\kappa)$. Some $t$ has $F_0(t)<1/\alpha$, so $M(0)<0$ by (i); and $M(\kappa)\ge(\E(\kappa-\abs V-\abs Z)_+^2)^{1/2}-\alpha^{-1/2}\to\infty$. So $M$ has exactly one zero $\kappa_*$, with the stated signs. Then $\Gamma_{\kappa_*}\ge0$ with $\Gamma_{\kappa_*}(\pm1)>\Gamma_0(\pm1)\ge0$, so by (i) its zeros are the points where $F_{\kappa_*}=1/\alpha$, while $F_{\kappa_*}\ge1/\alpha$: they are the minimizers of $F_{\kappa_*}$, which exist by (ii) and are unique by strict convexity.
+\end{proof}
+
+\begin{theorem}[The separability threshold]\label{thm:classification:mle}
+In the teacher model, let $\classificationa(r)=1/\classificationh(r)$ with $\classificationh(r)=\inf_{t\in\R}\E(Z-tV)_+^2$.
+\begin{enumerate}
+\item If $\alpha<\classificationa(r)$, then with probability tending to one the data are strictly separable and the logistic MLE does not exist.
+\item If $\alpha>\classificationa(r)$, then with probability tending to one every unit vector misclassifies some example, $\kappa_n<0$, and the logistic MLE exists and is unique.
+\item $\classificationa(r)\ge2$, with equality if $r=0$; and $\classificationa(r)>2$ if $\E V\ne0$, which holds for every increasing nonconstant link when $r>0$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to turn the sign of the scalar problem into probabilities with \cref{lem:classification:primal,lem:classification:dual}. For (i), some $t$ has $\E(Z-tV)_+^2<1/\alpha$; with $c=t/\sqrt{1+t^2}$, \cref{lem:classification:scalar}(i) gives $\Gamma_0(c)<0$, so the zero $\varkappa(c)$ of the increasing function $\kappa\mapsto\Gamma_\kappa(c)$ is positive, and \cref{lem:classification:dual} gives $\Prob(D_n<\varkappa(c)/2)\le2\Prob(\varkappa_n(c)\le\varkappa(c)/2)\to0$. On the complement $\kappa_n=D_n>0$ (\cref{lem:classification:deterministic}): the data are strictly separable and the MLE does not exist.
+
+For (ii), $\eta=M(0)>0$ by \cref{lem:classification:scalar}(iii), so by \cref{lem:classification:primal,lem:classification:lln} with $T=[0,\pi]$, $\Prob(\Delta_{[0,\pi]}(0)<\eta\sqrt n/2)\le4\Prob(n^{-1/2}\delta_{[0,\pi]}(0)\le\eta/2)\to0$. On the complement every unit $\theta$ has $\norm{(-Z\theta)_+}>0$, that is, some $\ip{z_i}{\theta}<0$; so the maximum $\kappa_n$ of the continuous function $\theta\mapsto\min_i\ip{z_i}{\theta}$ over the sphere is negative, and the MLE exists (\cref{lem:classification:deterministic}). Since $\alpha>\classificationa\ge2$ by (iii), eventually $n\ge d$, and the $z_i$ span $\R^d$ almost surely, which gives uniqueness.
+
+For (iii), $\classificationh\le\E Z_+^2=\frac12$. If $r=0$, $V$ is standard normal and $\E(Z-tV)_+^2=\frac12(1+t^2)$ is smallest at $t=0$. If $\E V\ne0$, the derivative $-2\E[VZ_+]=-2\E V\,\E Z_+$ of this convex function at $t=0$ is not zero, so its minimum is below $\frac12$; and $\E V=2\Cov(U,f(rU))>0$ for an increasing nonconstant link and $r>0$.
+\end{proof}
+
+This is Theorems~1 and~2 of \textcite{CandesSur2020} for the logistic link, who allow every nonsingular covariance and an intercept, and bound the transition window by $O(n^{-1/2})$, by the approximate kinematic formula of \textcite{AmelunxenEtAl2014}, which they describe as a modern form of Gordon's escape through a mesh; for general links it is Theorem~3(a) of \textcite{MontanariEtAl2025} and Proposition~3.1 of \textcite{DengKammounThrampoulidis2022}.
+
+\begin{theorem}[The max-margin classifier]\label{thm:classification:margin}
+In the teacher model with $\alpha<\classificationa(r)$, let $\kappa_*$ and $c_*$ be as in \cref{lem:classification:scalar}(iv). Then, in probability,
+\[
+\kappa_n\to\kappa_*,\qquad\ip{\hat\theta_n}{e^*}\to c_*,\qquad\classificationerr(\hat\theta_n)\to\cE(c_*),
+\]
+with $\hat\theta_n$ defined on the event $\{\kappa_n>0\}$, whose probability tends to one. For random labels $c_*=0$ and $\E(Z+\kappa_*)_+^2=1/\alpha$; for the noiseless teacher $\classificationa=\infty$ and $\cE(c_*)=\arccos(c_*)/\pi$.
+\end{theorem}
+
+\begin{proof}
+The plan is to squeeze $\kappa_n$ between the dual bound at the best slice and the primal bound over all slices, and to apply the primal bound once more to the slices far from $c_*$. Fix $\varepsilon\in(0,\kappa_*)$. Since $\varkappa(c_*)=\kappa_*$, \cref{lem:classification:dual} gives $\kappa_n=D_n\ge\kappa_*-\varepsilon$ with probability tending to one. Since $M(\kappa_*+\varepsilon)>0$, \cref{lem:classification:primal,lem:classification:lln} with $T=[0,\pi]$ give $\Delta_{[0,\pi]}(\kappa_*+\varepsilon)>0$, so that no unit vector has margin $\kappa_*+\varepsilon$, with probability tending to one.
+
+For the direction, let $C=\{c\in[-1,1]:\abs{c-c_*}\ge\varepsilon\}$, assumed non-empty, and $T=\{t\in[0,\pi]:\cos t\in C\}$. The continuous function $\Gamma_{\kappa_*}$ has a positive minimum $\eta$ on the compact set $C$; with $\delta=\min(\eta/2,\varepsilon)$ and the Lipschitz dependence on $\kappa$, $\Gamma_{\kappa_*-\delta}\ge\eta/2$ on $C$. So with probability tending to one $\Delta_T(\kappa_*-\delta)>0$ and $\kappa_n>\kappa_*-\delta$, and then $\hat\theta_n$, whose margin exceeds $\kappa_*-\delta$, is not at an angle in $T$: $\abs{\ip{\hat\theta_n}{e^*}-c_*}<\varepsilon$.
+
+For the error, \cref{lem:classification:rotation} applied to the fresh pair shows that $y\ip x\theta$ has the law of $cV+\sqrt{1-c^2}Z$ with $c=\ip\theta{e^*}$, and $\Prob(\ip x\theta=0)=0$, so $\classificationerr(\theta)=\cE(c)$; the function $\cE$ is continuous on $[-1,1]$, at $\pm1$ because $V$ has no atom at $0$, and the continuous mapping theorem gives the limit. For random labels, $F_\kappa(t)=(1+t^2)\E(\kappa-Z)_+^2$ is smallest at $t=0$. For the noiseless teacher $V=\abs U>0$, so $\classificationa=\infty$, and $\cE(c)=2\Prob(U>0,\ cU+\sqrt{1-c^2}Z<0)$ is twice the Gaussian measure of a wedge of angle $\arccos c$.
+\end{proof}
+
+For random labels this is \cref{thm:gordon:capacity} read at fixed load; for the noiseless teacher it confirms \textcite{OpperEtAl1990}. \Textcite{MontanariEtAl2025} prove the three limits for general covariances under an assumption (their Assumption~3) that excludes the noiseless link, and \textcite{AubinEtAl2020} prove them for ridge-penalized hinge and logistic losses, reaching the max-margin curve as the penalty tends to $0$ without a theorem for the exchange of limits.\sidenote{As far as we know, the noiseless case is not stated as a theorem elsewhere; the proof is the book's arrangement of the arguments of \textcite{Stojnic2013a} and \textcite{MontanariEtAl2025}, with the strict convexity of $F_\kappa$ supplying the uniqueness that the general case assumes.}
+
+\section{The proof, continued: the MLE beyond the threshold}\label{sec:classification:mle}
+
+Beyond the threshold the MLE exists, and Sur and Candès proved the prediction \eqref{eq:classification:sc} for it. We state their theorem in the book's units.
+
+\begin{theorem}[Sur and Candès 2019, in book units]\label{thm:classification:surcandes}
+In the teacher model with the logistic link, let $\alpha>\classificationa(r)$, and let the empirical distribution of the coordinates of $\sqrt n\,\beta^*$ converge to the law of a variable $B$, with second moments. Sur and Candès state that \eqref{eq:classification:sc} then has a unique solution $(a,\tau,\chi)$; let $\mu=a/r$.
+\begin{enumerate}
+\item Almost surely, for every pseudo-Lipschitz function $\psi$ of order two, $\frac1d\sum_{j=1}^d\psi\bigl(\sqrt n(\hat\beta_j-\mu\beta^*_j),\sqrt n\,\beta^*_j\bigr)\to\E\,\psi(\tau\sqrt\alpha\,Z,B)$, with $Z$ independent of $B$; in particular $\norm{\hat\beta-\mu\beta^*}\to\tau$.
+\item If $\beta^*_j=0$, then $\sqrt d\,\hat\beta_j\to\Normal(0,\tau^2)$ in law, and the likelihood-ratio statistic $2\Lambda_j$ of the hypothesis $\beta^*_j=0$ converges in law to $(\tau^2/\chi)\,\chi^2_1$.\index{likelihood-ratio test!rescaled}
+\end{enumerate}
+\end{theorem}
+
+\begin{proofsketch}
+These are Theorems~2--4 of \textcite{SurCandes2019}, translated by $\kappa_{\mathrm{SC}}=1/\alpha$, $\gamma=r$, $\beta_{\mathrm{SC}}=\sqrt n\,\beta$ and $(\alpha_\star,\sigma_\star,\lambda_\star)=(\mu,\tau\sqrt\alpha,\chi)$. Sur and Candès define a generalized approximate message-passing iteration whose state evolution, a theorem for a fixed number of iterations \parencite{JavanmardMontanari2013} (\cref{thm:amp:se} is the symmetric case), has the fixed point \eqref{eq:classification:sc}; a leave-one-out argument after \textcite{SurChenCandes2019}, with their bound on the norm of the MLE in place of strong convexity, shows that the iterates converge to the MLE. The details are in the article's supplementary appendix. \Textcite{SalehiAbbasiHassibi2019} reach the same equations by the CGMT, as the zero-penalty case of ridge-regularized logistic regression, omitting the reduction to compact sets and assuming a unique fixed point.
+\end{proofsketch}
+
+The factor $\tau^2/\chi$ exceeds one and diverges at the threshold, so the classical test rejects true nulls too often; at $d/n=0.2$, $r^2=5$ it is $1.4867$. \Textcite{ZhaoSurCandes2022} allow an arbitrary covariance. With a perceptron teacher, \textcite{AubinEtAl2020} proved the learning curves of ridge-penalized convex losses by Gordon's inequality, with optimally regularized logistic and hinge losses close to the Bayes-optimal error of \cref{ch:glm} (\cref{thm:glm:rsformula}); \textcite{MignaccoEtAl2020} treated Gaussian mixtures, and \textcite{DengKammounThrampoulidis2022} double descent.
+
+\section{Measuring it}\label{sec:classification:measuring}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=82mm,height=40mm]
+\nextgroupplot[xlabel={signal strength $r$},ylabel={load $\alpha=n/d$},xmin=0,xmax=6,ymin=1.5,ymax=6.5,
+  title={(a) the separability threshold},legend pos=north west,legend style={font=\scriptsize}]
+\addplot[physpred] table[x=r,y=alpha] {figures/data/11-classification-threshold-curve.dat};
+\addplot[proofpred] table[x=r,y=alpha] {figures/data/11-classification-threshold-curve.dat};
+\addplot[measured,ebars] table[x=r,y=med,y error plus=plus,y error minus=minus] {figures/data/11-classification-threshold-lp.dat};
+\legend{Gardner with a teacher,Theorem~\ref{thm:classification:mle},critical load ($n=200$)}
+\node[font=\scriptsize,text=muted] at (axis cs:4.4,2.3) {separable: no MLE};
+\node[font=\scriptsize,text=muted] at (axis cs:2.2,4.9) {not separable: MLE exists};
+\nextgroupplot[xlabel={load $\alpha=n/d$},ylabel={fraction separable},xmin=2.35,xmax=4.1,ymin=-0.04,ymax=1.06,
+  title={(b) sharpening at $r=\sqrt5$},legend pos=north east,legend style={font=\scriptsize}]
+\addplot[guide,forget plot] coordinates {(3.0714,-0.04) (3.0714,1.06)};
+\addplot[measured3,ebars] table[x=alpha,y=p100,y error plus=u100,y error minus=m100] {figures/data/11-classification-sharpness.dat};
+\addplot[measured2,ebars] table[x=alpha,y=p200,y error plus=u200,y error minus=m200] {figures/data/11-classification-sharpness.dat};
+\addplot[measured,ebars] table[x=alpha,y=p400,y error plus=u400,y error minus=m400] {figures/data/11-classification-sharpness.dat};
+\legend{$n=100$,$n=200$,$n=400$}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The separability threshold of logistic data. (a) The curve $\classificationa(r)$: the replica prediction (carnelian) and \cref{thm:classification:mle} (lapis dashed), which coincide. Points: medians, over $40$ data sets with $n=200$ examples and $200$ features (the teacher first), of the critical load $n/d_c$; distribution-free $95\%$ intervals from order statistics; seed $11001$. (b) The fraction of $60$, $40$ and $30$ data sets at $n=100$, $200$, $400$ that are separable at load $\alpha$, for $r=\sqrt5$, with Clopper--Pearson $95\%$ intervals; seed $11002$; dashed: $\classificationa(\sqrt5)=3.0714$. Scripts: \texttt{figures/scripts/11-classification-threshold.py} and \texttt{-sharpness.py}.}\label{fig:classification:threshold}
+\end{figure}
+
+The threshold script computes $\classificationa(r)$ by quadrature over the density of $V$ and decides separability by linear programming: the data restricted to the first $d$ features are strictly separable if and only if some $b$ has $y_i\ip{x_i}{b}\ge1$ for all $i$. Separability can only appear as features are added, so each data set has a critical dimension $d_c$, the smallest number of leading features for which it is separable, found by bisection. In \cref{fig:classification:threshold}(a) six of the seven intervals contain the prediction, for instance $3.670$ in $[3.279,3.922]$ against $3.669$ at $r=3$; the seventh, $[2.151,2.273]$ at $r=1$, ends at $200/88$, the attainable value just below $2.278$; at $r=0$, where Cover's formula gives $\Prob(d_c\le n/2)=\frac12$, we measure $1.970$, the midpoint of $200/101$ and $200/102$. In panel~(b) the standard deviation of the critical load falls from $0.72$ to $0.37$ and $0.21$ as $n$ doubles, and the medians, $3.125$, $3.125$ and $2.974$, have intervals containing $3.0714$; at $n=400$ the fraction separable at the threshold is $0.33$, a shift inside the window of width $O(n^{-1/2})$ \parencite{CandesSur2020} about which the theorem says nothing.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=82mm,height=40mm,
+  xmin=0,xmax=0.335,xlabel={$d/n=1/\alpha$},xtick={0,0.05,0.1,0.15,0.2,0.25,0.3}]
+\nextgroupplot[ylabel={bias factor $\mu$},ymin=0.9,ymax=2.6,title={(a) the MLE overestimates},
+  legend to name=classificationmlelegend,legend columns=4,legend style={/tikz/every even column/.append style={column sep=3mm}}]
+\addplot[guide,forget plot] coordinates {(0.3256,0.9) (0.3256,2.6)};
+\addplot[physpred] table[x=dn,y=mu] {figures/data/11-classification-mle-curve.dat};
+\addplot[proofpred] table[x=dn,y=mu] {figures/data/11-classification-mle-curve.dat};
+\addplot[muted,line width=0.8pt,densely dotted,no marks] coordinates {(0,1) (0.335,1)};
+\addplot[measured,ebars] table[x=dn,y=mu,y error plus=muh,y error minus=muh] {figures/data/11-classification-mle-sim.dat};
+\legend{zero-temperature replicas,Theorem~\ref{thm:classification:surcandes},classical theory,Newton's method ($n=1000$)}
+\nextgroupplot[ylabel={noise norm $\norm{\hat\beta-\mu\beta^*}$},ymin=0,ymax=4,title={(b) and its noise is inflated}]
+\addplot[guide,forget plot] coordinates {(0.3256,0) (0.3256,4)};
+\addplot[physpred,forget plot] table[x=dn,y=tau] {figures/data/11-classification-mle-curve.dat};
+\addplot[proofpred,forget plot] table[x=dn,y=tau] {figures/data/11-classification-mle-curve.dat};
+\addplot[muted,line width=0.8pt,densely dotted,no marks,forget plot] table[x=dn,y=tauclassical] {figures/data/11-classification-mle-curve.dat};
+\addplot[measured,ebars,forget plot] table[x=dn,y=tau,y error plus=tauh,y error minus=tauh] {figures/data/11-classification-mle-sim.dat};
+\end{groupplot}
+\end{tikzpicture}
+
+\vspace{1mm}
+\pgfplotslegendfromname{classificationmlelegend}
+\end{fullwidth}
+\caption{Bias and noise of the logistic MLE for the logistic teacher with $r=\sqrt5$. Curves: $\mu=a/r$ and $\tau$ from \eqref{eq:classification:sc} (carnelian; lapis dashed for \cref{thm:classification:surcandes}), up to $d/n=0.29$; both diverge at $\classificationh(\sqrt5)=0.3256$ (dashed). Dotted: the classical $\mu=1$ and $\tau^2=(d/n)/\E f'(rU)$, $\E f'(rU)=0.1412$. Points: $\ip{\hat\beta}{\beta^*}/r^2$ and $\norm{\hat\beta-\mu\beta^*}$ for the MLE (Newton's method), means over $40$ data sets with $n=1000$, Student-$t$ $95\%$ intervals; seed $11003$. Script: \texttt{figures/scripts/11-classification-mle.py}.}\label{fig:classification:mle}
+\end{figure}
+
+The MLE script solves \eqref{eq:classification:sc} by Gauss quadrature and reproduces the values that \textcite{SurCandes2019} print: $(\alpha_\star,\sigma_\star,\lambda_\star)=(1.1678,3.3466,0.9605)$ at $d/n=0.1$, and $(\alpha_\star,\sigma_\star)=(1.4994,4.7436)$ at $d/n=0.2$ against their $(1.499,4.744)$. In \cref{fig:classification:mle} nine of the ten intervals contain the prediction, for instance $\hat\mu=1.506\pm0.054$ against $1.499$ at $d/n=0.2$; the tenth, $1.339\pm0.037$ against $1.299$ at $d/n=0.15$, misses by $0.003$, and the estimates sit slightly above the limit, as in the simulations of Sur and Candès. The classical values fail already at $d/n=0.05$, where the noise norm is $0.651\pm0.024$, against $0.661$ predicted and $0.595$ classically. For $400$ null coordinates at $d/n=0.2$, ten per data set, the mean of $2\Lambda_j$ is $1.36\pm0.20$ against $\tau^2/\chi=1.487$, and at level $5\%$ the $\chi^2_1$ test rejects $42$ ($10.5\%$, interval $[7.7\%,13.9\%]$), the rescaled test $22$ ($5.5\%$, $[3.5\%,8.2\%]$).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=82mm,height=40mm,
+  xmin=0,xmax=5.2,xlabel={load $\alpha=n/d$}]
+\nextgroupplot[ylabel={maximal margin $\kappa_n$},ymin=0,ymax=2.2,title={(a) the margin},
+  legend to name=classificationmmlegend,legend columns=3,legend style={/tikz/every even column/.append style={column sep=3mm}}]
+\addplot[physpred] table[x=alpha,y=kappa] {figures/data/11-classification-maxmargin-curve.dat};
+\addplot[proofpred] table[x=alpha,y=kappa] {figures/data/11-classification-maxmargin-curve.dat};
+\addplot[physpred2] table[x=alpha,y=bayes] {figures/data/11-classification-maxmargin-curve.dat};
+\addplot[measured,ebars] table[x=alpha,y=margin,y error plus=marginh,y error minus=marginh] {figures/data/11-classification-maxmargin-sim-noiseless.dat};
+\addplot[measured2,ebars] table[x=alpha,y=margin,y error plus=marginh,y error minus=marginh] {figures/data/11-classification-maxmargin-sim-logistic.dat};
+\addplot[guide] table[x=alpha,y=kapparand] {figures/data/11-classification-maxmargin-curve.dat};
+\legend{replica prediction,Theorem~\ref{thm:classification:margin},Bayes-optimal error,SVM noiseless ($d=200$),SVM logistic $r=\sqrt5$ ($d=200$),random labels}
+\addplot[physpred,forget plot] table[x=alpha,y=kappa] {figures/data/11-classification-maxmargin-logistic.dat};
+\addplot[proofpred,forget plot] table[x=alpha,y=kappa] {figures/data/11-classification-maxmargin-logistic.dat};
+\node[font=\scriptsize,text=physics,anchor=south west] at (axis cs:1.55,0.62) {noiseless};
+\node[font=\scriptsize,text=physics,anchor=north east] at (axis cs:1.2,0.32) {logistic};
+\node[font=\scriptsize,text=muted,anchor=south] at (axis cs:0.55,1.15) {random};
+\nextgroupplot[ylabel={test error},ymin=0,ymax=0.5,title={(b) the test error},
+  yticklabel style={/pgf/number format/.cd,fixed,precision=2}]
+\addplot[guide,forget plot] coordinates {(0,0.2054) (5.2,0.2054)};
+\addplot[physpred,forget plot] table[x=alpha,y=err] {figures/data/11-classification-maxmargin-curve.dat};
+\addplot[proofpred,forget plot] table[x=alpha,y=err] {figures/data/11-classification-maxmargin-curve.dat};
+\addplot[physpred2,forget plot] table[x=alpha,y=bayes] {figures/data/11-classification-maxmargin-curve.dat};
+\addplot[physpred,forget plot] table[x=alpha,y=err] {figures/data/11-classification-maxmargin-logistic.dat};
+\addplot[proofpred,forget plot] table[x=alpha,y=err] {figures/data/11-classification-maxmargin-logistic.dat};
+\addplot[measured,ebars,forget plot] table[x=alpha,y=err,y error plus=errh,y error minus=errh] {figures/data/11-classification-maxmargin-sim-noiseless.dat};
+\addplot[measured2,ebars,forget plot] table[x=alpha,y=err,y error plus=errh,y error minus=errh] {figures/data/11-classification-maxmargin-sim-logistic.dat};
+\node[font=\scriptsize,text=physics,anchor=south west] at (axis cs:3.2,0.335) {logistic, max margin};
+\node[font=\scriptsize,text=muted,anchor=north east] at (axis cs:5.1,0.2) {logistic, Bayes};
+\node[font=\scriptsize,text=physics,anchor=north east] at (axis cs:2.6,0.135) {noiseless};
+\end{groupplot}
+\end{tikzpicture}
+
+\vspace{1mm}
+\pgfplotslegendfromname{classificationmmlegend}
+\end{fullwidth}
+\caption{The max-margin classifier with a teacher. Curves: the limits of \cref{thm:classification:margin}, which are the replica predictions (carnelian, lapis dashed on top), for the noiseless teacher and for the logistic teacher with $r=\sqrt5$, which end at $\classificationa(\sqrt5)=3.0714$; in (a) random labels (dashed grey, Gardner's formula); in (b) the Bayes-optimal error of the noiseless teacher \parencite{OpperHaussler1991,BarbierEtAl2019} (dotted) and the error $\E f(-r\abs U)=0.2054$ of the logistic teacher itself (dashed grey). Points: hard-margin support vector machines through the origin, solved in the dual, at $d=200$ and $n=\alpha d$; means over $10$ data sets with Student-$t$ $95\%$ intervals; seed $11004$; errors computed exactly from the cosine with the teacher. Script: \texttt{figures/scripts/11-classification-maxmargin.py}.}\label{fig:classification:maxmargin}
+\end{figure}
+
+For the noiseless teacher all ten intervals in \cref{fig:classification:maxmargin} contain the limits; at $\alpha=1$ the margin is $0.768\pm0.030$ against $\kappa_*=0.7865$, and the error $0.265\pm0.008$ against $\cE(c_*)=0.2657$. At large load $\alpha\cE(c_*)\to0.5005$ (its value at $\alpha=200$), against $0.4417$ for the Bayes-optimal classifier, the constants that \textcite{AubinEtAl2020} print as $0.500$ and $0.4417$. For the logistic teacher nine of the ten intervals contain the limits; near the threshold, at $\alpha=2.5$, the error is $0.3245\pm0.0087$ against $0.3341$. The predicted error decreases to $0.3256=\classificationh(\sqrt5)$ at the threshold (\cref{ex:classification:isostatic}), far above the Bayes error $0.2054$: the classifier fits the label noise.
+
+\section{The status board}\label{sec:classification:status}
+
+For convex estimators on Gaussian data everything in this chapter is proved; universality beyond Gaussian inputs is not, and replica symmetry fails on the non-convex side, for errors beyond capacity and for negative margins.
+
+\begin{statusboard}
+\statusrow{Random labels are separable if and only if $\alpha<2$}{\proved}{\textcite{Cover1965}, at every $n$}
+\statusrow{Separability (MLE existence) threshold $\classificationa(r)$, Gaussian inputs}{\proved}{\textcite[Thms.~1--2]{CandesSur2020}; \textcite[Thm.~3(a)]{MontanariEtAl2025}; \cref{thm:classification:mle}}
+\statusrow{The threshold from Gardner's volume sliced by the teacher}{\heuristicstatus}{\cref{sec:classification:physics} (the book's)}
+\statusrow{The same threshold for non-Gaussian inputs, $r>0$}{\conjectured}{\textcite[Sec.~5]{CandesSur2020}}
+\statusrow{MLE bias, noise, null law, rescaled likelihood-ratio test, Gaussian inputs}{\proved}{\textcite[Thms.~2--4]{SurCandes2019}; \textcite{ZhaoSurCandes2022}}
+\statusrow{Ridge- and $\ell_1$-regularized logistic regression}{\provedunder}{\textcite{SalehiAbbasiHassibi2019}: unique fixed point assumed, compactness step omitted}
+\statusrow{Maximal margin and max-margin error, noisy labels}{\proved}{\textcite[Thm.~3]{MontanariEtAl2025}, their Assumptions~1--3}
+\statusrow{Optimal-stability perceptron, noiseless teacher: margin and error ($\approx0.5005/\alpha$ at large $\alpha$)}{\proved}{\cref{thm:classification:margin}, the book's proof; prediction \textcite{OpperEtAl1990}}
+\statusrow{Convex ERM: perceptron teacher, Gaussian mixtures, double descent; Bayes error $\approx0.4417/\alpha$}{\proved}{\textcite[Thm.~2.2]{AubinEtAl2020} ($\lambda>0$); \textcite[Thms.~1--2]{MignaccoEtAl2020}; \textcite{DengKammounThrampoulidis2022}; \textcite{BarbierEtAl2019}}
+\statusrow{Replica symmetry for the fewest errors beyond capacity, and for negative margins}{\knownfalse}{\textcite{GardnerDerrida1988}, above a line; \textcite{Stojnic2013b}, $r=0$, $\kappa\le-0.63$}
+\end{statusboard}
+
+\section{Where the translation fails}\label{sec:classification:fails}
+
+\paragraph{What was assumed.} The theorems assume Gaussian inputs, used through rotation invariance and Gordon's inequality; the physics needs only Gaussian fields $\ip{x_i}{\theta}$, which the central limit theorem provides for many designs. Both assume the proportional limit, a fixed signal strength and classifiers through the origin, and both describe exact minimizers, not algorithms: gradient descent reaches the max-margin direction only as its iterations tend to infinity \parencite{SoudryEtAl2018}. The theory of the MLE assumes the logistic model; the threshold holds for every link.
+
+\paragraph{Where the physics is wrong, or not yet right.} Replica symmetry fails on the non-convex side. \Textcite{GardnerDerrida1988} found the replica-symmetric solution for the fewest training errors beyond capacity unstable above a line in the plane of margin and load. Beyond the separability threshold the maximal margin is negative and the problem is not convex: the primal bound still gives $\kappa_n\le\bar\kappa(\alpha)$, the replica-symmetric value (\cref{ex:classification:negative}), but for random labels that value is strictly above the truth when $\bar\kappa\le-0.63$ \parencite{Stojnic2013b}, and physics predicts full replica-symmetry breaking along the whole jamming line at negative margin \parencite{FranzEtAl2017}; with a teacher we know of no analysis. Two sources contain errors: Proposition~3.3 of \textcite{DengKammounThrampoulidis2022} is stated in its arXiv version~2 for $\kappa<\kappa_\star$ where it must be $\kappa>\kappa_\star$, since the support vector machine needs separable data; and \textcite{SalehiAbbasiHassibi2019} ignore the compactness hypothesis of the CGMT.
+
+\paragraph{Open problems.} First, universality: prove \cref{thm:classification:mle} for $r>0$ and non-Gaussian inputs, as \textcite[Sec.~5]{CandesSur2020} conjecture, and the theory of the MLE for non-Gaussian designs, which \textcite{SurCandes2019} call important to establish rigorously. Second, find the limit of the negative maximal margin for $\alpha>\classificationa(r)$; at $r=0$ this is the capacity of the negative perceptron (\cref{ch:gordon}). Third, close the two gaps in \textcite{SalehiAbbasiHassibi2019}.
+
+\begin{exercises}
+\item \consolidation (Cover from the threshold.) Show that $\classificationh(0)=\frac12$, that Cover's probability $2^{1-n}\sum_{k<d}\binom{n-1}k$ tends to $1$ or $0$ as $n/d\to\alpha<2$ or $\alpha>2$, and that at $r=0$ the critical dimension of \cref{sec:classification:measuring} has $\Prob(d_c\le n/2)=\frac12$ for even $n$.\label{ex:classification:cover}
+
+\item \consolidation (Sur and Candès in book units.) Show that \eqref{eq:classification:sc} is the system (5)--(7) of \textcite{SurCandes2019}, with $\{0,1\}$ labels, $\rho(t)=\log(1+e^t)$, $Q_1=\gamma U$ and $Q_2=-\alpha_\star\gamma U+\sqrt{\kappa_{\mathrm{SC}}}\,\sigma_\star Z$, under $(\alpha_\star,\sigma_\star,\lambda_\star)=(a/r,\tau\sqrt\alpha,\chi)$. \hint{$\E g(V)=2\E[f(rU)g(U)]$ for a symmetric link; $\classificationprox_{\chi\ell}(x)=-\classificationprox_{\chi\rho}(-x)$.}\label{ex:classification:surcandes}
+
+\item \consolidation (The classical limit.) Show that as $\alpha\to\infty$ the solution of \eqref{eq:classification:sc} has $a\to r$ and $\alpha\chi$, $\alpha\tau^2\to1/\E f'(rU)$, the classical inverse Fisher information of the part of $\hat\beta$ orthogonal to the teacher. Check $\kappa_*=0.7865$, $c_*=0.6714$ and $\cE(c_*)=0.2657$ for the noiseless teacher at $\alpha=1$.\label{ex:classification:classical}
+
+\item \byhand (Counting at the threshold.) Prove $\classificationh=\Prob(Z>t_{\mathrm{MLE}}V)$, check it at $r=\sqrt5$ ($t_{\mathrm{MLE}}=0.8708$), and show that $\cE(c_{\mathrm{MLE}})=\classificationh$ for $c_{\mathrm{MLE}}=t_{\mathrm{MLE}}/(1+t_{\mathrm{MLE}}^2)^{1/2}$: at the threshold, the error of the max-margin direction is the fraction of examples on the margin.\label{ex:classification:isostatic}
+
+\item \byhand\hard (Large signal.) For the logistic link, let $m_\ell$ be the minimum over $s>0$ of $\int_\R\E(Z-sw)_+^2\,f(w)\dd w$. Show that $\classificationa(r)/r$ tends to $\sqrt{\pi/2}/m_\ell=0.985$, with $m_\ell=1.2724$ attained at $s=0.3786$. \hint{put $t=sr$ and $v=w/r$ in $\int\E(Z-tv)_+^2\,2f(rv)\phi(v)\dd v$.}\label{ex:classification:larger}
+
+\item \byhand (The whole volume.) With $Q=c^2+(1-c^2)q$, show that $\frac12\log(1-c^2)$ plus the bracket of \eqref{eq:classification:slicers} is $\frac12\log(1-Q)+\frac{Q-c^2}{2(1-Q)}+\alpha\E\log H\bigl((\kappa-cV-\sqrt{Q-c^2}\,Z)/\sqrt{1-Q}\bigr)$, and derive it from the Gram matrix of $m$ students and the teacher.\label{ex:classification:entropy}
+
+\item \translate (Which half of a slice is a theorem.) Show that \cref{lem:classification:primal,lem:classification:lln} with $T=\{\arccos c\}$ prove the slice at overlap $c$ empty when $\alpha>\alpha_\kappa(c)$ and say nothing when $\alpha<\alpha_\kappa(c)$; compare with the negative perceptron of \cref{ch:gordon}.\label{ex:classification:slice}
+
+\item \translate\hard (The cavity field is a leave-one-out margin.) Let $\hat\beta^{(-i)}$ be the MLE without example $i$ and $H_{(-i)}$ the Hessian of its loss there. Expanding the score equation around $\hat\beta^{(-i)}$, show that $\ip{z_i}{\hat\beta}\approx\classificationprox_{\chi_i\ell}(\ip{z_i}{\hat\beta^{(-i)}})$ with $\chi_i=z_i^\top H_{(-i)}^{-1}z_i$, and identify the limit of $\chi_i$ with $\chi$ of \eqref{eq:classification:sc}.\label{ex:classification:cavity}
+
+\item \measurement (Universality.) Rerun the threshold script with inputs uniform on $[-\sqrt3,\sqrt3]$ and $\beta^*=r(1,\dots,1)/\sqrt d$, at $r=0$ and $r=2$. Why does Cover's count make $r=0$ a theorem, while $r=2$ is a conjecture?\label{ex:classification:universality}
+
+\item \measurement (The likelihood-ratio test.) With the MLE script, compute the rejection rates of both tests at $d/n=0.1$ ($\tau^2/\chi=1.1660$) and $d/n=0.25$ ($1.8396$). Why does the classical test fail more as $d/n$ grows?\label{ex:classification:lrt}
+
+\item \research (Negative margins with a teacher.) For $\alpha>\classificationa(r)$, show from \cref{lem:classification:primal,lem:classification:lln} that $\kappa_n$ is asymptotically at most the root $\bar\kappa(\alpha)$ of $M$, and compute $\bar\kappa(4)=-0.1234$ for $r=\sqrt5$. Is the bound tight? The exact limit is open.\label{ex:classification:negative}
+\end{exercises}
+
+\notesandrefs
+The statistical mechanics of learning from examples began with Gardner's space of interactions \parencite{Gardner1988,GardnerDerrida1988}; \textcite{OpperEtAl1990} and \textcite{OpperHaussler1991} computed by replicas the errors of the optimal-stability and Bayes-optimal perceptrons, and \textcite{EngelVandenBroeck2001} collect such computations. The high-dimensional theory of the logistic MLE began with \textcite{SurChenCandes2019}, for the global null; \textcite{CandesSur2020} proved the threshold curve with the kinematic formula of \textcite{AmelunxenEtAl2014}, and \textcite{SurCandes2019} the bias, the variance inflation and the rescaled test. Their heuristic came from statistics, from the leave-one-out analysis of robust regression (\cref{ch:lasso}), not from physics.
+
+Stojnic combined Gordon's inequality \parencite{Gordon1985} with duality for the perceptron \parencite{Stojnic2013a,Stojnic2013b}, an idea that became the CGMT (\cref{ch:gordon}). The book's own are the slicing of Gardner's volume, the counting identity $\classificationh=\Prob(Z>t_{\mathrm{MLE}}V)$ with its consequence for the error at the threshold, and the arrangement of the proofs of \cref{thm:classification:mle,thm:classification:margin} around the one-sided CGMT, which covers the noiseless teacher.
+
+\paragraph{Translating the literature.} \Textcite{CandesSur2020} write $\kappa=p/n=1/\alpha$, $\gamma_0$ (or $\gamma$) for $r$, and $V=YX$. \Textcite{SurCandes2019} use $\{0,1\}$ labels and inputs $X_i\sim\Normal(0,I_p/n)$, so their $\beta$ is $\sqrt n$ times ours, and their $(\alpha_\star,\sigma_\star,\lambda_\star)$ are our $(\mu,\tau\sqrt\alpha,\chi)$. \Textcite{MontanariEtAl2025} write $\psi=1/\alpha$, $\rho=r$, $T=YG$ for our $V$, and $F_\kappa(c_1,c_2)=(\E(\kappa-c_1YG-c_2Z)_+^2)^{1/2}$, so that $\Gamma_\kappa(c)=F_\kappa(c,\sqrt{1-c^2})-\sqrt{(1-c^2)/\alpha}$. \Textcite{DengKammounThrampoulidis2022} write $\kappa=p/n$ and $(\mu,\alpha,\lambda)$ for our $(a,\tau,\chi)$. \Textcite{AubinEtAl2020} use $w=\sqrt d\,\beta$, $\rho_{w^*}=r^2$, unnormalized sums of losses, and $\eta=m^2/(\rho_{w^*}q)$, our squared cosine.
+\printchapterbib
+\end{refsection}

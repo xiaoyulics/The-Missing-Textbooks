@@ -8,8 +8,10 @@
    the distance from the origin to the convex hull of z_1, ..., z_n, at d = 200, against the inverse
    of Gardner's curve alpha_c(kappa) = alpha. It is computed from the dual problem
    min_{a >= 0} (1/2)|Z^T a|^2 - sum(a): at the optimum |Z^T a|^2 = sum(a) = S and kappa_max = 1/sqrt(S).
+   (The margin of the direction Z^T a agrees with 1/sqrt(S) to about 1e-6 on these instances.)
+3. 200 further instances at alpha = 1.5 (seed 9), the point whose 20-instance interval misses the curve.
 
-Writes figures/data/00-prologue-*.dat. Runtime about a minute. Run from the volume root:
+Writes figures/data/00-prologue-*.dat. Runtime about a minute and a half. Run from the volume root:
     python figures/scripts/00-prologue-cover.py
 """
 import math
@@ -67,8 +69,10 @@ def main():
             k += rk.separable(Z)
         lo, hi = rk.clopper_pearson(k, trials)
         p = k / trials
-        sim.append([a, p, p - lo, hi - p, rk.cover_probability(n, d)])
-        print(f"d={d} alpha={a:.1f}: separable {k}/{trials} = {p:.3f} [{lo:.3f}, {hi:.3f}]; Cover {rk.cover_probability(n, d):.4f}")
+        cov = rk.cover_probability(n, d)
+        sim.append([a, p, p - lo, hi - p, cov])
+        print(f"d={d} alpha={a:.1f}: separable {k}/{trials} = {p:.3f} [{lo:.3f}, {hi:.3f}]; Cover {cov:.4f}"
+              f" ({'inside' if lo <= cov <= hi else 'OUTSIDE'} the interval)")
     rk.write_dat(os.path.join(OUT, "00-prologue-cover-sim.dat"), ["alpha", "frac", "lo", "hi", "cover"], sim)
 
     # 2. The largest margin of random labels against Gardner's curve
@@ -83,9 +87,18 @@ def main():
             k, res = max_margin(Z)
             ks.append(k)
         m, half = rk.mean_ci(ks)
-        mar.append([a, m, half, kappa_rs(a)])
-        print(f"d={d} alpha={a:.2f}: kappa_max = {m:.4f} +- {half:.4f}; Gardner inverse {kappa_rs(a):.4f}")
+        rs = kappa_rs(a)
+        mar.append([a, m, half, rs])
+        where = "contains it" if abs(m - rs) <= half else f"misses it by {abs(m - rs) - half:.4f}"
+        print(f"d={d} alpha={a:.2f}: kappa_max = {m:.4f} +- {half:.4f}; Gardner inverse {rs:.4f}; the interval {where}")
     rk.write_dat(os.path.join(OUT, "00-prologue-margin.dat"), ["alpha", "kappa", "half", "rs"], mar)
+    # 3. The point at alpha = 1.5 misses the curve: a finite-size bias, or a fluctuation of 20 instances?
+    gen = rk.rng(9)
+    n = int(round(1.5 * d))
+    ks = [max_margin(gen.standard_normal((n, d)))[0] for _ in range(200)]
+    m, half = rk.mean_ci(ks)
+    print(f"d={d} alpha=1.50, 200 further instances (seed 9): kappa_max = {m:.4f} +- {half:.4f}; "
+          f"Gardner inverse {kappa_rs(1.5):.4f}")
     curve = [[a, kappa_rs(a)] for a in np.round(np.arange(0.1, 2.0001, 0.05), 3)]
     rk.write_dat(os.path.join(OUT, "00-prologue-margin-curve.dat"), ["alpha", "kappa"], curve)
     curve_neg = [[a, kappa_rs(a)] for a in np.round(np.arange(2.0, 6.0001, 0.1), 3)]

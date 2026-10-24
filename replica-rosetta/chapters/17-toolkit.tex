@@ -1,0 +1,464 @@
+% Appendix A of The Replica Rosetta Stone: the shared toolkit.
+\appendixchapter{A Toolkit}{Gaussian calculus, concentration and random matrices}{ch:toolkit}
+\begin{refsection}[chapters/17-toolkit.bib]
+
+This appendix collects the tools that the book's proofs share: Gaussian integration by parts and interpolation, the comparison and concentration inequalities they yield, Laplace's method and Varadhan's lemma, the conditional law of a Gaussian matrix given linear constraints, the semicircle and Marchenko--Pastur laws, the Kac--Rice formula, and the numerical methods of the scripts. Results with short proofs that use only what precedes them are proved, including the semicircle law and the norm of a GOE matrix; the others are stated with their sources. Each item names the chapters that use it and, where there is one, the physical step that it replaces.
+
+Vectors are columns; $\abs x$ is the Euclidean norm, $\ip xy$ the inner product, $\norm A$ the operator norm and $\norm A_F$ the Frobenius norm of a matrix; $Z\sim\Normal(0,I_n)$ is a standard Gaussian vector, and $\partial_i$, $\partial_{ij}$ are partial derivatives.
+
+\section{Gaussian integration by parts and interpolation}\label{sec:toolkit:gaussian}
+
+A centered Gaussian vector $X$ in $\R^n$ with covariance $\Sigma=\E XX^\top$ has the law of $\Sigma^{1/2}Z$, where $\Sigma^{1/2}$ is the positive semidefinite square root of $\Sigma$, which may be singular. A function $F\colon\R^n\to\R$ has \term{moderate growth} if for every $a>0$ some $C_a$ satisfies $\abs{F(x)}\le C_ae^{a\abs x^2}$ for all $x$. Polynomials, bounded functions, $e^{\ip bx}$ and $\log\cosh$ have moderate growth, and so do sums and products of such functions and their compositions with linear maps. If $F$ has moderate growth, then $F(X)$ has moments of all orders, because $\E e^{a\abs X^2}\le\E e^{a\norm\Sigma\abs Z^2}<\infty$ when $2a\norm\Sigma<1$.
+
+\begin{theorem}[Gaussian integration by parts]\label{thm:toolkit:gaussianibp}
+Let $X$ be a centered Gaussian vector in $\R^n$ with covariance $\Sigma$, and let $F\colon\R^n\to\R$ be continuously differentiable, with $F$ and its first partial derivatives of moderate growth. Then, for each $i$,
+\begin{equation}\label{eq:toolkit:ibp}
+\E\bigl[X_iF(X)\bigr]=\sum_{j=1}^n\Sigma_{ij}\,\E\bigl[\partial_jF(X)\bigr].
+\end{equation}
+More generally, if $(Y,X)$ is a centered Gaussian vector in $\R\times\R^n$, then $\E[YF(X)]=\sum_j\E[YX_j]\,\E[\partial_jF(X)]$. For $n=1$ and $X=Z\sim\Normal(0,1)$ this is \term{Stein's identity} $\E[Zf(Z)]=\E f'(Z)$.
+\end{theorem}
+
+\begin{proof}
+The plan is to integrate by parts in one variable, to pass to a standard Gaussian vector by Fubini's theorem, and to reach a general covariance by a linear change of variables. Let $\phi(z)=e^{-z^2/2}/\sqrt{2\pi}$, so that $\phi'(z)=-z\phi(z)$. If $g\colon\R\to\R$ is continuously differentiable and $\abs{g(z)}+\abs{g'(z)}\le Ce^{az^2}$ with $a<\frac12$, then integration by parts on $[-L,L]$ gives
+\[
+\int_{-L}^Lg'(z)\phi(z)\dd z=g(L)\phi(L)-g(-L)\phi(-L)+\int_{-L}^Lzg(z)\phi(z)\dd z.
+\]
+The boundary terms are at most $Ce^{(a-1/2)L^2}$, and both integrals converge absolutely as $L\to\infty$; so $\E g'(Z)=\E[Zg(Z)]$ for $Z\sim\Normal(0,1)$.
+
+Now let $Z\sim\Normal(0,I_n)$, let $G\colon\R^n\to\R$ be continuously differentiable with $G$ and $\partial_kG$ of moderate growth, and fix $a<\frac12$. With the coordinates $z'$ other than $z_k$ held fixed, the bound $\abs{G(z)}+\abs{\partial_kG(z)}\le C_ae^{a\abs{z'}^2}e^{az_k^2}$ allows the one-variable identity in $z_k$. Since $\E[(1+\abs{Z_k})e^{a\abs Z^2}]<\infty$, Fubini's theorem integrates the identity over $z'$ and gives $\E[Z_kG(Z)]=\E[\partial_kG(Z)]$.
+
+Finally let $A=\Sigma^{1/2}$, so that $X$ has the law of $AZ$, and let $G(z)=F(Az)$. Then $\partial_kG(z)=\sum_jA_{jk}\,\partial_jF(Az)$, and $G$ and $\partial_kG$ have moderate growth because $\abs{Az}\le\norm A\abs z$. The previous step gives
+\[
+\E[X_iF(X)]=\sum_kA_{ik}\E[Z_kG(Z)]=\sum_kA_{ik}\E[\partial_kG(Z)],
+\]
+which is $\sum_j(AA^\top)_{ij}\E[\partial_jF(X)]$, and $AA^\top=\Sigma$. For the general form, apply \eqref{eq:toolkit:ibp} to the vector $(Y,X)$ and to the function $(y,x)\mapsto F(x)$, whose derivative in $y$ vanishes.
+\end{proof}
+
+Multiplying by a Gaussian variable is, in expectation, differentiating along its covariance. With $F(x)=x_jx_kx_l$ the identity gives Wick's formula $\E X_iX_jX_kX_l=\Sigma_{ij}\Sigma_{kl}+\Sigma_{ik}\Sigma_{jl}+\Sigma_{il}\Sigma_{jk}$, the form physicists usually meet. It extends to complex-valued $F$ by linearity, and it gives the interpolation lemma below, the I-MMSE relation (\cref{thm:freeentropy:immse}), and, in the proof of state evolution (\cref{thm:amp:se}), the average derivative that becomes the Onsager coefficient.\sidenote{Statisticians name the identity after Charles Stein, whose paper on estimating the mean of a multivariate normal distribution uses it to compute the risk of an estimator \parencite{Stein1981}.}\index{Gaussian integration by parts}\index{Stein's identity}
+
+\begin{lemma}[Gaussian interpolation]\label{lem:toolkit:interpolation}
+Let $X$ and $Y$ be independent centered Gaussian vectors in $\R^n$ with covariances $\Sigma^X$ and $\Sigma^Y$, and let $F\colon\R^n\to\R$ be twice continuously differentiable, with $F$ and its partial derivatives of first and second order of moderate growth. For $t\in[0,1]$ let $Z_t=\sqrt t\,X+\sqrt{1-t}\,Y$ and $\varphi(t)=\E F(Z_t)$. Then $\varphi$ is continuously differentiable on $[0,1]$, with
+\begin{equation}\label{eq:toolkit:interpolation}
+\varphi'(t)=\frac12\sum_{i,j=1}^n\bigl(\Sigma^X_{ij}-\Sigma^Y_{ij}\bigr)\,\E\bigl[\partial_{ij}F(Z_t)\bigr],
+\end{equation}
+and therefore $\E F(X)-\E F(Y)=\frac12\int_0^1\sum_{i,j}(\Sigma^X_{ij}-\Sigma^Y_{ij})\,\E[\partial_{ij}F(Z_t)]\dd t$.
+\end{lemma}
+
+\begin{proof}
+The plan is to differentiate under the expectation and to remove the factors $X_i/\sqrt t$ and $Y_i/\sqrt{1-t}$ with \cref{thm:toolkit:gaussianibp}. By the Cauchy--Schwarz inequality $\abs{Z_t}^2\le\abs X^2+\abs Y^2$, so for every $a>0$ the function $F$ and its first and second derivatives, evaluated at $Z_t$, are bounded by $C_ae^{a(\abs X^2+\abs Y^2)}$, uniformly in $t$. For $0<t<1$,
+\[
+\frac{\dd}{\dd t}F(Z_t)=\sum_i\partial_iF(Z_t)\Bigl(\frac{X_i}{2\sqrt t}-\frac{Y_i}{2\sqrt{1-t}}\Bigr),
+\]
+which on $[\delta,1-\delta]$ is bounded by $\sqrt n\,C_a(\abs X+\abs Y)e^{a(\abs X^2+\abs Y^2)}/(2\sqrt\delta)$, an integrable function for small $a$; so we may differentiate under the expectation. Apply the general form of \cref{thm:toolkit:gaussianibp} to the Gaussian vector $(X,Y)$ and to $G_i(x,y)=\partial_iF(\sqrt t\,x+\sqrt{1-t}\,y)$, whose derivatives are $\partial_{x_j}G_i=\sqrt t\,\partial_{ij}F$ and $\partial_{y_j}G_i=\sqrt{1-t}\,\partial_{ij}F$; since $X$ and $Y$ are independent, this gives
+\begin{gather*}
+\E[X_i\,\partial_iF(Z_t)]=\sqrt t\,\sum_j\Sigma^X_{ij}\,\E[\partial_{ij}F(Z_t)],\\
+\E[Y_i\,\partial_iF(Z_t)]=\sqrt{1-t}\,\sum_j\Sigma^Y_{ij}\,\E[\partial_{ij}F(Z_t)].
+\end{gather*}
+Substituting gives \eqref{eq:toolkit:interpolation} on $(0,1)$. By dominated convergence, $\varphi$ and the right side of \eqref{eq:toolkit:interpolation} are continuous on $[0,1]$, so by the mean value theorem $\varphi$ is differentiable at the end points too, and the integral formula is the fundamental theorem of calculus.
+\end{proof}
+
+The lemma uses $X$ and $Y$ only through the law of $Z_t$, which is centered Gaussian with covariance $t\Sigma^X+(1-t)\Sigma^Y$. Its message is a sign rule: if $(\Sigma^X_{ij}-\Sigma^Y_{ij})\,\partial_{ij}F\ge0$ for all $i,j$, then $\E F(X)\ge\E F(Y)$. For a free entropy the second derivatives are Gibbs covariances, and the derivative takes the form that every interpolation of the book uses.\index{Gaussian interpolation}
+
+\begin{corollary}[interpolation of a free entropy]\label{cor:toolkit:gibbs}
+Let $S$ be a finite set, $w\colon S\to(0,\infty)$, and let $X=(X(\sigma))_{\sigma\in S}$ and $Y=(Y(\sigma))_{\sigma\in S}$ be independent centered Gaussian processes with covariances $C^X(\sigma,\tau)=\E X(\sigma)X(\tau)$ and $C^Y(\sigma,\tau)$. Let $Z_t=\sqrt t\,X+\sqrt{1-t}\,Y$, let $\gibbs{\cdot}_t$ be the average under the Gibbs weights proportional to $w(\sigma)e^{Z_t(\sigma)}$, and let $\sigma^1,\sigma^2$ be two independent samples (replicas) from them. Then, with $\Delta=C^X-C^Y$,
+\begin{equation}\label{eq:toolkit:gibbs}
+\frac{\dd}{\dd t}\,\E\log\sum_{\sigma\in S}w(\sigma)e^{Z_t(\sigma)}=\frac12\,\E\bigl[\gibbs{\Delta(\sigma^1,\sigma^1)}_t-\gibbs{\Delta(\sigma^1,\sigma^2)}_t\bigr].
+\end{equation}
+\end{corollary}
+
+\begin{proof}
+The function $F(x)=\log\sum_\sigma w(\sigma)e^{x_\sigma}$ on $\R^S$ is infinitely differentiable, with $\abs{F(x)}\le\abs{\log\sum_\sigma w(\sigma)}+\max_\sigma\abs{x_\sigma}$, $\partial_\sigma F=p_\sigma$ and $\partial_{\sigma\tau}F=\delta_{\sigma\tau}p_\sigma-p_\sigma p_\tau$, where $p_\sigma(x)=w(\sigma)e^{x_\sigma}/\sum_\tau w(\tau)e^{x_\tau}$; all of these have moderate growth. At $x=Z_t$, $\sum_\sigma\Delta(\sigma,\sigma)p_\sigma=\gibbs{\Delta(\sigma^1,\sigma^1)}_t$ and $\sum_{\sigma,\tau}\Delta(\sigma,\tau)p_\sigma p_\tau=\gibbs{\Delta(\sigma^1,\sigma^2)}_t$, and \cref{lem:toolkit:interpolation} gives \eqref{eq:toolkit:gibbs}.
+\end{proof}
+
+In mean-field models the covariances are functions of the overlap, so \eqref{eq:toolkit:gibbs} expresses the derivative as a Gibbs average of a function of $R_{12}$. This is the computation behind Guerra and Toninelli's superadditivity and Guerra's replica-symmetric bound (\cref{thm:sk:guerratoninelli,thm:sk:rsbound}) and behind the interpolation bounds of \cref{ch:nishimori,ch:glm}. Where the replica method computes $\E Z^n$ with $n$ replicas and continues to $n\to0$, the interpolation needs two replicas and a sign.
+
+\section{Comparison inequalities}\label{sec:toolkit:comparison}
+
+For the maximum of a Gaussian vector the sign rule gives two classical inequalities. For a family $(X_t)_{t\in T}$ indexed by an infinite set we write $\E\sup_tX_t$ for the supremum of $\E\max_{t\in T_0}X_t$ over finite subsets $T_0\subset T$; for a process with continuous paths on a separable metric space this is the expectation of the supremum, by monotone convergence.
+
+\begin{theorem}[Slepian's lemma and the Sudakov--Fernique inequality]\label{thm:toolkit:slepian}
+Let $X=(X_1,\dots,X_n)$ and $Y=(Y_1,\dots,Y_n)$ be centered Gaussian vectors.
+\begin{enumerate}
+\item (Slepian.) If $\E X_i^2=\E Y_i^2$ for all $i$ and $\E X_iX_j\ge\E Y_iY_j$ for all $i\ne j$, then $\Prob(\max_iX_i>u)\le\Prob(\max_iY_i>u)$ for every $u\in\R$; in particular $\E\max_iX_i\le\E\max_iY_i$.
+\item (Sudakov--Fernique.) If $\E(X_i-X_j)^2\le\E(Y_i-Y_j)^2$ for all $i,j$, then $\E\max_iX_i\le\E\max_iY_i$.
+\end{enumerate}
+The comparisons of expectations extend to infinite index sets, with $\E\sup$ as above.
+\end{theorem}
+
+\begin{proof}
+The plan is to apply \cref{lem:toolkit:interpolation} to smooth functions that approximate $\ind\{\max_ix_i\le u\}$ and $\max_ix_i$. Only the laws of $X$ and $Y$ enter, so we may take them independent; write $a_{ij}=\E X_iX_j-\E Y_iY_j$.
+
+(i) Let $h\colon\R\to[0,1]$ be infinitely differentiable and nonincreasing, equal to $1$ on $(-\infty,0]$ and to $0$ on $[1,\infty)$, and let $F_k(x)=\prod_ih(k(x_i-u))$ for $k\ge1$. For $i\ne j$, $\partial_{ij}F_k(x)=k^2h'(k(x_i-u))\,h'(k(x_j-u))\prod_{l\ne i,j}h(k(x_l-u))\ge0$, because $h'\le0$; and $a_{ii}=0$, $a_{ij}\ge0$ by hypothesis. \Cref{lem:toolkit:interpolation} gives $\E F_k(X)\ge\E F_k(Y)$. As $k\to\infty$, $F_k$ decreases to the indicator of $\{\max_ix_i\le u\}$, and monotone convergence gives $\Prob(\max_iX_i\le u)\ge\Prob(\max_iY_i\le u)$. Integrating, $\E\max_iX_i=\int_0^\infty\Prob(\max_iX_i>u)\dd u-\int_{-\infty}^0\Prob(\max_iX_i\le u)\dd u\le\E\max_iY_i$.
+
+(ii) For $\beta>0$ let $F_\beta(x)=\beta^{-1}\log\sum_ie^{\beta x_i}$, which satisfies $\max_ix_i\le F_\beta(x)\le\max_ix_i+\beta^{-1}\log n$. With $p_i=e^{\beta x_i}/\sum_ke^{\beta x_k}$, we have $\partial_iF_\beta=p_i$ and $\partial_{ij}F_\beta=\beta(\delta_{ij}p_i-p_ip_j)$. Since $\sum_ip_i=1$,
+\[
+\sum_{i,j}a_{ij}\,\partial_{ij}F_\beta=\beta\Bigl(\sum_ia_{ii}p_i-\sum_{i,j}a_{ij}p_ip_j\Bigr)=\frac\beta2\sum_{i,j}p_ip_j\bigl(a_{ii}+a_{jj}-2a_{ij}\bigr),
+\]
+and $a_{ii}+a_{jj}-2a_{ij}=\E(X_i-X_j)^2-\E(Y_i-Y_j)^2\le0$. \Cref{lem:toolkit:interpolation} gives $\E F_\beta(X)\le\E F_\beta(Y)$, hence $\E\max_iX_i\le\E\max_iY_i+\beta^{-1}\log n$ for every $\beta>0$. For an infinite index set, apply (i) or (ii) to each finite subset.
+\end{proof}
+
+Part (ii) needs no equal variances; applied to a GOE matrix it gives $\E\lambda_{\max}(W)\le2$ at every size (\cref{thm:toolkit:semicircle}). Gordon's inequality, with a minimum over one index and a maximum over another, is proved in \cref{ch:gordon} (\cref{thm:gordon:gordon}) from \cref{lem:toolkit:interpolation} in the same way.\sidenote{Inequality (i) goes back to the paper of \textcite{Slepian1962} on the one-sided barrier problem for Gaussian noise; (ii) is due to \textcite{Sudakov1971} and \textcite{Fernique1975}, and the proof by $F_\beta$ follows \textcite{Chatterjee2005}.}\index{Slepian's lemma}\index{Sudakov--Fernique inequality}
+
+\section{Concentration}\label{sec:toolkit:concentration}
+
+Physicists call the free entropy of a disordered system self-averaging; the rigorous counterpart is concentration for smooth or Lipschitz functions of many independent Gaussian variables. The variance bound rests on a case of \cref{lem:toolkit:interpolation}.\index{concentration of measure}
+
+\begin{lemma}[a covariance identity]\label{lem:toolkit:covariance}
+Let $Z$ and $Z'$ be independent standard Gaussian vectors in $\R^n$, and let $f,g\colon\R^n\to\R$ be twice continuously differentiable, with $f$, $g$ and their first and second partial derivatives of moderate growth. Then
+\[
+\Cov\bigl(f(Z),g(Z)\bigr)=\int_0^1\E\bigl[\ip{\nabla f(Z)}{\nabla g(tZ+\sqrt{1-t^2}\,Z')}\bigr]\dd t.
+\]
+\end{lemma}
+
+\begin{proof}
+Let $Z_1,Z_2,Z_3$ be independent standard Gaussian vectors in $\R^n$, and apply \cref{lem:toolkit:interpolation} in $\R^{2n}$ to $X=(Z_1,Z_1)$, $Y=(Z_2,Z_3)$ and $F(x,y)=f(x)g(y)$. The two covariance matrices differ only in their off-diagonal blocks, which are $I_n$ for $X$ and $0$ for $Y$, and $\partial_{x_i}\partial_{y_i}F=\partial_if(x)\,\partial_ig(y)$; so $\varphi'(t)=\sum_i\E[\partial_if(U_t)\,\partial_ig(V_t)]$ with $(U_t,V_t)=\sqrt t\,(Z_1,Z_1)+\sqrt{1-t}\,(Z_2,Z_3)$. This pair is centered Gaussian with $\E U_tU_t^\top=\E V_tV_t^\top=I_n$ and $\E U_tV_t^\top=tI_n$, so it has the law of $(Z,tZ+\sqrt{1-t^2}\,Z')$. Finally $\varphi(1)=\E f(Z)g(Z)$ and $\varphi(0)=\E f(Z)\,\E g(Z)$.
+\end{proof}
+
+\begin{theorem}[Gaussian Poincaré inequality]\label{thm:toolkit:poincare}
+Let $Z\sim\Normal(0,I_n)$.
+\begin{enumerate}
+\item If $f\colon\R^n\to\R$ is continuously differentiable and $f$ and its partial derivatives have moderate growth, then $\Var f(Z)\le\E\abs{\nabla f(Z)}^2$.
+\item If $f$ is $L$-Lipschitz, that is $\abs{f(x)-f(y)}\le L\abs{x-y}$ for all $x,y$, then $\Var f(Z)\le L^2$.
+\item If $X\sim\Normal(0,\Sigma)$ and $f$ is as in (i), then $\Var f(X)\le\E\ip{\nabla f(X)}{\Sigma\nabla f(X)}\le\norm\Sigma\,\E\abs{\nabla f(X)}^2$.
+\end{enumerate}
+For complex-valued $f$, (i) holds with $\Var f=\E\abs{f-\E f}^2$ and $\abs{\nabla f}^2=\sum_k\abs{\partial_kf}^2$.
+\end{theorem}
+
+\begin{proof}
+The plan is to prove (i) for smooth $f$ from \cref{lem:toolkit:covariance} and to reach the general case by Gaussian smoothing. If $f$ is twice continuously differentiable with derivatives of first and second order of moderate growth, then \cref{lem:toolkit:covariance} with $g=f$ and the Cauchy--Schwarz inequality give
+\[
+\Var f(Z)\le\int_0^1\bigl(\E\abs{\nabla f(Z)}^2\bigr)^{1/2}\bigl(\E\abs{\nabla f(tZ+\sqrt{1-t^2}\,Z')}^2\bigr)^{1/2}\dd t=\E\abs{\nabla f(Z)}^2,
+\]
+because $tZ+\sqrt{1-t^2}\,Z'$ is again standard Gaussian. For $f$ as in (i), let $f_\eps(x)=\E f(x+\eps Z'')$ for $0<\eps\le1$, with $Z''$ standard Gaussian. Writing $f_\eps$ as the convolution of $f$ with the density of $\Normal(0,\eps^2I_n)$ and differentiating the density shows that $f_\eps$ is infinitely differentiable with derivatives of moderate growth, and dominated convergence gives $\nabla f_\eps(x)=\E\nabla f(x+\eps Z'')$. As $\eps\to0$, $f_\eps\to f$ and $\nabla f_\eps\to\nabla f$ pointwise, and since $\abs{x+\eps z}^2\le2\abs x^2+2\abs z^2$, both are bounded by $C_a'e^{2a\abs x^2}$ uniformly in $\eps$; for $a<\frac18$ dominated convergence carries the inequality for $f_\eps$ to the limit. If $f$ is $L$-Lipschitz, then $f_\eps$ is smooth and $L$-Lipschitz, so $\abs{\nabla f_\eps}\le L$ and $\Var f_\eps(Z)\le L^2$; and $\abs{f_\eps-f}\le\eps L\,\E\abs{Z''}\le\eps L\sqrt n$, which gives (ii) as $\eps\to0$. Part (iii) is (i) for $g(z)=f(\Sigma^{1/2}z)$, for which $\abs{\nabla g}^2=\ip{\nabla f}{\Sigma\nabla f}$. For complex $f$, add the inequalities for the real and imaginary parts.
+\end{proof}
+
+For the Sherrington--Kirkpatrick model, as a function of the $N(N-1)/2$ couplings, $\abs{\nabla\log Z_N}^2=\frac{\beta^2}N\sum_{i<j}\gibbs{\sigma_i\sigma_j}^2\le\beta^2(N-1)/2$, so the free entropy per spin has variance at most $\beta^2/(2N)$ at every $N$ (\cref{ch:freeentropy}).\sidenote{\Textcite{Chernoff1981} proved the inequality in dimension one by expanding $f$ in Hermite polynomials. \textcite{HoudrePerezAbreu1995} develop covariance identities like \cref{lem:toolkit:covariance}; \textcite[Chapter~3]{BoucheronLugosiMassart2013} derive the inequality from the Efron--Stein inequality and the central limit theorem.}\index{Gaussian Poincaré inequality}
+
+\begin{theorem}[concentration of Lipschitz functions]\label{thm:toolkit:lipschitz}
+Let $Z\sim\Normal(0,I_n)$ and let $f\colon\R^n\to\R$ be $L$-Lipschitz.
+\begin{enumerate}
+\item For every $\lambda\in\R$, $\E e^{\lambda(f(Z)-\E f(Z))}\le e^{\pi^2\lambda^2L^2/8}$; hence, for every $u\ge0$,
+\[
+\Prob\bigl(f(Z)-\E f(Z)\ge u\bigr)\le e^{-2u^2/(\pi^2L^2)},
+\]
+and $\Prob(\abs{f(Z)-\E f(Z)}\ge u)\le2e^{-2u^2/(\pi^2L^2)}$.
+\item (The sharp constant.) For every $\lambda\in\R$, $\E e^{\lambda(f(Z)-\E f(Z))}\le e^{\lambda^2L^2/2}$; hence $\Prob(f(Z)-\E f(Z)\ge u)\le e^{-u^2/(2L^2)}$ and $\Prob(\abs{f(Z)-\E f(Z)}\ge u)\le2e^{-u^2/(2L^2)}$.
+\end{enumerate}
+If $X\sim\Normal(0,\Sigma)$, the same bounds hold for $f(X)$ with $L^2$ replaced by $\norm\Sigma L^2$.
+\end{theorem}
+
+We prove (i), which loses the factor $\pi^2/4$ in the exponent and suffices for every limit theorem of the book. Part (ii) is due to \textcite{TsirelsonIbragimovSudakov1976}; with the median in place of the mean it also follows from the Gaussian isoperimetric inequality of \textcite{Borell1975} and \textcite{SudakovTsirelson1978}. \Textcite[Chapter~5]{BoucheronLugosiMassart2013} prove (ii) through the Gaussian logarithmic Sobolev inequality; \textcite[Theorem~5.2.2]{Vershynin2018} states the bound with an unspecified constant.
+
+\begin{proof}[Proof of (i)]
+The plan, known as the Maurey--Pisier argument \parencite{Pisier1986}, is to connect $Z$ to an independent copy $Z'$ along a quarter circle and to average the exponential along the arc by Jensen's inequality. Assume first that $f$ is continuously differentiable with $\abs{\nabla f}\le L$. For $\theta\in[0,\pi/2]$ let $Z_\theta=Z\sin\theta+Z'\cos\theta$ and $W_\theta=Z\cos\theta-Z'\sin\theta$, so that $\frac{\dd}{\dd\theta}Z_\theta=W_\theta$, $Z_0=Z'$ and $Z_{\pi/2}=Z$. The pair $(Z_\theta,W_\theta)$ is the image of $(Z,Z')$ under a rotation of $\R^{2n}$, so it has the law of $(Z,Z')$. With $A_\theta=\frac{\lambda\pi}2\ip{\nabla f(Z_\theta)}{W_\theta}$, Jensen's inequality for the uniform probability measure on $[0,\pi/2]$ gives
+\[
+e^{\lambda(f(Z)-f(Z'))}=\exp\Bigl(\frac2\pi\int_0^{\pi/2}A_\theta\dd\theta\Bigr)\le\frac2\pi\int_0^{\pi/2}e^{A_\theta}\dd\theta.
+\]
+Given $Z_\theta$, $A_\theta$ is centered Gaussian with variance $\frac{\lambda^2\pi^2}4\abs{\nabla f(Z_\theta)}^2\le\frac{\lambda^2\pi^2L^2}4$, so $\E e^{A_\theta}\le e^{\pi^2\lambda^2L^2/8}$, and by Tonelli's theorem $\E e^{\lambda(f(Z)-f(Z'))}\le e^{\pi^2\lambda^2L^2/8}$. Jensen's inequality in $Z'$ gives $\E e^{-\lambda f(Z')}\ge e^{-\lambda\E f(Z)}$, so by independence $\E e^{\lambda(f(Z)-\E f(Z))}\le\E e^{\lambda(f(Z)-f(Z'))}$. For a general $L$-Lipschitz $f$, the smoothed $f_\eps$ of the proof of \cref{thm:toolkit:poincare} satisfies $\abs{\nabla f_\eps}\le L$ and $\abs{f-f_\eps}\le\eps L\sqrt n$, so $\E e^{\lambda(f-\E f)}\le e^{2\abs\lambda\eps L\sqrt n}\,\E e^{\lambda(f_\eps-\E f_\eps)}$; let $\eps\to0$. Markov's inequality gives $\Prob(f-\E f\ge u)\le e^{-\lambda u+\pi^2\lambda^2L^2/8}$, which equals $e^{-2u^2/(\pi^2L^2)}$ at $\lambda=4u/(\pi^2L^2)$; the bound for $-f$ gives the two-sided form. For $X=\Sigma^{1/2}Z$, the function $z\mapsto f(\Sigma^{1/2}z)$ is $\norm\Sigma^{1/2}L$-Lipschitz.
+\end{proof}
+
+\begin{corollary}[concentration of a free entropy]\label{cor:toolkit:freeentropy}
+Let $S$ be a finite set, $w\colon S\to(0,\infty)$, and $(H(\sigma))_{\sigma\in S}$ a centered Gaussian process with $v=\max_\sigma\Var H(\sigma)$. Both $F=\log\sum_\sigma w(\sigma)e^{H(\sigma)}$ and $F=\max_\sigma H(\sigma)$ satisfy $\Var F\le v$ and, for every $u\ge0$, $\Prob(\abs{F-\E F}\ge u)\le2e^{-2u^2/(\pi^2v)}$, and $\Prob(\abs{F-\E F}\ge u)\le2e^{-u^2/(2v)}$ with the sharp constant.
+\end{corollary}
+
+\begin{proof}
+Write $H=AZ$ with $Z$ standard Gaussian and rows $a_\sigma$ of $A$, so that $\abs{a_\sigma}^2=\Var H(\sigma)\le v$. The gradient of $z\mapsto\log\sum_\sigma w(\sigma)e^{\ip{a_\sigma}z}$ is $\sum_\sigma p_\sigma a_\sigma$ for Gibbs weights $p_\sigma$, of norm at most $\max_\sigma\abs{a_\sigma}\le\sqrt v$; and $\abs{\max_\sigma\ip{a_\sigma}z-\max_\sigma\ip{a_\sigma}{z'}}\le\max_\sigma\abs{\ip{a_\sigma}{z-z'}}\le\sqrt v\,\abs{z-z'}$. Both functions are $\sqrt v$-Lipschitz, and \cref{thm:toolkit:poincare,thm:toolkit:lipschitz} apply.
+\end{proof}
+
+A deterministic part of the Hamiltonian, such as an external field, goes into the weights $w$. For the Sherrington--Kirkpatrick model $\Var H_N(\sigma)=\beta^2(N-1)/2$ for every $\sigma$, so the corollary with the sharp constant gives
+\[
+\Prob\Bigl(\Bigl\lvert\frac1N\log Z_N-\E\frac1N\log Z_N\Bigr\rvert\ge u\Bigr)\le2e^{-Nu^2/\beta^2},
+\]
+the bound of \cref{thm:freeentropy:concentration}; the constant of part (i) gives the exponent $4Nu^2/(\pi^2\beta^2)$. The bounds are summable in $N$, so the Borel--Cantelli lemma turns the convergence of $\E\frac1N\log Z_N$ into almost sure convergence. \Cref{ch:rem,ch:sk,ch:nishimori} use the corollary in this way, and \cref{ch:gordon} uses \cref{thm:toolkit:lipschitz} for the values of Gaussian min--max problems.\sidenote{The sharp form of \cref{cor:toolkit:freeentropy} for $\max_\sigma H(\sigma)$ is often called the Borell--TIS inequality, after \textcite{Borell1975} and \textcite{TsirelsonIbragimovSudakov1976}.}
+
+\section{Laplace's method and large deviations}\label{sec:toolkit:laplace}
+
+A physicist evaluates an integral $\int e^{Nf}$ at the maximum of $f$, the saddle point, after a Hubbard--Stratonovich transformation has turned a sum over configurations into such an integral. Laplace's method justifies the first step; large deviations and Varadhan's lemma evaluate the sum over configurations directly.\index{Laplace's method}
+
+\begin{definition}[large deviation principle]\label{def:toolkit:ldp}
+Let $(\cX,d)$ be a metric space. A \term{rate function} is a lower semicontinuous function $I\colon\cX\to[0,\infty]$; it is \term{good} if its level sets $\{I\le\alpha\}$ are compact. Probability measures $\mu_N$ on $\cX$ satisfy the \term{large deviation principle} with speed $N$ and rate function $I$ if, for every closed set $C$ and every open set $G$,
+\[
+\limsup_{N\to\infty}\frac1N\log\mu_N(C)\le-\inf_CI,\qquad\liminf_{N\to\infty}\frac1N\log\mu_N(G)\ge-\inf_GI.
+\]
+\end{definition}
+
+By Cramér's theorem the empirical mean of $N$ i.i.d.\ copies of $X$, with $\E e^{\ip\lambda X}<\infty$ for every $\lambda$, satisfies the principle with the Legendre transform of $\lambda\mapsto\log\E e^{\ip\lambda X}$ as rate \parencite[Chapter~2]{DemboZeitouni2010}. The case that spin systems need has a short proof.\index{large deviation principle}
+
+\begin{lemma}[the entropy of a magnetization]\label{lem:toolkit:binomial}
+Let $\sigma_1,\dots,\sigma_N$ be independent uniform signs, $m_N=\frac1N\sum_i\sigma_i$, and $I(m)=\frac{1+m}2\log(1+m)+\frac{1-m}2\log(1-m)$, with $0\log0=0$. For every $m\in\{-1,-1+\frac2N,\dots,1\}$,
+\[
+\frac{e^{-NI(m)}}{N+1}\le\Prob(m_N=m)\le e^{-NI(m)}.
+\]
+Consequently the laws of $m_N$ satisfy the large deviation principle on $[-1,1]$ with the good rate function $I$.
+\end{lemma}
+
+\begin{proof}
+Let $k=N(1+m)/2$, $p=k/N$ and $b_j=\binom Njp^j(1-p)^{N-j}$. Since $p^k(1-p)^{N-k}=e^{-N(\log2-I(m))}$, $\Prob(m_N=m)=\binom Nk2^{-N}=b_ke^{-NI(m)}$. The $N+1$ numbers $b_j$ sum to $1$, so $b_k\le1$; and $b_k$ is the largest of them, because $b_{j+1}/b_j=(N-j)p/((j+1)(1-p))$ is at least $1$ for $j<k$ and at most $1$ for $j\ge k$, so $b_k\ge1/(N+1)$. The function $I$ is continuous on the compact set $[-1,1]$, hence a good rate function. For a closed set $C$, summing the upper bound over the at most $N+1$ points of $C$ gives $\Prob(m_N\in C)\le(N+1)e^{-N\inf_CI}$. For an open set $G$ and $m\in G$, the lattice points $m'_N$ nearest to $m$ lie in $G$ for large $N$ and tend to $m$, and the lower bound gives $\liminf\frac1N\log\Prob(m_N\in G)\ge-\lim I(m'_N)=-I(m)$.
+\end{proof}
+
+\begin{theorem}[Laplace's method and Varadhan's lemma]\label{thm:toolkit:laplace}
+\leavevmode
+\begin{enumerate}
+\item (Laplace, exponential order.) Let $\nu$ be a Borel measure on a Borel set $A\subset\R^d$ with $\nu(A)>0$, and let $f\colon A\to\R$ be measurable and bounded above, with $\int_Ae^{N_0f}\dd\nu<\infty$ for some $N_0>0$. Let $M$ be the essential supremum of $f$ with respect to $\nu$; it equals $\sup_Af$ when $f$ is continuous and every nonempty relatively open subset of $A$ has positive measure. Then $\frac1N\log\int_Ae^{Nf}\dd\nu\to M$ as $N\to\infty$.
+\item (Laplace, with the prefactor.) Let $A\subset\R^d$ be a Borel set and $f,g\colon A\to\R$ measurable, with $\int_A\abs ge^{N_0f}\dd x<\infty$ for some $N_0$. Suppose that $x^*$ is an interior point of $A$, that $f$ is twice continuously differentiable near $x^*$ with $\nabla f(x^*)=0$ and $H=-\nabla^2f(x^*)$ positive definite, that $g$ is continuous at $x^*$, and that $\sup\{f(x):x\in A,\ \abs{x-x^*}\ge\delta\}<f(x^*)$ for every $\delta>0$. Then, as $N\to\infty$,
+\begin{equation}\label{eq:toolkit:laplace}
+\int_Ag(x)e^{Nf(x)}\dd x=e^{Nf(x^*)}\Bigl(\frac{2\pi}N\Bigr)^{d/2}(\det H)^{-1/2}\bigl(g(x^*)+o(1)\bigr).
+\end{equation}
+\item (Varadhan.) If probability measures $\mu_N$ on a metric space $\cX$ satisfy the large deviation principle with a good rate function $I$, and $F\colon\cX\to\R$ is continuous and bounded above, then
+\begin{equation}\label{eq:toolkit:varadhan}
+\lim_{N\to\infty}\frac1N\log\int_\cX e^{NF}\dd\mu_N=\sup_{x\in\cX}\bigl(F(x)-I(x)\bigr).
+\end{equation}
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+(i) Let $J_N=\int e^{Nf}\dd\nu$. For $N\ge N_0$, $J_N\le e^{(N-N_0)M}J_{N_0}$, so the upper limit of $\frac1N\log J_N$ is at most $M$. For $\eps>0$ the set $\{f>M-\eps\}$ has positive measure, by the definition of the essential supremum, and finite measure, because $e^{N_0f}\ge e^{N_0(M-\eps)}$ on it. So $J_N\ge e^{N(M-\eps)}\nu(\{f>M-\eps\})$, and the lower limit of $\frac1N\log J_N$ is at least $M-\eps$.
+
+(ii) The plan is to compare $f$ with its quadratic approximation on a small ball and to show that the rest of $A$ contributes an exponentially smaller amount. We may assume $x^*=0$ and $f(0)=0$. Let $\mu>0$ be the smallest eigenvalue of $H$, fix $\eps\in(0,\frac12)$, and choose $\delta>0$ such that the ball $B=\{\abs x<\delta\}$ lies in $A$ and $\norm{\nabla^2f(x)+H}\le\eps\mu$ and $\abs{g(x)-g(0)}\le\eps$ on $B$. Taylor's formula $f(x)=\int_0^1(1-s)\,x^\top\nabla^2f(sx)\,x\dd s$ gives $\abs{f(x)+\frac12x^\top Hx}\le\frac12\eps\mu\abs x^2\le\frac\eps2x^\top Hx$ on $B$, hence
+\[
+-\tfrac{1+\eps}2\,x^\top Hx\le f(x)\le-\tfrac{1-\eps}2\,x^\top Hx\qquad(x\in B).
+\]
+Let $c_N=(2\pi/N)^{d/2}(\det H)^{-1/2}=\int_{\R^d}e^{-Nx^\top Hx/2}\dd x$. The upper bound gives $\int_Be^{Nf}\le(1-\eps)^{-d/2}c_N$. The lower bound gives $\int_Be^{Nf}\ge(1+\eps)^{-d/2}c_N-\int_{\abs x\ge\delta}e^{-N\mu\abs x^2/2}\dd x$, and the last integral is at most $e^{-N\mu\delta^2/4}\int e^{-N\mu\abs x^2/4}\dd x=o(c_N)$. Also $\abs{\int_B(g-g(0))e^{Nf}}\le\eps(1-\eps)^{-d/2}c_N$. Outside $B$, $\eta=-\sup\{f(x):x\in A\setminus B\}$ is positive, and for $N\ge N_0$ the integral of $\abs ge^{Nf}$ over $A\setminus B$ is at most $e^{-(N-N_0)\eta}\int_A\abs ge^{N_0f}=o(c_N)$. Collecting the three estimates,
+\[
+\limsup_{N\to\infty}\Bigl\lvert\frac1{c_N}\int_Age^{Nf}-g(0)\Bigr\rvert\le\abs{g(0)}\bigl((1-\eps)^{-d/2}-(1+\eps)^{-d/2}\bigr)+\frac\eps{(1-\eps)^{d/2}},
+\]
+which tends to $0$ with $\eps$.
+
+(iii) The plan is to get the lower bound from small open sets and the upper bound by covering a compact level set of $I$ with finitely many small balls. Write $J_N=\int e^{NF}\dd\mu_N$. Lower bound: for $x$ with $I(x)<\infty$ and $\eps>0$, the set $G=\{F>F(x)-\eps\}$ is open and contains $x$, so $J_N\ge e^{N(F(x)-\eps)}\mu_N(G)$ and $\liminf\frac1N\log J_N\ge F(x)-\eps-I(x)$; take the supremum over $x$ and let $\eps\to0$. Upper bound: let $M=\sup F$, fix $\alpha<\infty$ and $\eps>0$, and let $K=\{I\le\alpha\}$, which is compact. By the lower semicontinuity of $I$ and the continuity of $F$, each $x\in K$ is the center of an open ball $B_x$ whose closure $\bar B_x$ satisfies $\inf_{\bar B_x}I\ge I(x)-\eps$ and $\sup_{\bar B_x}F\le F(x)+\eps$. Finitely many of these balls, centered at $x_1,\dots,x_k$, cover $K$, and the closed set $C=\cX\setminus\bigcup_jB_{x_j}$ satisfies $\inf_CI\ge\alpha$. Then
+\[
+J_N\le\sum_{j=1}^ke^{N(F(x_j)+\eps)}\mu_N(\bar B_{x_j})+e^{NM}\mu_N(C).
+\]
+The upper limit of $\frac1N\log$ of a sum of $k+1$ terms is the largest of the upper limits for the terms, so the principle gives $\limsup\frac1N\log J_N\le\max\{\sup(F-I)+2\eps,\,M-\alpha\}$. Let $\alpha\to\infty$ and $\eps\to0$.
+\end{proof}
+
+For the Curie--Weiss model, $Z_N=\sum_\sigma e^{NF(m(\sigma))}=2^N\E e^{NF(m_N)}$ with $F(m)=\beta m^2/2+hm$, and \cref{lem:toolkit:binomial} with part (iii) gives the limit $\log2+\sup_m(F(m)-I(m))$ of $\frac1N\log Z_N$. The physicist instead linearizes the square by the Hubbard--Stratonovich identity, sums over $\sigma$, and applies part (ii) to $\int\exp(N[-\beta y^2/2+\log2\cosh(\beta y+h)])\dd y$. The two variational formulas agree because $I$ is the Legendre transform of $\log\cosh$, the logarithmic moment generating function of a uniform sign; for $\beta=1.5$ and $h=0.1$ both give $0.896082602766$, and exact summation exceeds it by $1.80\times10^{-4}$ at $N=1000$ (\cref{ch:freeentropy} carries out both computations). Part (iii) also makes the integer moments $\E Z_N^n$ rigorous at fixed $n$ as $N\to\infty$, as integrals over the large deviations of the overlap matrix of $n$ replicas; it says nothing about the continuation to $n\to0$.\sidenote{The lemma is due to \textcite{Varadhan1966}. \Textcite[Chapter~4]{DemboZeitouni2010} prove it under a weaker tail condition on $F$, and \textcite[Theorem~D.8]{AndersonGuionnetZeitouni2010} state it for bounded continuous $F$.}\index{Varadhan's lemma}
+
+\section{Gaussian matrices and conditioning}\label{sec:toolkit:conditioning}
+
+\begin{definition}[the Gaussian orthogonal ensemble]\label{def:toolkit:goe}
+A random symmetric $N\times N$ matrix $W$ is a $\mathrm{GOE}(N)$ matrix if its entries $W_{ij}$, $i\le j$, are independent and centered Gaussian, with variance $1/N$ off the diagonal and $2/N$ on it. Equivalently, $W=(G+G^\top)/\sqrt{2N}$ for a matrix $G$ with i.i.d.\ $\Normal(0,1)$ entries, or $W$ has density proportional to $e^{-N\tr(W^2)/4}$ with respect to Lebesgue measure on the entries $(W_{ij})_{i\le j}$. Its covariance is $\E W_{ab}W_{cd}=(\delta_{ac}\delta_{bd}+\delta_{ad}\delta_{bc})/N$, so that $\tr(AW)\sim\Normal(0,2\tr(A^2)/N)$ for every symmetric $A$, and $OWO^\top$ is again $\mathrm{GOE}(N)$ for every orthogonal $O$, because it is centered Gaussian with the same covariance.
+\end{definition}
+
+The cavity method removes a site and asserts that the field acting on it is Gaussian. The analysis of approximate message passing removes the past instead: conditioned on what earlier iterates revealed, the matrix is a known part plus a fresh Gaussian matrix projected away from the directions already explored. For $M\in\R^{N\times t}$ of rank $t$, let $P_M=M(M^\top M)^{-1}M^\top$ be the orthogonal projection onto its column space, $P_M^\perp=I-P_M$, $M^+=(M^\top M)^{-1}M^\top$, and, for $Y\in\R^{N\times t}$,
+\begin{equation}\label{eq:toolkit:condmean}
+E_M(Y)=YM^++(M^+)^\top Y^\top-(M^+)^\top M^\top YM^+.
+\end{equation}
+\index{Gaussian conditioning}\index{GOE}
+
+\begin{lemma}[Gaussian conditioning]\label{lem:toolkit:conditioning}
+Let $W\sim\mathrm{GOE}(N)$, let $\widetilde W$ be an independent $\mathrm{GOE}(N)$ matrix, and let $1\le t<N$.
+\begin{enumerate}
+\item (Fixed directions.) If $M\in\R^{N\times t}$ is deterministic of rank $t$, then $W=E_M(WM)+P_M^\perp WP_M^\perp$, and $P_M^\perp WP_M^\perp$ is independent of $WM$. Hence, given $WM=Y$, the matrix $W$ is distributed as $E_M(Y)+P_M^\perp\widetilde WP_M^\perp$: for every bounded measurable $h$, $\E[h(W)\mid WM]=\hat h_M(WM)$ almost surely, with $\hat h_M(Y)=\E\,h\bigl(E_M(Y)+P_M^\perp\widetilde WP_M^\perp\bigr)$. In particular $\E[W\mid WM]=E_M(WM)$.
+\item (Directions chosen from the past.) Let $m^0\in\R^N$ be deterministic and $m^s=F_s(Wm^0,\dots,Wm^{s-1})$ for $1\le s<t$, with measurable maps $F_s$. Let $M_t=[m^0|\cdots|m^{t-1}]$, $Y_t=WM_t$ and $\cS_t=\sigma(Y_t)$. If $M_t$ has rank $t$ almost surely, then given $\cS_t$ the matrix $W$ is distributed as $E_{M_t}(Y_t)+P_{M_t}^\perp\widetilde WP_{M_t}^\perp$: for every bounded measurable $h$, $\E[h(W)\mid\cS_t]=\hat h_{M_t}(Y_t)$ almost surely.
+\item (The fresh field.) If $P$ is an orthogonal projection and $e$ a unit vector with $Pe=e$, then $P\widetilde We\sim\Normal\bigl(0,(P+ee^\top)/N\bigr)$, the law of $N^{-1/2}(Pz+\zeta e)$ for independent $z\sim\Normal(0,I_N)$ and $\zeta\sim\Normal(0,1)$.
+\item (Rectangular matrices.) Let $A\in\R^{n\times d}$ have i.i.d.\ $\Normal(0,1/n)$ entries, let $\widetilde A$ be an independent copy, and let $Q\in\R^{d\times t_1}$ and $M\in\R^{n\times t_2}$ be deterministic of full column rank. Then
+\[
+A=M(M^\top M)^{-1}(A^\top M)^\top+P_M^\perp(AQ)(Q^\top Q)^{-1}Q^\top+P_M^\perp AP_Q^\perp,
+\]
+and the last term is independent of $(AQ,A^\top M)$. Given $AQ=Y$ and $A^\top M=X$, the matrix $A$ is therefore distributed as $M(M^\top M)^{-1}X^\top+P_M^\perp Y(Q^\top Q)^{-1}Q^\top+P_M^\perp\widetilde AP_Q^\perp$. The analogue of (ii) holds, with the same proof.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+(i) The plan is to split $W$ into the part determined by $WM$ and a part uncorrelated with it. Write $P=P_M$ and $Y=WM$. Expanding $W=(P+P^\perp)W(P+P^\perp)$ gives $W=WP+PW-PWP+P^\perp WP^\perp$. Since $P=MM^+$, we have $WP=YM^+$, then $PW=(WP)^\top=(M^+)^\top Y^\top$ by symmetry, and $PWP=(M^+)^\top M^\top YM^+$; so $W=E_M(WM)+P^\perp WP^\perp$. The entries of $WM$ and of $P^\perp WP^\perp$ are jointly Gaussian, and by the covariance of \cref{def:toolkit:goe}
+\[
+\E\bigl[(P^\perp WP^\perp)_{ij}(WM)_{kl}\bigr]=\frac1N\bigl(P^\perp_{ik}(P^\perp M)_{jl}+(P^\perp M)_{il}P^\perp_{jk}\bigr)=0,
+\]
+because $P^\perp M=0$; so they are independent. Since $P^\perp WP^\perp$ has the law of $P^\perp\widetilde WP^\perp$, integrating it out (Fubini's theorem) gives the formula for $\E[h(W)\mid WM]$.
+
+(ii) The plan is an induction in which each new direction is split into its component along the old directions, which the past determines, and a fresh component, to which (i) applies. For $M$ of rank $s$ and $Y$ with $M^\top Y$ symmetric, let $L_{M,Y}$ be the law of $E_M(Y)+P_M^\perp\widetilde WP_M^\perp$. We prove by induction on $s\le t$ that, for every bounded measurable $H$,
+\[
+(\mathrm C_s)\qquad\E\,H(W,Y_s)=\E\int H(w,Y_s)\,L_{M_s,Y_s}(\dd w),
+\]
+which for $s=t$ and $H(w,y)=h(w)k(y)$ is the claim; recall that $M_s$ is a function of $Y_s$. For $s=1$, $M_1=m^0$ is deterministic and $(\mathrm C_1)$ is (i). Assume $(\mathrm C_s)$ for some $s<t$, and let $H$ be bounded and measurable in $(w,y)$, $y\in\R^{N\times(s+1)}$. Since $m^s=F_s(Y_s)$ and $Y_{s+1}=[Y_s|Wm^s]$, applying $(\mathrm C_s)$ to $(w,y)\mapsto H(w,[y|wF_s(y)])$ gives
+\[
+\E\,H(W,Y_{s+1})=\E\int H(w,[Y_s|wm^s])\,L_{M_s,Y_s}(\dd w).
+\]
+Fix $M=M_s$, $Y=Y_s$ and $m=m^s$ inside the integral, and write $P^\perp=P^\perp_M$. The vector $u=P^\perp m$ is not zero, because $M_{s+1}=[M|m]$ has rank $s+1$; let $e=u/\abs u$, and let $Q=P^\perp-ee^\top$, the projection onto the orthogonal complement of the columns of $M_{s+1}$. Under $L_{M,Y}$ write $w=E_M(Y)+V$ with $V=P^\perp\widetilde WP^\perp$. Then $Vm=\abs u\,Ve$, so $wM_{s+1}=[Y|E_M(Y)m+\abs u\,Ve]$ is a function of $Ve$. By the decomposition of (i), applied to $w$ and $M_{s+1}$, $w=E_{M_{s+1}}(wM_{s+1})+QwQ$, and $QwQ=Q\widetilde WQ$ because $M^+Q=0$ and $QP^\perp=Q$. The Gaussian pair $(Ve,Q\widetilde WQ)$ is uncorrelated, since \cref{def:toolkit:goe} gives
+\[
+\E\bigl[(Q\widetilde WQ)_{ij}(P^\perp\widetilde We)_k\bigr]=\tfrac1N\bigl((QP^\perp)_{ik}(Qe)_j+(Qe)_i(QP^\perp)_{jk}\bigr)=0,
+\]
+because $Qe=0$. So $Q\widetilde WQ$ may be replaced by $Q\widetilde W'Q$, with $\widetilde W'$ an independent copy, without changing the joint law. Hence, with $\bar H$ defined by the first line,
+\begin{gather*}
+\bar H(\hat y)=\int H(w',\hat y)\,L_{M_{s+1},\hat y}(\dd w'),\\
+\int H(w,[Y|wm])\,L_{M,Y}(\dd w)=\int\bar H(wM_{s+1})\,L_{M,Y}(\dd w).
+\end{gather*}
+Applying $(\mathrm C_s)$ to $(w,y)\mapsto\bar H([y|wF_s(y)])$, in which $M_{s+1}$ is the function $[M_s|F_s(y)]$ of $y$, we obtain $\E\,H(W,Y_{s+1})=\E\,\bar H(Y_{s+1})$, which is $(\mathrm C_{s+1})$.
+
+(iii) By \cref{def:toolkit:goe}, $\E(\widetilde We)_a(\widetilde We)_c=\sum_{b,d}e_be_d\,\E\widetilde W_{ab}\widetilde W_{cd}=(\delta_{ac}+e_ae_c)/N$, so $P\widetilde We$ has covariance $P(I+ee^\top)P/N=(P+ee^\top)/N$, which is also the covariance of $N^{-1/2}(Pz+\zeta e)$.
+
+(iv) The decomposition is $A=P_MA+P_M^\perp AP_Q+P_M^\perp AP_Q^\perp$, rewritten with the identities $P_MA=M(M^\top M)^{-1}(A^\top M)^\top$ and $AP_Q=AQ(Q^\top Q)^{-1}Q^\top$. Since $\E A_{ab}A_{kc}=\delta_{ak}\delta_{bc}/n$, the covariance of $(P_M^\perp AP_Q^\perp)_{ij}$ with $(AQ)_{kl}$ is $\frac1n(P_M^\perp)_{ik}(P_Q^\perp Q)_{jl}=0$, and with $(A^\top M)_{kl}$ it is $\frac1n(P_M^\perp M)_{il}(P_Q^\perp)_{kj}=0$; the rest is as in (i) and (ii).
+\end{proof}
+
+In symmetric AMP (\cref{ch:amp}) the iterates are $h^{s+1}=Wm^s-b_sm^{s-1}$ with $m^s=f_s(h^s)$, so the past is a function of $Y_t=WM_t$ with $M_t=[m^0|\cdots|m^{t-1}]$, and (ii) applies. Given the past, the next field $Wm^t$ has the law of $E_{M_t}(Y_t)m^t+\abs{P^\perp m^t}\,P^\perp\widetilde We$, with $P^\perp=P_{M_t}^\perp$ and $e$ the direction of $P^\perp m^t$. The first term, $Y_tM_t^+m^t+(M_t^+)^\top Y_t^\top P^\perp m^t$, combines past fields and past iterates, and \cref{ch:amp} extracts the Onsager correction from it; by (iii) the second is a fresh Gaussian vector, the rigorous form of the Gaussianity of the cavity field. \Textcite{Bolthausen2014} introduced the conditioning to construct solutions of the TAP equations, \textcite{BayatiMontanari2011} used it to prove state evolution, and \textcite{FengEtAl2022} give a tutorial account. Part (iv) serves the rectangular AMP of \cref{ch:glm,ch:lasso}, and \cref{ch:dmft} uses the same idea for gradient flow.
+
+\section{Random matrices}\label{sec:toolkit:rmt}
+
+Physicists study a random spectrum through the Green's function $(z-A)^{-1}$; mathematicians use the resolvent, its negative, and its normalized trace, the Stieltjes transform.\index{Stieltjes transform}\index{resolvent}
+
+\begin{definition}[Stieltjes transform and resolvent]\label{def:toolkit:stieltjes}
+The \term{Stieltjes transform} of a probability measure $\mu$ on $\R$ is $s_\mu(z)=\int\mu(\dd x)/(x-z)$ for $z\in\C\setminus\supp\mu$. The \term{resolvent} of a symmetric matrix $A\in\R^{N\times N}$, with eigenvalues $\lambda_k$ and orthonormal eigenvectors $u_k$, is $R_A(z)=(A-zI)^{-1}=\sum_ku_ku_k^\top/(\lambda_k-z)$ for $z\notin\{\lambda_k\}$. With the empirical spectral distribution $\mu_A=\frac1N\sum_k\delta_{\lambda_k}$ and, for $v\in\R^N$, the spectral measure $\nu_v=\sum_k\ip{u_k}v^2\delta_{\lambda_k}$,
+\[
+\tfrac1N\tr R_A(z)=s_{\mu_A}(z),\qquad v^\top R_A(z)v=\int\frac{\nu_v(\dd x)}{x-z}.
+\]
+These objects have the following properties; $z,w$ lie outside $\supp\mu$, or outside the spectrum of $A$.
+\begin{enumerate}
+\item The function $s_\mu$ is analytic, $s_\mu(\bar z)=\overline{s_\mu(z)}$, $\Im s_\mu(z)>0$ when $\Im z>0$, and $\abs{s_\mu(z)}\le1/\dist(z,\supp\mu)$. For $z,w\notin\R$, $\abs{s_\mu(z)-s_\mu(w)}\le\abs{z-w}/(\abs{\Im z}\abs{\Im w})$. On each interval of $\R\setminus\supp\mu$, $s_\mu$ is real and increasing.
+\item (Inversion.) If $a<b$ are not atoms of $\mu$, then $\mu((a,b))=\lim_{\eta\downarrow0}\frac1\pi\int_a^b\Im s_\mu(x+i\eta)\dd x$.
+\item (Continuity.) If $\mu_N$ and $\mu$ are probability measures and $s_{\mu_N}(z)\to s_\mu(z)$ for every $z\in\C\setminus\R$, then $\mu_N\to\mu$ weakly; the converse also holds.
+\item (Resolvent identities.) $AR_A(z)=I+zR_A(z)$; $R_A(z)-R_A(w)=(z-w)R_A(z)R_A(w)$, so that $\frac{\dd}{\dd z}R_A(z)=R_A(z)^2$; $R_{A+B}(z)=R_A(z)-R_{A+B}(z)BR_A(z)$; $R_A(z)^\top=R_A(z)$; and $\norm{R_A(z)}=1/\dist(z,\{\lambda_k\})\le1/\abs{\Im z}$.
+\item (Rank-one perturbations.) For $\theta\in\R$ and $v\in\R^N$, $\det(A+\theta vv^\top-zI)=\det(A-zI)\,(1+\theta\,v^\top R_A(z)v)$. Hence a real $z$ outside the spectrum of $A$ is an eigenvalue of $A+\theta vv^\top$ if and only if $1+\theta\,v^\top R_A(z)v=0$, and then every unit eigenvector $\hat u$ for $z$ satisfies
+\begin{equation}\label{eq:toolkit:overlap}
+\ip{\hat u}v^2=\frac1{\theta^2\,v^\top R_A(z)^2v}=\frac1{\theta^2\,\frac{\dd}{\dd z}\bigl(v^\top R_A(z)v\bigr)}.
+\end{equation}
+\item (Schur complement.) For $z\notin\R$, $R_A(z)_{ii}=\bigl(A_{ii}-z-a_i^\top R_{A^{(i)}}(z)a_i\bigr)^{-1}$, where $A^{(i)}$ is $A$ with row and column $i$ removed and $a_i$ is column $i$ of $A$ without its $i$th entry.
+\end{enumerate}
+\end{definition}
+
+\begin{proof}[Proofs]
+The plan is to read (i) and (iv) off the spectral decomposition, to take (ii) and (iii) from the literature, and to reduce (v) and (vi) to determinant and block-inverse formulas. (i) Differentiate under the integral sign; use $\Im\frac1{x-z}=\frac{\Im z}{\abs{x-z}^2}$, $\abs{x-z}\ge\dist(z,\supp\mu)$ and $\bigl\lvert\frac1{x-z}-\frac1{x-w}\bigr\rvert=\frac{\abs{z-w}}{\abs{x-z}\abs{x-w}}$; on $\R\setminus\supp\mu$ the derivative $\int\mu(\dd x)/(x-z)^2$ is positive. (ii) and (iii) are Theorems~2.4.3 and~2.4.4 of \textcite{AndersonGuionnetZeitouni2010}; their part~(b) gives vague convergence to the measure whose transform is $s_\mu$, which is $\mu$, and vague convergence to a probability measure is weak convergence. (iv) The first identity is $(A-z)R_A(z)=I$. Next, $R_A(z)-R_A(w)=R_A(z)\bigl[(A-w)-(A-z)\bigr]R_A(w)$ and $R_{A+B}-R_A=R_{A+B}\bigl[(A-z)-(A+B-z)\bigr]R_A$; the rest follows from the spectral decomposition. (v) Factor $A+\theta vv^\top-z=(A-z)(I+\theta R_A(z)vv^\top)$ and use $\det(I+xy^\top)=1+y^\top x$. If $(A+\theta vv^\top)\hat u=z\hat u$, then $(A-z)\hat u=-\theta\ip v{\hat u}v$, so $\hat u=-\theta\ip v{\hat u}R_A(z)v$, and $\abs{\hat u}=1$ gives \eqref{eq:toolkit:overlap}, with $v^\top R_A(z)^2v=\frac{\dd}{\dd z}v^\top R_A(z)v$ by (iv). (vi) is the formula for the first diagonal entry of the inverse of a block matrix, after a permutation that moves $i$ to the first position.
+\end{proof}
+
+\Cref{ch:spiked} proves the BBP transition (\cref{thm:spiked:bbp}) from (v) with $A=W$ and $\theta vv^\top=\frac\lambda Nxx^\top$: the outlier solves $1+\lambda\,v^\top R_W(z)v=0$ with $v=x/\sqrt N$, and \eqref{eq:toolkit:overlap} gives the overlap of its eigenvector with $x$. \Cref{ch:ridge} expresses the ridge risk through the Stieltjes transform of the Marchenko--Pastur law.\sidenote{Wigner introduced random symmetric matrices as models of the spectra of heavy nuclei \parencite{Wigner1955}; the resolvent method was pioneered by Pastur and coworkers, as \textcite{AndersonGuionnetZeitouni2010} recount.}
+
+\begin{theorem}[the semicircle law and the norm of a GOE matrix]\label{thm:toolkit:semicircle}
+Let $W\sim\mathrm{GOE}(N)$, let $\mu_N$ be its empirical spectral distribution and $s_N=s_{\mu_N}$, and let $\sigma_{\mathrm{sc}}(\dd x)=\frac1{2\pi}\sqrt{4-x^2}\,\ind_{\abs x\le2}\dd x$ be the semicircle law. Its Stieltjes transform is
+\begin{equation}\label{eq:toolkit:ssc}
+s(z)=\tfrac12\bigl(-z+\sqrt{z-2}\,\sqrt{z+2}\bigr),
+\end{equation}
+with principal square roots; for $\Im z>0$ it is the solution of $s^2+zs+1=0$ with $\Im s>0$.
+\begin{enumerate}
+\item Almost surely $\mu_N\to\sigma_{\mathrm{sc}}$ weakly. Quantitatively, for $\Im z=\eta>0$,
+\begin{gather*}
+\abs{\E s_N(z)-s(z)}\le\frac1\eta\Bigl(\frac1{N\eta^2}+\frac2{N^2\eta^4}\Bigr),\\
+\E\abs{s_N(z)-\E s_N(z)}^2\le\frac2{N^2\eta^4}.
+\end{gather*}
+\item For every $N$, $\E\lambda_{\max}(W)\le2$ and, for $u\ge0$, $\Prob(\lambda_{\max}(W)\ge2+u)\le e^{-Nu^2/\pi^2}$; with the sharp constant of \cref{thm:toolkit:lipschitz}, $e^{-Nu^2/4}$.
+\item Almost surely $\lambda_{\max}(W)\to2$, $\lambda_{\min}(W)\to-2$ and $\norm W\to2$.
+\item (Wigner matrices; stated.) Let $W_{ij}=W_{ji}=X_{ij}/\sqrt N$, where the $X_{ij}$, $i<j$, are i.i.d.\ with mean $0$ and variance $1$, independent of the i.i.d.\ diagonal entries $X_{ii}$, which have mean $0$ and finite variance. Then $\mu_N\to\sigma_{\mathrm{sc}}$ weakly in probability. If moreover $\E X_{12}^4<\infty$, then $\lambda_{\max}(W)\to2$ and $\norm W\to2$ almost surely.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}[Proof of (i)--(iii)]
+The plan is to derive the quadratic equation for $\E s_N$ by Gaussian integration by parts, to control the fluctuations of $s_N$ by the Poincaré inequality, to bound the top eigenvalue by the Sudakov--Fernique inequality, and to conclude with concentration. Fix $z$ with $\eta=\Im z>0$ and write $R=R_W(z)$, a smooth function of the independent entries $(W_{ab})_{a\le b}$ with $\abs{R_{ab}}\le\norm R\le1/\eta$. Differentiating $(W-z)R=I$ in the entry $W_{ab}$, which for $a<b$ moves both $W_{ab}$ and $W_{ba}$, gives $\partial R/\partial W_{ab}=-R(e_ae_b^\top+e_be_a^\top)R$ for $a<b$ and $\partial R/\partial W_{aa}=-Re_ae_a^\top R$. Stein's identity in the single variable $W_{ab}$, of variance $(1+\delta_{ab})/N$, gives for all $a,b$
+\[
+\E[W_{ab}R_{ba}]=-\frac1N\,\E\bigl[R_{aa}R_{bb}+R_{ab}^2\bigr],
+\]
+because $R$ is symmetric. Summing over $a,b$ and using $\tr(WR)=N+z\tr R$ from \cref{def:toolkit:stieltjes}~(iv),
+\[
+1+z\,\E s_N=-\E[s_N^2]-\frac1{N^2}\E\tr(R^2),\qquad\Bigl\lvert\frac1{N^2}\tr(R^2)\Bigr\rvert\le\frac1{N\eta^2}.
+\]
+For the variance write $W_{ab}=\sqrt{(1+\delta_{ab})/N}\,g_{ab}$ with independent standard normals $g_{ab}$, $a\le b$. Since $\partial s_N/\partial W_{ab}=-\frac2N(R^2)_{ab}$ for $a<b$ and $-\frac1N(R^2)_{aa}$ for $a=b$,
+\[
+\sum_{a\le b}\Bigl\lvert\frac{\partial s_N}{\partial g_{ab}}\Bigr\rvert^2=\frac2{N^3}\sum_{a,b}\abs{(R^2)_{ab}}^2=\frac2{N^3}\norm{R^2}_F^2\le\frac2{N^2}\norm R^4\le\frac2{N^2\eta^4},
+\]
+and \cref{thm:toolkit:poincare} gives $\E\abs{s_N-\E s_N}^2\le2/(N^2\eta^4)$. Let $m_N=\E s_N(z)$. Since $\E[s_N^2]=m_N^2+\E[(s_N-m_N)^2]$, the two displays give $m_N^2+zm_N+1=\eps_N$ with $\abs{\eps_N}\le1/(N\eta^2)+2/(N^2\eta^4)$. The roots of $x^2+zx+1$ are $s=s(z)$ and $s'=-z-s$, and $\Im s'=-\eta-\Im s<-\eta$; since $\Im m_N>0$, $\abs{m_N-s'}>\eta$, and $\abs{m_N-s}=\abs{\eps_N}/\abs{m_N-s'}\le\abs{\eps_N}/\eta$. This is the first bound of (i).
+
+For almost sure convergence, Chebyshev's inequality and the variance bound give $\Prob(\abs{s_N(z)-m_N(z)}>N^{-1/4})\le2N^{-3/2}\eta^{-4}$, which is summable, so by the Borel--Cantelli lemma $s_N(z)\to s(z)$ almost surely, for each $z$; hence, almost surely, for all $z$ in a countable dense subset of $\{\Im z>0\}$. The equicontinuity in \cref{def:toolkit:stieltjes}~(i) extends this to every $z$ with $\Im z>0$, and conjugation to every $z\notin\R$. That $s$ is the Stieltjes transform of $\sigma_{\mathrm{sc}}$ is a classical computation \parencite[Section~2.4.1]{AndersonGuionnetZeitouni2010}, so \cref{def:toolkit:stieltjes}~(iii) gives $\mu_N\to\sigma_{\mathrm{sc}}$ weakly, almost surely.
+
+(ii) For unit vectors $u,v$, \cref{def:toolkit:goe} gives $\E(u^\top Wu)(v^\top Wv)=2\ip uv^2/N$, so $\E(u^\top Wu-v^\top Wv)^2=\frac4N(1-\ip uv^2)\le\frac8N(1-\ip uv)$, which is $\E(Y_u-Y_v)^2$ for $Y_u=\frac2{\sqrt N}\ip gu$ with $g\sim\Normal(0,I_N)$. By \cref{thm:toolkit:slepian}~(ii) over the unit sphere, $\E\lambda_{\max}(W)=\E\sup_uu^\top Wu\le\frac2{\sqrt N}\E\abs g\le2$. With $W=(G+G^\top)/\sqrt{2N}$ as in \cref{def:toolkit:goe}, $\lambda_{\max}(W)=\sqrt{2/N}\,\sup_uu^\top Gu$ is a $\sqrt{2/N}$-Lipschitz function of the $N^2$ standard normal entries of $G$, because $\abs{u^\top(G-G')u}\le\norm{G-G'}\le\norm{G-G'}_F$; \cref{thm:toolkit:lipschitz} gives the tail bounds.
+
+(iii) By (ii) and the Borel--Cantelli lemma, $\limsup_N\lambda_{\max}(W)\le2+u$ almost surely for every $u>0$. For $\eps\in(0,2)$, a continuous function $0\le g\le1$ supported in $[2-\eps,2+\eps]$ with $\int g\dd\sigma_{\mathrm{sc}}>0$ has $\int g\dd\mu_N\to\int g\dd\sigma_{\mathrm{sc}}>0$ almost surely by (i), so $\mu_N$ eventually charges $[2-\eps,2+\eps]$ and $\lambda_{\max}(W)\ge2-\eps$. Since $-W$ is again $\mathrm{GOE}(N)$, $\lambda_{\min}(W)\to-2$, and $\norm W=\max(\lambda_{\max}(W),-\lambda_{\min}(W))\to2$.
+\end{proof}
+
+Part (iv) is Wigner's theorem in the form of \textcite[Theorem~2.1.21]{AndersonGuionnetZeitouni2010}; \textcite[Chapter~2]{BaiSilverstein2010} treat the almost sure versions. For the norm, \textcite{BaiYin1988} gave necessary and sufficient conditions for the almost sure convergence of the largest eigenvalue, among them the finite fourth moment. The proof of (i) is that of \textcite[Section~2.4.1]{AndersonGuionnetZeitouni2010}, with the Poincaré inequality for the concentration step and explicit errors.\index{semicircle law}
+
+\begin{theorem}[the Marchenko--Pastur law; stated]\label{thm:toolkit:mp}
+Let $X\in\R^{n\times d}$ have i.i.d.\ entries of mean $0$ and variance $1$, and let $n,d\to\infty$ with $d/n\to\gamma\in(0,\infty)$; in the book's notation $\gamma=1/\alpha$. Almost surely, the empirical spectral distribution of the $d\times d$ matrix $X^\top X/n$ converges weakly to the Marchenko--Pastur law $\mu_\gamma$. It has density $\rho_\gamma(x)=\sqrt{(b-x)(x-a)}/(2\pi\gamma x)$ on $[a,b]$, with $a=(1-\sqrt\gamma)^2$ and $b=(1+\sqrt\gamma)^2$, and, when $\gamma>1$, an atom of mass $1-1/\gamma$ at $0$. Its Stieltjes transform $m=s_{\mu_\gamma}$ solves
+\begin{equation}\label{eq:toolkit:mp}
+\gamma z\,m(z)^2+(z-1+\gamma)\,m(z)+1=0,
+\end{equation}
+with $\Im m(z)>0$ for $\Im z>0$; for real $z<0$, $m(z)$ is the positive root, $m(z)=\bigl(1-\gamma-z-\sqrt{(1-\gamma-z)^2-4\gamma z}\bigr)/(2\gamma z)$. The $n\times n$ matrix $XX^\top/n$ has the same nonzero eigenvalues, and the Stieltjes transform of its limiting spectral distribution is $\underline m(z)=\gamma m(z)-(1-\gamma)/z$. If the entries also have a finite fourth moment, then $\lambda_{\max}(X^\top X/n)\to b$ almost surely and, for $\gamma<1$, $\lambda_{\min}(X^\top X/n)\to a$ almost surely.
+\end{theorem}
+
+The law is due to \textcite{MarchenkoPastur1967}; \textcite[Chapters~3 and~5]{BaiSilverstein2010} prove it and the limits of the extreme eigenvalues, due to \textcite{YinBaiKrishnaiah1988} for the largest and to \textcite{BaiYin1993} for the smallest. For Gaussian entries the proof of \cref{thm:toolkit:semicircle}~(i) adapts, with \eqref{eq:toolkit:mp} in place of $s^2+zs+1=0$. The kit's \texttt{mp\_\allowbreak stieltjes} returns the positive root of \eqref{eq:toolkit:mp} at $z<0$. \Cref{ch:ridge,ch:kernels,ch:dmft} use the theorem.\index{Marchenko--Pastur law}
+
+\begin{remark}[large deviations of the GOE spectrum]\label{rem:toolkit:goeldp}
+The landscape computations of \cref{ch:kacrice} also use large deviations of a GOE matrix. Its empirical spectral distribution satisfies a large deviation principle at speed $N^2$, with a good rate function built from Voiculescu's noncommutative entropy \parencite{BenArousGuionnet1997b}, and $\lambda_{\max}(W)$ satisfies one at speed $N$ \parencite{BenArousDemboGuionnet2001}, with the good rate function $J(x)=\infty$ for $x<2$ and
+\[
+J(x)=\frac12\int_2^x\sqrt{y^2-4}\dd y=\frac x4\sqrt{x^2-4}-\log\frac{x+\sqrt{x^2-4}}2\qquad(x\ge2).
+\]
+These are Theorems~2.6.1 and~2.6.6 of \textcite{AndersonGuionnetZeitouni2010}, with potential $V(x)=x^2/4$ and $\beta=1$ for our normalization; we computed the closed form of $J$ from their rate function.
+\end{remark}
+
+\section{The Kac--Rice formula}\label{sec:toolkit:kacrice}
+
+Physicists count TAP solutions and critical points of random landscapes with a delta function; the Kac--Rice formula is the theorem behind the computation.\index{Kac--Rice formula}
+
+\begin{heuristic}[Counting with a delta function]
+If the critical points of a smooth function $f$ on $\R^n$ are nondegenerate, then near each of them the map $x\mapsto\nabla f(x)$ is a diffeomorphism, and the change of variables $y=\nabla f(x)$ gives $\int_U\delta(\nabla f(x))\abs{\det\nabla^2f(x)}\dd x=1$ on a small neighborhood $U$ of the point. Summing over critical points,
+\[
+\#\{x\in D:\nabla f(x)=0,\ f(x)\in B\}=\int_D\delta(\nabla f(x))\,\abs{\det\nabla^2f(x)}\,\ind\{f(x)\in B\}\dd x.
+\]
+For a random $f$, take expectations, exchange them with the integral, and write $\E[\delta(\nabla f(x))\Phi(x)]=\E[\Phi(x)\mid\nabla f(x)=0]\,p_{\nabla f(x)}(0)$, where $p_{\nabla f(x)}$ is the density of $\nabla f(x)$. The result is \eqref{eq:toolkit:kacrice}.
+\end{heuristic}
+
+A proof replaces $\delta$ by an approximate identity and must show that almost surely every critical point is nondegenerate and none lies on the boundary of $D$, and that the limit can be exchanged with the expectation; the regularity hypotheses below buy this. We state the formula as \textcite[Lemma~3.1]{AuffingerBenArousCerny2013} and \textcite[Lemma~1]{BenArousMeiMontanariNica2019} use it for Gaussian fields on spheres.
+
+\begin{theorem}[the Kac--Rice formula; stated]\label{thm:toolkit:kacrice}
+Let $f$ be a centered Gaussian field on the unit sphere $S^{N-1}\subset\R^N$ with twice continuously differentiable paths, and let $(U_\alpha,\psi_\alpha)$ be a finite atlas of $S^{N-1}$. Write $f^\alpha=f\circ\psi_\alpha^{-1}$, with partial derivatives $f^\alpha_i$ and $f^\alpha_{ij}$. Assume that
+\begin{enumerate}
+\item for every $\alpha$ and every $x\in\psi_\alpha(U_\alpha)$, the Gaussian vector $(f^\alpha_i(x),f^\alpha_{ij}(x))_{1\le i\le j<N}$ is nondegenerate;
+\item for some $\beta>0$ and constants $K_\alpha$, $\max_{i,j}\E\bigl(f^\alpha_{ij}(x)-f^\alpha_{ij}(y)\bigr)^2\le K_\alpha\abs{\log\abs{x-y}}^{-1-\beta}$ for all $x,y\in\psi_\alpha(U_\alpha)$.
+\end{enumerate}
+Let $\nabla f$ and $\nabla^2f$ be the gradient and the covariant Hessian in an orthonormal frame field, $p_\sigma$ the density of $\nabla f(\sigma)$, and $i(\cdot)$ the number of negative eigenvalues. For a Borel set $B\subset\R$ and $0\le k<N$, let $\cA_k(\sigma)$ be the event $\{f(\sigma)\in B,\ i(\nabla^2f(\sigma))=k\}$ and $\mathrm{Crt}_k(B)$ the number of critical points $\sigma$ at which $\cA_k(\sigma)$ holds. Then, with $\dd\sigma$ the surface measure,
+\begin{equation}\label{eq:toolkit:kacrice}
+\E\,\mathrm{Crt}_k(B)=\int_{S^{N-1}}\E\bigl[\abs{\det\nabla^2f(\sigma)}\,\ind_{\cA_k(\sigma)}\bigm|\nabla f(\sigma)=0\bigr]\,p_\sigma(0)\dd\sigma.
+\end{equation}
+\end{theorem}
+
+\Textcite{AuffingerBenArousCerny2013} take hypotheses (i) and (ii) from Corollaries~11.3.2 and~11.3.5 of \textcite{AdlerTaylor2007}, which make $f$ almost surely a Morse function with mean-square derivatives, and prove the formula as Adler and Taylor prove their Theorem~12.4.1. The general statement for random fields on manifolds is Theorem~12.1.1 of \textcite{AdlerTaylor2007}, whose hypotheses (a)--(g) concern the continuity, moments and moduli of continuity of the fields and the continuity of certain conditional densities; Chapter~11 of that book treats subsets of $\R^n$, and \textcite{AzaisWschebor2009} give another account. We know these conditions through \textcite{AuffingerBenArousCerny2013} and \textcite[Appendix~III]{Subag2017a}, not from the book itself. The formula scales to the sphere of radius $\sqrt N$.
+
+The formula gives a mean, which can exceed the typical number of critical points by an exponential factor; a second-moment computation shows when it does not \parencite{Subag2017a}. The conditional law of the Hessian given $\nabla f(\sigma)=0$ and $f(\sigma)=x$ is a Gaussian regression; for the pure spherical $p$-spin model it is a multiple of a GOE matrix minus a multiple of the identity \parencite[Lemma~3.2]{AuffingerBenArousCerny2013}, which turns \eqref{eq:toolkit:kacrice} into an expectation over the GOE (\cref{thm:kacrice:annealed}). In dimension one the same computation, with $\delta(X(t))\abs{X'(t)}$, gives Rice's formula: if $X$ is a stationary centered Gaussian process with continuously differentiable paths, $\lambda_0=\E X(t)^2$ and $\lambda_2=\E X'(t)^2$, then $X(t)=u$ has on average $\frac T\pi\sqrt{\lambda_2/\lambda_0}\,e^{-u^2/(2\lambda_0)}$ solutions in $[0,T]$, because $X(t)$ and $X'(t)$ are independent. For $X(t)=\sum_{k=1}^K(a_k\cos kt+b_k\sin kt)$ with independent standard normal coefficients the mean number of zeros in $[0,2\pi)$ is $2\sqrt{(K+1)(2K+1)/6}$, which is $12.410$ for $K=10$; $20000$ draws (seed 7), with the zeros counted as the roots on the unit circle of a polynomial of degree $2K$, give $12.400\pm0.033$ (a $95\%$ Student-$t$ interval).\sidenote{\Textcite{Kac1943} found that a random algebraic polynomial of degree $n$ with independent standard normal coefficients has about $(2/\pi)\log n$ real roots on average, and \textcite{Rice1944} derived the formula for the crossings of random noise.}
+
+\section{Numerics}\label{sec:toolkit:numerics}
+
+This section says what the numerical routines of the kit \texttt{figures/\allowbreak scripts/\allowbreak rosettakit.py} compute, how accurate they are, and how they fail. All numbers below were computed with the kit by the script \texttt{figures/\allowbreak scripts/\allowbreak 17-toolkit-numerics.py}, which also prints the numbers quoted for the Curie--Weiss model in \cref{sec:toolkit:laplace} and for Rice's formula in \cref{sec:toolkit:kacrice}.
+
+\paragraph{Gaussian expectations.} The function \texttt{gauss(f, n)} computes $\E f(Z)=\int f(z)\Dz$ by the $n$-point Gauss--Hermite rule $\sum_kw_kf(x_k)$, by default with $n=121$. The nodes $x_k$ are the zeros of the monic Hermite polynomial $\mathrm{He}_n$, these polynomials being orthogonal with $\E\,\mathrm{He}_j(Z)\mathrm{He}_k(Z)=k!\,\delta_{jk}$, and the weights are $w_k=n!/(n\,\mathrm{He}_{n-1}(x_k))^2$. The rule is exact for polynomials of degree at most $2n-1$, and for $f$ with $2n$ continuous derivatives its error is $f^{(2n)}(\xi)\,n!/(2n)!$ for some real $\xi$. \Cref{tab:toolkit:quadrature} shows what this means in practice: entire integrands such as $\cos$ are exact to rounding at $n=21$; integrands analytic only in a strip around the real axis, such as $\tanh$ and $\log\cosh$, converge roughly like $e^{-c\sqrt n}$; and an integrand with a kink converges like $1/n$. For such integrands \texttt{gauss\_\allowbreak split(f, a)} puts the kink at $a$ and applies $200$-point Gauss--Legendre rules to $f$ times the normal density on $(-12,a)$ and $(a,12)$; its error for $\E\abs Z$ is $5\times10^{-15}$. Numpy documents its routine for these nodes and weights as tested up to $100$ nodes; at $121$, $161$ and $201$ nodes the weights are symmetric and sum to $1$ within $2.2\times10^{-16}$. The kit's tail $H(x)=\Prob(Z>x)$ returns $0$ at $x=38$, where the true value falls below the smallest normal double; \texttt{logH} returns $\log H(x)$ stably.\index{Gauss--Hermite quadrature}
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{rcccc}
+\toprule
+$n$ & $\E\cos Z$ & $\E\tanh(2+\sqrt2Z)$ & $\E\log\cosh(1.5Z+0.3)$ & $\E\abs Z$\\
+\midrule
+11 & $2.8\times10^{-14}$ & $1.4\times10^{-3}$ & $5.1\times10^{-4}$ & $6.0\times10^{-2}$\\
+21 & $<10^{-15}$ & $7.4\times10^{-5}$ & $4.0\times10^{-6}$ & $3.1\times10^{-2}$\\
+41 & $<10^{-15}$ & $1.3\times10^{-6}$ & $7.0\times10^{-7}$ & $1.6\times10^{-2}$\\
+61 & $<10^{-15}$ & $6.8\times10^{-8}$ & $4.1\times10^{-8}$ & $1.1\times10^{-2}$\\
+121 & $<10^{-15}$ & $5.7\times10^{-11}$ & $1.9\times10^{-11}$ & $5.4\times10^{-3}$\\
+201 & $<10^{-15}$ & $3.9\times10^{-14}$ & $2.6\times10^{-14}$ & $3.3\times10^{-3}$\\
+\bottomrule
+\end{tabular}
+\caption{Absolute errors of the $n$-point Gauss--Hermite rule of the kit (\texttt{gauss}) against reference values: closed forms for $\cos$ and $\abs z$, mpmath quadrature at 30 digits for $\tanh$ and $\log\cosh$.}\label{tab:toolkit:quadrature}
+\end{table}
+
+\paragraph{Fixed points.} Saddle-point and state-evolution equations have the form $x=F(x)$. The function \texttt{fixed\_\allowbreak point(F, x0, damping, tol)} iterates the damped map $T_\delta(x)=(1-\delta)x+\delta F(x)$, $\delta\in(0,1]$, until the largest change of a coordinate is below \texttt{tol}, and returns the point, the number of iterations, and whether it converged. For scalar $F$, continuously differentiable near a fixed point $x^*$ with $\lambda=F'(x^*)$, the slope $T_\delta'(x^*)=1-\delta(1-\lambda)$ shows, by the mean value theorem, that the iteration converges to $x^*$ from nearby starting points, geometrically with ratio $r=\abs{1-\delta(1-\lambda)}$, when $0<\delta(1-\lambda)<2$, and that $x^*$ repels for every $\delta$ when $\lambda>1$.\index{fixed-point iteration} Damping therefore stabilizes fixed points with $\lambda<-1$, which the plain iteration misses because it oscillates; it slows the convergence when $0<\lambda<1$; and it never finds a fixed point with $\lambda>1$. For a vector equation the same holds with the eigenvalues of the Jacobian. When the change between iterates falls below \texttt{tol}, the error is about $\mathtt{tol}\cdot r/(1-r)$, large near a continuous transition, where $\lambda\to1$. For $\Z_2$ synchronization, $q=1-\mathrm{mmse}(\lambda^2q)$ with the Rademacher prior, the undamped iteration from $q=1$ with $\mathtt{tol}=10^{-13}$ takes $18$ iterations at $\lambda=2$, where $F'(q^*)=0.197$, and $608$ at $\lambda=1.02$, where $F'(q^*)=0.962$; it stops with errors $1.5\times10^{-14}$ and $2.5\times10^{-12}$, against the estimates $2.5\times10^{-14}$ and $2.5\times10^{-12}$, and with $\delta=\frac12$ it needs two to three times as many iterations. Near a transition a script should check the residual $\abs{F(x)-x}$, or solve $F(x)=x$ by bracketing and Brent's method (\texttt{root}), whose convergence does not depend on $F'$.
+
+\paragraph{Several fixed points.} When $F$ has several fixed points, a script must find all of them and say which one it reports. The recipe is to tabulate $F(q)-q$ on a grid, refine each sign change with \texttt{root}, classify each root by its slope, and run the damped iteration from $q_0=1$ (the informative branch) and from $q_0$ near $0$ (the uninformative one). A Bayes-optimal error is given by the global extremum of the potential whose stationarity condition is $q=F(q)$; an algorithm such as AMP follows its state evolution from its own starting point. For spiked Wigner matrices the replica-symmetric formula (\cref{thm:nishimori:rsformula}) gives the mutual information per coordinate as the minimum over $\gamma\ge0$ of $\Psi(\gamma)=\frac{\lambda^2}4+\frac{\gamma^2}{4\lambda^2}-\frac\gamma2+I(\gamma)$, with $I$ the mutual information of the scalar channel; with $\gamma=\lambda^2q$, the I-MMSE relation $I'(\gamma)=\frac12\mathrm{mmse}(\gamma)$ (\cref{thm:freeentropy:immse}) gives $\frac{\dd\Psi}{\dd\gamma}=\frac12(q-F(q))$. The potential difference of two fixed points is therefore an integral of the residual,
+\[
+\Psi(q_2)-\Psi(q_1)=\frac{\lambda^2}2\int_{q_1}^{q_2}\bigl(q-F(q)\bigr)\dd q,
+\]
+an equal-area rule. For the sparse Rademacher prior with $\rho=0.05$ at $\lambda=0.92$ there are three fixed points: $q=0$, stable, with $F'(0)=\lambda^2=0.846$; $q=0.12934$, unstable, with $F'=1.213$; and $q=0.75471$, stable, with $F'=0.550$. The damped iteration ($\delta=\frac12$) reaches $0.75471$ from $q_0=1$ and $0.3$, and $0$ from $q_0=0.1$ and $10^{-3}$. Since $\Psi(0.75471)-\Psi(0)=-0.0116$, the informative fixed point is the Bayes-optimal one, while AMP started without information stays at $0$: the hard phase of \cref{ch:spiked}. Solving $\Psi(q_+)=\Psi(0)$ for $\lambda$ gives the information-theoretic threshold $\lambda_{\mathrm{IT}}=0.86447$.
+
+\paragraph{Intervals.} The figures show $95\%$ intervals of two kinds; each caption says which, over how many independent replicates. For $R$ replicates with mean $\bar v$ and sample variance $s^2$ (divisor $R-1$), \texttt{mean\_ci} returns $\bar v\pm t_{R-1}s/\sqrt R$, with $t_{R-1}$ the $0.975$ quantile of Student's distribution with $R-1$ degrees of freedom. The coverage is exactly $95\%$ for normal replicates and tends to $95\%$ for replicates of finite variance; for skewed replicates and small $R$ it falls short, and for exponential replicates we measured $87.7\%$, $90.0\%$ and $92.6\%$ at $R=5$, $10$ and $30$ ($20000$ repetitions each, seed 2026). For $J$ successes in $n$ independent trials, \texttt{clopper\_\allowbreak pearson} returns $[\theta_-(J),\theta_+(J)]$, where $\theta_-(k)$ is the $\alpha/2$ quantile of the Beta distribution with parameters $(k,n-k+1)$, or $0$ if $k=0$, and $\theta_+(k)$ is the $1-\alpha/2$ quantile of the Beta distribution with parameters $(k+1,n-k)$, or $1$ if $k=n$, with $\alpha=0.05$ \parencite{ClopperPearson1934}.\index{Clopper--Pearson interval}
+
+\begin{proposition}\label{prop:toolkit:clopper}
+For every $\theta\in[0,1]$ and $J\sim\mathrm{Bin}(n,\theta)$, $\Prob\bigl(\theta_-(J)\le\theta\le\theta_+(J)\bigr)\ge1-\alpha$.
+\end{proposition}
+
+\begin{proof}
+For $1\le k\le n$, $\Prob(J\ge k)=\Prob(B_k\le\theta)$, where $B_k$ has the Beta distribution with parameters $(k,n-k+1)$: for independent uniform $U_1,\dots,U_n$ on $[0,1]$, the number of $U_i\le\theta$ has the law of $J$, and it is at least $k$ exactly when the $k$th smallest $U_i$, which has the law of $B_k$, is at most $\theta$. The end points $\theta_\pm(k)$ increase with $k$. If $\theta_+(J)<\theta$ has positive probability, let $k^*$ be the largest $k$ with $\theta_+(k)<\theta$; then $k^*<n$ and $\Prob(\theta_+(J)<\theta)=\Prob(J\le k^*)=\Prob(B_{k^*+1}>\theta)\le\Prob(B_{k^*+1}>\theta_+(k^*))=\alpha/2$. In the same way, with $k_*$ the smallest $k\ge1$ with $\theta_-(k)>\theta$, $\Prob(\theta_-(J)>\theta)=\Prob(B_{k_*}\le\theta)\le\Prob(B_{k_*}\le\theta_-(k_*))=\alpha/2$; the two failures have total probability at most $\alpha$.
+\end{proof}
+
+The interval is conservative: the infimum of its coverage over $\theta$ is $96.10\%$ for $n=10$, $95.08\%$ for $n=50$, and $95.002\%$ for $n=200$ and $n=1000$. Every random number of the scripts comes from \texttt{rng(seed)}, a numpy generator with a fixed seed, and every script writes its data with \texttt{write\_\allowbreak dat} and prints the numbers that its chapter quotes.
+
+\notesandrefs
+
+\Textcite[Chapters~5 and~7]{Vershynin2018} treats the Gaussian tools; its first edition has integration by parts and interpolation as Lemmas~7.2.3, 7.2.5 and~7.2.7 and the inequalities of Slepian and Sudakov--Fernique as Theorems~7.2.1, 7.2.9 and~7.2.11. \Textcite{BoucheronLugosiMassart2013} and \textcite{Ledoux2001} treat concentration, \textcite{DemboZeitouni2010} large deviations, \textcite{AndersonGuionnetZeitouni2010} and \textcite{BaiSilverstein2010} random matrices, and \textcite{AdlerTaylor2007} and \textcite{AzaisWschebor2009} the Kac--Rice formula. The induction in part (ii) of \cref{lem:toolkit:conditioning} was written for this book.
+
+\paragraph{Translating the literature.} \Textcite{AndersonGuionnetZeitouni2010} and \textcite{BaiSilverstein2010} define the Stieltjes transform as we do; \textcite{BenArousMeiMontanariNica2019} and much of the free-probability literature use the Cauchy transform $\int\mu(\dd x)/(z-x)=-s_\mu(z)$, in which the semicircle's transform reads $(z-\sqrt{z^2-4})/2$; and the physicist's Green's function $(z-A)^{-1}$ is $-R_A(z)$. The GOE of \textcite{AndersonGuionnetZeitouni2010} is ours; \textcite{AuffingerBenArousCerny2013} normalize it with $\E M_{ij}^2=(1+\delta_{ij})/(2N)$, so that their semicircle lives on $[-\sqrt2,\sqrt2]$; \textcite[Exercise~7.3.5]{Vershynin2018} uses unnormalized entries. Statisticians write the Marchenko--Pastur ratio as $\gamma=p/n$, our $d/n=1/\alpha$ (\cref{ch:ridge}), and the physicist's $\int f(z)\Dz$ is our $\E f(Z)$.
+
+\printchapterbib
+\end{refsection}
