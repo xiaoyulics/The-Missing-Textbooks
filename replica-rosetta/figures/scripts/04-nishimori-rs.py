@@ -96,14 +96,22 @@ def F_sparse(lam, q, rho):
     return psi_sparse(lam * lam * q, rho) - lam * lam * q * q / 4
 
 
-def lam_IT_sparse(rho):
-    """Smallest lam at which max_{q>0} F_rho(lam, q) reaches F_rho(lam, 0) = 0 (scan in q, then Brent)."""
+def max_sparse(lam, rho):
+    """(max over q in [0.02, 1] of F_rho(lam, q), its argmax): grid scan, then a bounded refinement."""
     qs = np.linspace(0.02, 1.0, 197)
+    vals = [F_sparse(lam, q, rho) for q in qs]
+    j = int(np.argmax(vals))
+    lo, hi = qs[max(j - 1, 0)], qs[min(j + 1, len(qs) - 1)]
+    res = optimize.minimize_scalar(lambda q: -F_sparse(lam, q, rho), bounds=(lo, hi), method="bounded",
+                                   options={"xatol": 1e-10})
+    return (-res.fun, res.x) if -res.fun > vals[j] else (vals[j], qs[j])
 
-    def gap(lam):
-        return max(F_sparse(lam, q, rho) for q in qs)
 
-    return rk.root(gap, 0.6, 0.99, tol=1e-10)
+def lam_IT_sparse(rho):
+    """Smallest lam at which max_{q>0} F_rho(lam, q) reaches F_rho(lam, 0) = 0 (refined scan in q,
+    then Brent in lam); returns (lam_IT, the second maximizer q_IT at lam_IT)."""
+    lit = rk.root(lambda lam: max_sparse(lam, rho)[0], 0.6, 0.99, tol=1e-10)
+    return lit, max_sparse(lit, rho)[1]
 
 
 def main():
@@ -164,8 +172,9 @@ def main():
 
     # 3. potentials
     rho = 0.05
-    lit = lam_IT_sparse(rho)
-    print(f"\nSparse Rademacher, rho = {rho}: lam_IT = {lit:.5f}  (digest 02: 0.86447)")
+    lit, qit = lam_IT_sparse(rho)
+    print(f"\nSparse Rademacher, rho = {rho}: lam_IT = {lit:.5f}  (digest 02: 0.86447); "
+          f"the overlap jumps from 0 to q_IT = {qit:.4f} (MMSE {1 - qit * qit:.4f})")
     lam_r = [0.8, 1.0, 1.2, 1.5]
     lam_s = [0.84, lit, 0.88]
     qs = np.linspace(0.0, 1.0, 201)
@@ -178,7 +187,7 @@ def main():
     for l in lam_s:
         vals = np.array([F_sparse(l, q, rho) - F_sparse(l, 0.0, rho) for q in qs])
         loc = [i for i in range(1, len(qs) - 1) if vals[i] > vals[i - 1] and vals[i] > vals[i + 1]]
-        print(f"  lam = {l:.4f}: interior local maxima of F_rho - F_rho(0):",
+        print(f"  lam = {l:.4f}: interior local maxima of F_rho - F_rho(0) on the plotting grid (step 0.005):",
               ", ".join(f"q = {qs[i]:.3f} (value {vals[i]:+.5f})" for i in loc) or "none")
     for l in lam_r:
         vals = [F(l, q) for q in qs]

@@ -11,7 +11,8 @@ and alpha = 1/E (Z + kappa*)_+^2 (Gardner's capacity).
 
 Computes
   (1) kappa*, c*, Err* on a grid of alpha for the noiseless teacher, the logistic teacher with r = sqrt(5)
-      (alpha < alpha_MLE = 3.0714), and random labels; the large-alpha constants alpha Err*;
+      (alpha < alpha_MLE = 3.0714), and random labels; the large-alpha constants alpha Err*, and their
+      limit 3/(sqrt(2 pi) G(s*)) (see large_alpha_constant);
   (2) the Bayes-optimal error of the noiseless teacher (Opper--Haussler; the replica formula proved by
       Barbier et al. 2019): q = qh/(1 + qh), qh = (alpha/(pi (1 - q))) E[exp(-q xi^2/(1 - q))/Phi(u xi)],
       u = sqrt(q/(1 - q)), error arccos(sqrt q)/pi;
@@ -119,6 +120,16 @@ def bayes_error(alpha):
     return math.acos(math.sqrt(q)) / math.pi
 
 
+def large_alpha_constant():
+    """Limit of alpha Err* (noiseless teacher) as alpha -> infinity. For large t only |U| ~ 1/t matters, so
+    F_kappa(t) ~ sqrt(2/pi) G(kappa t)/(3 t) with G(s) = E (s - Z)_+^3 = (s^3 + 3 s) Phi(s) + (s^2 + 2) phi(s);
+    minimizing gives s G'(s) = G(s), and Err* ~ 1/(pi t*) gives alpha Err* -> 3/(sqrt(2 pi) G(s*))."""
+    G = lambda s: (s ** 3 + 3 * s) * special.ndtr(s) + (s * s + 2) * math.exp(-0.5 * s * s) / SQ2PI
+    G1 = lambda s: 3 * ((1 + s * s) * special.ndtr(s) + s * math.exp(-0.5 * s * s) / SQ2PI)
+    s = optimize.brentq(lambda s: s * G1(s) - G(s), 0.1, 3.0, xtol=1e-15)
+    return 3 / (SQ2PI * G(s)), s
+
+
 def svm_origin(Z):
     """Hard-margin SVM through the origin for the rows z_i of Z; returns w (dual by L-BFGS-B)."""
     K = Z @ Z.T
@@ -139,6 +150,7 @@ def main():
     for a in [50.0, 100.0, 200.0]:
         k, c, e = noiseless.maxmargin(a)
         print("alpha=%5.0f: alpha Err* = %.4f, alpha Bayes = %.4f, alpha kappa* = %.4f" % (a, a * e, a * bayes_error(a), a * k))
+    print("limit alpha -> infinity: alpha Err* -> %.5f (s* = %.6f)" % large_alpha_constant())
     print("random labels alpha=1: kappa* = %.5f (Gardner: alpha_c(kappa*) = %.6f)" % (
         randl.maxmargin(1.0)[0], rk.gardner_capacity(randl.maxmargin(1.0)[0])))
     rows = []

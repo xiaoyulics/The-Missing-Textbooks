@@ -11,7 +11,7 @@ Runs: d = 125, 250, 500, 1000, 100 runs each (all dimensions advance in one vect
 up to t = 180. Records the error eps_g on a grid of spacing 0.4 and the escape time (first grid
 time with eps_g < eps*/2, eps* = 0.020657 the plateau of the attracting symmetric fixed point).
 Writes figures/data/15-sgd-plateau-curves.dat (learning curves, d = 125 and 1000) and
-15-sgd-plateau-escape.dat (escape times against d). Runtime: about 1 to 2 minutes.
+15-sgd-plateau-escape.dat (escape times against d). Runtime: about 30 seconds.
 """
 import math
 import os
@@ -158,16 +158,24 @@ def main():
         sd = float(np.std(tesc[ok], ddof=1))
         erows.append((d, math.log(d), med, med - srt[lo_i], srt[hi_i] - med, m, h, sd))
         allc.append(tesc[ok] - math.log(d) / (2 * LAMBDA))
-        print("  d=%5d: escaped %d/%d; median %.1f [%.1f, %.1f]; mean %.1f +- %.1f; std %.1f; eps_g(t=10) %.5f; sqrt(d) E|s(40)| = %.3f"
+        print("  d=%5d: escaped %d/%d; median %.1f [%.1f, %.1f]; mean %.1f +- %.1f; std %.1f; eps_g(t=10) %.5f; sqrt(d) E|epsilon(40)| = %.3f"
               % (d, ok.sum(), S, med, srt[lo_i], srt[hi_i], m, h, sd, np.mean(EG[g, int(round(10 / rec_dt))]), math.sqrt(d) * np.mean(SPEC[g])))
     rk.write_dat(os.path.join(OUT, "15-sgd-plateau-escape.dat"),
                  ["d", "lnd", "median", "lo", "hi", "mean", "ci", "sd"], erows)
     x = np.array([r[1] for r in erows])
-    for name, col in (("median", 2), ("mean", 5)):
-        yv = np.array([r[col] for r in erows])
-        res = stats.linregress(x, yv)
-        print("  slope of %s escape time against ln d: %.2f +- %.2f (1.96 SE); heuristic 1/(2 lambda) = %.2f; intercept %.2f"
-              % (name, res.slope, 1.96 * res.stderr, 1 / (2 * LAMBDA), res.intercept))
+    # slope of the mean escape times against ln d: weighted least squares with the standard errors
+    # of the means (sd/sqrt(S), from S independent runs each) as known variances, so that 1.96
+    # standard errors give a 95% interval (an unweighted fit of 4 points has only 2 degrees of freedom)
+    ym = np.array([r[5] for r in erows])
+    w = S / np.array([r[7] for r in erows]) ** 2
+    xb, yb = np.sum(w * x) / w.sum(), np.sum(w * ym) / w.sum()
+    sxx = np.sum(w * (x - xb) ** 2)
+    slope = np.sum(w * (x - xb) * (ym - yb)) / sxx
+    chi2 = np.sum(w * (ym - yb - slope * (x - xb)) ** 2)
+    print("  slope of the mean escape time against ln d (weighted): %.2f +- %.2f (95%%); heuristic 1/(2 lambda) = %.2f;"
+          " chi2 of the line %.2f on 2 dof" % (slope, 1.96 / math.sqrt(sxx), 1 / (2 * LAMBDA), chi2))
+    print("  slope of the median escape time against ln d (unweighted, point estimate): %.2f"
+          % stats.linregress(x, np.array([r[2] for r in erows])).slope)
     # the heuristic line c + ln(d)/(2 lambda), with c fitted to the mean escape times (slope fixed)
     cfit = float(np.mean([r[5] - r[1] / (2 * LAMBDA) for r in erows]))
     dl = np.exp(np.linspace(math.log(100), math.log(1300), 30))

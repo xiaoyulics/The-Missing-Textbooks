@@ -45,6 +45,7 @@ echo "-- undefined references/citations in this chapter --"
 echo "-- cross-chapter references (expected to be undefined in a single-chapter build) --"
 grep -oE "Reference \`[^']+' on page [0-9]+ undefined" wrapper.log | sed -E "s/ on page [0-9]+ undefined//" | sort -u | grep -vE ":$key|ch:$key" | tr '\n' ' '; echo
 grep -E "multiply defined" wrapper.log | sort -u
+grep -E "Float too large" wrapper.log | sort | uniq -c | head -20
 echo "-- overfull boxes: $(grep -c '^Overfull' wrapper.log) total; those over 3pt: --"
 grep -E "^Overfull \\\\[hv]box \(([3-9]|[1-9][0-9]+)\.[0-9]+pt too (wide|high)\)" wrapper.log | head -15
 [[ -f wrapper.pdf ]] && echo "-- pages: $(pdfinfo wrapper.pdf 2>/dev/null | awk '/^Pages/{print $2}') --"

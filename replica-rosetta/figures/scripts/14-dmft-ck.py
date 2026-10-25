@@ -6,7 +6,7 @@ Langevin dynamics ds = (-grad H - mu s) dt + sqrt(2T) dB on |s|^2 = N, start ind
   dR(t,t')/dt = -mu R + int_t'^t xi''(C(t,s)) R(t,s) R(s,t') ds,     R(t,t) = 1, C(t,t) = 1
   mu(t) = T + int_0^t [xi'(C) + xi''(C) C] R ds,                     e(t) = -int_0^t xi'(C(t,s)) R(t,s) ds.
 Scheme: Heun's method in t with trapezoidal quadrature (second order), Richardson extrapolation from h and h/2.
-Checks: p = 2, T = 0 against the exact solution of Theorem 14.2; p = 3, T = 1.2 against the equilibrium energy -1/T.
+Checks: p = 2, T = 0 against the exact solution of Theorem 14.3; p = 3, T = 1.2 against the equilibrium energy -1/T.
 Also prints the static and dynamical numbers quoted in the text (T_d, q_d, the CK aging predictions, thresholds).
 Writes figures/data/14-dmft-ck-energy.dat and 14-dmft-ck-aging.dat.
 """
@@ -120,7 +120,7 @@ def main():
     for T in (0.7, 0.5, 0.1, 0.01):
         q, x, E = ck_aging(P, T)
         print("CK aging prediction p=3, T=%.2f: q_EA=%.5f, x=%.5f, E_inf(T)=%.5f" % (T, q, x, E))
-    # check 1: p = 2, T = 0 against Theorem 14.2
+    # check 1: p = 2, T = 0 against Theorem 14.3
     Cx, Ex, E1, E2 = extrapolated(2, 0.0, 0.05, 10.0)
     ts = np.arange(len(Ex)) * 0.05
     u = 2 * s2 * ts[1:]

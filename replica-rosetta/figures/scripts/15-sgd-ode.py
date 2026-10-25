@@ -10,12 +10,13 @@ This script
   2. computes the symmetric fixed points for K = M = 2 (and K = 3), T = I: the eta -> 0 plateau
      (closed form), and at finite eta the two symmetric fixed points (identical students, A; the
      attracting one, B), with the eigenvalues of the linearization;
-  3. checks the closed form of the eta -> 0 escape rate 2K/(pi sqrt(2K-1) (2K+1)^{3/2});
+  3. checks the closed form of the eta -> 0 escape rate 2K/(pi sqrt(2K-1) (2K+1)^{3/2}) against
+     the largest eigenvalue of the first-order equations (printed in part 2);
   4. integrates the ODE from the random-start limit m_sym(0) = (q0 I, 0) (eta = 1, q0 = 1/4),
      checks that it stays in the symmetric subspace, and from slightly asymmetric starts
-     (escape time against ln(1/delta0));
-  5. computes numbers for the exercises (K = M = 1 critical learning rate; linear network).
-Writes figures/data/15-sgd-ode-curve.dat and 15-sgd-ode-escape.dat. Runtime: about 30 s.
+     (escape time against ln(1/delta0)).
+Writes figures/data/15-sgd-ode-curve.dat, 15-sgd-ode-plateau.dat and 15-sgd-ode-escape.dat.
+Runtime: about 10 s.
 """
 import math
 import os

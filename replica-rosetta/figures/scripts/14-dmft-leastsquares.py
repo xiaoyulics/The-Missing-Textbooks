@@ -1,4 +1,4 @@
-"""Chapter 14 (dmft): gradient flow on least squares against its DMFT limit (Theorem 14.1).
+"""Chapter 14 (dmft): gradient flow on least squares against its DMFT limit (Theorem 14.2).
 
 Model (book's regression normalization): x_i ~ N(0, I_d), y = X theta* + sigma z, |theta*| = r, theta_0 = 0,
 gradient flow on Lhat(theta) = |y - X theta|^2 / (2n); S = X^T X / n, gamma = d/n.
@@ -8,7 +8,7 @@ gradient flow on Lhat(theta) = |y - X theta|^2 / (2n); S = X^T X / n, gamma = d/
 The response is also obtained by integrating the DMFT kernel equations in time (Computation 14.2):
   R'(tau) = -R(tau) - int_0^tau Rl(tau - s) R(s) ds,   Rl(tau) = -gamma R(tau) - gamma int_0^tau R(tau - s) Rl(s) ds.
 Simulation: n = 2000, d = 1000 (gamma = 0.5) and n = 1000, d = 1500 (gamma = 1.5), sigma = 0.5, r = 1,
-10 independent replicates each (seeds 1400 + k), exact flow through the eigendecomposition of S.
+10 independent replicates each (seeds 1400 + 100 floor(10 gamma) + k), exact flow through the eigendecomposition of S.
 Writes figures/data/14-dmft-ls-curves.dat, 14-dmft-ls-sim.dat, 14-dmft-ls-response.dat.
 """
 import math

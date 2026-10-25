@@ -1,8 +1,8 @@
-"""Chapter 14 (dmft): zero-temperature gradient flow on the spherical 2-spin model (Theorem 14.2).
+"""Chapter 14 (dmft): zero-temperature gradient flow on the spherical 2-spin model (Theorem 14.3).
 
 H(s) = -(1/sqrt 2) <s, W s> on the sphere |s|^2 = N, W ~ GOE(N), so E H(s)H(s') = N (s.s'/N)^2 (the book's
 normalization, xi(q) = q^2). The spherical gradient flow from s_0 uniform is s_t = sqrt(N) e^{sqrt2 t W} s_0 / |...|.
-Limits (Theorem 14.2), with Phi(u) = int e^{u x} sigma_sc(dx) = I_1(2u)/u:
+Limits (Theorem 14.3), with Phi(u) = int e^{u x} sigma_sc(dx) = I_1(2u)/u:
    C(t, s) = Phi(sqrt2 (t + s)) / sqrt(Phi(2 sqrt2 t) Phi(2 sqrt2 s)),   e(t) = -Phi'(2 sqrt2 t) / (sqrt2 Phi(2 sqrt2 t)),
    aging: C(t_w (1 + x), t_w) -> (4 (1 + x) / (2 + x)^2)^{3/4} as t_w -> infinity.
 Simulation: N = 1500, 10 independent GOE matrices and starting points (seeds 1420 + k); every quantity is an

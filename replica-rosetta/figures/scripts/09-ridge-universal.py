@@ -7,8 +7,10 @@ direction of the teacher (uniform on the sphere, independent of X) and the noise
   E[R | X] = r^2 (1 - rank/d) + sigma^2 tr (X'X)^+                for the interpolator.
 These identities hold for every design, Gaussian or not; they remove the noise of the teacher and of
 the labels and leave only the fluctuation of the spectrum of X.
-The limits are those of the chapter's theorem (proved for Gaussian designs); for the interpolator with
-i.i.d. entries of finite (4+eta)-th moment they are Theorem 1 of Hastie-Montanari-Rosset-Tibshirani.
+The limits are those of the chapter's theorem (proved for Gaussian designs); for i.i.d. entries, and the
+risk averaged over the noise, they are Proposition 2 (alpha > 1, finite fourth moment), Theorem 1
+(alpha < 1, finite (4+eta)-th moment) and Corollary 6 (ridge) of Hastie-Montanari-Rosset-Tibshirani
+(journal numbering).
 Reports means with Student-t 95% intervals. Seeds: 7770 + j for data set j (the same seeds for both
 designs). Writes figures/data/09-ridge-universal.dat. Runtime: about 30 seconds.
 Run from the volume root: python figures/scripts/09-ridge-universal.py

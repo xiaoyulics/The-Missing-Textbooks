@@ -8,10 +8,12 @@ this lam is that of Jagannath--Lopatto--Miolane and Ben Arous--Gheissari--Jagann
 that of Ben Arous--Mei--Montanari--Nica (their f = -H/(sqrt(2) N), lam_BAMMN = lam/sqrt 2).
 
 Writes
-  figures/data/13-kacrice-complexity.dat  u, total, minima, idx1, idx2, idx10 (ABC Theta functions)
+  figures/data/13-kacrice-complexity.dat  u, total, minima, idx1, idx2, idx10 (ABC Theta functions), density
+  figures/data/13-kacrice-cs95.dat        u, the Crisanti--Sommers complexity of minima at E = u/sqrt 2
   figures/data/13-kacrice-spiked.dat      m, S0 and S (minima, all critical points) at four lam
-Prints E_k, the CS95 / ABC Remark 2.7 normalization check, the zero-temperature 1RSB value of E_0,
-lam_c(p), lam_ML(p) and the overlaps m*(lam).   Runs in a few seconds.
+Prints E_k, the CS95 / ABC Remark 2.7 normalization check, the zero-temperature 1RSB value of E_0, the
+ground state of Jagannath--Lopatto--Miolane, lam_c(p), lam_ML(p) and the overlaps m*(lam).
+Under a minute on a laptop.
 """
 import math
 import os

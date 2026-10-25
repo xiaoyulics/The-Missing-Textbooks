@@ -17,7 +17,7 @@ proved curve 1 - (1 - 1/lam^2)^2 (BBP, Chapter 5).  The prediction for AMP is 1 
 (a theorem for every lam != 1: Deshpande--Abbe--Montanari 2016; Montanari--Venkataramanan 2021).
 
 Writes figures/data/04-nishimori-amp.dat (lam, mean and 95% half-width of the AMP and spectral MSE,
-RS prediction).  Seeds 4000 + 100 k + r for the k-th lam and repetition r.  Runtime: about 80 s.
+RS prediction).  Seeds 4000 + 100 k + r for the k-th lam and repetition r.  Runtime: about 55 s.
 Run from the volume root:  python figures/scripts/04-nishimori-amp.py
 """
 import math

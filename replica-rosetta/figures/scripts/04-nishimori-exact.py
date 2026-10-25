@@ -1,4 +1,4 @@
-"""Chapter 4 (nishimori): Z2 synchronization by exact posterior enumeration at N = 8, 10, 12.
+"""Chapter 4 (nishimori): Z2 synchronization by exact posterior enumeration at N = 6, 8, 10, 12.
 
 Model (book normalization): A = (lam/N) x* x*^T + W, W ~ GOE(N), x* uniform on {-1,+1}^N.
 The posterior is the Gibbs measure exp((lam/2) x^T A x) on {-1,+1}^N; the evidence (likelihood ratio
@@ -16,7 +16,7 @@ It compares with the replica-symmetric formula max_q F(lam, q) and 1 - q*^2 (04-
 checks Guerra's bound phi_N >= max_q F (a theorem at every N) and the Nishimori identity
 E<R_{1*}^2> = E<R_{12}^2>.  Intervals: Student-t 95%.  Seeds 1000 N + k for the k-th value of lam.
 
-Writes figures/data/04-nishimori-exact.dat.  Runtime: about 80 s.
+Writes figures/data/04-nishimori-exact.dat.  Runtime: about 45 s.
 Run from the volume root:  python figures/scripts/04-nishimori-exact.py
 """
 import math
@@ -85,7 +85,7 @@ def main():
         header += [f"phi{N}", f"phi{N}ci", f"gap{N}", f"gap{N}ci", f"mmse{N}", f"mmse{N}ci", f"nish{N}", f"nish{N}ci"]
     rows = []
     tvals = []
-    mmse_in = 0
+    diffs = []
     for k, lam in enumerate(LAMS):
         phirs, q = rs(lam)
         row = [lam, phirs, 1 - q * q]
@@ -99,29 +99,50 @@ def main():
             mm, mmh = rk.mean_ci(data[:, 1])
             nish, nishh = rk.mean_ci(data[:, 2] - data[:, 3])
             tvals.append(nish / (nishh / rk_t95(M)))
+            diffs.append(data[:, 2] - data[:, 3])
             row += [phi, phih, N * gap, N * gaph, mm, mmh, nish, nishh]
             print(f"N={N:2d} lam={lam:4.2f}: phi_N={phi:.4f}+-{phih:.4f} (c={c:.2f}; direct {direct:.4f}+-{directh:.4f})"
                   f"  RS={phirs:.4f}  N*gap={N * gap:.3f}+-{N * gaph:.3f}"
                   f"  MMSE_N={mm:.4f}+-{mmh:.4f} (RS {1 - q * q:.4f})  E<R1*^2>-E<R12^2>={nish:+.4f}+-{nishh:.4f}")
         rows.append(row)
     rk.write_dat(os.path.join(OUT, "04-nishimori-exact.dat"), header, rows)
-    tvals = np.abs(np.array(tvals))
+    tsigned = np.array(tvals)
+    tvals = np.abs(tsigned)
     print(f"Nishimori identity: |t| over {tvals.size} tests: max {tvals.max():.2f}, "
           f"{int(np.sum(tvals > 1.96))} above 1.96, {int(np.sum(tvals > 2.58))} above 2.58")
     # The per-instance differences <R1*^2> - <R12^2> are strongly skewed (a few instances on which the
-    # posterior is confused carry large negative values), so Student intervals undercover. Recheck the
-    # worst cell with two fresh sets of 3000 instances (seeds 77 and 78).
+    # posterior is confident and wrong carry large negative values). Recheck the worst cell with two
+    # fresh sets of 3000 instances (seeds 77 and 78), and estimate how often a Student statistic as
+    # large as the worst one occurs, by resampling the pooled differences recentred to mean zero (the
+    # identity is exact), in one cell and for the largest of the forty.
     k = int(np.argmax(tvals))
     lam, N = LAMS[k // len(SIZES)], SIZES[k % len(SIZES)]
+    d0 = diffs[k]
+    q0 = np.quantile(d0, [0.001, 0.5])
+    print(f"  worst cell N={N} lam={lam}: t = {tsigned[k]:+.2f}; median {q0[1]:+.3f}, 0.1% quantile {q0[0]:+.3f}")
     S = rk.all_spins(N).astype(float)
+    pooled = [d0]
     for seed in (77, 78):
         gen = rk.rng(seed)
         d = np.array([instance(S, lam, gen) for _ in range(3000)])
         diff = d[:, 2] - d[:, 3]
+        pooled.append(diff)
         m, h = rk.mean_ci(diff)
         q = np.quantile(diff, [0.001, 0.5, 0.999])
         print(f"  recheck N={N} lam={lam} seed {seed}: E<R1*^2>-E<R12^2> = {m:+.4f} +- {h:.4f}; "
               f"quantiles 0.1%, 50%, 99.9%: {q[0]:+.3f} {q[1]:+.4f} {q[2]:+.3f}; sd {diff.std(ddof=1):.3f}")
+    cen = np.concatenate(pooled)
+    cen = cen - cen.mean()
+    gen = rk.rng(5)
+    ts = []
+    for _ in range(100):
+        x = cen[gen.integers(0, cen.size, size=(1000, M))]
+        ts.append(x.mean(axis=1) / (x.std(axis=1, ddof=1) / math.sqrt(M)))
+    ts = np.abs(np.concatenate(ts))
+    p1 = float(np.mean(ts >= tvals[k]))
+    print(f"  resampled |t| (100000 samples of {M}): P(|t| >= {tvals[k]:.2f}) = {p1:.1e} in one cell, "
+          f"{1 - (1 - p1) ** tvals.size:.3f} for the largest of {tvals.size}; "
+          f"P(|t| > 1.96) = {np.mean(ts > 1.96):.3f}")
     print(f"runtime {time.time() - t0:.1f} s")
 
 

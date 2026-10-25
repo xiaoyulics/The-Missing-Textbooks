@@ -12,7 +12,8 @@ Entropy of the version space of the Ising teacher (Barbier et al., Corollary 3):
 State evolution (GAMP): q_{t+1} = q(r_t), r_t = 2 alpha Psi'(q_t), from q_0 = 0.
 First-moment (annealed) bound of the version space (Theorem in Sec. "counting"):
     g_alpha(m) = h((1-m)/2) + alpha log(1 - arccos(m)/pi),  h = binary entropy in nats;
-    alpha_1 = smallest alpha with g_alpha < 0 on (-1, 1).
+    alpha_1 = smallest alpha with g_alpha < 0 on (-1, 1); a grid certificate (monotone bounds on each
+    interval) checks g_alpha < 0 on (-1, 1) at alpha = 1.4480.
 
 Outputs:  figures/data/07-glm-potential.dat   (s(q; alpha) for several alpha, for the physics figure)
           figures/data/07-glm-curves.dat      (learning curves and entropies against alpha)
@@ -209,6 +210,31 @@ a1 = rk.root(sup_g_interior, 1.3, 1.6, tol=1e-12)
 print(f"  alpha_1 (double) = {a1:.8f}; the maximizer of g at alpha_1: m = {mgrid[np.argmax(g_fm(mgrid[mgrid < 0.95], a1))]:.6f}")
 for a in (1.0, 1.2447, 1.4):
     print(f"  annealed entropy sup_m g_alpha(m) at alpha={a}: {sup_g(a)[0]:.6f}")
+
+
+def certify_ann(alpha=1.4480, nint=18_000_000, chunk=2_000_000):
+    """A grid certificate that g_alpha < 0 on (-1, 1), so that alpha_1 < alpha.  The entropy term
+    h((1-m)/2) increases on (-1, 0] and decreases on [0, 1); the term alpha log(1 - arccos(m)/pi)
+    increases.  On [a, b] in [-0.9, 0.9], g <= h at the point nearest 0 + second term at b.  For
+    m >= 0.9 (x = (1-m)/2 <= 0.05): h(x) <= x log(e/x) and arccos(1-2x) >= 2 sqrt(x) (as in the lemma
+    on near neighbors), so g <= sqrt(x) (sqrt(x) log(e/x) - 2 alpha/pi), and sqrt(x) log(e/x) increases
+    on (0, 1/e].  For m <= -0.9: g <= log 2 + alpha log(1 - arccos(-0.9)/pi)."""
+    end_hi = math.sqrt(0.05) * math.log(math.e / 0.05) - 2 * alpha / math.pi
+    end_lo = LOG2 + alpha * math.log1p(-math.acos(-0.9) / math.pi)
+    edges = np.linspace(-0.9, 0.9, nint + 1)
+    worst = -np.inf
+    for k in range(0, nint, chunk):
+        a, b = edges[k:k + chunk], edges[k + 1:k + chunk + 1]
+        c = np.where(b < 0, b, np.where(a > 0, a, 0.0))
+        p = (1 - c) / 2
+        ub = -p * np.log(p) - (1 - p) * np.log1p(-p) + alpha * np.log1p(-np.arccos(b) / math.pi)
+        worst = max(worst, float(ub.max()))
+    return end_hi, end_lo, worst
+
+
+e_hi, e_lo, w_mid = certify_ann()
+print(f"  certificate at alpha=1.4480: max bound on [-0.9,0.9] = {w_mid:.3e}; ends {e_hi:.4f} (m>=0.9), {e_lo:.4f} (m<=-0.9)"
+      f" -> {'g < 0 on (-1,1), alpha_1 < 1.4480' if max(w_mid, e_hi, e_lo) < 0 else 'NOT certified'}")
 
 # ----------------------------------------------------------------------------------------------
 # 4. High precision (mpmath) for alpha_IT, alpha_AMP, alpha_1, and the potential at alpha = 1.249

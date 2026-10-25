@@ -12,7 +12,7 @@ overlap of the maximum likelihood estimator (Jagannath--Lopatto--Miolane Thm 1.2
 lam >= lam_c = 2/sqrt 3.
 
 Writes figures/data/13-kacrice-spikedgd.dat (lam, warm-start mean overlap with 95% t interval over
-tensors, random-start success fraction m > 0.5 with Clopper--Pearson interval) and
+the warm runs, random-start success fraction m > 0.5 with Clopper--Pearson interval) and
 figures/data/13-kacrice-mstar.dat (the curve m*(lam)).  N = 80, seed 1331.  The warm-start interval is a
 Student-t interval over the 10 warm runs.  About a minute on a laptop.
 """
@@ -93,7 +93,8 @@ def main():
         lo, hi = rk.clopper_pearson(succ, n_rand)
         frac = succ / n_rand
         rows.append([lam, wm, wh, frac, frac - lo, hi - frac, m_star(lam) if lam >= 2 / math.sqrt(3) else -1])
-        print(f"lam={lam:.2f}: warm-start overlap {wm:.4f} +- {wh:.4f}; m* = {m_star(lam):.4f};"
+        print(f"lam={lam:.2f}: warm-start overlap {wm:.4f} +- {wh:.4f} (runs {min(warm_means):.3f} to"
+              f" {max(warm_means):.3f}, |m| <= {max(abs(x) for x in warm_means):.3f}); m* = {m_star(lam):.4f};"
               f" random starts reaching m > 0.5: {succ}/{n_rand}; unconverged {unconv}  ({time.time()-t0:.1f}s)")
     rk.write_dat(os.path.join(OUT, "13-kacrice-spikedgd.dat"),
                  ["lam", "warm", "warmhalf", "frac", "fraclo", "frachi", "mstar"], rows)

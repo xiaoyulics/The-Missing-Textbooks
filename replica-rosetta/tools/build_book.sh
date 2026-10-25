@@ -25,6 +25,7 @@ grep -E "ERROR|WARN" build/biber.out | grep -v "Overriding locale" | head -20
 echo "-- undefined references/citations --"
 { grep -oE "Reference \`[^']+' on page [0-9]+ undefined" main.log; grep -oE "Citation \`[^']+' on page [0-9]+ undefined" main.log; } | sed -E "s/ on page [0-9]+ undefined//" | sort -u | head -40
 grep -E "multiply defined" main.log | sort -u | head -20
+grep -E "Float too large" main.log | sort | uniq -c | head -20
 echo "-- overfull boxes: $(grep -c '^Overfull' main.log) total; over 3pt: --"
 grep -E "^Overfull \\\\[hv]box \(([3-9]|[1-9][0-9]+)\.[0-9]+pt too (wide|high)\)" main.log | head -30
 if [[ -f main.pdf ]]; then echo "-- pages: $(pdfinfo main.pdf | awk '/^Pages/{print $2}') --"; cp main.pdf "$ROOT/The-Replica-Rosetta-Stone.pdf"; fi

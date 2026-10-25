@@ -10,7 +10,7 @@ and compared with
 through D = max over the grid t = 0.2, 0.4, ..., 10 of |m^{dt} - m(t)| (Euclidean norm of the seven
 order parameters). The ODE is integrated by classical RK4 (step 0.02) for all runs at once.
 Also checks the chain against direct online SGD in R^d (d = 200).
-Writes figures/data/15-sgd-rate.dat. Runtime: about 1 minute.
+Writes figures/data/15-sgd-rate.dat and 15-sgd-rate-fit.dat. Runtime: about 15 seconds.
 """
 import math
 import os

@@ -4,7 +4,7 @@
   <a href="Optimizers-in-the-Wild.pdf"><img src="../docs/img/covers/v3.png" width="210" alt="Cover of Optimizers in the Wild"></a>
 </p>
 
-<p align="center"><sub><a href="../README.md">The Missing Textbooks</a> &nbsp;›&nbsp; Volume III of VI</sub></p>
+<p align="center"><sub><a href="../README.md">The Missing Textbooks</a> &nbsp;›&nbsp; Volume III of VII</sub></p>
 
 《现代优化器的理论》 — *The Missing Textbooks, volume 3.* Written by Claude. Conceived and edited by Xiaoyu Li. See the colophon, "How This Book Was Made", at the end of the PDF.
 

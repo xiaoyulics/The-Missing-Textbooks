@@ -3,7 +3,8 @@ of n = alpha d Gaussian patterns, measured exactly for alpha < 2 (the convex reg
 Gardner's curve kappa*(alpha), the solution of alpha_c(kappa) = alpha, which the capacity theorem proves.
 
 kappa_max is computed by least-distance programming: min |w| s.t. G w >= 1 (Lawson--Hanson, via NNLS),
-and kappa_max = 1/|w|.  For each instance one matrix with n_max = 1.75 d rows is drawn and the margin
+and kappa_max = 1/|w|.  An instance for which G w >= 1 is infeasible has no positive margin; it is
+counted as kappa_max = 0 (a slight upward bias), and the number of such instances is printed.  For each instance one matrix with n_max = 1.75 d rows is drawn and the margin
 of each prefix of alpha d rows is computed, alpha = 0.25, 0.5, ..., 1.75.
 d = 100, 200, 400 with 200, 100, 40 instances (seed 80900 + d); means with Student-t 95% intervals.
 Runtime: about 60 s.  Run from the volume root.
@@ -48,18 +49,20 @@ for d in TS:
     gen = rk.rng(80900 + d)
     nmax = int(round(1.75 * d))
     M = {a: [] for a in ALPHAS}
+    nfail = {a: 0 for a in ALPHAS}   # instances with no positive margin, counted as kappa_max = 0
     t1 = time.time()
     for _ in range(TS[d]):
         G = gen.standard_normal((nmax, d))
         for a in ALPHAS:
             km = max_margin(G[: int(round(a * d))])
+            nfail[a] += km is None
             M[a].append(km if km is not None else 0.0)
     for a in ALPHAS:
         m, h = rk.mean_ci(M[a])
         ks = kappa_star(a)
         rows.append([a, d, m, h, ks])
         print(f"d={d} alpha={a:4.2f}: kappa_max = {m:.4f} +- {h:.4f}   Gardner kappa*(alpha) = {ks:.4f}"
-              f"   difference {m-ks:+.4f}")
+              f"   difference {m-ks:+.4f}   (no positive margin: {nfail[a]})")
     print(f"   d={d}: {TS[d]} instances in {time.time()-t1:.1f} s")
 for d in TS:
     rk.write_dat(os.path.join(DATA, f"08-gordon-margin-d{d}.dat"), ["alpha", "d", "kappa", "ci", "pred"],

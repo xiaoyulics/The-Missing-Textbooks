@@ -3,7 +3,9 @@ kappa_max(G) = max_{|theta|=1} min_mu <g_mu, theta> is now negative and the prob
 (it is the maximum-norm point of the polytope {theta : G theta >= -1}: kappa_max = -1/max |theta|).
 Two polynomial-time algorithms give lower bounds on kappa_max:
   (LP)  the linear program of Montanari--Zhong--Zhou (2024, Sec. 4.2): maximize <v, theta> subject to
-        G theta >= -1 for a uniformly random direction v; the output margin is -1/|theta|.  Their
+        G theta >= -1 for a uniformly random direction v; the output margin is -1/|theta|.  (Their
+        program, max <v, theta> over {G theta >= kappa 1, |theta| <= 1}, returns a unit vector exactly
+        when kappa <= -1/|theta|, by rescaling, so this is the same algorithm.)  Their
         Theorem 4.3 proves that it converges to kappa_lin(alpha) = Phi^{-1}(1/alpha).
   (SP)  soft-min ascent on the sphere (Riemannian gradient ascent of -(1/beta) log mean exp(-beta G theta),
         beta = 4, 8, ..., 512) started at v, followed by one linear program that maximizes

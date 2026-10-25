@@ -13,7 +13,8 @@ component of x along (e_1 - m w)/sqrt(1-m^2), independent N(0,1), x_1 = m u + sq
 |x|^2 - u^2 = zeta^2 + chi^2_{d-2}, so that
     m' = (m - (delta/d) a sqrt(1-m^2) zeta) / sqrt(1 + (delta/d)^2 a^2 (zeta^2 + chi^2_{d-2})),
     a = -He_k(x_1) He_k'(u)/k!.
-200 runs per d. Writes figures/data/15-sgd-exponent.dat. Runtime: about 1 minute.
+200 runs per d. Writes figures/data/15-sgd-exponent-k1.dat, -k2.dat and -k3.dat. Runtime: about
+30 seconds.
 """
 import math
 import os
@@ -121,8 +122,9 @@ def main():
         if k == 2:
             nd = np.exp(ys) / np.exp(xs)
             res = stats.linregress(xs, nd)
-            print("   k=2: median/d against ln d: slope %.3f +- %.3f, intercept %.3f (prediction 1/(2r) = %.4f)"
-                  % (res.slope, 1.96 * res.stderr, res.intercept, 1 / (2 * r2)))
+            tq = stats.t.ppf(0.975, len(xs) - 2)          # 95% interval from the residuals (n - 2 dof)
+            print("   k=2: median/d against ln d: slope %.3f +- %.3f (95%%), intercept %.3f (prediction 1/(2r) = %.4f)"
+                  % (res.slope, tq * res.stderr, res.intercept, 1 / (2 * r2)))
     print("runtime %.0fs" % (time.time() - t0))
 
 

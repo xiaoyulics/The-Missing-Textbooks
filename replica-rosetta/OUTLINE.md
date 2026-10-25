@@ -63,7 +63,8 @@ proof side by side across the full width. The **status board** lists every predi
 
 ### The status words
 
-- **proved**: a theorem in a refereed publication (or a classical result), with its source.
+- **proved**: a theorem in a refereed publication (or a classical result, or a theorem proved
+  completely in the book, which the board says), with its source.
 - **proved under**: proved with hypotheses beyond the physical prediction (a prior, a range of
   parameters, Gaussian data, smoothness, a fixed number of iterations); the board names them.
 - **preprint** (`\provedpreprint`): proved only in an unrefereed preprint. Many 2025–2026
@@ -344,8 +345,8 @@ parameter $m=\beta_c/\beta$, $P(q)=m\delta_0+(1-m)\delta_1$); why replica symmet
 entropy below $T_c$.
 *The stone.* $\E Z^n$ ↔ first and second moments; the 1RSB saddle ↔ the extreme-value computation;
 $m=\beta_c/\beta$ ↔ the Poisson–Dirichlet weights $PD(m,0)$; the exchange of limits ↔ the exact
-$\varphi(n)=\lim N^{-1}\log\E Z_N^n$, which is non-analytic at $n=m$ (digest 01 §2.3: the book's own
-exact computation; check and present it).
+$\varphi(n)=\lim N^{-1}\log\E Z_N^n$, which is non-analytic at $n=m$ (derived by Ogure–Kabashima 2009a,
+App. A; the chapter proves it).
 *The proof.* Complete: the free entropy of the REM at every $\beta$ (`thm:rem:freeentropy`),
 by the first and second moments plus concentration; the exact moment function $\varphi(n)$ and the
 failure of the naive continuation. Stated: the Poisson–Dirichlet limit of the Gibbs weights
@@ -514,7 +515,7 @@ interpolation (from `lem:toolkit:interpolation`); the capacity for $\kappa\ge0$
 (`thm:gordon:capacity`): the upper bound by Gordon and the lower bound by the CGMT (or by convex
 duality), so that $\alpha_c(0)=2$. Stated: the CGMT (`thm:gordon:cgmt`, Thrampoulidis–Oymak–Hassibi
 2015 Thm 3; Thrampoulidis–Abbasi–Hassibi 2018 Thm 6.1; credit Stojnic for the duality idea); the
-negative margin (Stojnic's upper bound, beaten for $\kappa\lesssim-0.63$; full RSB predicted;
+negative margin (Stojnic's upper bound, beaten by his lifted bound for $\kappa<-0.622$ (proved by Montanari–Zhong–Zhou; the chapter computes the crossover); full RSB predicted;
 Montanari–Zhong–Zhou to leading order); the Ising perceptron (Ding–Sun and Huang under numerical
 conditions; Shmalo 2026 `\provedpreprint` computer-assisted; Altschuler–Tikhomirov's
 $\alpha_c<0.847$, and the closed form $(1+\log2)/2$ the same method gives, digest 01 §0.4 item 2:
@@ -607,9 +608,9 @@ of kernel ridge regression for Gaussian features with a finite number of distinc
 the reduction of the flat-spectrum case to Chapter 9's ridge formula, or El Karoui's linearization
 in its simplest case. Stated: Mei–Montanari 2022 (random features, $\lambda>0$), Hu–Lu 2023,
 Montanari–Saeed 2022, Ghorbani et al. 2021 (polynomial regime), Misiakiewicz 2022, Xiao et al.
-Where Gaussian equivalence fails: digest 03 §6 rows 34–40, and the book's own counterexample at zero
-ridge in fixed low dimension (digest 03 §5.3.3: check it independently before presenting it as the
-book's own).
+Where Gaussian equivalence fails: digest 03 §6 rows 34–40, and the counterexample at zero ridge in fixed
+low dimension (digest 03 §5.3.3; its ingredients are in Belkin–Hsu–Mitra 2018, so the chapter claims
+only the comparison).
 *Measuring it.* Kernel ridge learning curves on the sphere against the formula; random-features
 regression against Mei–Montanari's curve; a Gaussian-equivalence test that fails (polynomial regime
 or one large gradient step).
@@ -641,7 +642,8 @@ Thms 2.5, 2.8 give the target; `thm:kacrice:annealed`), given the Kac–Rice for
 facts of the toolkit. Stated: Subag 2017a (concentration), Subag–Zeitouni, Ben Arous–Mei–Montanari–
 Nica 2019 (spiked tensor), Huang–Sellke (ALG), Fan–Mei–Montanari's TAP complexity bound for $\Z_2$.
 *Measuring it.* $E_\infty$, $E_0$ and the complexity curves for $p=3$; gradient descent on the
-3-spin at $N=200$–$800$ ending near $-E_\infty$ (digest 02 `02_pspin_complexity.py`,
+3-spin at $N=25$–$200$ (the chapter finds the endpoints still $0.05$ above $-E_\infty$ at $N=200$,
+the gap shrinking roughly like $N^{-1/2}$; dense tensors make $N\ge400$ impractical) (digest 02 `02_pspin_complexity.py`,
 `02_bbp_and_pspin_gd.py`); the spiked tensor's annealed threshold $\lambda_c(k)$.
 *Status board.* Digest 02 §6 Kac–Rice rows; note ABC Remark 2.7's misprint ($\sqrt2E$, not
 $E/\sqrt2$).
@@ -668,7 +670,7 @@ horizon), Sellke 2024 (threshold), Dembo–Subag 2020, Celentano–Cheng–Monta
 v3 2026), Gerbelot et al. 2024 (SIAM J. Math. Data Sci.). Normalizations: state the CK ↔ ABC
 dictionary once (factor $\sqrt2$).
 *Measuring it.* Integrate the CK equations for $p=3$ (energy and two-time correlation at several
-temperatures; $T_d=\sqrt{3/8}$); gradient flow on least squares against the Marchenko–Pastur curve
+temperatures; $T_d=\sqrt{3/8}$ in Cugliandolo–Kurchan units, $\sqrt3/2$ in the book's); gradient flow on least squares against the Marchenko–Pastur curve
 (digest 04 `d4_ck_integrate.py`, `d4_gf_leastsquares.py`).
 *Status board.* Digest 04 §6 rows D1–D13, L1–L9.
 
@@ -691,7 +693,7 @@ Stated: Goldt et al. 2019/2020a with Veiga et al. 2022; Ben Arous–Gheissari–
 1.3–1.5, log factors) and 2024 (effective dynamics); Damian et al. 2023 (smoothing); Arnaboldi et
 al. 2023.
 *Measuring it.* The Saad–Solla ODE for $K=M=2$ against SGD at $d=500$–$2000$: plateau at
-$\varepsilon^*=0.011611$ ($\eta\to0$; $0.012086$ at $\eta=0.1$); steps to weak recovery for
+$\varepsilon^*=0.011611$ ($\eta\to0$; at $\eta=0.1$ the identical-student point A has $0.0120858$, the attracting plateau B $0.0120852$); steps to weak recovery for
 Hermite targets with information exponent 1, 2, 3 (digest 04 `d4_saad_solla.py`,
 `d4_info_exponent.py`).
 *Status board.* Digest 04 §6 rows O1–O12.

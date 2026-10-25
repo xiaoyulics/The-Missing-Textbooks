@@ -12,7 +12,8 @@ The four routes (all in the proportional limit):
   (3) Gordon's auxiliary problem (CGMT): min_{a>=0} max_{theta>=0} F(a, theta),
         F = theta sqrt(a^2 + sigma^2) - a sqrt(theta^2/alpha + lam^2 r^2) - theta^2/2 + (lam/2)(r^2 + a^2),
         R = a*^2, training error theta*^2;
-  (4) Hastie-Montanari-Rosset-Tibshirani (Cor. 5), with the Marchenko-Pastur Stieltjes transform of
+  (4) Hastie-Montanari-Rosset-Tibshirani (Cor. 6 of the journal version, Cor. 5 of arXiv v5), with the
+      Marchenko-Pastur Stieltjes transform of
       the kit: R = r^2 lam^2 m'(-lam) + sigma^2 gamma (m(-lam) - lam m'(-lam)), gamma = 1/alpha.
 Writes figures/data/09-ridge-curves.dat and figures/data/09-ridge-routes.dat. Runtime: a few seconds.
 Run from the volume root: python figures/scripts/09-ridge-routes.py

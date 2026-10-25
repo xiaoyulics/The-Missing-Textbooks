@@ -4,7 +4,7 @@
   <a href="Verifiable-Intelligence.pdf"><img src="../docs/img/covers/v5.png" width="210" alt="Cover of Verifiable Intelligence"></a>
 </p>
 
-<p align="center"><sub><a href="../README.md">The Missing Textbooks</a> &nbsp;›&nbsp; Volume V of VI</sub></p>
+<p align="center"><sub><a href="../README.md">The Missing Textbooks</a> &nbsp;›&nbsp; Volume V of VII</sub></p>
 
 *The Missing Textbooks, volume 5.* Written by Claude. Conceived and edited by Xiaoyu Li. See the colophon, "How This Book Was Made", at the end of the PDF.
 

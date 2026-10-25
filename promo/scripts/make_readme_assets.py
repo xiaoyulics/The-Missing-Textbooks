@@ -6,7 +6,8 @@ cover thumbnails with a soft shadow, and the shelf in a light and a dark variant
 Inputs are produced by the film: promo/out/posters*/ (stills) and promo/public/covers/ (scripts/prepare_assets.py).
 Run from the repo root:  python3 promo/scripts/make_readme_assets.py
 Images whose sources are missing (the film's posters and frames) are skipped and the committed ones kept;
-volume VI has no act in the film, and its still comes from scripts/make_still_v6.py.
+volumes VI and VII have no act in the film; their stills come from scripts/make_still_v6.py and
+scripts/make_still_v7.py.
 """
 import os, sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -62,7 +63,7 @@ def cover_with_shadow(n, dark=False, size=(CW, CH)):
     ImageDraw.Draw(canvas).rectangle([pad, pad, pad + size[0] - 1, pad + size[1] - 1], outline=edge, width=1)
     return canvas
 
-NVOL = 6
+NVOL = 7
 for n in range(1, NVOL + 1):
     c = cover_with_shadow(n, size=(300, 400))
     c.save(f"{OUT}/covers/v{n}.png", optimize=True)
@@ -103,6 +104,7 @@ VOLS = [
     ("IV", ["Deep Learning as an", "Experimental Science"], 365, "#c0432a", "#ff8a6e"),
     ("V", ["Verifiable", "Intelligence"], 357, "#3a44b5", "#9aa4ff"),
     ("VI", ["Singular Learning Theory", "for the Rest of Us"], 368, "#966012", "#e0a54a"),
+    ("VII", ["The Replica", "Rosetta Stone"], 387, "#54485a", "#b9a7c6"),
 ]
 def shelf(dark):
     gap = 44

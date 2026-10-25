@@ -2,13 +2,16 @@
 
 Projected gradient descent (step 0.15) on H(s) = N^{-1} sum_{ijk} J_ijk s_i s_j s_k on |s|^2 = N
 (E H(s) H(s') = N R^3, the book's normalization), from uniform random starts, until
-|grad H| < 1e-5 sqrt(N); K independent Hamiltonians x R starts per size.  The 95% intervals are
+|grad H| < 1e-5 sqrt(N); K independent Hamiltonians x R starts per size (N = 25, 50, 75, 100, 200;
+K = 10, 8, 6, 5, 4; R = 8, except R = 4 at N = 200, where the dense tensor makes a run cost about
+20 seconds).  The 95% intervals are
 Student-t intervals over the K per-Hamiltonian means.  At N = 100 the Riemannian Hessian at every endpoint,
 divided by sqrt(p(p-1)), is compared with the semicircle on [-2 - t, 2 - t], t = 2u/E_inf, that the Gaussian
 regression lemma predicts at a point of energy u, and with the threshold semicircle on [0, 4].
 
 Writes figures/data/13-kacrice-gd.dat, 13-kacrice-hessian.dat and 13-kacrice-hessian-sc.dat.
-Seeds 130 + N.  About two minutes on a laptop; BLAS limited to two threads.
+Seeds 130 + N.  About two minutes on a laptop; BLAS limited to two threads.  The data files
+13-kacrice-hessian*.dat are not plotted; the chapter quotes the printed Hessian summary.
 """
 import math
 import os
@@ -67,7 +70,7 @@ def hessian_spectrum(T, s):
 def main():
     t0 = time.time()
     rows, spec, energies = [], [], []
-    plan = {25: (10, 8), 50: (8, 8), 75: (6, 8), 100: (5, 8)}
+    plan = {25: (10, 8), 50: (8, 8), 75: (6, 8), 100: (5, 8), 200: (4, 4)}
     for N, (K, R) in plan.items():
         rng = rk.rng(130 + N)
         means, allE, unconv = [], [], 0

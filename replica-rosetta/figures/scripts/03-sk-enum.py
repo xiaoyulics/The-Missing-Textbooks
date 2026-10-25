@@ -13,7 +13,7 @@ fields z of the interpolation), with a Student-t 95% interval.
    (2000 draws at N = 4 down to 100 at N = 14). Independent disorder draws for the two sides (seeds
    30000 + 100 N + k and 30050 + 100 N + k). Also printed: N E<R12^2> at beta = 0.8 against 1/(1 - beta^2).
    Written to figures/data/03-sk-sumrule.dat with the physical prediction -(1/4N) log(1 - beta^2) and the
-   rigorous bounds of Theorem 3.4 (beta = 0.8) and the rigorous lower bound phi_RS - P_1RSB (beta = 2).
+   rigorous bounds of Theorem 3.6 and (3.3) (beta = 0.8) and the rigorous lower bound phi_RS - P_1RSB (beta = 2).
 
 Run from the volume root: python figures/scripts/03-sk-enum.py   (about two minutes on a busy machine)
 """
@@ -165,6 +165,6 @@ for N in sorted(samples_l):
     rows.append((N, g8, gh8, r8, rh8, pred, lo, up, g2, gh2, r2, rh2, gap_lb_2))
 rk.write_dat(os.path.join(OUT, "03-sk-sumrule.dat"),
              ["N", "gap8", "gci8", "rem8", "rci8", "pred8", "lo8", "up8", "gap2", "gci2", "rem2", "rci2", "lb2"], rows)
-print(f"   beta=0.8: c_beta = {cb:.5f}; Theorem 3.4 bound on the gap at N=14: {rows[-1][7]:.4f}; Jensen lower bound {rows[-1][6]:.5f}; prediction {rows[-1][5]:.5f}")
+print(f"   beta=0.8: c_beta = {cb:.5f}; Theorem 3.6 bound on the gap at N=14: {rows[-1][7]:.4f}; Jensen lower bound {rows[-1][6]:.5f}; prediction {rows[-1][5]:.5f}")
 print(f"   beta=2: rigorous lower bound phi_RS(q*) - P_1RSB = {gap_lb_2:.6f} (q* = {qstar2:.6f})")
 print(f"done in {time.time() - T0:.1f} s")

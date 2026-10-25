@@ -14,10 +14,10 @@ Three formulas for the curve, which must agree:
 Writes:
   10-lasso-transition-curve.dat : alpha, eps_c, rho_c = eps_c/alpha (Donoho--Tanner coordinates);
   10-lasso-transition-prob.dat  : success fraction of l1 minimization at alpha = 0.5 against rho for
-                                  d = 100, 200, 400 (40 trials per point, Clopper--Pearson 95% intervals);
-  10-lasso-transition-pts.dat   : 50% points in the (alpha, rho) plane at d = 200 from logistic fits
-                                  (30 trials per point, 9 points per alpha), with parametric-bootstrap
-                                  95% intervals.
+                                  d = 50, 100, 200 (30 trials per point, Clopper--Pearson 95% intervals);
+  10-lasso-transition-pts.dat   : 50% points in the (alpha, rho) plane at d = 100 from logistic fits
+                                  (24 trials per point, 7 points per alpha), with parametric-bootstrap
+                                  95% intervals (400 resamples).
 Also prints a Monte Carlo check of the bounds d psi(s/d) - 2 sqrt(d/s) <= delta(D) <= d psi(s/d) on the
 statistical dimension of the l1 descent cone.
 Runtime: about one minute.
