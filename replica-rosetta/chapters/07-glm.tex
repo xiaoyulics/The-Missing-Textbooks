@@ -1,0 +1,422 @@
+% Chapter 7 of The Replica Rosetta Stone: generalized linear models, the teacher--student perceptron
+% and the hard phase.
+\newcommand{\glmV}{\mathcal{V}}
+\newcommand{\glmfrs}{f_{\mathrm{RS}}}
+\newcommand{\glmIT}{\alpha_{\mathrm{IT}}}
+\newcommand{\glmAMP}{\alpha_{\mathrm{AMP}}}
+\newcommand{\glmann}{\alpha_{\mathrm{ann}}}
+\newcommand{\glmPout}{P_{\mathrm{out}}}
+\newcommand{\glmB}{\varepsilon_{\mathrm{B}}}
+\newcommand{\glmG}{\varepsilon_{\mathrm{G}}}
+\newcommand{\glmZout}{\cZ_{\mathrm{out}}}
+
+\rstchapter{Generalized Linear Models}{The teacher--student perceptron and the hard phase}{the replica formula\dict adaptive interpolation}{ch:glm}
+\stonefoot{partial}
+\begin{refsection}[chapters/07-glm.bib]
+
+\begin{chaptersummary}
+A teacher perceptron with weights $\pm1$ labels $n=\alpha d$ Gaussian patterns, and a Bayesian student tries to recover the weights. Replicas predict that the error falls continuously until $\glmIT=1.2447$ and then jumps to zero, while message passing stays on a metastable branch until $\glmAMP=1.4926$. \Textcite{BarbierEtAl2019} proved the formula behind the first prediction by adaptive interpolation, and \textcite{CelentanoMontanariWu2020} the second for first-order methods. We prove the identity on which their proof rests (free entropy equals replica potential plus a remainder that vanishes when the overlap concentrates), the bounds $1\le\glmIT\le1.4480$ by counting the version space, and that overlap concentration yields the physicists' Gibbs and Bayes errors and exact recovery above $\glmIT$. We recompute $\glmIT$ in high precision (the paper prints $1.249$, which its formula does not give) and measure GAMP against state evolution at $d=2000$. Whether some efficient algorithm learns between $\glmIT$ and $\glmAMP$ is open.
+\end{chaptersummary}
+
+\section{The question: how many examples does a student need?}\label{sec:glm:question}
+
+A perceptron with weights $w\in\R^d$ labels a pattern $x\in\R^d$ by the sign of $\ip xw$. In the \term{teacher--student scenario}\index{teacher--student scenario}, which \textcite{BarbierEtAl2019} credit to \textcite{GardnerDerrida1989b} for the perceptron, a teacher $w^*$ labels $n$ random patterns, and a student who sees patterns and labels tries to recover $w^*$. How many examples does the student need, and how well does it then label a new pattern? Statisticians call the model a \term{generalized linear model}\index{generalized linear model}: the labels depend on $w^*$ only through the projections $\ip{x_\mu}{w^*}$. We take
+\begin{equation}\label{eq:glm:model}
+w^*\sim P_0^{\otimes d},\qquad x_\mu\iid\Normal(0,I_d),\qquad y_\mu\sim\glmPout\Bigl(\cdot\Bigm|\frac{\ip{x_\mu}{w^*}}{\sqrt d}\Bigr),
+\end{equation}
+for $\mu\le n$, with $n/d\to\alpha$. The kernel $\glmPout$ is the \term{output channel}; equivalently $y_\mu=\varphi_{\mathrm{out}}(\ip{x_\mu}{w^*}/\sqrt d,A_\mu)$ with independent noise $A_\mu$. The running example is the noiseless perceptron, $y_\mu=\sgn\ip{x_\mu}{w^*}$, with two teachers: the \term{Ising teacher}\index{perceptron!Ising teacher}, $w^*$ uniform on $\{-1,1\}^d$, and the \term{spherical teacher}\index{perceptron!spherical teacher}, $w^*\sim\Normal(0,I_d)$.\sidenote{Physicists put the spherical teacher on the sphere of radius $\sqrt d$; the Gaussian prior, which \textcite{BarbierEtAl2019} use, gives the same limits because $\norm{w^*}^2/d\to1$.}
+
+The student is Bayes-optimal: it knows $P_0$ and $\glmPout$ and computes the posterior $P(w\mid X,y)\propto P_0^{\otimes d}(w)\prod_\mu\glmPout(y_\mu\mid\ip{x_\mu}w/\sqrt d)$, whose normalizer $\cZ(X,y)$, the evidence, is the partition function. For the Ising teacher and the noiseless channel the posterior is uniform on the \term{version space}\index{version space} $\glmV$, the set of $w\in\{-1,1\}^d$ with $\sgn\ip{x_\mu}w=y_\mu$ for every $\mu\le n$, and $\cZ=\abs\glmV/2^d$. Physicists call sampling from it \term{Gibbs learning}\index{Gibbs learning} at zero temperature \parencite{SeungSompolinskyTishby1992}; with the teacher's prior, it is exact Bayesian inference.
+
+The \term{free entropy}\index{free entropy!of a generalized linear model} $f_d=\frac1d\E\log\cZ(X,y)$, the expectation over teacher, patterns and labels, is minus the mutual information per weight between teacher and data when the channel is noiseless;\sidenote{We write $f_d$, as \textcite{BarbierEtAl2019} do, rather than the book's generic $\phi$, because $\phi$ and $\Phi$ denote the standard normal density and distribution function in this chapter.} for the Ising teacher $f_d+\log2=\frac1d\E\log\abs\glmV$ is the entropy of the version space. The \term{overlap}\index{overlap!teacher--student} $Q=\frac1d\ip w{w^*}$ of a posterior sample $w$ with the teacher is the book's $m$. For a fresh pattern, the \term{Gibbs error} $\glmG$ is the probability that a posterior sample labels it differently from the teacher, and the \term{Bayes error} $\glmB$ the smallest probability of error of a prediction from the data. Learning is \emph{perfect} when the overlap tends to one.
+
+\begin{physicsbox}[Gardner and Derrida 1989; Gy\"orgyi 1990; Sompolinsky, Tishby and Seung 1990; Opper and Haussler 1991]
+The overlap concentrates on a number $q_*(\alpha)$, the solution of the variational problem \eqref{eq:glm:frs}, and $\glmG=\frac1\pi\arccos q_*$, $\glmB=\frac1\pi\arccos\sqrt{q_*}$. For the Ising teacher the overlap rises continuously along one branch until $\alpha_{\mathrm{GD}}=1.245$, where the student freezes into the teacher and the error drops from a positive value to zero: a first-order transition to perfect generalization. The branch survives as a metastable state up to a spinodal near $\alpha=1.49$. For the spherical teacher the errors decay like $1/\alpha$, and the Gibbs error exceeds the Bayes error by a factor that tends to $\sqrt2$.
+\end{physicsbox}
+
+Gy\"orgyi's abstract attributes $1.245$ to \textcite{GardnerDerrida1989b}; the spinodal $1.493$ is Gy\"orgyi's, as \textcite{BarbierEtAl2019} report (of these early papers we have read only the abstracts). How do physicists derive these statements, and what is proved? And between the transition and the spinodal, where the data determine the teacher but the algorithms of physics do not find it, is the obstacle in those algorithms or in every efficient one?
+
+\section{The physics: replicas with a teacher}\label{sec:glm:physics}
+
+\Textcite{Gyorgyi1990} and \textcite{SompolinskyTishbySeung1990} computed the entropy of the version space and the errors with replicas, and \textcite{OpperHaussler1991} the error of the Bayes-optimal classifier. We follow the modern form for a general channel \parencite{ZdeborovaKrzakala2016,BarbierEtAl2019}, in which the teacher is one more replica (\cref{ch:nishimori}).
+
+\begin{heuristic}[The replica computation with a teacher]
+\emph{Replicate.} For discrete outputs the probability of the labels is the evidence itself, $P(y\mid X)=\cZ(X,y)$, so for an integer $k\ge1$
+\begin{align*}
+\E\cZ^k&=\E_X\sum_y\cZ(X,y)^{k+1}\\
+&=\E_{w^0,\dots,w^k}\prod_{\mu=1}^n\E_{x_\mu}\sum_y\prod_{a=0}^k\glmPout\Bigl(y\Bigm|\frac{\ip{x_\mu}{w^a}}{\sqrt d}\Bigr),
+\end{align*}
+with $w^0,\dots,w^k$ independent draws from the prior: the teacher has become replica $0$.
+
+\emph{Order parameters.} Given the replicas, the fields $\ip{x_\mu}{w^a}/\sqrt d$ are Gaussian with covariance $Q_{ab}=\ip{w^a}{w^b}/d$, with $Q_{aa}=1$ for the Ising prior, so each pattern contributes the factor $\cI_k(Q)=\sum_y\E_{s\sim\Normal(0,Q)}\prod_a\glmPout(y\mid s^a)$. Fixing $Q$ by delta functions with conjugate parameters $\hat Q_{ab}$, and writing $\E$ for the average over $k+1$ independent signs, Laplace's method in $d$ gives $\frac1d\log\E\cZ^k\approx\operatorname{extr}\Lambda_k(Q,\hat Q)$ with
+\[
+\Lambda_k=-\sum_{a<b}\hat Q_{ab}Q_{ab}+\log\E e^{\sum_{a<b}\hat Q_{ab}w^aw^b}+\alpha\log\cI_k(Q).
+\]
+
+\emph{Replica symmetry with a teacher.} Teacher and replicas are exchangeable, $k+1$ samples from the posterior, so take $Q_{ab}=q$ and $\hat Q_{ab}=r$ for all $a<b$. Then $s^a=\sqrt q\,V+\sqrt{1-q}\,u^a$ with independent standard normals, and linearizing $\sum_{a<b}w^aw^b=\frac12(\sum_aw^a)^2-\frac{k+1}2$ with a Gaussian $Z$ gives $\E e^{r\sum_{a<b}w^aw^b}=\E\cZ_0(Z)^{k+1}$ and $\cI_k=\E_V\sum_y\glmZout(y,V)^{k+1}$, with $\cZ_0(Z)=e^{-r/2}\cosh(\sqrt rZ)$ and $\glmZout(y,V)=\E_u\glmPout(y\mid\sqrt qV+\sqrt{1-q}\,u)$.
+
+\emph{Continue to $k\to0$.} Both are normalizations ($\E\cZ_0=1$, $\E_V\sum_y\glmZout=1$), so to first order they are $1+k\E[\cZ_0\log\cZ_0]$ and $1+k\E_V\sum_y\glmZout\log\glmZout$. With $\frac{k(k+1)}2$ pairs and $f_d\approx\frac1{kd}\log\E\cZ^k$, the free entropy is the value at a stationary point of
+\begin{equation}\label{eq:glm:frs}
+\glmfrs(q,r)=\psi(r)+\alpha\Psi(q)-\frac{rq}2,
+\end{equation}
+where, by the shift $\E[\cZ_0(Z)g(Z)]=\E g(Z+\sqrt r\,w^*)$ for a uniform sign $w^*$,
+\begin{equation}\label{eq:glm:channels}
+\begin{gathered}
+\psi(r)=\E\log\cosh(r+\sqrt rZ)-\frac r2,\\
+\Psi(q)=\E_V\sum_y\glmZout(y,V)\log\glmZout(y,V).
+\end{gathered}\qedhere
+\end{equation}
+\end{heuristic}
+
+Both functions are free entropies of scalar problems: $\psi$ that of a sign $w^*$ seen through the Gaussian channel $\sqrt r\,w^*+Z$ of \cref{ch:freeentropy}, and $\Psi$ that of the output channel when a part $\sqrt q\,V$ of the field is known. The stationarity conditions are
+\begin{equation}\label{eq:glm:fixed}
+q=2\psi'(r)=\E\tanh\bigl(r+\sqrt rZ\bigr),\qquad r=2\alpha\Psi'(q),
+\end{equation}
+the first by the I-MMSE relation and the Nishimori identity (\cref{thm:freeentropy:immse,lem:freeentropy:nishimori}). Five steps are not justified:\index{replica method!uncontrolled steps} the continuation from integers to $k\to0$, the exchange of $k\to0$ with $d\to\infty$, Laplace's method with a non-integer number of replicas, the replica-symmetric ansatz, and the choice among stationary points, where physicists take the largest free entropy; the rigorous form of this rule is a supremum over $q$ of an infimum over $r$ (\cref{thm:glm:rsformula}).
+
+\begin{computation}{The sign channel}\label{comp:glm:sign}
+\step For $y=\sgn s$ and $a=\sqrt{q/(1-q)}$, $\glmZout(y,V)=\Prob_u(y(\sqrt qV+\sqrt{1-q}\,u)>0)=\Phi(yaV)$. Summing over $y$ and using $V\mapsto-V$, $\Psi(q)=2\E_V[\Phi(aV)\log\Phi(aV)]$, with $\Psi(0)=-\log2$ and $\Psi(1)=0$.
+\step Let $G(x)=\Phi(x)\log\Phi(x)$. As $\frac{\dd}{\dd q}a^2=(1-q)^{-2}$, Stein's identity $\E[Vh(V)]=\E h'(V)$ gives $\Psi'(q)=(1-q)^{-2}\E_V[G''(aV)]$, and $G''(x)=\phi(x)^2/\Phi(x)-x\phi(x)(1+\log\Phi(x))$.
+\step By symmetry $\E_V[aV\phi(aV)]=0$, and Stein's identity once more gives $X=\E_V[aV\phi(aV)\log\Phi(aV)]=-a^2X+a^2\E_V[\phi(aV)^2/\Phi(aV)]$, so $X=q\E_V[\phi(aV)^2/\Phi(aV)]$, as $a^2/(1+a^2)=q$.
+\step Hence $\E_V[G''(aV)]=(1-q)\E_V[\phi(aV)^2/\Phi(aV)]$ and, with $\phi(x)^2=e^{-x^2}/(2\pi)$,
+\[
+2\Psi'(q)=\frac1{\pi(1-q)}\,\E_V\Bigl[\frac{e^{-a^2V^2}}{\Phi(aV)}\Bigr],\qquad2\Psi'(0)=\frac2\pi.
+\]
+\step The value at $q=0$ is Hebb's rule: knowing nothing, the student still gains the signal-to-noise ratio $2\alpha/\pi$, because the average of $y_\mu x_\mu$ points to the teacher. So $q=0$ is never a fixed point for the sign channel, unlike for channels that are even in $s$.
+\end{computation}
+
+\paragraph{The Ising teacher.} As $\psi$ is convex, $\inf_r[\psi(r)-rq/2]$ is attained where $\E\tanh(r+\sqrt rZ)=q$, and $s(q;\alpha)=\log2+\inf_r\glmfrs(q,r)$ is, in the replica picture, the entropy of the part of the version space at overlap $q$; its stationary points are the fixed points of \eqref{eq:glm:fixed} (\cref{ex:glm:stationary}), and $s(1;\alpha)=0$, the teacher alone. In \cref{fig:glm:physics}(a), for $\alpha<1.2447$ an interior maximum lies above $0$ ($q_*=0.5607$, $\glmB=0.2306$ at $\alpha=1$). At $\glmIT=1.2447$ it reaches $0$, at $q=0.6938$; beyond, it is negative, the global maximum moves to $q=1$, and the Bayes error jumps from $0.1867$ to $0$. A set of sign vectors cannot have negative entropy, so past this point the version space is the teacher and a set too small to carry entropy.\sidenote{\Textcite{KrauthMezard1989} used the same criterion, a replica-symmetric entropy that vanishes, for the capacity of the Ising perceptron without a teacher (\cref{ch:gordon}).} The interior maximum survives, with negative entropy, until the spinodal $\glmAMP=1.4926$, at $q=0.8937$.\sidenote{According to \textcite{BarbierEtAl2019}, Sompolinsky, Tishby and Seung argued that metastable states exist at least up to $\alpha\approx1.628$, beyond the spinodal of the replica-symmetric branch.}
+
+\paragraph{Message passing.} Iterating \eqref{eq:glm:fixed} from $q^0=0$,
+\begin{equation}\label{eq:glm:se}
+q^{t+1}=\E\tanh\bigl(r^t+\sqrt{r^t}Z\bigr),\qquad r^t=2\alpha\Psi'(q^t),
+\end{equation}
+is the cavity method run as an algorithm: the \term{state evolution}\index{state evolution!GAMP} of the generalized approximate message passing algorithm (GAMP) of \textcite{Rangan2011}, the AMP of \cref{ch:amp} for generalized linear models.\sidenote{Rangan stated it without a complete proof. \Textcite{JavanmardMontanari2013} need Lipschitz nonlinearities, and sign labels are discontinuous; \textcite{BarbierEtAl2019} keep it as their Claim~1 (\cref{sec:glm:status}).} With $F=X/\sqrt d$, $\hat w^0=0$ and $g^{-1}=0$, Bayes-optimal GAMP alternates $\omega^t=F\hat w^t-V^tg^{t-1}$, with the Onsager term $-V^tg^{t-1}$, the output step $g^t=\partial_\omega\log\Phi(y\,\omega^t/\sqrt{V^t})$, and the input step $\hat w^{t+1}=\tanh(F^\top g^t+A^t\hat w^t)$, componentwise, where $V^t$ is the mean of $1-(\hat w^t)^2$ and $A^t=-\frac1d\sum_\mu\partial_\omega g^t_\mu$; state evolution predicts $\frac1d\ip{\hat w^t}{w^*}\to q^t$. The map \eqref{eq:glm:se} is increasing, as $\Psi$ is convex \parencite{BarbierEtAl2019}, so from $q^0=0$ it climbs to the smallest fixed point: the branch of \cref{fig:glm:physics}(a) for $\alpha<\glmAMP$, and $q=1$ above. Between $\glmIT$ and $\glmAMP$ the data determine the teacher, but GAMP stops on the metastable branch, at an error falling from $0.187$ to $0.106$. This is the \term{hard phase}\index{hard phase}, and the physicists' conjecture \parencite{BarbierEtAl2019} is that no polynomial-time algorithm does better there.
+
+\paragraph{The errors.} In the replica-symmetric state the fields of a fresh pattern are $\sqrt q\,V+\sqrt{1-q}\,U$ for the teacher and $\sqrt q\,V+\sqrt{1-q}\,u$ for a posterior sample. Two Gaussian fields with correlation $\rho$ have different signs with probability $\frac1\pi\arccos\rho$, so a posterior sample errs with probability $\frac1\pi\arccos q$, and the best prediction, $\sgn V$ (the sign of the posterior mean field, the ``center of mass''), with probability $\frac1\pi\arccos\sqrt q$.
+
+\begin{computation}{The spherical teacher}\label{comp:glm:largealpha}
+\step For the Gaussian prior $\psi(r)=\frac r2-\frac12\log(1+r)$, so $q=r/(1+r)$ in \eqref{eq:glm:fixed}. The fixed point is unique (numerically, for $\frac14\le\alpha\le20$), and the errors decrease smoothly, $\glmB=0.2544$ and $\glmG=0.3384$ at $\alpha=1$ (\cref{fig:glm:physics}(b)).
+\step As $q\to1$, $a\to\infty$; substituting $x=aV$ in \cref{comp:glm:sign}, $\E_V[e^{-a^2V^2}/\Phi(aV)]\simeq I/a$ with $I=\int_\R\frac{e^{-x^2}}{\Phi(x)}\frac{\dd x}{\sqrt{2\pi}}=2.263980$.
+\step So $r\simeq\alpha I/(\pi\sqrt{1-q})$, and $1-q=1/(1+r)\simeq1/r$ gives $\sqrt{1-q}\simeq\pi/(\alpha I)$.
+\step Since $\arccos\sqrt q\simeq\sqrt{1-q}$ and $\arccos q\simeq\sqrt{2(1-q)}$, $\alpha\glmB\to1/I=0.44170$ and $\alpha\glmG\to\sqrt2/I=0.62466$: the ratio $\sqrt2$ of \textcite{OpperHaussler1991}, and the constant $0.4417$ that \textcite{AubinEtAl2020} print. At $\alpha=100$ the products are $0.44164$ and $0.62456$.
+\end{computation}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=80mm,height=49mm]
+\nextgroupplot[xlabel={overlap $q$},ylabel={$s(q;\alpha)$},xmin=0.3,xmax=1.0,ymin=-0.13,ymax=0.13,
+  ytick={-0.1,0,0.1},title={(a) the potential of the Ising teacher},
+  legend to name=glmpotlegend,legend columns=5,legend style={font=\scriptsize,/tikz/every even column/.append style={column sep=3mm}}]
+\addplot[guide,forget plot] coordinates {(0.3,0) (1,0)};
+\addplot[physpred2] table[x=q,y=s100] {figures/data/07-glm-potential.dat};
+\addplot[physpred] table[x=q,y=sIT] {figures/data/07-glm-potential.dat};
+\addplot[stone,line width=0.9pt,densely dashed,no marks] table[x=q,y=s140] {figures/data/07-glm-potential.dat};
+\addplot[muted,line width=0.9pt,dashdotted,no marks] table[x=q,y=sAMP] {figures/data/07-glm-potential.dat};
+\addplot[physics!45,line width=0.9pt,no marks] table[x=q,y=s160] {figures/data/07-glm-potential.dat};
+\addplot[only marks,mark=*,mark size=1.5pt,color=physics,forget plot] coordinates {(0.69376,0) (1,0)};
+\legend{$\alpha=1$,$\glmIT$,$1.4$,$\glmAMP$,$1.6$}
+\nextgroupplot[xmode=log,xlabel={$\alpha$},ylabel={$\alpha\times$error},xmin=0.25,xmax=20,ymin=0,ymax=0.72,
+  title={(b) the spherical teacher},legend pos=south east,legend style={font=\scriptsize},
+  xtick={0.25,1,4,16},xticklabels={$\frac14$,$1$,$4$,$16$}]
+\addplot[guide,forget plot] coordinates {(0.25,0.44170) (20,0.44170)};
+\addplot[guide,forget plot] coordinates {(0.25,0.62466) (20,0.62466)};
+\addplot[physpred] table[x=alpha,y=aepsBsph] {figures/data/07-glm-curves.dat};
+\addplot[physpred2] table[x=alpha,y=aepsGsph] {figures/data/07-glm-curves.dat};
+\addplot[measured,ebars] table[x=alpha,y expr=\thisrow{alpha}*\thisrow{err},y error expr=\thisrow{alpha}*\thisrow{errci}] {figures/data/07-glm-gamp-sph.dat};
+\legend{Bayes,Gibbs,GAMP $d=2000$}
+\end{groupplot}
+\end{tikzpicture}
+
+\vspace{0.5mm}
+\raisebox{1.1ex}{\small (a):}\enspace\pgfplotslegendfromname{glmpotlegend}
+\end{fullwidth}
+\caption{(a) The potential $s(q;\alpha)=\log2+\inf_r\glmfrs(q,r)$ of the Ising teacher. At $\glmIT$ the interior maximum (dot at $q=0.694$) is level with the value $0$ of the teacher alone ($q=1$); above, the maximum that message passing reaches has negative entropy; at $\glmAMP$ it disappears. (b) The spherical teacher: $\alpha$ times the Bayes and Gibbs errors of the formula, their limits $1/I$ and $\sqrt2/I$ (dashed), and $\alpha$ times the error of Bayes-optimal GAMP at $d=2000$ ($3$ instances per point, $95\%$ Student-$t$ intervals, seeds $9000+100k+s$). Scripts: \texttt{07-glm-potential.py}, \texttt{07-glm-gamp.py}.}\label{fig:glm:physics}
+\end{figure}
+
+\section{The stone}\label{sec:glm:stone}
+
+\begin{stone}{the replica formula}{adaptive interpolation}
+\stonestep{Replicate}{$\E\cZ^k=\E\sum_y\cZ^{k+1}$: the teacher is replica $0$; continue $k\to0$.}{A path from the GLM ($t=0$) to two scalar channels ($t=1$) along which the student's measure stays a posterior (\cref{def:glm:interp}). Nothing is continued in $k$.}
+\stonestep{Gaussian fields}{The fields $\ip x{w^a}/\sqrt d$ are Gaussian with covariance $Q_{ab}$; replica symmetry makes them $\sqrt q\,V+\sqrt{1-q}\,u^a$.}{Gaussian integration by parts in $x_\mu$, $V_\mu$, $U_\mu$. At $t=1$ the field is $\sqrt{R_2}\,V+\sqrt{1-R_2}\,U$: the symmetric decomposition is the end of the path.}
+\stonestep{The saddle point}{Stationarity of $\glmfrs(q,r)$ in the order parameter and its conjugate.}{The sum rule (\cref{thm:glm:sumrule}): for all path functions $q(t)$, $r(t)$, the free entropy is the potential plus a remainder, exactly at every $d$.}
+\stonestep{Replica symmetry}{$Q_{ab}=q$ for all pairs, teacher included.}{The remainder, a covariance, vanishes if the overlap concentrates and $q(t)=\E\gibbs Q_t$ (\cref{cor:glm:lower}); concentration is proved under small perturbations.}
+\stonestep{The extremum}{Among stationary points, the largest free entropy.}{Two adaptive paths give matching bounds; convex duality turns $\sup_r\inf_q$ into $\sup_q\inf_r$.}
+\stonestep{Annealed approximation}{Replace $\E\log\cZ$ by $\log\E\cZ$.}{Jensen's inequality and a first moment: $\glmIT\le1.4480$; counting gives $\glmIT\ge1$ (\cref{thm:glm:versionspace}).}
+\stonestep{The spinodal}{The metastable branch ends at $\glmAMP$; the iterated cavity equations are trapped on it until then.}{State evolution for a fixed number of iterations: no first-order method beats it, and one comes within every $\epsilon$ of it \parencite{CelentanoMontanariWu2020}; so such methods learn perfectly if and only if $\alpha>\glmAMP$. For GAMP itself it is a claim.}
+\stonestep{The hard phase}{Between $\glmIT$ and $\glmAMP$ no efficient algorithm learns.}{No counterpart: a conjecture, proved for first-order methods with boundedly many iterations \parencite{CelentanoMontanariWu2020}.}
+\end{stone}
+
+The rigorous route keeps the two scalar channels and the replica-symmetric decomposition of the fields as the end of the interpolation, and replaces the replicas by a path along which the student's measure stays a true posterior, so that the Nishimori identity, the physical reason for replica symmetry, holds at every step. What the proof adds is adaptivity: in the spiked models of \cref{ch:nishimori,ch:spiked} the remainder is a square and a straight path gives a bound, while here it is a covariance between the overlap and an output statistic, and the path must be chosen, by a differential equation, so that it vanishes. The routes part at the extremum, which the proof derives from convexity, and at the hard phase, where the proof reaches only restricted classes of algorithms.
+
+\section{The proof: the interpolation sum rule}\label{sec:glm:proof}
+
+We prove the identity behind adaptive interpolation for the Ising teacher and a smooth binary channel, and deduce one direction of the replica formula when the overlap concentrates.
+
+\begin{assumption}[A smooth binary channel]\label[assumption]{ass:glm:channel}
+The labels are $\pm1$ and $\glmPout(y\mid s)=\sigma(ys)$ for a twice continuously differentiable $\sigma\colon\R\to(0,1)$ with $\sigma(s)+\sigma(-s)=1$ and $\abs{(\log\sigma)'(s)}+\abs{(\log\sigma)''(s)}\le C(1+\abs s)$.
+\end{assumption}
+
+The probit channel $\sigma(s)=\Phi(s/\sqrt\Delta)$, which adds Gaussian noise of variance $\Delta>0$ to the field before taking the sign, and the logistic channel satisfy the assumption; the noiseless channel is their limit. For such a channel $\Psi$ is the negative entropy of a two-point law, so $-\log2\le\Psi\le0$.
+
+\begin{definition}[The interpolating model]\label{def:glm:interp}
+Fix $d,n\ge1$ and continuous $q\colon[0,1]\to[0,1]$, $r\colon[0,1]\to[0,\infty)$; let $R_1(t)=\int_0^tr$ and $R_2(t)=\int_0^tq$, so $0\le R_2(t)\le t$. Let $w^*$ be uniform on $\{-1,1\}^d$, and $x_\mu\sim\Normal(0,I_d)$, $V_\mu,U_\mu,Z_i\sim\Normal(0,1)$ independent ($\mu\le n$, $i\le d$). At time $t$ the data are the patterns, the $V_\mu$, $Y_{t,\mu}\sim\glmPout(\cdot\mid S_{t,\mu})$ independently given the rest, and $Y'_{t,i}=\sqrt{R_1(t)}\,w^*_i+Z_i$, where
+\[
+S_{t,\mu}=\sqrt{1-t}\,\frac{\ip{x_\mu}{w^*}}{\sqrt d}+\sqrt{R_2(t)}\,V_\mu+\sqrt{t-R_2(t)}\,U_\mu.
+\]
+The posterior of $(w^*,U)$ is the Gibbs measure $\gibbs\cdot_t$ on $(w,u)\in\{-1,1\}^d\times\R^n$ with weight
+\[
+2^{-d}\prod_\mu\glmPout(Y_{t,\mu}\mid s_{t,\mu})\phi(u_\mu)\prod_ie^{-\frac12(Y'_{t,i}-\sqrt{R_1(t)}\,w_i)^2},
+\]
+$s_{t,\mu}$ being $S_{t,\mu}$ with $(w,u_\mu)$ in place of $(w^*,U_\mu)$, and normalizer $\cZ_t$; let $f_d(t)=\frac1d\E\log\cZ_t$. Write $Q=\frac1d\ip w{w^*}$, $u_y(s)=\log\glmPout(y\mid s)$, and
+\[
+A_t=\frac1d\sum_{\mu=1}^nu'_{Y_{t,\mu}}(S_{t,\mu})\,u'_{Y_{t,\mu}}(s_{t,\mu}).
+\]
+\end{definition}
+
+\begin{theorem}[The sum rule]\label{thm:glm:sumrule}
+Assume \cref{ass:glm:channel} and the Rademacher prior. For every $d,n\ge1$ and all path functions $q,r$ as in \cref{def:glm:interp},
+\begin{equation}\label{eq:glm:sumrule}
+\begin{split}
+f_d={}&\psi\bigl(R_1(1)\bigr)+\frac nd\,\Psi\bigl(R_2(1)\bigr)-\frac12\int_0^1r(t)q(t)\dd t\\
+&+\frac12\int_0^1\E\gibbs{\bigl(A_t-r(t)\bigr)\bigl(Q-q(t)\bigr)}_t\dd t,
+\end{split}
+\end{equation}
+with $f_d$ the free entropy of \eqref{eq:glm:model} and $\psi,\Psi$ as in \eqref{eq:glm:channels}. For constant paths the first three terms are $\glmfrs(q,r)$ with $n/d$ in place of $\alpha$.
+\end{theorem}
+
+\begin{proof}
+The plan is to compute the free entropy at the two ends of the path, to differentiate along it, and to remove the teacher from the derivative with the Nishimori identity and Gaussian integration by parts. Assume first that $q$ takes values in $[\delta,1-\delta]$ and $r$ in $[\delta,\infty)$ for some $\delta>0$, so that $R_1$, $R_2$ and $t-R_2$ are positive on $(0,1]$ and the square roots below are differentiable there. The growth condition gives $\abs{u_y(s)}\le C'(1+s^2)$ and $\abs{u'_y(s)}\le C(1+\abs s)$, so every function below is bounded by a polynomial in the Gaussian variables; this justifies differentiation under the expectation and Gaussian integration by parts (\cref{thm:toolkit:gaussianibp}).
+
+\emph{The endpoints.} At $t=0$, $R_1=R_2=0$, the $u_\mu$ drop out, and the side channel contributes $\prod_ie^{-Z_i^2/2}$, which does not depend on $w$; so $f_d(0)=f_d-\frac12$. At $t=1$ the patterns drop out and the measure factorizes. The output factors give $\frac nd\Psi(R_2(1))$. With $R=R_1(1)$, a side-channel factor gives $\E\log\sum_{w=\pm1}\frac12e^{-\frac12(Y'-\sqrt Rw)^2}=-\frac{1+R}2-\frac R2+\E\log\cosh(R+\sqrt RZ)$, because $\E Y'^2=1+R$, $\sqrt RY'=Rw^*+\sqrt RZ$ and $\log\cosh$ is even. Hence $f_d(1)=\psi(R_1(1))-\frac12(1+R_1(1))+\frac nd\Psi(R_2(1))$.
+
+\emph{Differentiation.} Given the patterns and $V$, the data $(Y_t,Y'_t)$ have density $(2\pi)^{-d/2}\cZ_t(Y,Y')$ with respect to counting measure times Lebesgue measure, as integrating the joint law of $(w^*,U,Y_t,Y'_t)$ over $(w^*,U)$ shows. So $f_d(t)=\frac1d\E_{X,V}\sum_Y\int(2\pi)^{-d/2}\cZ_t\log\cZ_t\dd Y'$, and as $\sum_Y\int\partial_t\cZ_t\dd Y'=0$, with $\partial_t$ at fixed data, $f_d'(t)=\frac1d\E[\cZ_t^{-1}\partial_t\cZ_t\log\cZ_t]=\frac1d\E[\gibbs{L_t}_t\log\cZ_t]$. Here $L_t$ is the derivative at fixed data of the logarithm of the weight of $(w,u)$, with $\dot s=\partial_ts$:
+\[
+L_t=\sum_\mu\dot s_{t,\mu}u'_{Y_{t,\mu}}(s_{t,\mu})+\frac{r(t)}{2\sqrt{R_1(t)}}\sum_iw_i\bigl(Y'_{t,i}-\sqrt{R_1(t)}w_i\bigr).
+\]
+Given the data, $(w^*,U)$ is one more sample from $\gibbs\cdot_t$, so the Nishimori identity (\cref{lem:freeentropy:nishimori}) replaces $(w,u)$ by $(w^*,U)$, for which $Y'_{t,i}-\sqrt{R_1}w^*_i=Z_i$. Thus $f_d'(t)=T_1+T_2$ with
+\[
+T_1=\frac1d\sum_\mu\E\bigl[\dot S_{t,\mu}u'_{Y_{t,\mu}}(S_{t,\mu})\log\cZ_t\bigr],\qquad T_2=\frac{r(t)}{2d\sqrt{R_1(t)}}\sum_i\E\bigl[w^*_iZ_i\log\cZ_t\bigr].
+\]
+
+\emph{The side channel.} $Z_i$ enters $\log\cZ_t$ only through $Y'_{t,i}$, and $\partial_{Y'_i}\log\cZ_t=-\gibbs{Y'_{t,i}-\sqrt{R_1}w_i}_t$. Integration by parts in $Z_i$, with $\E[w_i^*Z_i]=0$ and $(w_i^*)^2=1$, gives $\E[w^*_iZ_i\log\cZ_t]=-\sqrt{R_1}(1-\E[w^*_i\gibbs{w_i}_t])$, so $T_2=-\frac{r(t)}2(1-\E\gibbs Q_t)$.
+
+\emph{The output channel.} Let $L_y$ be $\log\cZ_t$ with $Y_{t,\mu}$ set to $y$. Averaging over $Y_{t,\mu}$ given the rest turns the $\mu$-th term of $T_1$ into $\frac1d\E[\dot S_{t,\mu}G_\mu]$, with
+\[
+G_\mu=\sum_{y=\pm1}\partial_s\glmPout(y\mid S_{t,\mu})\,L_y.
+\]
+The variables $x_{\mu1},\dots,x_{\mu d},V_\mu,U_\mu$ are independent of the rest; they enter $G_\mu$ through $S_{t,\mu}$, and all but $U_\mu$ also through $s_{t,\mu}$ in $L_y$. Integrate by parts in each, using
+\[
+\dot S_{t,\mu}=-\frac{\ip{x_\mu}{w^*}}{2\sqrt{(1-t)d}}+\frac{q(t)V_\mu}{2\sqrt{R_2(t)}}+\frac{(1-q(t))U_\mu}{2\sqrt{t-R_2(t)}}.
+\]
+The terms with $\partial_s^2\glmPout(y\mid S_{t,\mu})L_y$ have total coefficient $-\frac{\norm{w^*}^2}{2d}+\frac{q(t)}2+\frac{1-q(t)}2=0$, since $\norm{w^*}^2=d$. The terms where the derivative falls on $L_y$ give $\partial_s\glmPout(y\mid S_{t,\mu})$ times
+\[
+-\frac1{2d}\sum_iw^*_i\gibbs{w_iu'_y(s_{t,\mu})}_{t,y}+\frac{q(t)}2\gibbs{u'_y(s_{t,\mu})}_{t,y}=-\frac12\gibbs{(Q-q(t))u'_y(s_{t,\mu})}_{t,y},
+\]
+$\gibbs\cdot_{t,y}$ being the Gibbs measure at $Y_{t,\mu}=y$. Undoing the average over $Y_{t,\mu}$ and summing over $\mu$, $T_1=-\frac12\E\gibbs{A_t(Q-q(t))}_t$.
+
+\emph{Assembling.} Writing $1-\E\gibbs Q_t=(1-q(t))-\E\gibbs{Q-q(t)}_t$,
+\[
+f_d'(t)=-\frac{r(t)(1-q(t))}2-\frac12\E\gibbs{\bigl(A_t-r(t)\bigr)\bigl(Q-q(t)\bigr)}_t,\qquad0<t<1.
+\]
+This is bounded on $(0,1)$ and $f_d$ is continuous on $[0,1]$, so $f_d=f_d(0)+\frac12=f_d(1)-\int_0^1f_d'+\frac12$; the endpoints and $\frac12\int_0^1r(1-q)=\frac12R_1(1)-\frac12\int_0^1rq$ give \eqref{eq:glm:sumrule}. The left side does not depend on the path and the right side is continuous in $(q,r)$ for uniform convergence, by dominated convergence, so approximation removes the restriction to $[\delta,1-\delta]\times[\delta,\infty)$.
+\end{proof}
+
+The identity holds at every $d$, without limits or concentration (\cref{sec:glm:measuring} checks it by Monte Carlo): the replica potential is exact up to a remainder that measures how far the overlap is from concentrating. In the spiked Wigner model the remainder is a positive multiple of $\E\gibbs{(Q-q)^2}$ (\cref{ch:nishimori}); here it has no sign, being nonnegative at $q=r=0$ (\cref{ex:glm:remainder}) and negative along other paths. A bound needs a path along which it vanishes.
+
+\begin{corollary}[One bound from overlap concentration]\label[corollary]{cor:glm:lower}
+Assume \cref{ass:glm:channel}, the Rademacher prior, $n/d\to\alpha\in(0,\infty)$, and
+\begin{equation}\label{eq:glm:conc}
+\delta_d=\sup\int_0^1\E\gibbs{\bigl(Q-\E\gibbs Q_t\bigr)^2}_t\dd t\to0,
+\end{equation}
+the supremum over the paths of \cref{def:glm:interp} with constant $r$. Then $\liminf_{d}f_d\ge\sup_{r\ge0}\inf_{q\in[0,1]}\glmfrs(q,r)$.
+\end{corollary}
+
+\begin{proof}
+The plan is to choose the path so that $q(t)=\E\gibbs Q_t$ and to bound the remainder by the Cauchy--Schwarz inequality. The field $S_{t,\mu}$ is standard normal, its variance being $(1-t)\norm{w^*}^2/d+R_2+t-R_2=1$, so $\E u'_{Y_{t,\mu}}(S_{t,\mu})^4\le C^4\E(1+\abs Z)^4=:C_4$, and by the Nishimori identity so is $\E\gibbs{u'_{Y_{t,\mu}}(s_{t,\mu})^4}_t$. With $(\frac1d\sum_\mu a_\mu)^2\le\frac n{d^2}\sum_\mu a_\mu^2$ and Cauchy--Schwarz, $\E\gibbs{A_t^2}_t\le(n/d)^2C_4$ for every $t$ and path.
+
+The model at time $t$ depends on the path only through $(R_1(t),R_2(t))$; let $F_d(t,R_1,R_2)=\E\gibbs Q_t$ for $0\le t\le1$, $R_1\ge0$, $0\le R_2\le t$. It is continuous by dominated convergence, with values in $[0,1]$ since $\E\gibbs Q_t=\frac1d\E\norm{\gibbs w_t}^2$ by the Nishimori identity. Fix $r\ge0$. By Peano's theorem, $R_2'(t)=F_d(t,rt,\min(\max(R_2(t),0),t))$, $R_2(0)=0$, has a solution on $[0,1]$; its right side lies in $[0,1]$, so $0\le R_2(t)\le t$ and the clamp is inactive. The path $r(t)=r$, $q(t)=R_2'(t)$ then satisfies $q(t)=\E\gibbs Q_t$.
+
+Along it the remainder in \eqref{eq:glm:sumrule} is $\frac12\int_0^1\E\gibbs{(A_t-r)(Q-\E\gibbs Q_t)}_t\dd t$, at most $\frac12(\sqrt2\frac nd\sqrt{C_4}+\sqrt2r)\delta_d^{1/2}$ in absolute value by Cauchy--Schwarz. Hence
+\[
+f_d\ge\psi(r)+\frac nd\Psi\bigl(R_2(1)\bigr)-\frac r2R_2(1)-o(1)\ge\inf_{q\in[0,1]}\Bigl[\psi(r)+\frac nd\Psi(q)-\frac{rq}2\Bigr]-o(1).
+\]
+As $-\log2\le\Psi\le0$, replacing $n/d$ by $\alpha$ moves the infimum by at most $\abs{n/d-\alpha}\log2$. Let $d\to\infty$ and take the supremum over $r$.
+\end{proof}
+
+The corollary is replica symmetry turned into a hypothesis: if the overlap does not fluctuate, one half of the replica formula follows from an identity. The hypothesis \eqref{eq:glm:conc} is not known as stated. What is proved is the following.
+
+\begin{theorem}[\textcite{BarbierEtAl2019}, Theorems 1--3 and Corollary 3]\label{thm:glm:rsformula}
+Consider \eqref{eq:glm:model} with $n/d\to\alpha$ under hypotheses (h1)--(h5): the prior has a finite third moment and at least two points in its support; the outputs have a bounded moment of order $2+\gamma$; the pattern entries are independent, centered, of variance $1$ and bounded third moment; $\varphi_{\mathrm{out}}$ is continuous almost everywhere; and either Gaussian noise $\Delta>0$ is added to the outputs or the outputs take values in $\N$. Let $\rho=\E_{P_0}X^2$ and $\glmfrs(q,r)=\psi_{P_0}(r)+\alpha\Psi(q;\rho)-\frac{rq}2$, with the scalar free entropies of $\sqrt rX_0+Z$ and of $\glmPout(\cdot\mid\sqrt qV+\sqrt{\rho-q}\,W)$.
+\begin{enumerate}
+\item $f_d\to\sup_{q\in[0,\rho]}\inf_{r\ge0}\glmfrs(q,r)$, which equals the supremum of $\glmfrs$ over the fixed points of $q=2\psi_{P_0}'(r)$, $r=2\alpha\Psi'(q)$ ($r=\infty$ allowed at $q=\rho$); for an informative channel both are attained at the same points.
+\item If the channel is informative and $P_0$ has all moments, then for $\alpha$ in a set $D^*$ with countable complement the maximizer $q_*(\alpha)$ is unique, $\abs Q\to q_*$ in probability under $\E\gibbs\cdot$, and the Bayes mean squared error of a new label tends to that of the scalar channel at $q_*$.
+\item For the noiseless perceptron with the Rademacher prior, $\frac1d\E\log\abs\glmV\to\log2+\sup_{q<1}\inf_r\glmfrs(q,r)$.
+\end{enumerate}
+\end{theorem}
+
+Both teachers satisfy the hypotheses, with $\Delta=0$ after relabeling the outputs as $\{0,1\}$. Their proof adds four things to \cref{cor:glm:lower}. Concentration in averaged form: the initial values are perturbed to $R_i(0)=\epsilon_i\in[s_d,2s_d]$, $s_d=\frac12d^{-1/16}$, and the average over $\epsilon$ and $t$ of the overlap variance is at most $Cd^{-1/8}$ (their Proposition~4), controlling thermal fluctuations by the curvature of the free entropy in a side-channel signal-to-noise ratio and the Nishimori identity, and fluctuations of the data by concentration of the free entropy; the average survives adaptive paths because the flow $\epsilon\mapsto(R_1(t),R_2(t))$ has Jacobian at least $1$, by Liouville's formula (their Propositions~6--7). The upper bound, along $r(t)=2\alpha\Psi'(q(t))$, by Jensen's inequality for the convex $\psi$ and $\Psi$ (Proposition~8). Convex duality, $\sup_r\inf_q=\sup_q\inf_r$ (Appendix~D). And approximation from bounded priors and noisy smooth channels to (h1)--(h5) (Appendix~C).
+
+\section{The proof: counting the version space}\label{sec:glm:counting}
+
+The second proof is elementary and specific to the Ising teacher. A sign vector $w$ at Hamming distance $j$ from $w^*$ makes the angle $\theta_j=\arccos(1-2j/d)$ with it, and a Gaussian pattern separates the two with probability $\theta_j/\pi$: the projection of the pattern on their plane has a uniform direction, and the signs differ when the orthogonal line separates them. Let
+\[
+g_\alpha(m)=h\Bigl(\frac{1-m}2\Bigr)+\alpha\log\Bigl(1-\frac{\arccos m}\pi\Bigr),\qquad m\in(-1,1],
+\]
+with $h(p)=-p\log p-(1-p)\log(1-p)$, so $g_\alpha(1)=0$ and $g_\alpha\to-\infty$ at $-1$; let $\glmann$ be the infimum of the $\alpha$ with $g_\alpha<0$ on $(-1,1)$. As $g_\alpha(m)$ decreases strictly in $\alpha$ for $m<1$, $g_\alpha<0$ on $(-1,1)$ for every $\alpha>\glmann$; numerically $\glmann=1.4479664$.
+
+\begin{lemma}[No near neighbors]\label[lemma]{lem:glm:near}
+For every $\alpha>0$ there is $\epsilon\in(0,e^{-1}]$ such that if $n\ge\alpha d$, then the expected number of $w\in\glmV\setminus\{w^*\}$ within Hamming distance $\epsilon d$ of $w^*$ is at most $d\,e^{-\alpha\sqrt d/\pi}$.
+\end{lemma}
+
+\begin{proof}
+The plan is a first moment at each distance $j$. A fixed $w$ at distance $j$ lies in $\glmV$ when no pattern separates it from $w^*$, with probability $p_j^n$, $p_j=1-\theta_j/\pi$. As $\cos\theta\ge1-\theta^2/2$, $\cos(2\sqrt{j/d})\ge\cos\theta_j$ with both angles in $[0,\pi]$, so $\theta_j\ge2\sqrt{j/d}$ and $p_j^n\le e^{-\frac{2n}\pi\sqrt{j/d}}$. With $\binom dj\le(ed/j)^j$, the expected number at distance $j$ is at most $\exp(\sqrt{jd}\,[\sqrt{j/d}\log(ed/j)-\frac{2n}{\pi d}])$. The function $x\mapsto\sqrt x\log(e/x)$ increases on $(0,e^{-1}]$ and tends to $0$ at $0$; choose $\epsilon\le e^{-1}$ with $\sqrt\epsilon\log(e/\epsilon)\le\alpha/\pi$. For $1\le j\le\epsilon d$ the bracket is at most $-\alpha/\pi$, so each of the at most $d$ terms is at most $e^{-\alpha\sqrt d/\pi}$.
+\end{proof}
+
+\begin{theorem}[Counting the version space]\label{thm:glm:versionspace}
+For the Ising teacher and the noiseless perceptron, for every $d$ and $n$,
+\begin{equation}\label{eq:glm:vsbounds}
+\Bigl(1-\frac nd\Bigr)_+\log2\le\frac1d\E\log\abs\glmV\le\frac1d\log\E\abs\glmV\le\frac{\log(d+1)}d+\sup_{m}g_{\frac nd}(m).
+\end{equation}
+If $\liminf n/d>\glmann$, then $\Prob(\glmV=\{w^*\})\to1$. So the entropy of the version space stays above $(1-\alpha)\log2$ when $n/d\to\alpha<1$, and it tends to $0$, with a posterior that is the point mass at the teacher with probability tending to one, when $n/d\to\alpha>\glmann$.
+\end{theorem}
+
+\begin{proof}
+The plan is an information count below, and Jensen's inequality with a first moment above. Given the data the posterior is uniform on $\glmV$, so $\E\log\abs\glmV$ is the conditional entropy $H(w^*\mid X,y)=H(w^*)-I(w^*;y\mid X)\ge d\log2-H(y\mid X)\ge(d-n)\log2$; and $\abs\glmV\ge1$ since $w^*\in\glmV$. The middle inequality is Jensen's. Next, $\E\abs\glmV=\sum_{j=0}^d\binom djp_j^n$ as in \cref{lem:glm:near}, and $\binom dj\le e^{dh(j/d)}$; with $m=1-2j/d$, each of the $d+1$ terms is at most $e^{dg_{n/d}(m)}$.
+
+Let $\liminf n/d>\glmann$ and fix $\alpha'\in(\glmann,\liminf n/d)$, so that $n\ge\alpha'd$ for large $d$, and let $\epsilon$ be given by \cref{lem:glm:near} for $\alpha'$. Vectors within distance $\epsilon d$ contribute at most $d\,e^{-\alpha'\sqrt d/\pi}$ to $\E\abs{\glmV\setminus\{w^*\}}$. For $j>\epsilon d$, $m\in[-1,1-2\epsilon)$, and as $\log p_j\le0$ the term is at most $e^{dg_{\alpha'}(m)}$. The function $g_{\alpha'}$ is continuous on $(-1,1]$, tends to $-\infty$ at $-1$ and is negative on $(-1,1)$, so $c=-\sup_{[-1,1-2\epsilon]}g_{\alpha'}>0$ and these terms contribute at most $d\,e^{-cd}$. Hence $\Prob(\glmV\ne\{w^*\})\le\E\abs{\glmV\setminus\{w^*\}}\to0$. The last sentence follows, as $\frac1d\E\log\abs\glmV\le\Prob(\glmV\ne\{w^*\})\log2$.
+\end{proof}
+
+Let $\glmIT$ be the infimum of the $\alpha$ such that $\frac1d\E\log\abs\glmV\to0$ whenever $n/d\to\alpha$; as patterns only shrink $\glmV$, the entropy tends to $0$ for every $\alpha>\glmIT$. By \cref{thm:glm:rsformula}(iii), $\glmIT$ is the smallest $\alpha$ with $\log2+\sup_{q<1}\inf_r\glmfrs(q,r)=0$, numerically $1.2447$. So $1\le\glmIT\le\glmann<1.4480$ (\cref{sec:glm:measuring}). The upper bound in \eqref{eq:glm:vsbounds} is the zero-temperature annealed approximation of \textcite{SeungSompolinskyTishby1992}, and it is not exact: $0.1569$ at $\alpha=1$, against $0.1061$ from \cref{thm:glm:rsformula}. The counting bound is the one that \textcite{BarbierEtAl2019} mention for exact recovery with discrete outputs. The physicists' errors need one more step, from the overlap to predictions; write $\bar R(u,v)=\ip uv/(\norm u\norm v)$.
+
+\begin{proposition}[Errors from the overlap]\label[proposition]{prop:glm:errors}
+Consider the noiseless perceptron with the Rademacher or the standard Gaussian prior, a fresh pattern $x\sim\Normal(0,I_d)$, and $p=\gibbs{\ind\{\ip xw>0\}}$, the posterior probability of the label $+1$.
+\begin{enumerate}
+\item For every $d$, $\glmG=\frac1\pi\E\gibbs{\arccos\bar R(w,w^*)}=\E[2p(1-p)]$ and $\glmB=\E\min(p,1-p)$, so $\glmB\le\glmG\le2\glmB$.
+\item If $Q\to q\in[0,1]$ in probability under $\E\gibbs\cdot$, then $\glmG\to\frac1\pi\arccos q$ and $\glmB\to\frac1\pi\arccos\sqrt q$.
+\item For $\alpha\in D^*$, part~2 applies with $q=q_*(\alpha)$ of \cref{thm:glm:rsformula}.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+The plan is to write both errors through overlaps of replicas, which the Nishimori identity ties to $Q$, and to identify the limit law of $p$ by its moments. Part~1: given the data and a posterior sample, $x$ is independent of both, and the angle argument gives the first formula. Given the data and $x$, the teacher is one more posterior sample (\cref{lem:freeentropy:nishimori}), so the label and the prediction of an independent sample are independent signs, each $+1$ with probability $p$; they differ with probability $2p(1-p)$, the best prediction errs with probability $\min(p,1-p)$, and $\min(p,1-p)\le2p(1-p)\le2\min(p,1-p)$.
+
+Part~2. For the Gaussian prior $\norm{w^*}^2/d\to1$ in probability, and so does $\norm w^2/d$ under $\E\gibbs\cdot$, by the Nishimori identity; hence $\bar R(w,w^*)\to q$, and by the same identity $\bar R(w^a,w^b)\to q$ for independent posterior samples (for the Rademacher prior $\bar R=Q$). Bounded convergence gives the limit of $\glmG$, and if $q=1$, then $\glmB\le\glmG\to0$. Let $q<1$. Given the data and $k$ samples, $(\ip x{w^a}/\norm{w^a})_{a\le k}$ is Gaussian with correlation matrix $\bar R^{(k)}$, so $\E p^k=\E\gibbs{G_k(\bar R^{(k)})}$, where $G_k(\Sigma)$ is the probability that a $\Normal(0,\Sigma)$ vector has positive entries. In probability $\bar R^{(k)}\to\Sigma_q=(1-q)I+q\mathbf1\mathbf1^\top$, positive definite, at which $G_k$ is continuous; so $\E p^k\to G_k(\Sigma_q)=\E\Phi(bV)^k$, $b=\sqrt{q/(1-q)}$, writing $g_a=\sqrt qV+\sqrt{1-q}u_a$. Moments determine laws on $[0,1]$, so $p\to\Phi(bV)$ in law and $\glmB\to\E\Phi(-b\abs V)$: the probability that a standard Gaussian vector of the plane falls in a cone of opening angle $\pi-2\arctan b$, that is, $\frac12-\frac1\pi\arctan b=\frac1\pi\arccos\sqrt q$.
+
+Part~3. By \cref{thm:glm:rsformula} and the Nishimori identity, $\abs{\bar R(w^1,w^2)}\to q_*$. The Bayes predictor of a new label is $2p-1$, and as $\E[y(2p-1)]=\E(2p-1)^2$, its mean squared error is $1-\E(2p-1)^2=1-\frac2\pi\E\gibbs{\arcsin\bar R(w^1,w^2)}$, by the angle formula for two replicas; the same computation in the scalar channel gives $1-\frac2\pi\arcsin q_*$. So $\E\gibbs{\arcsin\bar R(w^1,w^2)}\to\arcsin q_*$. Every fixed point of \eqref{eq:glm:fixed} has $r=2\alpha\Psi'(q)>0$, by the closed form of \cref{comp:glm:sign}, hence $q_*>0$, and the probability that $\bar R(w^1,w^2)<0$ tends to $0$. So $\bar R(w^1,w^2)\to q_*$, and by the Nishimori identity and the norm argument of part~2, $Q\to q_*$.
+\end{proof}
+
+For the Ising teacher and $\alpha>\glmIT$, \cref{thm:glm:rsformula}(iii) makes $q=1$, where $\inf_r\glmfrs(q,r)=-\log2$, a maximizer, so $q_*(\alpha)=1$ when $\alpha\in D^*$, and with \cref{lem:glm:near} the proposition sharpens \cref{thm:glm:versionspace}.
+
+\begin{corollary}[Exact recovery above the transition]\label[corollary]{cor:glm:exact}
+For the Ising teacher, if $n/d\to\alpha>\glmIT$ with $\alpha\in D^*$, then $\Prob(\glmV=\{w^*\})\to1$.
+\end{corollary}
+
+\begin{proof}
+Take $\epsilon$ from \cref{lem:glm:near} for $\alpha/2$, and let $K_{\mathrm{near}}$ and $K_{\mathrm{far}}$ count the vectors of $\glmV\setminus\{w^*\}$ within distance $\epsilon d$ of $w^*$ and beyond it, where $Q<1-2\epsilon$. By the lemma $\Prob(K_{\mathrm{near}}\ge1)\to0$. If $K_{\mathrm{near}}=0$, the posterior mass of $\{Q<1-2\epsilon\}$ is $K_{\mathrm{far}}/(1+K_{\mathrm{far}})\ge\frac12\ind\{K_{\mathrm{far}}\ge1\}$, and $\E\gibbs{\ind\{Q<1-2\epsilon\}}\to0$ by \cref{prop:glm:errors} with $q_*=1$. Hence $\Prob(K_{\mathrm{far}}\ge1)\to0$.
+\end{proof}
+
+So exhaustive search recovers the teacher exactly from $\glmIT$ on, while first-order methods with boundedly many iterations stop at an error of order $0.1$ up to $\glmAMP$; for $\alpha\in(1.4480,1.4926)$ both sides of this gap need only \cref{thm:glm:versionspace} and \textcite{CelentanoMontanariWu2020}, with a floating-point evaluation of \eqref{eq:glm:se}.
+
+\section{Measuring it}\label{sec:glm:measuring}
+
+\paragraph{The transition, recomputed.} The script \texttt{07-glm-potential.py} evaluates the potential of the Ising teacher by quadrature, with the closed forms of \cref{comp:glm:sign} (checked against finite differences to $10^{-9}$), and solves the stationarity conditions together with the vanishing of the branch entropy, in double precision and in $20$-digit arithmetic (residuals below $10^{-21}$).\sidenote{Near $q=1$ the scale $a=\sqrt{q/(1-q)}$ is large, and quadrature in $V$ fails; the substitution $x=aV$ keeps the integrands of \cref{comp:glm:sign} on the unit scale.} Both give $\glmIT=1.2446840$; the branch entropy is $+3.31\times10^{-5}$ at $\alpha=1.2446$ and $-6.31\times10^{-6}$ at $1.2447$. In the same way $\glmAMP=1.4926318$ and $\glmann=1.4479664$, and a grid bound certifies $g_{1.4480}<0$ on $(-1,1)$, so $\glmann<1.4480$.\sidenote{On each of $1.8\times10^7$ intervals of $[-0.9,0.9]$, $g_\alpha$ is at most its entropy term at the point nearest $0$ plus its second term at the right end, as the first increases up to $m=0$ and then decreases and the second increases; this gives $g_{1.4480}\le-9.7\times10^{-6}$. Near $m=1$ the estimates of \cref{lem:glm:near}, and near $m=-1$ the bound $h\le\log2$, do the rest.} \Textcite{BarbierEtAl2019} print $\glmIT\approx1.249$ in the main text and $1.249(1)$ in the supplement. At $\alpha=1.249$ their formula, that of \cref{thm:glm:rsformula}, gives the branch the entropy $-1.698\times10^{-3}$, so $1.249$ lies inside the phase of perfect learning that the formula defines; Gy\"orgyi's $1.245$ agrees with the zero, and their spinodal $1.493(1)$ with ours. The theorem concerns the formula, not its evaluation, and is unaffected.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=80mm,height=50mm]
+\nextgroupplot[xlabel={$\alpha=n/d$},ylabel={$\frac1d\E\log\abs{\glmV}$},xmin=0,xmax=2.6,ymin=0,ymax=0.72,
+  title={(a) entropy of the version space},legend pos=north east,legend style={font=\scriptsize}]
+\addplot[physpred] table[x=alpha,y=srep] {figures/data/07-glm-curves.dat};
+\addplot[proofpred] table[x=alpha,y=sann] {figures/data/07-glm-curves.dat};
+\addplot[proofpred,forget plot] table[x=alpha,y=scount] {figures/data/07-glm-curves.dat};
+\addplot[measured3,ebars,restrict expr to domain={\thisrow{d}}{9:11}] table[x=x,y=ent,y error=entci] {figures/data/07-glm-versionspace.dat};
+\addplot[measured2,ebars,restrict expr to domain={\thisrow{d}}{13:15}] table[x=x,y=ent,y error=entci] {figures/data/07-glm-versionspace.dat};
+\addplot[measured,ebars,restrict expr to domain={\thisrow{d}}{17:19}] table[x=x,y=ent,y error=entci] {figures/data/07-glm-versionspace.dat};
+\legend{formula,bounds,$d=10$,$d=14$,$d=18$}
+\nextgroupplot[xlabel={$\alpha=n/d$},ylabel={generalization error},xmin=0,xmax=2.1,ymin=-0.01,ymax=0.5,
+  title={(b) Bayes error and GAMP},unbounded coords=jump,legend pos=north east,legend style={font=\scriptsize}]
+\fill[stone!12] (axis cs:1,-0.01) rectangle (axis cs:1.4479664,0.5);
+\addplot[guide,forget plot] coordinates {(1.2446840,-0.01) (1.2446840,0.5)};
+\addplot[guide,forget plot] coordinates {(1.4926318,-0.01) (1.4926318,0.5)};
+\addplot[physpred] table[x=alpha,y=epsBlow] {figures/data/07-glm-curves.dat};
+\addplot[physpred,forget plot] table[x=alpha,y=epsBhigh] {figures/data/07-glm-curves.dat};
+\addplot[physpred2] table[x=alpha,y=epsmeta] {figures/data/07-glm-curves.dat};
+\addplot[measured,ebars] table[x=alpha,y=err,y error=errci] {figures/data/07-glm-gamp-alpha.dat};
+\legend{Bayes error,GAMP fixed point,GAMP $d=2000$}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The Ising teacher. (a) Entropy of the version space: the formula of \cref{thm:glm:rsformula} (solid), the limits as $d\to\infty$ of the bounds of \cref{thm:glm:versionspace} (dashed: annealed upper bound and counting lower bound; the enumerations obey the finite-$d$ bounds), and exact enumeration at $d=10$, $14$, $18$ with $1500$, $600$, $250$ instances per point, at $\alpha=n/d$, with Student-$t$ $95\%$ intervals (seeds $50000+1000j+10k$). (b) The Bayes error of the formula (solid, jumping at $\glmIT$), the error at GAMP's fixed point from an uninformative start where it differs (dotted, up to $\glmAMP$), and Bayes-optimal GAMP at $d=2000$: mean of $8$ instances, $95\%$ intervals, at most $150$ iterations (seeds $7000+100k+s$). Shaded: the proved bracket $[1,\glmann]$ for $\glmIT$; dashed lines at $\glmIT$ and $\glmAMP$. Scripts: \texttt{07-glm-versionspace.py}, \texttt{07-glm-gamp.py}.}\label{fig:glm:measure}
+\end{figure}
+
+\paragraph{The version space.} In \cref{fig:glm:measure}(a) every enumerated entropy lies between the finite-$d$ bounds \eqref{eq:glm:vsbounds}, as it must. Below $\alpha=1$ the enumeration is close to the formula at $d=18$ ($0.368\pm0.006$ against $0.372$ at $\alpha=0.5$); near and above the transition it is not ($0.127\pm0.009$ against $0.106$ at $\alpha=1$, $0.017\pm0.004$ against $0$ at $\alpha=1.5$). One source: the $d$ neighbors at Hamming distance $1$ survive on average $d(1-\theta_1/\pi)^n$ times, $0.21$ at $d=18$, $n=27$, a correction that decays only like $e^{-2\alpha\sqrt d/\pi}$. At $\alpha=1.5$ the probability that the version space is the teacher alone grows from $0.58$ at $d=10$ to $0.69$ at $d=18$, as \cref{cor:glm:exact} predicts.
+
+\paragraph{GAMP against state evolution.} The script \texttt{07-glm-gamp.py} runs Bayes-optimal GAMP at $d=2000$ from the prior mean, $8$ instances at each of $11$ values of $\alpha$, stopping when the iterates stop moving, when GAMP's variance estimate falls below $10^{-8}$ (the estimate has frozen to a sign vector), or after $150$ iterations.\sidenote{The second rule matters. Once $V^t$ is tiny, no pattern lies within $\sqrt{V^t}$ of the decision boundary, the empirical $A^t$ collapses, and the iteration falls back to the prior mean; we saw this in a test run at $\alpha=1.47$.} Up to $\alpha=1.47$ it stops on the branch, and the mean error of $\sgn\ip x{\hat w}$ agrees with state evolution within the intervals at every point but $\alpha=0.8$ ($0.2605\pm0.0035$ against $0.2644$): $0.2295\pm0.0052$ against $0.2306$ at $\alpha=1$, and $0.1259\pm0.0151$ against $0.1272$ at $\alpha=1.47$, in the hard phase, where no instance found the teacher. At $\alpha=1.55$ seven of eight instances recovered $w^*$ exactly, from $1.6$ on all. Through the iterations the overlap follows state evolution: $0.708$ after $5$ iterations at $\alpha=1.3$ (prediction $0.708$), $0.925$ after $10$ at $\alpha=1.6$ ($0.926$). Near the spinodal the fixed point is soft, single instances spread by about $\pm0.05$, and in exploratory runs with other seeds an occasional instance escaped to the teacher at $\alpha=1.47$: finite-size effects that state evolution, a statement for a fixed number of iterations as $d\to\infty$, does not describe. With the Gaussian prior GAMP reaches the Bayes error (\cref{fig:glm:physics}(b)): $0.2546\pm0.0073$ against $0.2544$ at $\alpha=1$.
+
+\paragraph{The sum rule.} The script \texttt{07-glm-sumrule.py} checks \cref{thm:glm:sumrule} by Monte Carlo with exact enumeration at $d=6$, $n=7$, for the probit channel with $\Delta=\frac12$ ($1.4\times10^5$ samples for $f_d$, $1.8\times10^5$ per path, six-point quadrature in $t$, seed $2026$): $f_d=-0.7552\pm0.0007$. Along $q=r=0$ the potential part is $-0.8087$ and the remainder $+0.0532$; along $q=0.7$, $r=0.3$, $-0.6876$ and $-0.0681$; along $q=0.2+0.5t$, $r=1-0.6t$, $-0.7414$ and $-0.0143$. The totals, $-0.7555$, $-0.7556$, $-0.7557$, agree: the remainder takes both signs and absorbs the choice of path.
+
+\section{The status board}\label{sec:glm:status}
+
+The predictions of the physics box are theorems for Bayes-optimal learning from Gaussian patterns and all but countably many $\alpha$, except that $1.2447$ and $1.4926$ are floating-point evaluations of proved formulas, and that the spinodal's meaning is proved for first-order methods with a fixed number of iterations, GAMP's own state evolution being a claim. That no efficient algorithm beats GAMP in the hard phase is a conjecture.
+
+\begin{statusboard}
+\statusrow{Replica formula for the free entropy and mutual information of a GLM}{\provedunder}{(h1)--(h5), Bayes-optimality; \textcite{BarbierEtAl2019}, Thm~1}
+\statusrow{Overlap concentration (replica symmetry); errors of the scalar channel}{\provedunder}{$\alpha\in D^*$; averaged over a small perturbation; \textcite{BarbierEtAl2019}, Prop.~4, Thms~2--3}
+\statusrow{Ising teacher: first-order transition to perfect learning at $\glmIT=1.2447$}{\provedunder}{a floating-point evaluation, not certified, of \textcite{BarbierEtAl2019}, Cor.~3, Thm~2, which cover the noiseless sign channel (printed $1.249$); \cref{cor:glm:exact}}
+\statusrow{$1\le\glmIT\le1.4480$, by counting and a first moment}{\proved}{\cref{thm:glm:versionspace}, elementary; grid certificate of $\glmann<1.4480$}
+\statusrow{The annealed approximation of the learning curve is exact}{\knownfalse}{an upper bound strictly above the formula: $0.157$ against $0.106$ at $\alpha=1$}
+\statusrow{Gibbs error $\frac1\pi\arccos q_*$, Bayes error $\frac1\pi\arccos\sqrt{q_*}$; spherical teacher $0.442/\alpha$, $0.625/\alpha$}{\provedunder}{$\alpha\in D^*$; \cref{prop:glm:errors} with \textcite{BarbierEtAl2019}, Thms~2--3; constants: \cref{comp:glm:largealpha}}
+\statusrow{Message passing from an uninformative start learns perfectly if and only if $\alpha>\glmAMP=1.4926$}{\provedunder}{the best first-order method with $t$ iterations as $d\to\infty$, then $t\to\infty$ \parencite[Thm.~1 of arXiv v2, for every measurable channel of linear growth]{CelentanoMontanariWu2020}; a floating-point evaluation of \eqref{eq:glm:se}; for GAMP itself, Barbier et al.'s Claim~1}
+\statusrow{No polynomial-time algorithm learns in the hard phase $(\glmIT,\glmAMP)$}{\conjectured}{physics \parencite{BarbierEtAl2019}; Bayes-AMP optimal among first-order methods with boundedly many iterations \parencite{CelentanoMontanariWu2020}}
+\end{statusboard}
+
+\section{Where the translation fails}\label{sec:glm:fails}
+
+\paragraph{What was assumed.} Independent patterns with independent entries: (h3) allows non-Gaussian entries, not the correlations of real data (\cref{ch:kernels}). A Bayes-optimal student who knows prior and channel exactly: every step, from the derivative of the free entropy to the error formulas, uses the Nishimori identity, and Barbier et al.\ stress that their formula fails outside this setting. A student that minimizes a convex loss is the subject of \cref{ch:classification} \parencite{AubinEtAl2020}; a Bayesian student with the wrong prior is a spin glass, and nothing here applies to it. A proportional limit and a product prior; our sum rule also needs the Rademacher prior, whose norm is exact, and a smooth channel. And the algorithmic statements concern first-order methods with a fixed number of iterations as $d\to\infty$ (for GAMP itself, a claim).
+
+\paragraph{Where the physics is wrong, or not yet right.} Outside the Bayes-optimal setting replica symmetry fails in neighboring models: for the Ising perceptron without a teacher the replica-symmetric capacity $4/\pi$, which \textcite{GardnerDerrida1988} met (\cref{ch:gordon}), exceeds the first-moment bound $1$, and the correct value, Krauth and M\'ezard's zero-entropy point, is proved under numerical conditions \parencite{DingSun2025,Huang2024} and, without them, in a computer-assisted preprint whose author states that it has not been independently reproduced or peer reviewed \parencite{Shmalo2026}. The rigorous paper prints $1.249$, a value its formula does not give, where the physics literature had $1.245$. And near the transition the limits are approached slowly (\cref{sec:glm:measuring}).
+
+\paragraph{Open problems.} The one that \textcite{BarbierEtAl2019} leave open: does some polynomial-time algorithm recover the Ising teacher for $\glmIT<\alpha<\glmAMP$? The evidence for hardness specific to this model is the physics of the metastable branch and the optimality of Bayes-AMP among first-order methods with boundedly many iterations \parencite{CelentanoMontanariWu2020,MontanariWu2024}; low-degree bounds \parencite{KuniskyWeinBandeira2022} and overlap-gap arguments \parencite{GamarnikEtAl2022} exist for spiked matrices and the symmetric binary perceptron, and we did not find a result of either kind for the planted Ising perceptron. Second, the rate of convergence of $\frac1d\E\log\abs\glmV$, slow near $\glmIT$ in our measurements. Third, the free entropy of a mismatched Bayesian student, where replica symmetry breaking is expected.
+
+\begin{exercises}
+\item \consolidation (The sign channel.) Carry out \cref{comp:glm:sign}, check $2\Psi'$ against a finite difference of $\Psi$ at $q=0.2,0.8,0.95$, and interpret $\Psi(0)=-\log2$ and $\Psi(1)=0$.\label{ex:glm:sign}
+
+\item \consolidation (Stationary points.) For the Rademacher prior show that $\psi'(r)=\frac12\E\tanh(r+\sqrt rZ)$ by Stein's and the Nishimori identities, that $\psi$ is convex, and that $\frac{\dd}{\dd q}s(q;\alpha)=\alpha\Psi'(q)-\frac12r(q)$, with $r(q)$ the inverse of $r\mapsto\E\tanh(r+\sqrt rZ)$; conclude that the stationary points of $s$ are the fixed points of \eqref{eq:glm:fixed}. For the Gaussian prior, eliminate $r$ and find the potential $\frac12\log(1-q)+\alpha\Psi(q)+\frac q2$ of Barbier et al.'s Corollary~3.\label{ex:glm:stationary}
+
+\item \consolidation (Gibbs and Bayes.) Show that $\arccos q/\arccos\sqrt q$ increases from $1$ at $q=0$ to $\sqrt2$ as $q\to1$; compare with part~1 of \cref{prop:glm:errors}.\label{ex:glm:gibbs}
+
+\item \consolidation (The remainder at the origin.) Show that at $q=r=0$ the remainder in \eqref{eq:glm:sumrule} is $\frac1{2d^2}\sum_\mu\int_0^1\E\norm{\gibbs{u'_{Y_{t,\mu}}(s_{t,\mu})\,w}_t}^2\dd t\ge0$. \hint{use the Nishimori identity with two replicas.} Which bound on $f_d$ follows?\label{ex:glm:remainder}
+
+\item \byhand (Linear regression.) For $y=s+\sqrt\Delta z$, show that $\Psi(q)=-\frac12\log(2\pi e(\Delta+1-q))$. With the Gaussian prior, show that the error $m=1-q$ solves $m^2+(\Delta+\alpha-1)m-\Delta=0$, and that $m\to\max(0,1-\alpha)$ as $\Delta\to0$. Compare with the bound $\glmIT\ge1$.\label{ex:glm:linear}
+
+\item \byhand (The first moment.) Derive $g_\alpha(m)$, show that $g_\alpha(0)=(1-\alpha)\log2$ and that $g_\alpha<0$ near $m=1$ for every $\alpha>0$, and compute $\glmann=1.4480$, with the maximizer at $m=0.6976$. Why does the annealed bound miss the transition at $1.2447$?\label{ex:glm:annealed}
+
+\item \byhand\hard (A symmetric channel.) For $y=\sgn(\abs s-\kappa)$ with $\kappa=0.6745$, so that both labels are equally likely, show that $q=0$ is a fixed point of \eqref{eq:glm:fixed} for every $\alpha$, stable when $\alpha\cdot2\Psi''(0)\cdot2\psi''(0)<1$, that $2\psi''(0)=1$ and $2\Psi''(0)=16\kappa^2\phi(\kappa)^2$, and so that state evolution started from a small overlap returns to $0$ for $\alpha<1.3605$. \hint{expand both scalar channels to second order, and use $\int_{-\kappa}^\kappa(z^2-1)\phi(z)\dd z=-2\kappa\phi(\kappa)$.}\label{ex:glm:door}
+
+\item \translate (Replica symmetry is concentration.) Show with the Nishimori identity that the overlap of two posterior samples has the law of $Q$, and deduce that if $Q\to q$ in probability, then the overlap matrix of $k$ samples and the teacher tends to the replica-symmetric matrix. Which step of the replica computation does this replace?\label{ex:glm:rs}
+
+\item \translate (The conjugate parameter.) Show, by the Nishimori identity, that at $t=1$ the mean of $A_1$ is $\frac nd$ times $2\Psi'(R_2(1))$. Conclude that the physicist's conjugate parameter $\hat q=r$ is the mean squared derivative of the output log-likelihood.\label{ex:glm:conjugate}
+
+\item \measurement (The spinodal at finite size.) Run \texttt{07-glm-gamp.py} at $d=500$, $1000$, $4000$ for $\alpha=1.47$ and $1.55$, and record the fraction of instances that recover $w^*$. Why is GAMP's transition smeared around $\glmAMP$, and why should the smearing shrink with $d$?\label{ex:glm:spinodal}
+
+\item \research (Noise.) For the probit channel with $\Delta>0$, show that $q_*<1$ for every $\alpha$, and locate the critical $\Delta_c$ below which $q_*(\alpha)$ still jumps. Is there a hard phase for $\Delta<\Delta_c$?\label{ex:glm:noise}
+
+\item \research (The hard phase.) Find a polynomial-time algorithm that recovers the Ising teacher for some $\alpha<\glmAMP$, or prove a low-degree lower bound for the planted Ising perceptron in $(\glmIT,\glmAMP)$.\label{ex:glm:hard}
+\end{exercises}
+
+\notesandrefs
+The teacher--student perceptron entered physics with the ``three unfinished works'' of \textcite{GardnerDerrida1989b}, as \textcite{BarbierEtAl2019} recount. \Textcite{Gyorgyi1990} found the first-order transition of the Ising teacher; \textcite{SompolinskyTishbySeung1990} and \textcite{SeungSompolinskyTishby1992} developed Gibbs learning, with its annealed and high-temperature approximations; \textcite{OpperHaussler1991} computed the Bayes-optimal error. \Textcite{EngelVandenBroeck2001} review the physics, and \textcite{ZdeborovaKrzakala2016} place the model among inference problems with algorithmic thresholds.
+
+\Textcite{KoradaMacris2009} used interpolation on the Nishimori line for a gauge-symmetric spin glass; the replica formula for random linear estimation was proved by \textcite{ReevesPfister2016} and \textcite{BarbierMacrisDiaKrzakala2020}; \textcite{BarbierMacris2019} introduced adaptive interpolation, and \textcite{BarbierEtAl2019} used it for generalized linear models, inspired, they note, by Talagrand's interpolation paths for the perceptron without a teacher; \textcite{Barbier2021} developed the concentration of the overlap. GAMP is due to \textcite{Rangan2011}, who stated its state evolution; \textcite{JavanmardMontanari2013} proved state evolution for a general class of AMP algorithms with Lipschitz nonlinearities, building on \textcite{BayatiMontanari2011}; \textcite{CelentanoMontanariWu2020} and \textcite{MontanariWu2024} proved that Bayes-AMP is optimal among first-order methods with boundedly many iterations.
+
+The sum rule (\cref{thm:glm:sumrule}) is Proposition~3 of \textcite{BarbierEtAl2019} made exact for the Rademacher prior and a smooth binary channel; the proof through the density of the data and \cref{cor:glm:lower} are the book's presentation. \Cref{lem:glm:near}, \cref{thm:glm:versionspace}, \cref{prop:glm:errors} and \cref{cor:glm:exact} are the book's own: the counting and first-moment arguments are classical in spirit, but we did not find them stated for this model, and Barbier et al.\ state their generalization result for the mean squared error of the label, not for classification errors.
+
+\paragraph{Translating the literature.} \Textcite{BarbierEtAl2019} write $n$ for our $d$, $m$ for our $n$, $\Phi$ for the data matrix, $X^*$ for $w^*$, $\rho$ for $\E w_i^{*2}$ (here $1$), $N(x)$ for our $\Phi(x)$, and $\psi_{P_0}$, $\Psi_{P_{\mathrm{out}}}$, $f_{\mathrm{RS}}$, $f_n$ as we do; their $\alpha=m/n$ is ours. The physics of learning writes $N$ for the number of weights and $P=\alpha N$ for the number of examples \parencite{SeungSompolinskyTishby1992}, and, in the review of \textcite{EngelVandenBroeck2001}, $J$ and $T$ for student and teacher, $R$ for the teacher--student overlap (our $Q$) and $q$ for the overlap of two students (our $R_{12}$); its generalization error $\frac1\pi\arccos R$ of a single student is our Gibbs error. In Rangan's GAMP the pairs $(\hat p,\tau^p)$, $(\hat s,\tau^s)$, $(\hat r,\tau^r)$, $(\hat x,\tau^x)$ are our $(\omega,V)$, $(g,-\partial_\omega g)$, $(\hat w+F^\top g/A,1/A)$ and $(\hat w,v)$.
+
+\printchapterbib
+\end{refsection}

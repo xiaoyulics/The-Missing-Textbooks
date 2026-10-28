@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <img alt="6 volumes" src="https://img.shields.io/badge/volumes-6-1b8aa8?style=flat-square">
-  <img alt="2,186 pages" src="https://img.shields.io/badge/pages-2%2C186-6a45d6?style=flat-square">
+  <img alt="7 volumes" src="https://img.shields.io/badge/volumes-7-1b8aa8?style=flat-square">
+  <img alt="2,573 pages" src="https://img.shields.io/badge/pages-2%2C573-6a45d6?style=flat-square">
   <img alt="language: English" src="https://img.shields.io/badge/language-English-7d8d22?style=flat-square">
   <img alt="written by Claude" src="https://img.shields.io/badge/written%20by-Claude-c0432a?style=flat-square">
   <img alt="typeset with LaTeX" src="https://img.shields.io/badge/typeset%20with-LaTeX-3a44b5?style=flat-square">
@@ -18,7 +18,7 @@
 
 <p align="center">
   <a href="#the-shelf">The shelf</a> &nbsp;·&nbsp;
-  <a href="#the-six-volumes">The volumes</a> &nbsp;·&nbsp;
+  <a href="#the-seven-volumes">The volumes</a> &nbsp;·&nbsp;
   <a href="#how-a-volume-is-made">How a volume is made</a> &nbsp;·&nbsp;
   <a href="#the-film">The film</a> &nbsp;·&nbsp;
   <a href="#build-from-source">Build</a>
@@ -31,7 +31,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/img/shelf-dark.png">
-    <img src="docs/img/shelf-light.png" alt="The six volumes: I Dissolving Problems (333 pages), II The Hydrogen Atoms of Deep Learning (394), III Optimizers in the Wild (369), IV Deep Learning as an Experimental Science (365), V Verifiable Intelligence (357), VI Singular Learning Theory for the Rest of Us (368)" width="100%">
+    <img src="docs/img/shelf-light.png" alt="The seven volumes: I Dissolving Problems (333 pages), II The Hydrogen Atoms of Deep Learning (394), III Optimizers in the Wild (369), IV Deep Learning as an Experimental Science (365), V Verifiable Intelligence (357), VI Singular Learning Theory for the Rest of Us (368), VII The Replica Rosetta Stone (387)" width="100%">
   </picture>
 </p>
 
@@ -43,10 +43,11 @@
 | **IV** | *Deep Learning as an Experimental Science*<br>A Laboratory Manual | 365 | [PDF](experimental-science/Deep-Learning-as-an-Experimental-Science.pdf) · [sources](experimental-science/) |
 | **V** | *Verifiable Intelligence*<br>Interactive Proofs as a Theory of AI Oversight | 357 | [PDF](verifiable-intelligence/Verifiable-Intelligence.pdf) · [sources](verifiable-intelligence/) |
 | **VI** | *Singular Learning Theory for the Rest of Us*<br>From y = abx to Neural Networks | 368 | [PDF](singular-learning/Singular-Learning-Theory-for-the-Rest-of-Us.pdf) · [sources](singular-learning/) |
+| **VII** | *The Replica Rosetta Stone*<br>Physical Derivations and Rigorous Proofs, Side by Side | 387 | [PDF](replica-rosetta/The-Replica-Rosetta-Stone.pdf) · [sources](replica-rosetta/) |
 
 <br>
 
-## The six volumes
+## The seven volumes
 
 <a id="vol-1"></a>
 
@@ -156,6 +157,24 @@ Neural networks are singular statistical models: many weights give the same func
 
 <br>
 
+<a id="vol-7"></a>
+
+### VII &nbsp;·&nbsp; The Replica Rosetta Stone
+
+*Physical Derivations and Rigorous Proofs, Side by Side*
+
+<p align="center">
+  <a href="replica-rosetta/"><img src="docs/img/stills/v7.jpg" width="760" alt="The largest margin of random labeled points against Gardner’s replica formula: a glowing lapis curve where the formula is a theorem, dotted carnelian where it is only an upper bound, the two meeting at the capacity 2"></a>
+</p>
+
+Many exact predictions of high-dimensional statistics and learning theory came from statistical physics, derived with replicas, cavities, TAP equations, counts of critical points and dynamical mean-field theory, and many were later proved by mathematicians with interpolation, Gaussian conditioning, comparison inequalities and large deviations, by routes that rarely look like the derivations. This book is a parallel text. Each chapter takes one prediction about inference or learning, from the capacity of the perceptron to the plateaus of online SGD, derives it as a physicist would, sets the derivation beside the rigorous route step by step, proves the central result, measures it in a script, and records on a status board what is proved, under which hypotheses, what rests on unrefereed preprints, and what is known to be false.
+
+**Parts:** Two Languages · Inference on the Nishimori Line · Comparison and Convexity · Landscapes and Dynamics
+
+**[Read the PDF →](replica-rosetta/The-Replica-Rosetta-Stone.pdf)** &nbsp;·&nbsp; [Contents and sources](replica-rosetta/)
+
+<br>
+
 ## How a volume is made
 
 1. **Plan.** `OUTLINE.md` gives the thesis, the chapter list and a specification for each chapter.
@@ -177,7 +196,7 @@ All volumes share one LaTeX design, [`template/missingbook.cls`](template/missin
   <img src="docs/img/film-preview.webp" width="760" alt="Highlights of the promotional film: the title assembling out of particles, a hammer failing against a walnut, spectral lines, optimizers racing, verdict stamps, a lie being caught, and five books landing on a shelf">
 </p>
 
-A 112-second film for the first five volumes, built with [Remotion](https://www.remotion.dev): React for the layout, WebGL shaders and three.js for the picture, and a score synthesized in NumPy. Each of those volumes has its own act, and the act for volume V runs the book’s own linearity test on the real codeword printed on its title page. Volume VI has no act yet; its still above is drawn from the book’s own posterior samples by `promo/scripts/make_still_v6.py`. Source and instructions are in [`promo/`](promo/).
+A 112-second film for the first five volumes, built with [Remotion](https://www.remotion.dev): React for the layout, WebGL shaders and three.js for the picture, and a score synthesized in NumPy. Each of those volumes has its own act, and the act for volume V runs the book’s own linearity test on the real codeword printed on its title page. Volumes VI and VII have no act yet; their stills above are drawn from the books’ own computations by `promo/scripts/make_still_v6.py` and `promo/scripts/make_still_v7.py`. Source and instructions are in [`promo/`](promo/).
 
 <br>
 

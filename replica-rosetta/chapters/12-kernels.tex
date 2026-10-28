@@ -1,0 +1,438 @@
+% Chapter 12 of The Replica Rosetta Stone: kernel ridge regression, random features and Gaussian equivalence.
+\rstchapter{Kernels and Random Features}{Learning curves and Gaussian equivalence}{the Gaussian approximation\dict universality}{ch:kernels}
+\stonefoot{partial}
+\begin{refsection}[chapters/12-kernels.bib]
+
+\newcommand*{\kernelsleff}{\lambda_{\mathrm{eff}}}
+\newcommand*{\kernelsdf}{\mathrm{df}}
+\newcommand*{\kernelsSh}{\hat\Sigma}
+\newcommand*{\kernelsscript}[1]{\texttt{12-kernels-}\allowbreak\texttt{#1}}
+
+\begin{chaptersummary}
+Physicists predict the learning curve of kernel ridge regression from the spectrum of the kernel alone: a replica computation, in which the features are replaced by Gaussian vectors with the same covariance, gives an effective ridge $\kernelsleff$ fixed by one scalar equation and a closed formula for the risk. We prove the formula for Gaussian features with finitely many distinct eigenvalues by a leave-one-out argument that turns the physicists' cavity step into a theorem, and state what is proved for real kernels and for random features. We also prove that the formula is wrong at zero ridge in fixed dimension: on the circle it predicts the noise term $\sigma^2$, and the truth is $2\sigma^2/3$. Simulations confirm the formula for Gaussian features, for a kernel on the sphere at $n\asymp d$ and $n\asymp d^2$, and for random features, and show where the linear Gaussian equivalent stops working. Open: a criterion that says, for a given kernel and data distribution, when the Gaussian approximation is exact.
+\end{chaptersummary}
+
+\section{The question: how fast does a kernel learn?}\label{sec:kernels:question}
+
+A kernel method fits a linear function of fixed nonlinear features of the input. Take a positive semidefinite kernel $K$ on an input space $\cX$, with reproducing kernel Hilbert space $\cH$ (RKHS), and $n$ samples: independent inputs $x_i$ of law $P_x$ and labels $y_i=f_*(x_i)+\sigma\varepsilon_i$, the $\varepsilon_i$ independent of the inputs, with mean $0$ and variance $1$. Write $\mathbf K=(K(x_i,x_j))_{i,j\le n}$ and $k(x)=(K(x,x_i))_{i\le n}$. \term{Kernel ridge regression}\index{kernel ridge regression} with the per-sample normalized ridge $\lambda>0$ of this book is
+\begin{equation}\label{eq:kernels:krr}
+\hat f_\lambda=\argmin_{f\in\cH}\;\frac1{2n}\sum_{i=1}^n\bigl(y_i-f(x_i)\bigr)^2+\frac\lambda2\norm f_\cH^2,\qquad\hat f_\lambda(x)=k(x)^\top(\mathbf K+n\lambda I)^{-1}y .
+\end{equation}
+At $\lambda=0$ we mean the limit $\lambda\downarrow0$, the \term{minimum-norm interpolant}\index{minimum-norm interpolant}. The quantity of this chapter is the excess risk $R=\norm{\hat f_\lambda-f_*}^2_{L^2(P_x)}$ (the test error is $R+\sigma^2$); its graph against $n$ is the \term{learning curve}\index{learning curve}.
+
+The kernel acts through its \term{Mercer decomposition}\index{Mercer decomposition}: the integral operator of $K$ on $L^2(P_x)$ has eigenvalues $\eta_k\ge0$ and orthonormal eigenfunctions $e_k$, and $K(x,x')=\sum_k\eta_ke_k(x)e_k(x')$.\sidenote{Mercer's theorem gives this expansion, with uniform convergence, for a continuous kernel on a compact space; the examples of this chapter are of this kind.} Expand the target as $f_*=\sum_kv_ke_k$, so that $v_k^2$ is its power in mode $k$. In the coordinates $u(x)=(\sqrt{\eta_k}\,e_k(x))_k$, a function $f=\ip w{u}$ has $\norm f_\cH=\norm w$ and $\norm f^2_{L^2}=\ip w{\Lambda w}$ with $\Lambda=\diag(\eta_k)$: kernel ridge regression is ridge regression (\cref{ch:ridge}) on features of covariance $\Lambda$, with target weights $w_{*,k}=v_k/\sqrt{\eta_k}$ where $\eta_k>0$. Two kernels recur. On the circle, $K(\theta,\theta')=1+\sum_{k\ge1}2k^{-2}\cos k(\theta-\theta')$ has $\eta_0=1$ and, for $k\ge1$, $\eta_k=k^{-2}$ twice (on $\cos k\theta$ and $\sin k\theta$). For data uniform on the sphere $S^{d-1}(\sqrt d)$, an inner-product kernel $h(\ip x{x'}/d)$ has the spherical harmonics as eigenfunctions, and the harmonics of degree $\ell$ share one eigenvalue, with multiplicity $B(d,\ell)\approx d^\ell/\ell!$.
+
+\term{Random features}\index{random features} approximate a kernel by a finite random sum \parencite{RahimiRecht2007},\sidenote{Random features were introduced to make kernel methods cheap: $N$ features replace the $n\times n$ kernel matrix.} $f(x;a)=\sum_{j\le N}a_j\varsigma(\ip{\theta_j}x/\sqrt d)$, with frozen $\theta_j$ independent and uniform on $S^{d-1}(\sqrt d)$ and an activation $\varsigma$; ridge regression fits $a$ by minimizing $\frac1{2n}\norm{y-Za}^2+\frac\lambda2\norm a^2$, $Z_{ij}=\varsigma(\ip{\theta_j}{x_i}/\sqrt d)$, on data uniform on $S^{d-1}(\sqrt d)$, with $\alpha=n/d$ and $\psi=N/d$. With $G\sim\Normal(0,1)$, the activation enters through $\mu_0=\E\varsigma(G)$, $\mu_1=\E[G\varsigma(G)]$, $\mu_*^2=\E\varsigma(G)^2-\mu_0^2-\mu_1^2$ and $\zeta=\mu_1/\mu_*$; for the ReLU, $\mu_0=1/\sqrt{2\pi}$, $\mu_1=\frac12$, $\mu_*^2=\frac14-\frac1{2\pi}$ and $\zeta=1.6589$. Finally, write $\kernelsdf_1(t)=\sum_k\eta_k/(\eta_k+t)$ and $\kernelsdf_2(t)=\sum_k\eta_k^2/(\eta_k+t)^2$ for the two degrees of freedom of the kernel at ridge $t$.
+
+\begin{physicsbox}[Sollich 1998; Bordelon, Canatar and Pehlevan 2020; Canatar, Bordelon and Pehlevan 2021]
+Let the \term{effective ridge} $\kernelsleff>0$ solve
+\begin{equation}\label{eq:kernels:leff}
+\lambda=\kernelsleff\Bigl(1-\frac{\kernelsdf_1(\kernelsleff)}n\Bigr).
+\end{equation}
+Then, for large $n$, the excess risk of kernel ridge regression is
+\begin{equation}\label{eq:kernels:formula}
+R=\frac{\sum_k\kernelsleff^2v_k^2/(\eta_k+\kernelsleff)^2+\sigma^2\,\kernelsdf_2(\kernelsleff)/n}{1-\kernelsdf_2(\kernelsleff)/n}.
+\end{equation}
+For random features, the risk is that of ridge regression on the Gaussian covariates $u=\mu_0\mathbf 1+\mu_1\Theta x/\sqrt d+\mu_*w$, with $w\sim\Normal(0,I_N)$ independent of $x$ \parencite{GeraceEtAl2020,GoldtEtAl2020b}.
+\end{physicsbox}
+
+\index{effective ridge}The modes with $\eta_k\ll\kernelsleff$, which the data cannot resolve, act as extra ridge, so $\kernelsleff>\lambda$. The formula contains the phenomenology of kernel learning: modes are learned in decreasing order of $\eta_k$, the factor $1/(1-\kernelsdf_2/n)$ produces interpolation peaks, and on the sphere the risk drops in stages at $n\asymp d^\ell$. The last sentence of the box is the \term{Gaussian equivalence}\index{Gaussian equivalence} principle:\sidenote{\textcite{GoldtEtAl2020b} named it the Gaussian Equivalence Property; \textcite{XiaoEtAl2023} describe the physics derivations of kernel curves as resting on a ``Gaussian equivalence conjecture''.} nonlinear features may be replaced by Gaussian vectors with the same first two moments. How do physicists derive \eqref{eq:kernels:formula}, and when is it a theorem? The answer has a twist: the formula is exactly the risk of Gaussian features; for real kernels it is right in high dimension, close in fixed dimension with a large ridge, and wrong there without one.
+
+\section{The physics: replicas over Gaussian features}\label{sec:kernels:physics}
+
+\Textcite{CanatarEtAl2021} derived \eqref{eq:kernels:formula} by replicas, after \textcite{BordelonEtAl2020} had obtained it from an equation of \textcite{Sollich1998}. The key step is, in their words, ``a Gaussian approximation to the average over the dataset in the feature space''. We redo the computation in the book's units.
+
+\begin{heuristic}[Replica computation of the learning curve]
+\emph{Gibbs measure.} In Mercer coordinates, $n$ times the objective \eqref{eq:kernels:krr} is $L(w)=\frac12\sum_i(y_i-\ip w{u(x_i)})^2+\frac{n\lambda}2\norm w^2$. The Gibbs weight $e^{-\beta L(w)}$ concentrates at the estimator as $\beta\to\infty$. Replica $a$ has error $\Delta^a=w^a-w_*$ and excess risk $\ip{\Delta^a}{\Lambda\Delta^a}$.
+
+\emph{Replicas.} The samples are independent, so for integer $r$, with $h^a=\ip{\Delta^a}{u(x)}$,
+\[
+\E Z^r=\int\prod_{a\le r}\dd w^a\,e^{-\frac{\beta n\lambda}2\sum_a\norm{w^a}^2}\Bigl(\E_{x,\varepsilon}e^{-\frac\beta2\sum_a(\sigma\varepsilon-h^a)^2}\Bigr)^n .
+\]
+
+\emph{The Gaussian approximation.} Treat $(h^a)_{a\le r}$ as a centered Gaussian vector with second moments $Q_{ab}=\E h^ah^b=\ip{\Delta^a}{\Lambda\Delta^b}$, and $\varepsilon$ as standard Gaussian. This is exact when $u(x)$ is Gaussian; for a kernel it is the approximation. With $J$ the all-ones matrix, the average becomes $\det(I_r+\beta(Q+\sigma^2J))^{-1/2}$, and the data enter only through $Q$.
+
+\emph{Order parameters.} Impose $Q_{ab}=\ip{\Delta^a}{\Lambda\Delta^b}$ with Lagrange multipliers $\hat Q_{ab}$. The exponent acquires $-\frac12\sum_{ab}\hat Q_{ab}Q_{ab}$, and the integral over $w$ factorizes over the modes $k$, mode $k$ carrying $\exp(\frac{\eta_k}2\sum_{ab}\hat Q_{ab}\Delta^a_k\Delta^b_k)$.
+
+\emph{Replica symmetry at zero temperature.} The problem is convex; take $Q_{ab}=q+\frac\chi\beta\delta_{ab}$ and $\hat Q_{ab}=n(-\beta\hat m\,\delta_{ab}+\beta^2\hat s)$. As $r\to0$ the determinant contributes $-\frac{rn}2[\log(1+\chi)+\beta(q+\sigma^2)/(1+\chi)]$ and the multipliers $-\frac{r\beta n}2(\hat s\chi-\hat mq)+O(rn)$. In mode $k$ a Hubbard--Stratonovich variable $z\sim\Normal(0,1)$ decouples the replicas, and as $\beta\to\infty$ (Laplace) each sees the scalar problem
+\[
+\mathcal E_k(z)=\min_w\Bigl\{\frac\lambda2w^2+\frac{\eta_k\hat m}2(w-w_{*,k})^2-\sqrt{\frac{\eta_k\hat s}n}\,z\,(w-w_{*,k})\Bigr\},
+\]
+with $\E_z\mathcal E_k=\lambda\hat mv_k^2/(2(\lambda+\eta_k\hat m))-\eta_k\hat s/(2n(\lambda+\eta_k\hat m))$. Collecting the terms of order $r\beta n$, $\E Z^r\approx e^{-r\beta nf}$ with
+\[
+f=\frac{q+\sigma^2}{2(1+\chi)}+\frac{\hat s\chi-\hat mq}2+\sum_k\Bigl[\frac{\lambda\hat m\,v_k^2}{2(\lambda+\eta_k\hat m)}-\frac{\eta_k\hat s}{2n(\lambda+\eta_k\hat m)}\Bigr].
+\]
+
+\emph{Saddle point.} Setting the four derivatives of $f$ to zero gives $\hat m=1/(1+\chi)$, $\hat s=(q+\sigma^2)/(1+\chi)^2$ and
+\[
+\chi=\frac1n\sum_k\frac{\eta_k}{\lambda+\eta_k\hat m},\qquad q=\sum_k\frac{\lambda^2v_k^2}{(\lambda+\eta_k\hat m)^2}+\frac{\hat s}n\sum_k\frac{\eta_k^2}{(\lambda+\eta_k\hat m)^2}.
+\]
+
+\emph{The effective ridge.} Put $\kernelsleff=\lambda/\hat m=\lambda(1+\chi)$, so that $\lambda+\eta_k\hat m=\hat m(\kernelsleff+\eta_k)$. The equation for $\chi$ becomes $1/(1+\chi)=1-\kernelsdf_1(\kernelsleff)/n$, which is \eqref{eq:kernels:leff}; the equation for $q$ becomes $q=\sum_k\kernelsleff^2v_k^2/(\eta_k+\kernelsleff)^2+(q+\sigma^2)\kernelsdf_2/n$. Since $q=Q_{aa}$ at $\beta=\infty$ is the risk of the estimator, this is \eqref{eq:kernels:formula}.
+\end{heuristic}
+
+Five steps are uncontrolled: the Gaussian approximation; the continuation from integer $r$ to $r\to0$ and its exchange with $n\to\infty$ (\cref{ch:freeentropy}); the replica-symmetric ansatz, which convexity makes plausible;\sidenote{A strictly convex objective has a unique minimizer, so the replicas collapse onto it as $\beta\to\infty$; for the nonconvex problems of \cref{ch:gordon}, the perceptron at negative margin, the replicas break.} the choice of the stationary point; and the limit $\beta\to\infty$ after $n\to\infty$. Only the first depends on the kernel; the rest is the computation of \cref{ch:ridge} with a general spectrum.
+
+\paragraph{The cavity version.} Sollich's route is closer to the proof.\sidenote{Sollich studied Gaussian process regression; its posterior mean is kernel ridge regression with $n\lambda$ equal to the noise variance of the prior model.} In our normalization: adding sample $n+1$ to the resolvent $G$ of the empirical feature covariance by the \term{Sherman--Morrison formula}\index{Sherman--Morrison formula} changes $G$ by a rank-one term divided by $1+u_{n+1}^\top Gu_{n+1}/n$. Sollich replaced the average of this ratio by the ratio of the averages, so that the denominator becomes $1+\tr(\Lambda G)/n$, took a continuum limit in $n$, and solved the resulting equation by characteristics \parencite[\S2.2]{BordelonEtAl2020}; \textcite{CanatarEtAl2021} note that their replica formula agrees with his ``lower continuous approximation''.
+
+\paragraph{Random features.} One more step reduces random features to Gaussian features.
+
+\begin{heuristic}[Gaussian equivalence of random features]
+Fix $\Theta$. For a random input, $t_j=\ip{\theta_j}x/\sqrt d$ is nearly standard Gaussian, and $t_j,t_l$ are nearly jointly Gaussian with correlation $\rho_{jl}=\ip{\theta_j}{\theta_l}/d=O(d^{-1/2})$ for $j\ne l$. Expand $\varsigma=\sum_k\mu_k\mathrm{He}_k/k!$ with $\mu_k=\E[\varsigma(G)\mathrm{He}_k(G)]$; Mehler's formula gives the \term{Hermite expansion}\index{Hermite expansion}
+\[
+\E\bigl[\varsigma(t_j)\varsigma(t_l)\bigr]=\sum_{k\ge0}\frac{\mu_k^2}{k!}\rho_{jl}^k=\mu_0^2+\mu_1^2\rho_{jl}+O(\rho_{jl}^2),
+\]
+and at $\rho_{jj}=1$ it gives $\mu_0^2+\mu_1^2+\mu_*^2$, since $\mu_*^2=\sum_{k\ge2}\mu_k^2/k!$. So the feature covariance is $\mu_0^2\mathbf1\mathbf1^\top+\mu_1^2\Theta\Theta^\top/d+\mu_*^2I$ up to off-diagonal entries of order $1/d$, and by Stein's lemma the covariance with a linear target $\ip\beta x$ is $\mu_1\Theta\beta/\sqrt d$: the moments of the \term{Gaussian covariate model}\index{Gaussian covariate model} $u=\mu_0\mathbf1+\mu_1\Theta x/\sqrt d+\mu_*w$. Assume that at the trained weights the risk sees only these moments; ridge regression on $u$ is then ridge regression on Gaussian features, and the computation above gives the curve of \textcite{MeiMontanari2022}.
+\end{heuristic}
+
+The uncontrolled step is the last: moments are matched at fixed weights, and the weights that matter are trained on the features. \Textcite{MontanariSaeed2022} point out that the naive argument fails as stated, since the projections of the data on the trained weights are not Gaussian; a proof must compare minimum values, not distributions at the minimizer.
+
+\section{The stone}\label{sec:kernels:stone}
+
+\begin{stone}{the replica and cavity computations}{deterministic equivalents and universality}
+\stonestep{The Gaussian approximation}
+{The local fields $\ip{\Delta^a}{u(x)}$ are treated as jointly Gaussian; the eigenfunctions disappear, and only $(\eta_k)$ and $(v_k^2)$ remain.}
+{A hypothesis of the theorem (\cref{ass:kernels:blocks}). For real kernels, a universality theorem with its own hypotheses \parencite{XiaoEtAl2023,MisiakiewiczSaeed2024}; false in fixed dimension at $\lambda=0$ (\cref{prop:kernels:circle}).}
+\stonestep{Replicas, order parameters, self-averaging}
+{Overlaps $Q_{ab}=q+\chi\delta_{ab}/\beta$, assumed to concentrate; $q$ is the risk, $\chi$ a susceptibility.}
+{No replicas: $\hat\beta-\beta_*=-\lambda Q_\lambda\beta_*+\sigma Q_\lambda X^\top\varepsilon/n$ with $Q_\lambda=(\kernelsSh+\lambda I)^{-1}$, so the risk is a sum of traces, which concentrate by the Poincaré inequality (\cref{lem:kernels:conc}). The susceptibility is $\delta=\E\tr(\Sigma Q_\lambda)/n$; in the limit $1+\delta=\kernelsleff/\lambda=1+\chi$.}
+\stonestep{The cavity: add one sample}
+{Sherman--Morrison, then the average of a ratio replaced by the ratio of averages: $1+u^\top Gu/n$ becomes $1+\tr(\Lambda G)/n$.}
+{The \term{leave-one-out}\index{leave-one-out} identity $Qx_1=Q_1x_1/(1+d_1)$ is exact, and replacing $d_1=x_1^\top Q_1x_1/n$ by $\delta$ costs $\E(d_1-\delta)^2=O(1/n)$, because $Q_1$ is independent of $x_1$ (\cref{prop:kernels:deteq}).}
+\stonestep{The saddle-point equation}
+{$\partial_{\hat s}f=0$ gives \eqref{eq:kernels:leff}; its solution is taken as the physical one.}
+{The same equation is an approximate fixed point $\delta\approx F_n(\delta)$; uniqueness and the bound $\abs{\delta-\delta_*}\le U^2\abs{\delta-F(\delta)}$ keep the error of order $n^{-1/2}$ (\cref{lem:kernels:fixedpoint}).}
+\stonestep{The risk from the saddle}
+{$\partial_{\hat m}f=0$ gives $q=B_0+(q+\sigma^2)\kernelsdf_2/n$: noise and unlearned target, fed back through the residuals, give $1/(1-\kernelsdf_2/n)$.}
+{The risk is a derivative of traces, $(\lambda h_n)'$ and $-\lambda^2\partial_t\tr(BQ_{\lambda,t})$; traces are convex in $\lambda$ and $t$, so derivatives converge (\cref{lem:kernels:convex}); $1/(1-D_2)=\dd\kernelsleff/\dd\lambda$.}
+\stonestep{Gaussian equivalence of random features}
+{Mehler's expansion matches two moments with the Gaussian covariate model.}
+{Ridge: resolvent algebra (\cref{thm:kernels:mm}); kernel matrices: El Karoui's linearization; convex losses: Lindeberg swapping \parencite{HuLu2023}; nonconvex losses inside a domain of Gaussianity: \textcite{MontanariSaeed2022}. The linear equivalent is false beyond $n\asymp d$ \parencite{GhorbaniEtAl2021}.}
+\stonestep{Zero temperature, then zero ridge}
+{$\beta\to\infty$ after $n\to\infty$; the ridgeless curve is the formula at $\lambda\to0$.}
+{No counterpart in general: the theorems need $\lambda>0$ or effective-rank conditions; for random features the limit is conjectured; in fixed dimension the formula's noise term is wrong by the factor $3/2$.}
+\end{stone}
+
+The proof follows the cavity derivation, not the replica one: both use the Sherman--Morrison formula, and the proof adds an error budget for Sollich's one approximation, the replacement of a random denominator by its mean, with a stability estimate that carries the error through the fixed-point equation. The replica-symmetric ansatz has no counterpart, because nothing is guessed. Two steps are not translated: Gaussianity, a hypothesis of both routes that only separate universality theorems remove, and the zero-ridge limit, in which the formula can fail. The physics computes the Gaussian model exactly; everything difficult is the passage from the Gaussian model to the real one.
+
+\section{The proof: the cavity, made rigorous}\label{sec:kernels:proof}
+
+We prove the formula where the Gaussian approximation is no approximation, for the simplest spectrum that keeps the structure of \eqref{eq:kernels:formula}: finitely many distinct eigenvalues, each with multiplicity proportional to $n$.
+
+\begin{assumption}[Gaussian features with finitely many distinct eigenvalues]\label[assumption]{ass:kernels:blocks}
+Fix $m\ge1$, distinct $\eta_1,\dots,\eta_m>0$, $\pi_1,\dots,\pi_m>0$ and $b_1,\dots,b_m\ge0$. For each $n$ let $p_1,\dots,p_m$ be positive integers with $p_j/n\to\pi_j$, $p=\sum_jp_j$, $\Sigma=\diag(\eta_1I_{p_1},\dots,\eta_mI_{p_m})$, and $P_j$ the orthogonal projection on the $j$th block of coordinates.
+\begin{enumerate}
+\item The rows of $X\in\R^{n\times p}$ are $x_i=\Sigma^{1/2}g_i$, with $g_1,\dots,g_n$ independent $\Normal(0,I_p)$.
+\item $y_i=\ip{x_i}{\beta_*}+\sigma\varepsilon_i$, with $\varepsilon_1,\dots,\varepsilon_n$ independent, of mean $0$ and variance $1$; $\beta_*=\sum_jb_ju_j$ with $u_j$ uniform on the unit sphere of the range of $P_j$; $X$, $\varepsilon$ and the $u_j$ are independent.
+\item $\hat\beta=(\kernelsSh+\lambda I)^{-1}X^\top y/n$ with $\kernelsSh=X^\top X/n$ and $\lambda>0$ fixed.
+\end{enumerate}
+\end{assumption}
+
+These are Gaussian Mercer features with $m$ distinct eigenvalues, and a target with power $\eta_jb_j^2$ spread isotropically over the $j$th eigenspace. Write $R=\ip{\hat\beta-\beta_*}{\Sigma(\hat\beta-\beta_*)}$, $\bar R_n=\E[R\mid X]$ for its average over the noise and the target, and $D_1(t)=\sum_j\pi_j\eta_j/(\eta_j+t)$, $D_2(t)=\sum_j\pi_j\eta_j^2/(\eta_j+t)^2$ for the limits of $\kernelsdf_1(t)/n$ and $\kernelsdf_2(t)/n$.
+
+\begin{theorem}[The learning curve for Gaussian features]\label{thm:kernels:main}
+Under \cref{ass:kernels:blocks}, the equation $\lambda=t(1-D_1(t))$ has exactly one solution $t=\kernelsleff$ with $D_1(t)<1$, at this solution $D_2(\kernelsleff)<1$, and, in probability as $n\to\infty$,
+\[
+\bar R_n\;\longrightarrow\;R_*=\frac{\sum_j\kernelsleff^2\eta_jb_j^2/(\eta_j+\kernelsleff)^2+\sigma^2D_2(\kernelsleff)}{1-D_2(\kernelsleff)}.
+\]
+\end{theorem}
+
+This is \eqref{eq:kernels:formula} with the target powers summed over each eigenspace; for one block ($m=1$, $\eta_1=1$, $\pi_1=\gamma=1/\alpha$, $b_1=r$) it is the isotropic ridge risk of \cref{thm:ridge:risk}, $R_*=(r^2\kernelsleff^2+\sigma^2\gamma)/((1+\kernelsleff)^2-\gamma)$ (\cref{ex:kernels:flat}). It is a special case of \textcite[Theorems~5--6 of arXiv version~5]{HastieEtAl2022} and of \cref{thm:kernels:cm} below, which allow general covariances and non-Gaussian features; the special case keeps the structure of the proof.
+
+Throughout, $A=\sum_ja_jP_j$ is block-scalar with $a_j\ge a>0$, $Q=(\kernelsSh+A)^{-1}$, $c=\sup_np/n$ and $\bar\eta=\max_j\eta_j$. Since $\kernelsSh\succeq0$ and $A\succeq aI$, $\norm Q\le1/a$.
+
+\begin{lemma}[Concentration of traces]\label[lemma]{lem:kernels:conc}
+For every deterministic symmetric $D$, $\Var\bigl(\tr(DQ)/n\bigr)\le4c\bar\eta^2\norm D^2/(a^4n^2)$.
+\end{lemma}
+
+\begin{proof}
+The plan is to apply the Gaussian Poincaré inequality (\cref{thm:toolkit:poincare}) to $f=\tr(DQ)/n$ as a function of the standard Gaussian vector $(g_1,\dots,g_n)$; $f$ is smooth because $\kernelsSh+A\succeq aI$. Moving $g_i$ in a direction $h$ changes $\kernelsSh$, to first order, by $\Sigma^{1/2}(hg_i^\top+g_ih^\top)\Sigma^{1/2}/n$ and $Q$ by minus $Q$ times this times $Q$; since $D$ and $Q$ are symmetric, $\nabla_{g_i}f=-2n^{-2}\Sigma^{1/2}QDQx_i$. The matrix $M=(QDQ)\Sigma(QDQ)$ is positive semidefinite with $\norm M\le\bar\eta\norm D^2/a^4$, and $\tr(M\kernelsSh)\le\norm M\tr\kernelsSh$, so
+\[
+\sum_i\norm{\nabla_{g_i}f}^2=\frac4{n^4}\sum_ix_i^\top Mx_i=\frac4{n^3}\tr(M\kernelsSh)\le\frac{4\bar\eta\norm D^2}{a^4n^3}\tr\kernelsSh .
+\]
+Since $\E\tr\kernelsSh=\tr\Sigma\le c\bar\eta n$, the Poincaré inequality gives $\Var f\le\E\norm{\nabla f}^2\le4c\bar\eta^2\norm D^2/(a^4n^2)$.
+\end{proof}
+
+\begin{lemma}[A stable fixed point]\label[lemma]{lem:kernels:fixedpoint}
+Let $a_j>0$, $c_j\ge0$ with $\sum_jc_j>0$, and $F(\delta)=\sum_jc_j/(a_j+\eta_j/(1+\delta))$ for $\delta\ge0$. Then $F$ has exactly one fixed point $\delta_*$, $0<\delta_*\le\sum_jc_j/a_j$, and for every $\delta\ge0$, $\abs{\delta-\delta_*}\le(1+\max(\delta,\delta_*))^2\abs{\delta-F(\delta)}$.
+\end{lemma}
+
+\begin{proof}
+Put $u=1+\delta$ and $\phi(u)=\sum_jc_j/(a_ju+\eta_j)$, strictly decreasing on $[1,\infty)$. Then $F(\delta)=u\phi(u)$, so $\delta-F(\delta)=u\psi(u)$ with $\psi(u)=1-1/u-\phi(u)$, which is strictly increasing, negative at $u=1$ and tends to $1$; so it has exactly one zero $u_*>1$, and $\delta_*=u_*-1$ is the only fixed point. Since $u/(a_ju+\eta_j)<1/a_j$, $\delta_*=F(\delta_*)\le\sum_jc_j/a_j$. Finally $\psi'(v)=v^{-2}-\phi'(v)\ge v^{-2}$, so by the mean value theorem $\abs{\psi(u)}=\abs{\psi(u)-\psi(u_*)}\ge\abs{u-u_*}/\max(u,u_*)^2$, while $\abs{\psi(u)}=\abs{\delta-F(\delta)}/u\le\abs{\delta-F(\delta)}$; together they give the bound.
+\end{proof}
+
+\begin{proposition}[Deterministic equivalent of block traces]\label[proposition]{prop:kernels:deteq}
+Let $\delta_n$ be the fixed point of $F_n(\delta)=\sum_j(p_j\eta_j/n)/(a_j+\eta_j/(1+\delta))$ and $\bar\tau_j=(p_j/n)/(a_j+\eta_j/(1+\delta_n))$. There is a constant $C$, depending only on $c$, $\bar\eta$ and $a$, such that $\E(\tr(P_jQ)/n-\bar\tau_j)^2\le C/n$ for every $j$ and $n$. If the $a_j$ do not depend on $n$, then $\tr(P_jQ)/n\to\pi_j/(a_j+\eta_j/(1+\delta_\infty))$ in probability, with $\delta_\infty$ the fixed point of $F_\infty(\delta)=\sum_j\pi_j\eta_j/(a_j+\eta_j/(1+\delta))$.
+\end{proposition}
+
+This is the \term{deterministic equivalent}\index{deterministic equivalent} of the resolvent on block traces:\sidenote{The term comes from random-matrix theory: a deterministic matrix whose normalized traces against bounded test matrices agree, to leading order, with those of a random one.} $\E Q$ is close to $T=(A+\Sigma/(1+\delta))^{-1}$, as if the data covariance acted through its population value, discounted by $1+\delta$.
+
+\begin{proof}
+The plan is the cavity argument with an error budget: an exact leave-one-out identity, the replacement of a random quadratic form by its mean, and the fixed point. Write $Q_i=(\kernelsSh-x_ix_i^\top/n+A)^{-1}$, independent of $x_i$; $d_i=x_i^\top Q_ix_i/n\ge0$; $\delta=\E\tr(\Sigma Q)/n$; and $T=(A+\Sigma/(1+\delta))^{-1}$, block-scalar. Each of $Q$, $Q_i$, $T$ has norm at most $1/a$. We use two facts: for a standard Gaussian $g\in\R^p$ and a deterministic symmetric $M$, $\E g^\top Mg=\tr M$ and $\Var g^\top Mg=2\tr M^2\le2p\norm M^2$ (diagonalize $M$); and $\E\norm{x_1}^2=\tr\Sigma\le c\bar\eta n$, $\E\norm{x_1}^4=(\tr\Sigma)^2+2\tr\Sigma^2\le3c^2\bar\eta^2n^2$.
+
+\emph{Step 1: an exact identity.} Multiplying $Q^{-1}=Q_1^{-1}+x_1x_1^\top/n$ by $Q_1x_1$ gives the Sherman--Morrison identity $Qx_1=Q_1x_1/(1+d_1)$. From $Q(\kernelsSh+A)=I$ and the exchangeability of the samples, $I-\E[Q]A=\E[Q\kernelsSh]=\E[Qx_1x_1^\top]=\E[Q_1x_1x_1^\top/(1+d_1)]$. Insert $1/(1+d_1)=1/(1+\delta)+(\delta-d_1)/((1+\delta)(1+d_1))$, use $\E[Q_1x_1x_1^\top]=\E[Q_1]\Sigma$, write $\E Q_1=\E Q+\E(Q_1-Q)$, and multiply on the right by $T$:
+\begin{equation}\label{eq:kernels:loo}
+T-\E Q=\frac{\E[Q_1-Q]\Sigma T}{1+\delta}+\frac{\E\bigl[Q_1x_1x_1^\top T\,(\delta-d_1)/(1+d_1)\bigr]}{1+\delta}.
+\end{equation}
+
+\emph{Step 2: the two error terms.} Take $\tr(D\,\cdot)/n$ of \eqref{eq:kernels:loo} for a deterministic $D$. By the resolvent identity $Q_1-Q=Qx_1x_1^\top Q_1/n$, the first term is $\E[x_1^\top Q_1\Sigma TDQx_1]/(n^2(1+\delta))$, at most $\bar\eta\norm D\E\norm{x_1}^2/(a^3n^2)\le c\bar\eta^2\norm D/(a^3n)$ in absolute value. In the second, $1+d_1\ge1$ and $\abs{x_1^\top TDQ_1x_1}\le\norm D\norm{x_1}^2/a^2$, so the Cauchy--Schwarz inequality bounds it by $(\sqrt3c\bar\eta\norm D/a^2)(\E(d_1-\delta)^2)^{1/2}$.
+
+\emph{Step 3: the quadratic form concentrates.} Split $d_1-\delta$ into $d_1-\tr(\Sigma Q_1)/n$, $\tr(\Sigma(Q_1-Q))/n$ and $\tr(\Sigma Q)/n-\delta$. Given $Q_1$, the first is $(g_1^\top Mg_1-\tr M)/n$ with $M=\Sigma^{1/2}Q_1\Sigma^{1/2}$, $\norm M\le\bar\eta/a$, so its second moment is at most $2c\bar\eta^2/(a^2n)$. The second equals $x_1^\top Q_1\Sigma Qx_1/n^2$, with second moment at most $3c^2\bar\eta^4/(a^4n^2)$. The third has second moment at most $4c\bar\eta^4/(a^4n^2)$ by \cref{lem:kernels:conc}. Hence $\E(d_1-\delta)^2\le C_1/n$ with $C_1=6c\bar\eta^2/a^2+3(3c^2+4c)\bar\eta^4/a^4$, and with Step 2, for every deterministic $D$,
+\begin{equation}\label{eq:kernels:deqbound}
+\Bigl|\frac{\tr(DT)}n-\frac{\E\tr(DQ)}n\Bigr|\le\frac{C_2\norm D}{\sqrt n},\qquad C_2=\frac{c\bar\eta^2}{a^3}+\frac{\sqrt{3C_1}\,c\bar\eta}{a^2}.
+\end{equation}
+
+\emph{Step 4: the fixed point.} Because $T$ is block-scalar, $\tr(\Sigma T)/n=F_n(\delta)$, and \eqref{eq:kernels:deqbound} with $D=\Sigma$ gives $\abs{\delta-F_n(\delta)}\le\bar\eta C_2/\sqrt n$. Both $\delta$ and $\delta_n$ are at most $c\bar\eta/a$, so \cref{lem:kernels:fixedpoint} gives $\abs{\delta-\delta_n}\le U^2\bar\eta C_2/\sqrt n$ with $U=1+c\bar\eta/a$.
+
+\emph{Step 5: the block traces.} With $D=P_j$, \eqref{eq:kernels:deqbound} gives $\abs{(p_j/n)/(a_j+\eta_j/(1+\delta))-\E\tr(P_jQ)/n}\le C_2/\sqrt n$. The map $\delta\mapsto(p_j/n)/(a_j+\eta_j/(1+\delta))$ is $(c\bar\eta/a^2)$-Lipschitz on $[0,\infty)$, so $\abs{\E\tr(P_jQ)/n-\bar\tau_j}\le C_3/\sqrt n$ with $C_3=C_2(1+c\bar\eta^2U^2/a^2)$, and \cref{lem:kernels:conc} with $D=P_j$ adds a variance of at most $4c\bar\eta^2/(a^4n^2)$.
+
+\emph{Step 6: the limit.} If the $a_j$ are fixed, $\abs{F_n-F_\infty}\le\sum_j\abs{p_j/n-\pi_j}\eta_j/a_j\to0$ uniformly, so $\abs{\delta_\infty-F_n(\delta_\infty)}\to0$, and \cref{lem:kernels:fixedpoint} for $F_n$ gives $\delta_n\to\delta_\infty$. Then $\bar\tau_j$ converges to the stated limit, and Chebyshev's inequality completes the proof.
+\end{proof}
+
+The risk is a derivative of traces; derivatives of limits need care.
+
+\begin{lemma}[Derivatives of convex limits]\label[lemma]{lem:kernels:convex}
+Let $f_n$ be random differentiable convex functions on an open interval $I$ with $f_n(y)\to f(y)$ in probability for every $y\in I$, where $f$ is deterministic and differentiable at $x\in I$. Then $f_n'(x)\to f'(x)$ in probability.
+\end{lemma}
+
+\begin{proof}
+Fix $\epsilon>0$ and choose $h>0$ with $[x-h,x+h]\subset I$ and both quotients $(f(x\pm h)-f(x))/(\pm h)$ within $\epsilon$ of $f'(x)$. By convexity, $(f_n(x)-f_n(x-h))/h\le f_n'(x)\le(f_n(x+h)-f_n(x))/h$, and both bounds converge in probability to numbers within $\epsilon$ of $f'(x)$; so $\Prob(\abs{f_n'(x)-f'(x)}>2\epsilon)\to0$.
+\end{proof}
+
+\begin{proof}[Proof of \cref{thm:kernels:main}]
+The plan is to write $\bar R_n$ as a bias and a variance, each the derivative of a first-order trace, and to pass to the limit with \cref{prop:kernels:deteq} and \cref{lem:kernels:convex}.
+
+\emph{The effective ridge.} Let $\varphi(t)=t(1-D_1(t))$. The factor $1-D_1$ increases strictly from $1-\sum_j\pi_j$ to $1$; let $t_0$ be its zero if $\sum_j\pi_j>1$ and $t_0=0$ otherwise. Then $\varphi\le0$ on $(0,t_0]$, and on $(t_0,\infty)$ it is positive and strictly increasing to $\infty$, so $\lambda$ has exactly one preimage $\kernelsleff$ with $D_1(\kernelsleff)<1$. Moreover $\varphi'(t)=1-D_1(t)+t\sum_j\pi_j\eta_j/(\eta_j+t)^2=1-D_2(t)$, which is positive at $\kernelsleff$ because the middle expression is a sum of two positive terms there. For a ridge $\mu>0$ let $\delta(\mu)$ be the fixed point of $F_\infty$ with all $a_j=\mu$; with $t=\mu(1+\delta)$, the equation $\delta=(1+\delta)\sum_j\pi_j\eta_j/(\mu(1+\delta)+\eta_j)=(1+\delta)D_1(t)$ reads $\mu=t(1-D_1(t))$. So $\mu(1+\delta(\mu))=\kernelsleff(\mu)$, the effective ridge of the ridge $\mu$.
+
+\emph{Bias and variance.} Write $Q_\mu=(\kernelsSh+\mu I)^{-1}$. Since $Q_\lambda\kernelsSh=I-\lambda Q_\lambda$, $\hat\beta-\beta_*=-\lambda Q_\lambda\beta_*+\sigma Q_\lambda X^\top\varepsilon/n$. Average over $\varepsilon$, which has mean zero and identity covariance, and over $\beta_*$, with $\E\beta_*\beta_*^\top=B=\sum_j(b_j^2/p_j)P_j$:
+\[
+\bar R_n=\lambda^2\tr(BQ_\lambda\Sigma Q_\lambda)+\frac{\sigma^2}n\tr(\Sigma Q_\lambda\kernelsSh Q_\lambda)=:B_n+V_n .
+\]
+
+\emph{The variance.} The function $h_n(\mu)=\tr(\Sigma Q_\mu)/n$ is convex, because $h_n''(\mu)=2\tr(\Sigma Q_\mu^3)/n\ge0$. From $Q_\lambda\kernelsSh Q_\lambda=Q_\lambda-\lambda Q_\lambda^2$, $V_n=\sigma^2(h_n(\lambda)+\lambda h_n'(\lambda))$. By \cref{prop:kernels:deteq} with $A=\mu I$, $h_n(\mu)=\sum_j\eta_j\tr(P_jQ_\mu)/n$ converges in probability to $F_\infty(\delta(\mu))=\delta(\mu)$. Since $\varphi'=1-D_2>0$, the implicit function theorem makes $\kernelsleff(\mu)$ differentiable with derivative $1/(1-D_2)$, so $\mu\delta(\mu)=\kernelsleff(\mu)-\mu$ has derivative $D_2/(1-D_2)$. By \cref{lem:kernels:convex}, $h_n'(\lambda)\to\delta'(\lambda)$, and $V_n\to\sigma^2D_2/(1-D_2)$ at $\kernelsleff$.
+
+\emph{The bias.} For $t\in I=(-\lambda/(2\bar\eta),\infty)$ let $Q_{\lambda,t}=(\kernelsSh+\lambda I+t\Sigma)^{-1}$, which is $Q$ for $A=\lambda I+t\Sigma$, with $a_j=\lambda+t\eta_j\ge\lambda/2$, and $f_n(t)=\tr(BQ_{\lambda,t})=\sum_jb_j^2(n/p_j)\tr(P_jQ_{\lambda,t})/n$. Then $f_n'(t)=-\tr(BQ_{\lambda,t}\Sigma Q_{\lambda,t})$, so $B_n=-\lambda^2f_n'(0)$, and $f_n''(t)=2\tr(B^{1/2}(Q_{\lambda,t}\Sigma)Q_{\lambda,t}(\Sigma Q_{\lambda,t})B^{1/2})\ge0$. By \cref{prop:kernels:deteq}, $f_n(t)\to f(t)=\sum_jb_j^2/(\lambda+t\eta_j+\eta_j/(1+\tilde\delta(t)))$ in probability, where $\tilde\delta(t)$ is the fixed point of $F_t(\delta)=\sum_j\pi_j\eta_j/(\lambda+t\eta_j+\eta_j/(1+\delta))$. At $t=0$, with $\delta=\tilde\delta(0)=\delta(\lambda)$, $\partial_\delta F_0=\sum_j\pi_j\eta_j^2/(\kernelsleff+\eta_j)^2=D_2<1$ and $\partial_tF_t=-(1+\delta)^2D_2$, so the implicit function theorem gives $\tilde\delta'(0)=-(1+\delta)^2D_2/(1-D_2)$. Differentiating $f$, with $\lambda+\eta_j/(1+\delta)=(\kernelsleff+\eta_j)/(1+\delta)$ and $\lambda(1+\delta)=\kernelsleff$,
+\[
+-\lambda^2f'(0)=\sum_j\frac{\kernelsleff^2\eta_jb_j^2}{(\eta_j+\kernelsleff)^2}\Bigl(1-\frac{\tilde\delta'(0)}{(1+\delta)^2}\Bigr)=\frac1{1-D_2}\sum_j\frac{\kernelsleff^2\eta_jb_j^2}{(\eta_j+\kernelsleff)^2}.
+\]
+\Cref{lem:kernels:convex} gives $B_n\to-\lambda^2f'(0)$, and adding the limits of $B_n$ and $V_n$ proves the theorem.
+\end{proof}
+
+\paragraph{What the general theorems add.} Deterministic targets, through bilinear forms $v^\top Qv$; non-Gaussian features, through the Hanson--Wright inequality; infinitely many eigenvalues, through effective ranks; multiplicative errors.
+
+\begin{theorem}[\textcite{ChengMontanari2024}, Theorem~1, in outline]\label{thm:kernels:cm}
+Let $x=\Sigma^{1/2}z$ with $\Sigma$ of finite trace and norm $1$, and $z$ with independent sub-Gaussian coordinates of mean $0$ and variance $1$ (or with a convex concentration property); assume $\norm{\Sigma^{-1/2}\beta_*}<\infty$ and an effective-rank condition on $\Sigma$. Define $\kernelsleff$ by \eqref{eq:kernels:leff} with the eigenvalues of $\Sigma$, and $B_n$, $V_n$ as the two terms of \eqref{eq:kernels:formula}. Under a condition relating $n$, the effective rank and $\lambda/\kernelsleff$, for every $D>0$, with probability $1-O(n^{-D+1})$, the bias and the variance of ridge regression given $X$ are $B_n(1+\epsilon_n)$ and $V_n(1+\epsilon_n')$, with explicit $\epsilon_n,\epsilon'_n\to0$.
+\end{theorem}
+
+For kernels, \textcite{MisiakiewiczSaeed2024} prove the same equivalent, in an unrefereed preprint, under hypercontractivity of the top eigenfunctions, a relaxed Hanson--Wright inequality, and a high-frequency part of the kernel matrix close to a multiple of the identity, which inner-product kernels on the sphere satisfy in high dimension. On the sphere at $n\asymp d^\ell$ the curves are theorems: \textcite[Theorem~2]{XiaoEtAl2023} for the risk averaged over isotropic random labels, and \textcite{Misiakiewicz2022}, in a preprint, with the effective regularization $(n\lambda+\mu_{>\ell})/\mu_\ell$, in which the mass of the higher harmonics acts as ridge (\cref{ex:kernels:block}). Between the stages the kernel learns exactly the projection of $f_*$ on the polynomials of degree at most $\ell$ \parencite[Thm.~4]{GhorbaniEtAl2021}.
+
+For random features, $\lambda_{\mathrm{MM}}=\lambda/\psi$ is the ridge in Mei and Montanari's units.
+
+\begin{theorem}[\textcite{MeiMontanari2022}, Theorems~1, 2 and~7]\label{thm:kernels:mm}
+Let $x_i$, $\theta_j$ be independent and uniform on $S^{d-1}(\sqrt d)$, $N/d\to\psi$, $n/d\to\alpha$ in $(0,\infty)$, and $\varsigma$ weakly differentiable with $\abs{\varsigma(u)},\abs{\varsigma'(u)}\le c_0e^{c_1\abs u}$ and $\mu_0,\mu_1,\mu_*\ne0$. Let $y_i=f_d(x_i)+\sigma\varepsilon_i$ with $\E\varepsilon^4<\infty$ and $f_d(x)=\beta_0+\ip{\beta_1}x+f_d^{\mathrm{NL}}(x)$, where $\norm{\beta_1}^2\to F_1^2$ and $f_d^{\mathrm{NL}}$ is a centered isotropic Gaussian process orthogonal to the polynomials of degree at most one, of variance tending to $F_*^2$. For every $\lambda_{\mathrm{MM}}>0$ the expected excess risk of random-features ridge regression is, up to $o(1)$,
+\[
+F_1^2\,\mathscr B(\zeta,\psi,\alpha,\lambda_{\mathrm{MM}}/\mu_*^2)+(\sigma^2+F_*^2)\,\mathscr V(\zeta,\psi,\alpha,\lambda_{\mathrm{MM}}/\mu_*^2)+F_*^2,
+\]
+with $\zeta=\mu_1/\mu_*$ and $\mathscr B$, $\mathscr V$ explicit functions of the solution of two algebraic equations (their Definition~1). For linear $f_d$ the risk converges in probability, and the same limit holds for ridge regression on the Gaussian covariates $u=\mu_0\mathbf1+\mu_1\Theta x/\sqrt d+\mu_*w$ with $x\sim\Normal(0,I_d)$ (Theorem~7, whose proof is omitted as a repetition of that of Theorem~2).
+\end{theorem}
+
+At $N,n\asymp d$ random features learn only the linear part of $f_*$. The proof writes the risk as traces of resolvent products, and its replacement of the feature kernel by $\mu_1^2\Theta\Theta^\top/d+\mu_*^2I$ inside them is the rigorous form of the Hermite heuristic; \textcite[Theorem~2.1]{ElKaroui2010} had proved the matrix version, a kernel matrix $(f(x_i^\top x_j/p))$ with $n\asymp p$ being in operator norm $f'(0)XX^\top/p$ plus multiples of $\mathbf1\mathbf1^\top$ and $I$. Beyond ridge, \textcite{HuLu2023} prove Gaussian equivalence for convex losses, odd activations with three bounded derivatives, strongly convex penalties and Gaussian weights, by a Lindeberg replacement of the samples; \textcite{MontanariSaeed2022} remove convexity for minimizers in a ``domain of Gaussianity'', by interpolating between the features and Gaussian vectors with the same covariance, for centered activations with three bounded derivatives (their Corollary~2); full proofs are in their arXiv version~3 (2026). Neither theorem covers the ReLU.
+
+\section{The proof: where the formula fails}\label{sec:kernels:counter}
+
+In fixed dimension at zero ridge neither Gaussian features nor a nearly scalar high-frequency kernel matrix are available, and the formula is wrong. The cleanest case is the circle kernel of \cref{sec:kernels:question}, whose RKHS is the Sobolev space $H^1$.\sidenote{The periodic linear spline minimizes $\norm{f'}$ among the interpolants of the data; the term $c_0(f)^2$ of the RKHS norm adds a small parabolic correction (\cref{prop:kernels:circle}).}
+
+\begin{computation}{The formula at zero ridge on the circle}\label{comp:kernels:circle}
+\step \emph{The spectrum.} $\eta_0=1$ and $\eta_k=k^{-2}$ twice. With $a=t^{-1/2}$, $1/(1+tk^2)=a^2/(a^2+k^2)$, and the classical sums of $(k^2+a^2)^{-1}$ and $(k^2+a^2)^{-2}$ over $k\ge1$ give
+\begin{align*}
+\kernelsdf_1(t)&=\frac1{1+t}+\pi a\coth\pi a-1,\\
+\kernelsdf_2(t)&=\frac1{(1+t)^2}+\frac{\pi a\coth\pi a+\pi^2a^2\operatorname{csch}^2\pi a-2}2 .
+\end{align*}
+\step \emph{The effective ridge.} At $\lambda=0$, \eqref{eq:kernels:leff} reads $\kernelsdf_1(\kernelsleff)=n$; $\kernelsdf_1$ decreases from $+\infty$ to $0$, so there is one root $\lambda_n$, and $\lambda_n\to0$. As $a\to\infty$, $\coth\pi a-1$ and $a^2\operatorname{csch}^2\pi a$ vanish exponentially, so $\kernelsdf_1=\pi a+o(1)$, $\kernelsdf_2=\pi a/2+o(1)$, $\lambda_n=\pi^2n^{-2}(1+O(1/n))$ and $\kernelsdf_2(\lambda_n)/n\to\frac12$.
+\step \emph{The noise term.} The variance term of \eqref{eq:kernels:formula} at $\lambda=0$ is $\sigma^2(\kernelsdf_2/n)/(1-\kernelsdf_2/n)\to\sigma^2$; it is $0.98657\sigma^2$ at $n=16$ and $0.99978\sigma^2$ at $n=64$.
+\step \emph{Other spectra.} For $\eta_k=k^{-b}$, $b>1$, $\kernelsdf_2/\kernelsdf_1\to1-1/b$ and the noise term tends to $\sigma^2(b-1)$ (\cref{ex:kernels:powerlaw}): the \term{tempered overfitting}\index{tempered overfitting} constant of \textcite{MallinarEtAl2022} (test error $b\sigma^2$).
+\end{computation}
+
+\begin{proposition}[The ridgeless circle]\label[proposition]{prop:kernels:circle}
+Let $P_x$ be uniform on the circle $[0,2\pi)$, $K$ the kernel of \cref{comp:kernels:circle}, and $y_i=\sigma\varepsilon_i$ (target $0$). For $n\ge2$ distinct points whose largest gap between circularly consecutive points is $G$, the minimum-norm interpolant $\hat f$ satisfies
+\[
+\Bigl|\E_\varepsilon\norm{\hat f}^2_{L^2}-\frac{2\sigma^2}3\Bigr|\le\sigma^2\Bigl(\frac{G^3}{12\pi}+\frac{G^5}{128\pi}\Bigr).
+\]
+If the points are independent and uniform, then $\E_\varepsilon\norm{\hat f}^2_{L^2}\to2\sigma^2/3$ in probability, while the formula \eqref{eq:kernels:formula} at $\lambda=0$ tends to $\sigma^2$: the formula overestimates the ridgeless noise term by the factor $3/2$.
+\end{proposition}
+
+\begin{proof}
+The plan is to identify the RKHS norm, show that the interpolant is a linear spline plus a small parabolic correction, and compute the noise of the spline exactly. Norms and inner products are in $L^2(\dd\theta/2\pi)$, and $c_0(f)=\frac1{2\pi}\int_0^{2\pi}f$.
+
+\emph{The RKHS norm.} For $f=c_0+\sum_{k\ge1}(a_k\sqrt2\cos k\theta+b_k\sqrt2\sin k\theta)$, $\norm f_\cH^2$ is the sum of the squared coefficients divided by the eigenvalues, $c_0^2+\sum_kk^2(a_k^2+b_k^2)=c_0(f)^2+\norm{f'}^2$. So $\hat f$ minimizes $J(f)=c_0(f)^2+\norm{f'}^2$ over $H^1$ subject to $f(\theta_i)=y_i$; $J$ is the square of a Hilbert norm, so the minimizer is unique.
+
+\emph{The interpolant.} Let $s$ be the periodic piecewise-linear interpolant of the data; on each gap $[\theta_i,\theta_{i+1}]$, of length $g_i$, let $q(\theta)=(\theta-\theta_i)(\theta_{i+1}-\theta)$; and put $S_3=\sum_ig_i^3$. Let $h\in H^1$ vanish at the nodes. Then $\ip{s'}{h'}=0$, because $s'$ is constant on each gap and $h'$ integrates to zero there, and integration by parts on each gap, with $q''=-2$, gives $c_0(h)=\frac12\ip{h'}{q'}$. Hence $J(s+h)=(c_0(s)+c_0(h))^2+\norm{s'}^2+\norm{h'}^2$, and by the Cauchy--Schwarz inequality $\norm{h'}^2\ge4c_0(h)^2/\norm{q'}^2$, with equality for multiples of $q$. Since $\norm{q'}^2=S_3/(6\pi)$, it remains to minimize $(c_0(s)+c)^2+24\pi c^2/S_3$ over $c=c_0(h)$, and
+\[
+\hat f=s-\tau q,\qquad\tau=\frac{12\pi\,c_0(s)}{S_3+24\pi}.
+\]
+
+\emph{The noise of the spline.} On the gap from $\theta_i$ to $\theta_{i+1}$, $s=(1-u)y_i+uy_{i+1}$ with $u$ uniform on $[0,1]$ when $\theta$ is uniform on the gap, and $y_i$, $y_{i+1}$ are independent because $n\ge2$. Hence, for every configuration of points,
+\[
+\E_\varepsilon\norm s^2=\frac{\sigma^2}{2\pi}\sum_ig_i\int_0^1\bigl((1-u)^2+u^2\bigr)\dd u=\frac{2\sigma^2}3 .
+\]
+
+\emph{The correction.} Write $s=\sum_iy_i\phi_i$, with $\phi_i$ the hat function at $\theta_i$. Then $c_0(s)=\sum_iw_iy_i$ with $w_i=(g_{i-1}+g_i)/(4\pi)\le G/(2\pi)$ and $\sum_iw_i=1$, and $\tau=12\pi c_0(s)/(S_3+24\pi)$ with $12\pi/(S_3+24\pi)\le\frac12$, so that $\norm{\hat f}^2-\norm s^2=-2\tau\ip sq+\tau^2\norm q^2$. Integrating $q$ against the two linear pieces of $\phi_i$ gives $\ip{\phi_i}q=(g_{i-1}^3+g_i^3)/(24\pi)$, and the $y_i$ are uncorrelated, so
+\[
+0\le\E_\varepsilon\bigl[c_0(s)\ip sq\bigr]=\sigma^2\sum_iw_i\ip{\phi_i}q=\frac{\sigma^2}{96\pi^2}\sum_i(g_{i-1}+g_i)(g_{i-1}^3+g_i^3)\le\frac{\sigma^2G^3}{12\pi},
+\]
+by $g_{i-1}^3+g_i^3\le G^2(g_{i-1}+g_i)$, $g_{i-1}+g_i\le2G$ and $\sum_i(g_{i-1}+g_i)=4\pi$. With $\abs q\le G^2/4$ and $\E_\varepsilon c_0(s)^2=\sigma^2\sum_iw_i^2\le\sigma^2G/(2\pi)$, the two terms of $\E_\varepsilon\norm{\hat f}^2-\E_\varepsilon\norm s^2$ are at most $\sigma^2G^3/(12\pi)$ and $\sigma^2G^5/(128\pi)$ in absolute value.
+
+\emph{Random points.} The gap after $\theta_i$ exceeds $x$ only if the other $n-1$ points avoid an arc of length $x$, so $\Prob(G>x)\le n(1-x/2\pi)^{n-1}$; for $x=4\pi\log n/n$ this is at most $n^{-1+2/n}\to0$. So $G\to0$ in probability and the bound tends to $0$. The statement about the formula is \cref{comp:kernels:circle}.
+\end{proof}
+
+The order $G^3$ and its constant are sharp: for equally spaced points the deviation is $\sigma^2G^3/(12\pi)$ up to a factor $1+O(G^2)$ (\cref{ex:kernels:grid}). With a target $f_*\in\cH$ nothing changes: the interpolation error of $s$ is at most $2\sqrt{2\pi G}\norm{f_*'}$, the correction is $O(G^2)$, and the cross term vanishes in expectation over the noise, so $\E_\varepsilon R\to2\sigma^2/3$. The formula matches Gaussian features with the same spectrum (\cref{fig:kernels:circle}): the eigenfunctions make the difference. The Gaussian approximation spreads the unresolved modes as independent noise over every coordinate, while on the circle the interpolant is local, a hat function per sample, and its noise is an average over one gap. In the language of \textcite{MisiakiewiczSaeed2024}, the high-frequency part of the kernel matrix is far from a multiple of the identity; a ridge that makes up most of the effective ridge, $\lambda/\kernelsleff\to1$, makes that part negligible against $n\lambda I$ and restores the formula (\cref{sec:kernels:measure}).\sidenote{That Gaussian-design predictions can fail in fixed dimension was known in other forms: below a crossover ridge the formula gets the exponent of the learning curve of a Laplace kernel wrong \parencite{TomasiniEtAl2022}; Gaussian equivalence needs a strong ridge \parencite{ChengEtAl2024b}; and a kernel on the disk has a ridgeless variance that appears to diverge \parencite{BarzilaiShamir2024}.}
+
+The ingredients of the example are known. \Textcite{BelkinEtAl2018} note that in one dimension the minimum-norm interpolant of the Laplace kernel $e^{-\abs{x-x'}/w}$ tends to linear interpolation as the bandwidth $w$ grows, and their bound $2\sigma^2/(d+2)$ on the noise term of simplicial interpolation is $2\sigma^2/3$ at $d=1$. \Textcite{MallinarEtAl2022}, who checked $b\sigma^2$ on Gaussian features, call this tempered overfitting, ask that the universality assumption be checked for each kernel, and leave open whether the Laplace kernel on a sphere reaches the formula's noise term or a fixed fraction of it. For a kernel with RKHS $H^1$ the circle answers this in one dimension: the fraction is $2/3$. We have not found this comparison in print.
+
+\section{Measuring it}\label{sec:kernels:measure}
+
+Four scripts measure the formula. Each runs in under two minutes on one core; intervals are Student-$t$ $95\%$ intervals over independent repetitions.
+
+\paragraph{The theorem.}\sidenote{The scripts for the theorem, the circle and the sphere average over the noise analytically, through traces, which removes the largest source of Monte Carlo error.} The script \kernelsscript{theorem.py} takes three blocks with $\eta=(1,0.3,0.05)$ and $\pi=(0.3,0.6,1.2)$, with $b^2=(0.5,1,2)$, $\sigma^2=0.25$ and $\lambda=0.05$, for which $\kernelsleff=0.236079$, $D_2=0.420909$ and $R_*=0.431273$. It computes $\bar R_n$ for each design by the trace formula of the proof; averaged over $60$, $40$, $20$, $10$, $5$ designs at $n=50,100,200,400,800$ ($p=2.1n$), it is $0.43426\pm0.00187$, $0.43258\pm0.00128$, $0.43153\pm0.00060$, $0.43170\pm0.00069$ and $0.43127\pm0.00098$: the finite-size bias, $0.0030$ at $n=50$ and $0.0013$ at $n=100$, decays about like $1/n$, faster than the $n^{-1/2}$ of \cref{prop:kernels:deteq}. The training error, $0.03062$ at $n=800$, matches $(\lambda/\kernelsleff)^2(R_*+\sigma^2)=0.030559$ (\cref{ex:kernels:gcv}).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=80mm,height=47mm]
+\nextgroupplot[xmode=log,xmin=6,xmax=6000,ymin=0.55,ymax=1.1,xlabel={samples $n$},ylabel={noise term $\E_\varepsilon R/\sigma^2$},
+  title={(a) $\lambda=0$, target $0$},legend style={font=\scriptsize,at={(0.97,0.52)},anchor=east}]
+\addplot[physpred] table[x=n,y=noise0] {figures/data/12-kernels-circle-curve.dat};
+\addplot[proofpred] coordinates {(6,0.6666667) (6000,0.6666667)};
+\addplot[measured,ebars] table[x=n,y=krr,y error plus=krrci,y error minus=krrci] {figures/data/12-kernels-circle-noise.dat};
+\addplot[measured3,ebars] table[x=n,y=gcm,y error plus=gcmci,y error minus=gcmci] {figures/data/12-kernels-circle-noise.dat};
+\legend{formula,proved limit $2/3$,kernel,Gaussian features}
+\nextgroupplot[xmode=log,ymode=log,xmin=10,xmax=1600,ymin=0.02,ymax=0.7,ytick={0.03,0.1,0.3},log ticks with fixed point,xlabel={samples $n$},ylabel={excess risk $\E_\varepsilon R$},
+  title={(b) $\lambda=10^{-3}$, $\sigma^2=0.1$, sawtooth target}]
+\addplot[physpred] table[x=n,y=lc] {figures/data/12-kernels-circle-curve.dat};
+\addplot[measured,ebars] table[x=n,y=krr,y error plus=krrci,y error minus=krrci] {figures/data/12-kernels-circle-lc.dat};
+\addplot[measured3,ebars] table[x=n,y=gcm,y error plus=gcmci,y error minus=gcmci] {figures/data/12-kernels-circle-lc.dat};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Kernel ridge regression on the circle with $\eta_0=1$, $\eta_k=k^{-2}$ (dots), Gaussian features with the same spectrum (squares), and the formula \eqref{eq:kernels:formula} (solid). (a) Ridgeless, pure noise: the exact noise term of the interpolant, from its closed form, averaged over $400$ point sets per $n$, tends to the proved limit $2/3$ (dashed); Gaussian features ($80$, $24$, $12$ draws at $n\le128$, $256$, $512$; modes up to $k=4n$ explicit, the rest as a diagonal term) follow the formula, which tends to $1$. (b) Ridge $\lambda=10^{-3}$, $\sigma^2=0.1$, target the sawtooth $(\pi-\theta)/\sqrt2$, with power $k^{-2}$ on the sine modes: exact $\E_\varepsilon R$ over $100$, $40$, $12$ point sets ($n\le128$, $\le512$, $1024$). Seeds 1201, 1202. Script: \texttt{figures/scripts/12-kernels-circle.py}.}\label{fig:kernels:circle}
+\end{figure}
+
+\paragraph{The circle.} \Cref{fig:kernels:circle}(a) is \cref{prop:kernels:circle} at finite $n$. The interpolant's noise term, computed from the closed form $s-\tau q$ (equal to the kernel computation to $10^{-11}$ at $n=8$, $32$), is $0.6058$ at $n=8$, $0.6524$ at $n=16$, and within $10^{-5}$ of $2/3$ from $n=256$ on; Gaussian features give $1.0001\pm0.0032$, $1.0010\pm0.0019$ and $1.0025\pm0.0033$ at $n=128$, $256$, $512$, on the formula. With a ridge the agreement returns (\cref{fig:kernels:circle}(b)): at $n=128$, $512$, $1024$ the kernel gives $0.0852\pm0.0061$, $0.0413\pm0.0032$, $0.0323\pm0.0036$ against $0.0856$, $0.0397$, $0.0322$, though $9$ to $19\%$ above the formula at $n\le64$. Sweeping the ridge at $n=512$, the ratio of the kernel's noise term to the formula's is $0.665$ when $\lambda/\kernelsleff=0.003$, $0.735$ at $0.18$, $0.925$ at $0.55$ and $0.991$ at $0.82$ (\cref{ex:kernels:sweep}).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[rplot,height=0.5\linewidth,xmode=log,ymode=log,xmin=8,xmax=2200,ymin=0.015,ymax=3,xlabel={samples $n$ ($d=20$)},ylabel={excess risk $\E_\varepsilon R$},
+  legend pos=south west,legend style={font=\scriptsize}]
+\addplot[guide,forget plot] coordinates {(20,0.015) (20,3)};
+\addplot[guide,forget plot] coordinates {(209,0.015) (209,3)};
+\addplot[physpred] table[x=n,y=formula] {figures/data/12-kernels-sphere-curve.dat};
+\addplot[physpred2] table[x=n,y=linear] {figures/data/12-kernels-sphere-curve.dat};
+\addplot[measured,ebars] table[x=n,y=krr,y error plus=krrci,y error minus=krrci] {figures/data/12-kernels-sphere-sim.dat};
+\legend{formula with the kernel's spectrum,linear Gaussian equivalent,kernel ridge regression}
+\node[font=\scriptsize,text=muted,anchor=south west] at (axis cs:22,0.22) {$n=d$};
+\node[font=\scriptsize,text=muted,anchor=south west] at (axis cs:220,1.5) {$n=B(d,2)$};
+\end{axis}
+\end{tikzpicture}
+\caption{Kernel ridge regression on $S^{19}(\sqrt{20})$ with the ReLU arc-cosine kernel, target $x_1+x_1x_2$ (powers $1$ and $d/(d+2)$ in degrees $1$ and $2$), $\sigma^2=0.1$, unnormalized ridge $n\lambda=10^{-3}$. Dots: exact $\E_\varepsilon R$ over $30$, $12$, $6$ data sets ($n\le290$, $\le800$, larger). Solid: the formula with the kernel's spectrum at $d=20$ (degrees $0$ to $16$). Dotted: the formula for the linear Gaussian equivalent, in which the mass of degree at least $2$ is ridge and the degree-$2$ target is noise. Seed 1203. Script: \texttt{figures/scripts/12-kernels-sphere.py}.}\label{fig:kernels:sphere}
+\end{figure}
+
+\paragraph{The sphere.} \Cref{fig:kernels:sphere} uses the ReLU arc-cosine kernel $h(t)=(\sqrt{1-t^2}+(\pi-\arccos t)t)/(2\pi)$ on $S^{19}(\sqrt{20})$. Its eigenvalue on the harmonics of degree $k$ is $\xi_k=\E[h(\tau)P_k(\tau)]$ (Funk--Hecke), with $P_k$ the Gegenbauer polynomial and $\tau$ the inner product of two independent uniform unit vectors; the degree masses $B(d,k)\xi_k$ are $0.163182$, $0.25$, $0.077336$ for $k=0,1,2$, and $0.009482$ beyond.\sidenote{The masses of odd degree $3$ and higher vanish: the ReLU has no odd Hermite coefficient beyond the first, so $h$ has no odd part beyond $t/4$.} The simulated risk is exact in the noise and in the population, through the $L^2$ Gram kernel $\sum_k\xi_k^2B(d,k)P_k$ (checked against $10^5$ test points). The formula with the full spectrum follows the simulation through both stages, $n\approx d$ and $n\approx B(d,2)=209$: $0.3551\pm0.0178$ against $0.3413$ at $n=209$, $0.04149\pm0.00044$ against $0.04149$ at $n=800$, $0.02246\pm0.00005$ against $0.02250$ at $n=1600$. The linear Gaussian equivalent, exact at $n\asymp d$ as $d\to\infty$, stalls at the power of the degree-$2$ target, $0.92$ at $n=1600$: the kernel learns it once $n$ is of order $d^2$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=15mm},rplot,width=80mm,height=47mm]
+\nextgroupplot[xmin=0,xmax=6.5,ymin=0,ymax=3.7,xlabel={width $\psi=N/d$},ylabel={excess risk $R$},
+  title={(a) $\lambda_{\mathrm{MM}}=10^{-3}$},legend columns=2,legend style={font=\scriptsize,at={(0.5,0.98)},anchor=north}]
+\addplot[physpred] table[x=psi,y=r3] {figures/data/12-kernels-rf-curve.dat};
+\addplot[proofpred,forget plot] table[x=psi,y=r3] {figures/data/12-kernels-rf-curve.dat};
+\addplot[physpred2,restrict y to domain=0:2.35] table[x=psi,y=rless] {figures/data/12-kernels-rf-curve.dat};
+\addplot[measured,ebars] table[x=psi,y=rf,y error plus=rfci,y error minus=rfci] {figures/data/12-kernels-rf-sim3.dat};
+\addplot[measured3,ebars] table[x=psi,y=gcm,y error plus=gcmci,y error minus=gcmci] {figures/data/12-kernels-rf-sim3.dat};
+\legend{formula (a theorem),ridgeless limit,random features,Gaussian covariates}
+\nextgroupplot[xmin=0,xmax=6.5,ymin=0.15,ymax=1.05,xlabel={width $\psi=N/d$},
+  title={(b) $\lambda_{\mathrm{MM}}=0.1$},legend pos=north east,legend style={font=\scriptsize}]
+\addplot[physpred] table[x=psi,y=r1] {figures/data/12-kernels-rf-curve.dat};
+\addplot[proofpred,forget plot] table[x=psi,y=r1] {figures/data/12-kernels-rf-curve.dat};
+\addplot[guide] table[x=psi,y=r1alt] {figures/data/12-kernels-rf-curve.dat};
+\addplot[measured,ebars] table[x=psi,y=rf,y error plus=rfci,y error minus=rfci] {figures/data/12-kernels-rf-sim1.dat};
+\addplot[measured3,ebars] table[x=psi,y=gcm,y error plus=gcmci,y error minus=gcmci] {figures/data/12-kernels-rf-sim1.dat};
+\legend{formula (a theorem),with $\zeta=\mu_1^2/\mu_*^2$,random features,Gaussian covariates}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Random-features ridge regression with ReLU features, $d=100$, $n=300$ ($\alpha=3$), linear target with $F_1^2=1$, noise $\sigma^2=0.5$. Solid with dashes over it: Mei and Montanari's formula with $\zeta=\mu_1/\mu_*$, the physical prediction and, for $\lambda_{\mathrm{MM}}>0$, a theorem (\cref{thm:kernels:mm}). Dots: random features; squares: the Gaussian covariate model; $20$ repetitions each. Dotted in (a): the ridgeless formula (their Theorem~3), conjectured to be the risk of the ridgeless estimator. Thin dashed in (b): the formula with $\zeta=\mu_1^2/\mu_*^2$, as eq.~(4) of their arXiv version~5 prints it. Seed 1204. Script: \texttt{figures/scripts/12-kernels-rf.py}.}\label{fig:kernels:rf}
+\end{figure}
+
+\paragraph{Random features.} \Cref{fig:kernels:rf} shows the double descent of random features at $\alpha=3$: a peak at $N=n$ of height $2.0541$ for $\lambda_{\mathrm{MM}}=10^{-3}$ (simulated $2.0217\pm0.1290$ for random features, $2.0802\pm0.1195$ for Gaussian covariates), removed by the larger ridge. Of the $44$ simulated points, $42$ contain the formula in their intervals, about what $95\%$ intervals should give, and random features and Gaussian covariates cannot be told apart at this precision. The formula needs $\zeta=\mu_1/\mu_*$, as eq.~(9) of Mei and Montanari defines it: with $\mu_1^2/\mu_*^2$, as their eqs.~(4) and~(52) print it, the prediction at $\lambda_{\mathrm{MM}}=0.1$, $\psi=2$ is $0.351$, against $0.4842\pm0.0219$ (random features), $0.4915\pm0.0174$ (Gaussian covariates) and $0.4912$ (formula).
+
+No measurement contradicts a theorem. Two observations go beyond the theorems: at $d=20$ the formula with the full spectrum is accurate across both learning stages, and on the circle its error is governed by $\lambda/\kernelsleff$.
+
+\section{The status board}\label{sec:kernels:board}
+
+The learning-curve formula is a theorem for Gaussian features, for kernels on the sphere at $n\asymp d^\ell$ (with random labels) and for random features with a ridge; in fixed dimension with a ridge it is supported by numerics, and without one it is false. Gaussian equivalence is proved for ridge and for convex losses with smooth odd activations, false for the linear equivalent beyond the proportional regime or after a large step and for the classification error on real data, and conjectured for the ReLU with classification losses.
+
+\begin{statusboard}
+\statusrow{Learning-curve formula \eqref{eq:kernels:formula} for Gaussian features, $\lambda>0$}{\proved}{\textcite{HastieEtAl2022}; \textcite[Thm.~1]{ChengMontanari2024}; \cref{thm:kernels:main}}
+\statusrow{The formula for kernels on the sphere at $n\asymp d^\ell$: learning stages and peaks}{\provedunder}{random labels: \textcite[Thm.~2]{XiaoEtAl2023}; between stages: \textcite[Thm.~4]{GhorbaniEtAl2021}}
+\statusrow{The formula for general kernels with concentrated features}{\provedpreprint}{\textcite{MisiakiewiczSaeed2024}, arXiv:2403.08938v1, under concentration conditions; real data: numerics}
+\statusrow{The formula at $\lambda=0$ in fixed dimension}{\knownfalse}{circle, $2\sigma^2/3$ against $\sigma^2$: \cref{prop:kernels:circle}; the $2\sigma^2/3$ of linear interpolation: \textcite{BelkinEtAl2018}}
+\statusrow{Random-features ridge risk (Mei--Montanari), $\lambda>0$}{\proved}{\textcite[Thms.~1--2]{MeiMontanari2022}}
+\statusrow{Ridgeless random features as the $\lambda\to0$ limit of the formula}{\conjectured}{numerics; \textcite[Remark~1]{MeiMontanari2022}}
+\statusrow{Random features $\approx$ Gaussian covariates, ridge}{\proved}{\textcite[Thm.~7]{MeiMontanari2022}, linear target, proof omitted as a repetition; with a proof, odd smooth activations: \textcite{HuLu2023}}
+\statusrow{Random features $\approx$ Gaussian covariates, convex losses}{\provedunder}{odd smooth activation, strongly convex penalty: \textcite{HuLu2023}}
+\statusrow{The same for ReLU features with logistic or hinge loss}{\conjectured}{numerics: sign features, logistic loss \parencite{GeraceEtAl2020}; ReLU features, max-margin \parencite{MontanariEtAl2025}; the universality theorems exclude the ReLU}
+\statusrow{The Gaussian covariate model for real feature maps on real data}{\knownfalse}{classification error, MNIST and CIFAR-10: \textcite[arXiv v3, Figs.~3, 7]{LoureiroEtAl2022}; square loss: conjectured}
+\statusrow{Linear Gaussian equivalence at $n$ or $N\asymp d^\ell$, $\ell\ge2$, or after one large gradient step}{\knownfalse}{\textcite{GhorbaniEtAl2021,MeiMisiakiewiczMontanari2022}; \cref{fig:kernels:sphere}; \textcite{BaEtAl2022}}
+\end{statusboard}
+
+\section{Where the translation fails}\label{sec:kernels:fails}
+
+\paragraph{What was assumed.} The theorem of this chapter assumes Gaussian features, a positive ridge and a target spread isotropically over each eigenspace; the general theorems keep a concentration hypothesis that real feature maps need not satisfy. The kernel theorems assume data uniform on the sphere or the hypercube, and \textcite{XiaoEtAl2023} average over random labels. Mei and Montanari assume spherical data and features, a linear target plus an isotropic Gaussian process, and $\lambda>0$; Hu and Lu exclude the ReLU, which is not odd. The physics asserts the formula for every kernel and data law.
+
+\paragraph{Where the physics is wrong, or not yet right.} At zero ridge in fixed dimension the Gaussian approximation misjudges the noise term (\cref{prop:kernels:circle}) and can miss its divergence \parencite{ChengEtAl2024b}. Beyond the proportional regime the linear equivalent declares the nonlinear part of the target unlearnable, while kernels and random features learn degree-$\ell$ polynomials once $n$ (and $N$) exceed $d^\ell$ \parencite{GhorbaniEtAl2021,MeiMisiakiewiczMontanari2022}; the refined, degree-$\ell$ equivalent of the physicists' learning stages is the one that is proved. Even it fails at $n\asymp N\asymp d^2$ for single-index targets and non-quadratic losses, by a preprint of \textcite{WenEtAl2025}.\sidenote{Their conditional Gaussian equivalent keeps, along one direction of feature space, the second Hermite polynomial of the target's index, and is Gaussian in the orthogonal complement.} After one large gradient step the features carry a spike that the plain equivalent misses \parencite{BaEtAl2022}. For data from a mixture of Gaussians, one Gaussian with the same covariance can fail when the target is aligned with the means and covariances of the clusters \parencite{PesceEtAl2023}. And \textcite{LoureiroEtAl2022} conjecture that the Gaussian covariate model describes real feature maps on real data: their experiments and their universality theorem for linear teachers support it for the square loss, and their own experiments show that it fails for the classification error on MNIST and CIFAR-10.
+
+\paragraph{Open problems.} A criterion, for a given kernel and data distribution, for the exactness of the Gaussian approximation; in particular the ridgeless learning curve in fixed dimension, of which the circle gives one constant (\cref{ex:kernels:research}). The interchange of $\lambda\to0$ and $d\to\infty$ for random features \parencite[Remark~1]{MeiMontanari2022}. Gaussian equivalence for ReLU random features with logistic or hinge loss. And an explanation of the accuracy of the finite-$d$ formula across learning stages (\cref{fig:kernels:sphere}).
+
+\begin{exercises}
+\item \consolidation (The flat spectrum.) Derive the one-block case of \cref{thm:kernels:main} and check that it is \cref{thm:ridge:risk}. For $\gamma=\lambda=r^2=\sigma^2=1$, show that $\kernelsleff$ is the golden ratio $\phi$ and $R_*=1/\phi=0.618034$.\label{ex:kernels:flat}
+
+\item \consolidation (Spectral bias.) Show that $\kernelsleff\ge\lambda$, that $\kernelsleff\to\lambda$ as $n\to\infty$ for a fixed summable spectrum, and that the modal error $\kernelsleff^2/((\eta_k+\kernelsleff)^2(1-\kernelsdf_2/n))$ decreases in $\eta_k$.
+
+\item \consolidation (Hermite data of the ReLU.) Show that $\mu_0=\mu_2=1/\sqrt{2\pi}$, $\mu_1=\frac12$, $\mu_*^2=\frac14-\frac1{2\pi}$ and $\zeta=1.658897$, and that the Taylor coefficients of $h(\rho)=(\sqrt{1-\rho^2}+(\pi-\arccos\rho)\rho)/(2\pi)$ at $0$ are $\frac1{2\pi}$, $\frac14$, $\frac1{4\pi}$, which are $\mu_k^2/k!$ for $k=0,1,2$.
+
+\item \consolidation (Power-law spectra.) For $\eta_k=k^{-b}$, $b>1$, show that $\kernelsdf_2(t)/\kernelsdf_1(t)\to1-1/b$ as $t\to0$, so that the ridgeless noise term of the formula tends to $\sigma^2(b-1)$. \hint{compare sums with integrals; $\int_0^\infty(1+v^b)^{-2}\dd v=(1-1/b)\int_0^\infty(1+v^b)^{-1}\dd v$.}\label{ex:kernels:powerlaw}
+
+\item \byhand (The training error.) In the replica computation write $h^a=\omega+\sqrt{\chi/\beta}\,z_a$, with $\omega$ Gaussian of variance $q$, and apply Laplace's method in the $z_a$: show that the training residual is $(y-\omega)/(1+\chi)$, so that the training error is $(\lambda/\kernelsleff)^2(R+\sigma^2)$ ($0.03062$ against $0.030559$ in \kernelsscript{theorem.py}). Why is this generalized cross-validation?\label{ex:kernels:gcv}
+
+\item \byhand (A block that acts as ridge.) Add to a spectrum $p'$ modes of eigenvalue $\mu/p'$ and total target power $v^2$, and let $p'\to\infty$ at fixed $n$. Show that in \eqref{eq:kernels:leff} the block replaces $\lambda$ by $\lambda+\mu/n$, and that in \eqref{eq:kernels:formula} its target power is unlearned and acts as noise. Relate this to Misiakiewicz's effective regularization $(n\lambda+\mu_{>\ell})/\mu_\ell$.\label{ex:kernels:block}
+
+\item \byhand (Grid points.) For equally spaced points on the circle, use the closed form of \cref{prop:kernels:circle} to show that the ridgeless noise term is $\sigma^2(\frac23-\frac{2\pi^2}{3n^3}+O(n^{-5}))$; the formula, blind to the points, still predicts $\sigma^2(1+o(1))$.\label{ex:kernels:grid}
+
+\item \translate (Iterating the saddle point.) Show that the map $F$ of \cref{lem:kernels:fixedpoint} is increasing and concave, that $\delta_{k+1}=F(\delta_k)$ from $\delta_0=0$ increases to $\delta_*$, and that for $A=\lambda I$, $F'(\delta_*)=D_2(\kernelsleff)<1$: the physicists' iteration converges.
+
+\item \translate (The susceptibility is observable.) With the hat matrix $S=XQ_\lambda X^\top/n$, use $\tr S=p-\lambda\tr Q_\lambda$ and \cref{prop:kernels:deteq} to prove that $1-\tr S/n\to\lambda/\kernelsleff=1/(1+\chi)$ in probability. Which step of the replica computation does this replace?
+
+\item \measurement (Turning the ridge on.) At $n=512$ the ratio of the kernel's noise term to the formula's is $0.665$, $0.667$, $0.735$, $0.925$, $0.991$, $0.999$ for $\lambda=10^{-7},\dots,10^{-2}$ (part (c) of \kernelsscript{circle.py}). Plot it against $\lambda/\kernelsleff$ for $n=128$, $512$, $2048$; why is this, not $\lambda$, the variable that matters?\label{ex:kernels:sweep}
+
+\item \measurement (A misprint, measured.) Set $\zeta=\mu_1^2/\mu_*^2$ in \kernelsscript{rf.py} and repeat \cref{fig:kernels:rf}. By how many interval widths does each point disagree?
+
+\item \research\hard (Fixed-dimension learning curves.) Find the ridgeless noise constant of kernel ridge regression with the Laplace kernel on $S^d$, $d\ge2$, at uniform random points, and compare it with the formula's $\sigma^2/d$; then find a learning-curve formula exact at zero ridge in fixed dimension. \hint{in one dimension the interpolant is local.}\label{ex:kernels:research}
+
+\item \research\harder (Beyond smooth activations.) Prove Gaussian equivalence of the test error of logistic regression on ReLU random features in the proportional regime.
+\end{exercises}
+
+\notesandrefs
+At about the time of \textcite{Sollich1998}, \textcite{DietrichEtAl1999} computed learning curves of support vector machines by replicas, with the Gaussian approximation that Canatar et al.\ adopt; with \textcite{OpperUrbanczik2001} they found, in Canatar et al.'s summary, limits $n\propto d^\ell$, the learning stages that the rigorous theory later established. \Textcite{MallinarEtAl2022} used the formula to classify overfitting as benign, tempered or catastrophic.
+
+Random features entered machine learning as a computational device \parencite{RahimiRecht2007}. Their double descent was computed by \textcite{MeiMontanari2022}, building on \textcite{HastieEtAl2022}, and by \textcite{GeraceEtAl2020} with replicas and the Gaussian equivalence that \textcite{GoldtEtAl2020b} proposed for the hidden manifold model. \Textcite{LoureiroEtAl2022} solved the Gaussian covariate model for convex losses with the convex Gaussian min-max theorem (\cref{thm:gordon:cgmt}).
+
+The proof of \cref{thm:kernels:main} is the standard leave-one-out derivation of deterministic equivalents, written for this book with explicit constants and with the convexity step of \cref{lem:kernels:convex}. The circle counterexample, \cref{prop:kernels:circle}, was found in the research for this volume and rechecked here; its ingredients are in \textcite{BelkinEtAl2018} (\cref{sec:kernels:counter}).
+
+\paragraph{Translating the literature.} \Textcite{CanatarEtAl2021} write $P$ for our $n$, $\lambda_{\mathrm{CBP}}=n\lambda$, $\kappa=n\kernelsleff$, $\gamma=\kernelsdf_2/n$, $\eta_\rho\bar w_\rho^2=v_k^2$ and $E_g=R$; \textcite{BordelonEtAl2020} write $p$ for $n$ and $\lambda_\rho$ for $\eta_k$. \Textcite{MallinarEtAl2022} write $\delta=n\lambda$, $\kappa=\kernelsleff$ and $E_0=1/(1-\kernelsdf_2/n)$, and include the noise in the test error. \Textcite{ChengMontanari2024} write $\lambda_\star$ for $\kernelsleff$; \textcite{Misiakiewicz2022} uses the unnormalized ridge $n\lambda$ and $\psi=n/B(d,\ell)$. \Textcite{MeiMontanari2022} write $\sigma$ for our activation $\varsigma$, $\tau^2$ for our $\sigma^2$, $\psi_1=\psi$, $\psi_2=\alpha$, and the ridge as $\frac1n\sum(y-f)^2+\frac{N\lambda_{\mathrm{MM}}}d\norm a^2$; their arXiv version~5 defines $\zeta=\mu_1^2/\mu_*^2$ in eqs.~(4) and~(52) but $\zeta=\mu_1/\mu_*$ in eq.~(9), and only the latter makes their eq.~(15) agree with the equations of their proof (eq.~(85)) and with simulation (\cref{fig:kernels:rf}).
+
+\printchapterbib
+\end{refsection}

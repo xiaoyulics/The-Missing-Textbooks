@@ -1,0 +1,419 @@
+% Chapter 5 of The Replica Rosetta Stone: spiked matrices, the BBP transition and the information threshold.
+\newcommand{\spikedGOE}{\mathrm{GOE}}
+\newcommand{\spikedmmse}{\mathrm{mmse}}
+\newcommand{\spikedsc}{\sigma_{\mathrm{sc}}}
+\newcommand{\spikedIT}{\lambda_{\mathrm{IT}}}
+\newcommand{\spikedalg}{\lambda_{\mathrm{alg}}}
+\newcommand{\spikeddyn}{\lambda_{\mathrm{dyn}}}
+
+\rstchapter{Spiked Matrices}{PCA, the BBP transition and the information threshold}{zero-temperature replicas\dict resolvents}{ch:spiked}
+\stonefoot{proved}
+\begin{refsection}[chapters/05-spiked.bib]
+
+\begin{chaptersummary}
+Plant a vector $x$ of strength $\lambda$ in a symmetric Gaussian matrix, $A=\frac\lambda Nxx^\top+W$. Principal component analysis sees it exactly when $\lambda>1$: the top eigenvalue leaves the semicircle at $\lambda+1/\lambda$, and the top eigenvector has squared overlap $1-1/\lambda^2$ with $x$. Physicists read both numbers off the ground state of a spherical spin glass, by replicas at zero temperature; we prove them with the resolvent and the secular equation of a rank-one perturbation, and the eigenvector limit comes out as the derivative of the eigenvalue limit, as an order parameter is the derivative of a free energy. The Bayes estimator beats PCA for every non-Gaussian prior, and for sparse priors its overlap can jump: the transition is first order below the density $\rho_{\mathrm{tri}}=0.0964$, while the information threshold falls below the spectral one only below $\rho_*=0.0856$, two densities that the value $\rho\approx0.09$ in the literature does not separate. Simulations show the transition, its finite-size smearing, and a window in which message passing stays far below the Bayes overlap; whether an efficient algorithm can do better there is open.
+\end{chaptersummary}
+
+\section{The question: when does the top eigenvector see the spike?}\label{sec:spiked:question}
+
+Principal component analysis replaces a data matrix by its top eigenvector. The simplest model in which to ask when this works is the \term{spiked Wigner model}\index{spiked Wigner model}: an unknown $x\in\R^N$ observed through the symmetric matrix
+\begin{equation}\label{eq:spiked:model}
+A=\frac\lambda N\,xx^\top+W,\qquad W\sim\spikedGOE(N),
+\end{equation}
+where $W$ has independent entries $W_{ij}\sim\Normal(0,1/N)$ for $i<j$ and $W_{ii}\sim\Normal(0,2/N)$, and the entries of $x$ are independent draws from a prior $P_0$ with $\E X^2=1$, independent of $W$. The noise alone has the semicircle law on $[-2,2]$ as its limiting spectral distribution (\cref{thm:toolkit:semicircle}); the signal adds a rank-one matrix with eigenvalue $\lambda\norm x^2/N\approx\lambda$.\sidenote{Other books scale the GOE so that the semicircle lives on $[-\sqrt2,\sqrt2]$ or on $[-2\sqrt N,2\sqrt N]$; with this book's scaling the edge is $2$ and the BBP threshold is $\lambda=1$.} We write $\mu_1(M)\ge\mu_2(M)\ge\cdots$ for the eigenvalues of a symmetric matrix $M$.
+
+Two priors run through the chapter. The Rademacher prior, $x_i=\pm1$ with probability $\frac12$ each, is \term{$\Z_2$ synchronization}\index{Z2 synchronization@$\mathbb{Z}_2$ synchronization}: recover $N$ signs from noisy measurements of all their products $x_ix_j$.\sidenote{The name refers to the group $\Z_2=\{\pm1\}$: the task is to recover group elements from noisy measurements of their ratios $x_ix_j^{-1}=x_ix_j$.} The sparse Rademacher prior, $x_i=0$ with probability $1-\rho$ and $x_i=\pm\rho^{-1/2}$ with probability $\rho/2$ each, is the simplest model of \term{sparse PCA}\index{sparse PCA}.
+
+PCA estimates the direction of $x$ by a unit top eigenvector $v_1$ of $A$, and its quality is the squared overlap $\ip{v_1}{x}^2/\norm x^2$: $1$ when $v_1=\pm x/\norm x$, of order $1/N$ for a random direction. The Bayes estimator uses the whole posterior. \Cref{ch:nishimori} describes it by the \term{overlap}\index{overlap} $q_*(\lambda)$, which a probabilist would call the limit of the normalized inner product of two independent samples from the posterior: the matrix minimum mean-square error tends to $1-q_*(\lambda)^2$, and, for priors with bounded support and all but countably many $\lambda$, $q_*$ is the largest squared cosine with $x$ that an estimator can achieve \parencite[Proposition~2.2]{MontanariVenkataramanan2021}. \term{Weak recovery}\index{weak recovery} means $q_*>0$.
+
+\begin{physicsbox}[spiked Wigner matrices]
+Let $N\to\infty$ in \eqref{eq:spiked:model}.
+\begin{enumerate}
+\item The top eigenvalue tends to $\lambda+1/\lambda$ if $\lambda>1$ and to the edge $2$ if $\lambda\le1$; the squared overlap of the top eigenvector with $x/\norm x$ tends to $1-1/\lambda^2$ if $\lambda>1$ and to $0$ if $\lambda\le1$.
+\item The Bayes overlap $q_*(\lambda)$ maximizes the potential $\phi_{\mathrm{RS}}(\lambda,q)$ of \eqref{eq:spiked:potential}. For the Rademacher prior it is continuous at $\lambda=1$ and exceeds $1-1/\lambda^2$ above it. For the sparse Rademacher prior it jumps at an information-theoretic threshold $\spikedIT(\rho)$ when $\rho<\rho_{\mathrm{tri}}\approx0.0964$, and $\spikedIT<1$ when $\rho<\rho_*\approx0.0856$.
+\item Message passing reaches $q_*$ except in a hard window $(\spikedIT,\spikedalg)$, below $\lambda=1$ or just above it, which no polynomial-time algorithm can enter.
+\end{enumerate}
+\end{physicsbox}
+
+Part (i) comes from the ground state of a spin glass, parts (ii) and (iii) from the replica-symmetric free entropy of the posterior \parencite{LesieurKrzakalaZdeborova2017}. How do physicists derive them, and what is proved? Part (i) completely, here; part (ii) as a theorem about a variational formula, evaluated numerically; part (iii) for message passing only.
+
+\section{The physics: the top eigenvalue as a ground state}\label{sec:spiked:physics}
+
+\subsection{The spherical model}\label{sec:spiked:spherical}
+
+For a symmetric matrix $A$ let $H(\sigma)=\frac12\ip{\sigma}{A\sigma}$ on the sphere $S_N=\{\sigma\in\R^N:\norm\sigma^2=N\}$. Its maximum is $\frac N2\mu_1(A)$, at $\sigma=\pm\sqrt N\,v_1$, so the top eigenvalue is twice the \term{ground-state energy}\index{ground state} per spin of the \term{spherical model}\index{spherical model} with Gibbs weight $e^{\beta H}$. A physicist computes a ground state as the zero-temperature limit of a free entropy: with $\dd\sigma$ the uniform probability measure on $S_N$,
+\[
+Z_N(\beta)=\int_{S_N}e^{\beta H(\sigma)}\dd\sigma,\qquad\phi(\beta)=\lim_{N\to\infty}\frac1N\E\log Z_N(\beta),
+\]
+and $\lim_{\beta\to\infty}\phi(\beta)/\beta$ should be the limit of $\mu_1(A)/2$. At fixed $N$ the limit $\beta\to\infty$ gives $\mu_1(A)/2$ exactly, by Laplace's method; taking $N\to\infty$ first is the first uncontrolled step. With $m(\sigma)=\ip\sigma x/N$ and $\norm x^2=N$ (the Rademacher prior), the Hamiltonian is $\frac12\ip{\sigma}{W\sigma}+\frac{N\lambda}2m(\sigma)^2$: the spherical Sherrington--Kirkpatrick model with a ferromagnetic coupling along $x$, a Curie--Weiss term after the gauge change $\sigma_i\mapsto x_i\sigma_i$. For $\lambda=0$ the model was solved in 1976 by Kosterlitz, Thouless and Jones, who used the known spectrum of a large random matrix and found the results \enquote{identical to those obtained by the $n\to0$ trick} \parencite{KosterlitzThoulessJones1976}: an early instance of the translation this chapter carries out.\sidenote{The spherical constraint can also be imposed with a Lagrange multiplier $z$, which makes the integral Gaussian. The saddle-point equation, $\frac1N\tr(z-\beta A)^{-1}=1$, contains the physicist's Green's function $(z-\beta A)^{-1}$, which is $-R_{\beta A}(z)$ in the notation of \cref{def:toolkit:stieltjes} (\cref{ex:spiked:lagrange}).}
+
+\subsection{Zero-temperature replicas}\label{sec:spiked:replicas}
+
+\begin{heuristic}[The ground state by replicas]
+\emph{Replicate and average.} For an integer $n$, the moment $\E Z_N^n$ is an integral over replicas $\sigma^1,\dots,\sigma^n$ in $S_N$. For the GOE, $\E[\ip{\sigma}{W\sigma}\ip{\tau}{W\tau}]=\frac2N\ip\sigma\tau^2$ (only products of the same entry survive), so $\sum_a\ip{\sigma^a}{W\sigma^a}$ is centered Gaussian with variance $2N\sum_{a,b}R_{ab}^2$, where $R_{ab}=\ip{\sigma^a}{\sigma^b}/N$. With $m_a=\ip{\sigma^a}x/N$, averaging over $W$ at fixed $x$ gives
+\[
+\E Z_N^n=\int\exp\Bigl(N\Bigl[\frac{\beta^2}4\sum_{a,b=1}^nR_{ab}^2+\frac{\beta\lambda}2\sum_{a=1}^nm_a^2\Bigr]\Bigr)\prod_{a=1}^n\dd\sigma^a.
+\]
+\emph{Order parameters.} Configurations with prescribed overlaps $Q=(R_{ab})$ and $m=(m_a)$ have mass $e^{N\mathcal S(Q,m)+o(N)}$, with $\mathcal S(Q,m)=\frac12\log\det(Q-mm^\top)$, half the log-determinant of the Gram matrix of $x/\sqrt N,\sigma^1/\sqrt N,\dots,\sigma^n/\sqrt N$. Laplace's method gives $\frac1N\log\E Z_N^n\to\sup_{Q,m}\bigl[\frac{\beta^2}4\sum_{a,b}Q_{ab}^2+\frac{\beta\lambda}2\sum_am_a^2+\mathcal S(Q,m)\bigr]$.
+
+\emph{Replica symmetry and $n\to0$.} Take $Q_{ab}=q$ for $a\ne b$ and $m_a=m$. Then $Q-mm^\top=(1-q)I+(q-m^2)J$, with $J$ the matrix of ones, has the eigenvalue $1-q$ with multiplicity $n-1$ and $1-q+n(q-m^2)$ once. Dividing the exponent by $n$ and letting $n\to0$ gives
+\begin{equation}\label{eq:spiked:phiRS}
+\phi_{\mathrm{sph}}(q,m)=\frac{\beta^2}4(1-q^2)+\frac{\beta\lambda}2m^2+\frac12\log(1-q)+\frac{q-m^2}{2(1-q)}.
+\end{equation}
+\emph{Saddle points.} The equations $\partial_m\phi_{\mathrm{sph}}=\partial_q\phi_{\mathrm{sph}}=0$ read $m(\beta\lambda-\frac1{1-q})=0$ and $\beta^2q=(q-m^2)/(1-q)^2$. Their solutions are the paramagnet $q=m=0$; the spin glass $m=0$, $q=1-1/\beta$, for $\beta>1$; and the ferromagnet $1-q=1/(\beta\lambda)$, $m^2=(1-\frac1{\beta\lambda})(1-\frac1{\lambda^2})$, for $\lambda>1$ and $\beta\lambda>1$.
+
+\emph{Zero temperature.} As $\beta\to\infty$, $q\to1$ with $\chi=\beta(1-q)$ fixed: $\chi=1$ for the spin glass and $\chi=1/\lambda$ for the ferromagnet. Dividing \eqref{eq:spiked:phiRS} by $\beta$ at the solutions gives the ground-state energies $e_{\mathrm{SG}}=1$ and $e_{\mathrm F}=\frac12(\lambda+\frac1\lambda)$, and $m^2\to1-1/\lambda^2$ for the ferromagnet. For $\lambda>1$ the ferromagnet has the larger energy, so
+\[
+\mu_1(A)\to2e_{\mathrm F}=\lambda+\frac1\lambda,\qquad\frac{\ip{v_1}x^2}{\norm x^2}=m^2\to1-\frac1{\lambda^2}=2\,\frac{\partial e_{\mathrm F}}{\partial\lambda};
+\]
+for $\lambda\le1$ only the spin glass is left, and $\mu_1(A)\to2$, $m\to0$.
+\end{heuristic}
+
+Five steps are not controlled: the exchange of $N\to\infty$ and $\beta\to\infty$; the continuation of integer moments to $n\to0$, and its exchange with $N\to\infty$ (\cref{ch:freeentropy}); the ansatz; the choice among saddle points, although the \enquote{supremum} is a minimum in $q$ when $n<1$; and the identification of the overlap of the actual ground state with the saddle value of $m$. The mass formula for $(Q,m)$, by contrast, is a rigorous large-deviation statement at fixed $n$.\sidenote{For the sphere and a quadratic Hamiltonian the ansatz costs nothing, as Kosterlitz, Thouless and Jones found at $\lambda=0$. With Ising spins the same computation describes the Sherrington--Kirkpatrick model of \cref{ch:sk}, where it fails at low temperature.} The identity $m^2=2\,\partial e_{\mathrm F}/\partial\lambda$ is the physicist's reading of an order parameter as the derivative of the energy in its conjugate field, $\lambda$ multiplying $\frac N2m^2$; it returns in the proof as the normalization of the eigenvector and as convexity. At finite temperature \eqref{eq:spiked:phiRS} gives the phase diagram (\cref{ex:spiked:finiteT}).
+
+\subsection{What Bayes adds: the replica-symmetric potential}\label{sec:spiked:potential}
+
+\Cref{ch:nishimori} derives the replica-symmetric free entropy of the posterior and proves it (\cref{thm:nishimori:rsformula}, Lelarge and Miolane): $\frac1NI(x;A)\to\frac{\lambda^2}4-\sup_{q\ge0}\phi_{\mathrm{RS}}(\lambda,q)$, with the \term{replica-symmetric potential}\index{replica-symmetric potential}
+\begin{equation}\label{eq:spiked:potential}
+\phi_{\mathrm{RS}}(\lambda,q)=\psi(\lambda^2q)-\frac{\lambda^2q^2}4,\qquad\psi(\gamma)=\E\log\int e^{\sqrt\gamma Zy+\gamma yX-\gamma y^2/2}\,P_0(\dd y),
+\end{equation}
+where $X\sim P_0$ and $Z\sim\Normal(0,1)$ are independent ($\psi$ is the $\psi_{P_0}$ of \cref{ch:nishimori}); for all but countably many $\lambda$ the maximizer $q_*(\lambda)$ is unique and the matrix MMSE tends to $1-q_*(\lambda)^2$. Here $\psi$ is the free entropy of the scalar channel $Y=\sqrt\gamma X+Z$, and by the I-MMSE relation (\cref{thm:freeentropy:immse} for bounded priors, \textcite{GuoShamaiVerdu2005} in general) its derivative is half the \term{overlap map}\index{overlap map}
+\begin{equation}\label{eq:spiked:G}
+G(\gamma)=2\psi'(\gamma)=1-\spikedmmse(\gamma)=\E\bigl[X\,\E(X\mid Y)\bigr].
+\end{equation}
+The stationary points of $\phi_{\mathrm{RS}}(\lambda,\cdot)$ solve $q=G(\lambda^2q)$, the fixed-point equation of state evolution (\cref{thm:amp:se}): the iteration $q_{t+1}=G(\lambda^2q_t)$ is the physicist's picture of an algorithm climbing the potential. A stationary point with $q>0$ is determined by $\gamma=\lambda^2q$, through $q=G(\gamma)$ and $\lambda^2=L(\gamma)\defeq\gamma/G(\gamma)$, so all of them lie on the graph of one function. Since $\partial_q^2\phi_{\mathrm{RS}}=\frac{\lambda^2}2(\lambda^2G'(\lambda^2q)-1)$ and $L'=(G-\gamma G')/G^2$, a stationary point is a local maximum of $\phi_{\mathrm{RS}}(\lambda,\cdot)$, and a stable fixed point of the iteration, exactly when $L$ increases at $\gamma$. As $\lambda^2q^2=\gamma G(\gamma)$ and $\psi(\gamma)=\frac12\int_0^\gamma G$, its free entropy relative to $q=0$ is
+\begin{equation}\label{eq:spiked:dphi}
+\phi_{\mathrm{RS}}\bigl(\lambda,G(\gamma)\bigr)-\phi_{\mathrm{RS}}(\lambda,0)=\frac12\int_0^\gamma G(t)\dd t-\frac{\gamma\,G(\gamma)}4\qquad\bigl(\lambda^2=L(\gamma)\bigr).
+\end{equation}
+For the Gaussian prior $G(\gamma)=\gamma/(1+\gamma)$ and $L(\gamma)=1+\gamma$, so for $\lambda>1$ the only stationary point with $q>0$ is $q=1-1/\lambda^2$, the overlap of PCA. Near $q=0$ the prior enters to second order only through its third moment.
+
+\begin{computation}{The overlap map near $\gamma=0$}\label{comp:spiked:expansion}
+\step \emph{Posterior weights.} Let $P_0$ have bounded support and moments $m_1=0$, $m_2=1$, $m_3$, $m_4$, and $s=\sqrt\gamma$. Given $Y=y$ the posterior has density $e^{syx-s^2x^2/2}=\sum_{k\ge0}\mathrm{He}_k(y)(sx)^k/k!$ with respect to $P_0$, up to normalization; here $\mathrm{He}_1=y$, $\mathrm{He}_2=y^2-1$, $\mathrm{He}_3=y^3-3y$.
+\step \emph{The posterior mean.} The numerator is $sy+\frac{s^2m_3}2\mathrm{He}_2(y)+\frac{s^3m_4}6\mathrm{He}_3(y)+O(s^4)$, the denominator $1+\frac{s^2}2\mathrm{He}_2(y)+O(s^3)$, so
+\[
+\E(X\mid Y=y)=sy+\frac{s^2m_3}2\mathrm{He}_2(y)+s^3\Bigl(\frac{m_4}6\mathrm{He}_3(y)-\frac{y^3-y}2\Bigr)+O(s^4).
+\]
+\step \emph{Average over the data.} With $Y=sX+Z$: $\E[X\cdot sY]=s^2$, $\E[X\,\mathrm{He}_2(Y)]=s^2m_3$, and $\E[Xh(Y)]=s\,\E h'(Z)+O(s^2)$, which is $0$ for $h=\mathrm{He}_3$ and $s$ for $h=(y^3-y)/2$. As $G$ is a function of $s^2$ (replace $(s,Z)$ by $(-s,-Z)$),
+\[
+G(\gamma)=\gamma-\Bigl(1-\frac{m_3^2}2\Bigr)\gamma^2+O(\gamma^3).
+\]
+\step \emph{The bifurcation at $\lambda=1$.} Hence $L(\gamma)=1+(1-\frac{m_3^2}2)\gamma+O(\gamma^2)$. If $m_3^2<2$, the stationary points born at $q=0$ when $\lambda=1$ exist for $\lambda>1$: the branch starts continuously. If $m_3^2>2$, they exist for $\lambda<1$: the transition is first order and $\spikedIT<1$. This is the criterion $\ip{x_0^3}^2>2\ip{x_0^2}^3$ of \textcite{LesieurKrzakalaZdeborova2017}. Symmetric priors have $m_3=0$, so for them a first-order transition can only come from another branch.
+\step \emph{The next order.} For symmetric priors $G(\gamma)=\gamma-\gamma^2+c_3\gamma^3+O(\gamma^4)$ with $c_3=\frac{m_4^2}6-m_4+\frac52$ (\cref{ex:spiked:cubic}), which is $(1-6\rho+15\rho^2)/(6\rho^2)$ for the sparse Rademacher prior. Truncated, $L(\gamma)\approx1+\gamma-(c_3-1)\gamma^2$ peaks at $1+\frac1{4(c_3-1)}$, so the branch born at $\lambda=1$ turns back at $\spikedalg\approx1+\frac{3\rho^2}{4(1-3\rho)^2}$: $1.00260$ at $\rho=0.05$ and $1.000340$ at $\rho=0.02$, against $1.002700$ and $1.000341$ (\cref{tab:spiked:thresholds}).
+\end{computation}
+
+\subsection{Sparse priors: three branches and a hard phase}\label{sec:spiked:sparse}
+
+For the sparse Rademacher prior with small $\rho$ the curve $L$ rises from $L(0+)=1$ to a local maximum $\spikedalg^2$, falls to a local minimum $\spikeddyn^2$, and rises again, so a level $\lambda^2$ meets it up to three times (\cref{fig:spiked:amp}). The low branch, born at $q=0$ when $\lambda=1$, ends at the \term{spinodal}\index{spinodal} $\spikedalg$, where it merges with the unstable middle branch; the high branch exists above $\spikeddyn$. The Bayes overlap lies on the branch of larger free entropy \eqref{eq:spiked:dphi}, the competitor being $q=0$ when $\lambda\le1$, and jumps where the two are equal, at the \term{information-theoretic threshold}\index{information-theoretic threshold} $\spikedIT$ (\term{Maxwell's construction}\index{Maxwell construction}).\sidenote{The name comes from Maxwell's equal-area rule for the liquid--gas transition of van der Waals. The analogy is close: the low and high branches are the gas and the liquid, $\spikedalg$ and $\spikeddyn$ the spinodals, $\spikedIT$ the coexistence point.} This is the phase diagram of \textcite{LesieurKrzakalaZdeborova2017} (\cref{fig:spiked:phase}).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=80mm,height=45mm]
+\nextgroupplot[xlabel={spike strength $\lambda$},ylabel={overlap},xmin=0.6,xmax=3,ymin=-0.02,ymax=1.02,
+  legend pos=south east,legend style={font=\scriptsize},title={(a) Bayes against PCA}]
+\addplot[proofpred] table[x=lam,y=spec] {figures/data/05-spiked-overlaps.dat};
+\addplot[physpred] table[x=lam,y=rad] {figures/data/05-spiked-overlaps.dat};
+\addplot[physpred2,unbounded coords=jump] table[x=lam,y=q] {figures/data/05-spiked-bayes.dat};
+\addplot[guide,forget plot] coordinates {(0.864471,0) (0.864471,0.582934)};
+\legend{PCA $=$ Bayes{,} Gaussian prior,Bayes{,} Rademacher,Bayes{,} sparse $\rho=0.05$}
+\nextgroupplot[xlabel={density $\rho$},ylabel={$\lambda$},xmin=0.01,xmax=0.1,ymin=0.4,ymax=1.1,
+  xtick={0.02,0.04,0.06,0.08,0.1},legend style={font=\scriptsize,at={(0.97,0.05)},anchor=south east},title={(b) sparse Rademacher prior}]
+\addplot[physpred] table[x=rho,y=lamIT] {figures/data/05-spiked-phase.dat};
+\addplot[physpred2] table[x=rho,y=lamdyn] {figures/data/05-spiked-phase.dat};
+\addplot[proofpred] table[x=rho,y=lamalg] {figures/data/05-spiked-phase.dat};
+\addplot[only marks,mark=*,mark size=1.4pt,color=stone,forget plot] coordinates {(0.085593,1) (0.096416,1.019951)};
+\legend{$\spikedIT$,$\spikeddyn$,$\spikedalg$}
+\node[font=\scriptsize,text=stone,anchor=north] at (axis cs:0.0856,0.985) {$\rho_*$};
+\node[font=\scriptsize,text=stone,anchor=east] at (axis cs:0.0950,1.045) {$\rho_{\mathrm{tri}}$};
+\node[font=\scriptsize,text=muted] at (axis cs:0.05,1.06) {easy};
+\node[font=\scriptsize,text=muted] at (axis cs:0.03,0.9) {hard};
+\node[font=\scriptsize,text=muted] at (axis cs:0.04,0.55) {impossible};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{(a) The squared cosine with $x$ achieved by PCA, $(1-1/\lambda^2)_+$ (\cref{thm:spiked:bbp}), which is also the Bayes overlap for the Gaussian prior (\cref{prop:spiked:pcabayes}), and the Bayes overlap $q_*(\lambda)$ for the Rademacher prior and for the sparse Rademacher prior with $\rho=0.05$, which jumps from $0$ to $0.583$ at $\spikedIT=0.8645$ (gray). (b) Sparse Rademacher prior: weak recovery is impossible below $\spikedIT$, message passing is suboptimal between $\spikedIT$ and $\spikedalg$ and optimal above; $\spikedalg$ exceeds the spectral threshold $\lambda=1$ by at most $0.02$, and the dots mark $\rho_*$ and $\rho_{\mathrm{tri}}$. All curves evaluate the potential \eqref{eq:spiked:potential}, a theorem (\cref{thm:nishimori:rsformula}). Script: \texttt{figures/scripts/05-spiked-phase.py}.}\label{fig:spiked:phase}
+\end{figure}
+
+The curve stops being monotone below the tricritical density $\rho_{\mathrm{tri}}=0.0964$ of Lesieur, Krzakala and Zdeborová (we recompute $0.096416$), where the three thresholds merge at $\lambda=1.0200$. The information threshold crosses the spectral one at the smaller density $\rho_*=0.085593$ ($\spikeddyn$ at $0.086914$): for $\rho_*<\rho<\rho_{\mathrm{tri}}$ the overlap becomes positive continuously at $\lambda=1$ and jumps above it, while for $\rho<\rho_*$ it jumps from $0$ below $\lambda=1$. The value $\rho\approx0.09$ that \textcite{KrzakalaXuZdeborova2016} found numerically for the separation of the information threshold from their \enquote{algorithmic} one, which is the spectral threshold $\lambda=1$ (not our $\spikedalg$), and that \textcite{PerryWeinBandeiraMoitra2018} quote as the critical density for recovery below the spectral threshold, is $\rho_*$; the first-order transition begins at $\rho_{\mathrm{tri}}$.
+
+Between $\spikedIT$ and $\spikedalg$ physicists see a \term{hard phase}\index{hard phase}: the posterior sits on the high branch, but message passing started without information climbs $\phi_{\mathrm{RS}}$ from $q=0$ and stays on the low branch, or at $q=0$ when $\lambda<1$. \Textcite{LesieurKrzakalaZdeborova2017} conjecture that no polynomial-time algorithm beats message passing there, and remark that a proof in full generality would imply $\mathrm P\ne\mathrm{NP}$. For $\rho<\rho_*$ the window contains $(\spikedIT,1]$, where the top eigenvector sees nothing and the posterior sees the spike.
+
+\section{The stone}\label{sec:spiked:stone}
+
+\begin{stone}{the zero-temperature replica computation}{the resolvent and a rank-one perturbation}
+\stonestep{The quantity}{The top eigenvalue is twice a ground-state energy, the limit of $2\phi_N(\beta)/\beta$ as $N\to\infty$ and then $\beta\to\infty$, in this order and without control.}{A maximum, $\mu_1(A)=\max_{\norm v=1}\ip{v}{Av}$ (Courant--Fischer): no temperature, no limit in $\beta$.}
+\stonestep{Average over the noise}{Replicate and average over $W$; the Gaussian average gives $e^{N\beta^2\sum_{a,b}R_{ab}^2/4}$, a function of the overlaps alone.}{No average: condition on $W$ and use two spectral facts, the semicircle law and $\norm W\to2$ (\cref{thm:toolkit:semicircle}); every statement holds almost surely.}
+\stonestep{Order parameters}{The overlaps $m$ and $q$; in the ferromagnetic phase the saddle point gives the susceptibility $\chi=\beta(1-q)\to1/\lambda$.}{The secular equation, the vanishing of the Sherman--Morrison denominator: $z>\mu_1(W)$ is an eigenvalue of $W+\theta uu^\top$ iff $1+\theta\ip{u}{R_W(z)u}=0$ (\cref{lem:spiked:secular}). One unknown, the outlier, replaces $q$ and $m$, and $\chi=-s(\lambda+1/\lambda)$.}
+\stonestep{Self-averaging}{The average over $W$ makes all directions alike; the saddle point is the typical value.}{Isotropy: for $u$ independent of $W$, $\ip{u}{R_W(z)u}\to s(z)$, by orthogonal invariance and a fourth moment (\cref{lem:spiked:isotropic}). No replica counterpart: the average did this work.}
+\stonestep{Which saddle}{Keep the solution of largest energy: the ferromagnet when $\lambda>1$, with $e=\frac12(\lambda+1/\lambda)$.}{Does $s(z)=-1/\theta$ have a root above the edge? As $s$ increases from $s(2)=-1$, iff $\theta>1$, and the root is $\theta+1/\theta$ (\cref{lem:spiked:stieltjes}).}
+\stonestep{The order parameter}{$m^2=2\,\partial e/\partial\lambda$: the overlap is the derivative of the energy in its conjugate field.}{Normalization: by \eqref{eq:toolkit:overlap}, $\ip u{v_1}^2=1/(\theta^2\ip u{R_W(\mu_1)^2u})\to1/(\theta^2s'(\theta+1/\theta))=1-\theta^{-2}$, the derivative of the eigenvalue limit; for $\theta\le1$, the supporting lines of the convex function $t\mapsto\mu_1(W+tuu^\top)$ (\cref{lem:spiked:supporting}).}
+\stonestep{Beyond the top eigenvector}{The potential $\phi_{\mathrm{RS}}(\lambda,q)$; its S-shaped branches for sparse priors; message passing follows its branch, and nothing efficient does better.}{The potential is a theorem (\cref{thm:nishimori:rsformula}), and so is the branch of message passing \parencite{MontanariVenkataramanan2021}; the claim about all efficient algorithms is a conjecture.}
+\end{stone}
+
+The proof follows the derivation closely. The saddle point is the secular equation in another form: the zero-temperature susceptibility, $\chi=1/\lambda$ for the ferromagnet and $1$ for the spin glass, is minus the Stieltjes transform at the top eigenvalue, $-s(\lambda+1/\lambda)$ or $-s(2)$. The proof replaces the average over $W$ by two spectral facts and adds isotropy, which the replicas never need. The overlap as a derivative of the energy becomes the normalization of the eigenvector, whose limit is the derivative of the outlier (\cref{ex:spiked:bgn}), and, for $\theta\le1$, the supporting line of a convex function, the device by which \textcite{LelargeMiolane2019} obtain the MMSE from the mutual information. The routes part at the Bayes estimator, whose potential is proved by interpolation (\cref{ch:nishimori}), not by anything resembling replicas.
+
+\section{The proof: the resolvent and a rank-one perturbation}\label{sec:spiked:proof}
+
+Throughout this section $W=W_N\sim\spikedGOE(N)$ and $u=u_N$ is a unit vector in $\R^N$, deterministic or random, independent of $W_N$. For $\theta\ge0$ put $A_N(\theta)=W_N+\theta u_Nu_N^\top$. We use three facts about the GOE: (S1) almost surely, the empirical spectral distribution $\mu_N$ of $W_N$ converges weakly to the \term{semicircle law}\index{semicircle law} $\spikedsc(\dd x)=\frac1{2\pi}\sqrt{4-x^2}\,\dd x$ on $[-2,2]$; (S2) almost surely, $\mu_1(W_N)\to2$ and $\norm{W_N}\to2$ (both in \cref{thm:toolkit:semicircle}); (S3) the law of $W_N$, with density proportional to $e^{-N\tr(W^2)/4}$, is invariant under $W\mapsto OWO^\top$ for every orthogonal $O$ (\cref{def:toolkit:goe}). We use the resolvent $R_W(z)=(W-z)^{-1}$ and the \term{Stieltjes transform}\index{Stieltjes transform} of \cref{def:toolkit:stieltjes}; for the semicircle law and real $z>2$, \eqref{eq:toolkit:ssc} gives
+\begin{equation}\label{eq:spiked:s}
+s(z)=\int\frac{\spikedsc(\dd x)}{x-z}=\frac{-z+\sqrt{z^2-4}}2,\qquad s'(z)=\int\frac{\spikedsc(\dd x)}{(x-z)^2}.
+\end{equation}
+
+\begin{theorem}[The BBP transition for spiked Wigner]\label{thm:spiked:bbp}
+Fix $\theta\ge0$; let $\Lambda(\theta)=\theta+1/\theta$ for $\theta>1$, $\Lambda(\theta)=2$ for $\theta\le1$. Almost surely, as $N\to\infty$:
+\begin{enumerate}
+\item $\mu_1(A_N(\theta))\to\Lambda(\theta)$;
+\item $\mu_2(A_N(\theta))\to2$;
+\item $\ip{u_N}{v_N}^2\to1-\theta^{-2}$ if $\theta>1$, and $\to0$ if $\theta\le1$, for every choice of unit eigenvectors $v_N$ of $A_N(\theta)$ with eigenvalue $\mu_1(A_N(\theta))$.
+\end{enumerate}
+The same holds for the spiked Wigner matrix \eqref{eq:spiked:model}, with $\theta=\lambda$ and $u_N=x/\norm x$, when $x$ consists of the first $N$ terms of an i.i.d.\ sequence with law $P_0$, $\E X^2=1$, independent of $(W_N)_{N\ge1}$.
+\end{theorem}
+
+The \term{BBP transition}\index{BBP transition} is the change at $\theta=1$: one eigenvalue leaves the bulk, and its eigenvector acquires a macroscopic overlap with the spike.\sidenote{The initials are those of Baik, Ben Arous and P\'ech\'e, who proved the transition for sample covariance matrices \parencite{BaikBenArousPeche2005}.} The proof rests on four lemmas, of which only the third is probabilistic.
+
+\begin{lemma}[The Stieltjes transform above the edge]\label[lemma]{lem:spiked:stieltjes}
+On $(2,\infty)$, $s$ is continuous and strictly increasing, from $-1$ at $2^+$ to $0$ at $\infty$, and $s(z)+1/s(z)=-z$. For $\theta>1$, $s(z)=-1/\theta$ has the unique solution $z=\theta+1/\theta$ in $(2,\infty)$, where $s'(z)=1/(\theta^2-1)$; for $0<\theta\le1$ it has none.
+\end{lemma}
+
+\begin{proof}
+Since $s(z)=-2/(z+\sqrt{z^2-4})$, it is continuous and strictly increasing with the stated limits, and $1/s(z)=-(z+\sqrt{z^2-4})/2$, so $s+1/s=-z$. If $s(z)=-1/\theta$ with $z>2$, then $z=-s-1/s=\theta+1/\theta$, and $s(z)>-1$ forces $\theta>1$. Conversely, for $\theta>1$ the point $z=\theta+1/\theta$ exceeds $2$, $\sqrt{z^2-4}=\theta-1/\theta$, and $s(z)=-1/\theta$. Differentiating $s^2+zs+1=0$ gives $s'=-s/(2s+z)$, which there is $\frac1\theta/(\theta-\frac1\theta)=1/(\theta^2-1)$.
+\end{proof}
+
+\begin{lemma}[The secular equation]\label[lemma]{lem:spiked:secular}
+Let $W$ be a real symmetric $N\times N$ matrix, $u$ a unit vector, $\theta>0$ and $A=W+\theta uu^\top$. For $z>\mu_1(W)$ let $r(z)=\ip u{R_W(z)u}$, with derivative $r'(z)=\ip u{R_W(z)^2u}$.
+\begin{enumerate}
+\item A real $z>\mu_1(W)$ is an eigenvalue of $A$ if and only if $1+\theta r(z)=0$, and then every unit eigenvector $v$ for $z$ satisfies $\ip uv^2=1/(\theta^2r'(z))$.
+\item On $(\mu_1(W),\infty)$, $r$ is continuous and strictly increasing and $r'$ is decreasing. If $1+\theta r=0$ has a root $z_0>\mu_1(W)$, then $\mu_1(A)=z_0$; otherwise $\mu_1(A)=\mu_1(W)$.
+\item $\mu_1(W)\le\mu_1(A)\le\mu_1(W)+\theta$ and $\mu_2(W)\le\mu_2(A)\le\mu_1(W)$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to take the eigenvalue equation from the rank-one formula, the rest from the spectral decomposition. Part (i) is \cref{def:toolkit:stieltjes}~(v), with \eqref{eq:toolkit:overlap}. For (ii), write $W=\sum_k\mu_k\phi_k\phi_k^\top$ and $c_k=\ip u{\phi_k}^2$, so that $r(z)=\sum_kc_k/(\mu_k-z)$ and $r'(z)=\sum_kc_k/(\mu_k-z)^2$, with $c_k\ge0$ and $\sum_kc_k=1$; on $(\mu_1(W),\infty)$ each term of $r$ increases, strictly if $c_k>0$, and each term of $r'$ decreases. Hence $1+\theta r=0$ has at most one root above $\mu_1(W)$. By (iii), $\mu_1(A)\ge\mu_1(W)$; if $\mu_1(A)>\mu_1(W)$ it is a root by (i), and if a root $z_0$ exists it is an eigenvalue, so $\mu_1(A)\ge z_0>\mu_1(W)$ and $\mu_1(A)=z_0$. For (iii), $0\preceq\theta uu^\top\preceq\theta I$, so Courant--Fischer gives $\mu_k(W)\le\mu_k(A)\le\mu_k(W)+\theta$ for every $k$ (Weyl's inequalities), and $\mu_2(A)\le\max_{v\perp u,\norm v=1}\ip v{Av}=\max_{v\perp u,\norm v=1}\ip v{Wv}\le\mu_1(W)$.
+\end{proof}
+
+The \term{secular equation}\index{secular equation} $1+\theta r(z)=0$ reduces the outlier to one scalar equation, but $r$ depends on all of $W$. Along a direction independent of $W$, the resolvent sees only the spectrum.\sidenote{The proof rotates $u_N$ into a uniformly random direction. A Haar-distributed rotation would serve as well; a reflection that exchanges two vectors avoids the Haar measure on the orthogonal group.}
+
+\begin{lemma}[The resolvent along an independent direction]\label[lemma]{lem:spiked:isotropic}
+Let $W_N\sim\spikedGOE(N)$ and let the unit vectors $u_N$ be independent of $W_N$. For each $z>2$, almost surely $\ip{u_N}{R_{W_N}(z)u_N}\to s(z)$ and $\ip{u_N}{R_{W_N}(z)^2u_N}\to s'(z)$; the left sides are defined once $\norm{W_N}<z$, true for all large $N$ by (S2).
+\end{lemma}
+
+\begin{proof}
+The plan is to compare each quadratic form with a normalized trace, which (S1) controls, after replacing $u_N$ by a uniformly random direction. Fix $z>2$ and $p\in\{1,2\}$, let $\delta=(z-2)/2$, $K=\delta^{-p}$ and $E_N=\{\norm{W_N}\le2+\delta\}$. On $E_N$ the matrix $M=R_{W_N}(z)^p$ exists and $\norm M\le K$.
+
+\emph{The trace.} On $E_N$, $\frac1N\tr M=\int f\dd\mu_N$ with $f(x)=(\min\{x,2+\delta\}-z)^{-p}$, which is bounded and continuous and equals $(x-z)^{-p}$ on $[-2,2]$. By (S1) and \eqref{eq:spiked:s}, $\int f\dd\mu_N$ tends almost surely to $s(z)$ if $p=1$ and to $s'(z)$ if $p=2$; and by (S2) $E_N$ holds for all large $N$.
+
+\emph{A uniform direction.} Let $\xi\sim\Normal(0,I_N)$ be independent of $(W_N,u_N)$, $w=\xi/\norm\xi$, and $O$ the Householder reflection exchanging $w$ and $u_N$ ($O=I-2(w-u_N)(w-u_N)^\top/\norm{w-u_N}^2$, or $I$ if $w=u_N$), an orthogonal symmetric function of $(u_N,w)$. Given $(u_N,w)$, the matrix $W'=OW_NO$ is GOE by (S3), so $W'$ is GOE and independent of $(u_N,w)$, and $(W',u_N)$ has the law of $(W_N,u_N)$. As $\ip{u_N}{R_{W'}(z)^pu_N}=\ip{w}{Mw}$, $\norm{W'}=\norm{W_N}$ and $\tr R_{W'}(z)^p=\tr M$, for every $\eps>0$
+\[
+\Prob\bigl(E_N,\ \abs{\ip{u_N}{Mu_N}-\tfrac1N\tr M}>\eps\bigr)=\Prob\bigl(E_N,\ \abs{\ip{w}{Mw}-\tfrac1N\tr M}>\eps\bigr).
+\]
+\emph{A fourth moment.} Condition on $W_N\in E_N$, so that $M$ is a fixed symmetric matrix with $\norm M\le K$, independent of $\xi$. In an orthonormal eigenbasis of $M$, with eigenvalues $d_i$, the coordinates $\eta_i$ of $\xi$ are i.i.d.\ standard normal, and $\ip\xi{M\xi}-\tr M=\sum_id_i(\eta_i^2-1)$ is a sum of independent centered terms. With $\E(\eta^2-1)^2=2$ and $\E(\eta^2-1)^4=60$,
+\[
+\E\bigl[(\ip\xi{M\xi}-\tr M)^4\bigm|W_N\bigr]=60\sum_id_i^4+12\sum_{i\ne j}d_i^2d_j^2\le72N^2K^4.
+\]
+By Markov's inequality, $a=\frac1N(\ip\xi{M\xi}-\tr M)$ satisfies $\Prob(\abs a>\eta\mid W_N)\le72K^4/(\eta^4N^2)$, and $b=\norm\xi^2/N-1$ (the case $M=I$) satisfies $\Prob(\abs b>\eta)\le72/(\eta^4N^2)$. Since $\ip w{Mw}-\frac1N\tr M=(a-b\cdot\frac1N\tr M)/(1+b)$ and $\abs{\frac1N\tr M}\le K$, on $\{\abs a\le\eta,\abs b\le\eta\}$ with $\eta\le\frac12$ this difference is at most $2\eta(1+K)$. With $\eta=\min\{\frac12,\eps/(2+2K)\}$,
+\[
+\Prob\bigl(E_N,\ \abs{\ip w{Mw}-\tfrac1N\tr M}>\eps\bigr)\le\frac{72(K^4+1)}{\eta^4N^2},
+\]
+which is summable in $N$. By the Borel--Cantelli lemma and the equality above, almost surely, for all large $N$, either $E_N$ fails or $\abs{\ip{u_N}{Mu_N}-\frac1N\tr M}\le\eps$; and $E_N$ holds for all large $N$. Taking $\eps=1/k$ for all $k\ge1$ and adding the trace part proves the lemma.
+\end{proof}
+
+\begin{lemma}[Supporting lines]\label[lemma]{lem:spiked:supporting}
+Let $W$ be real symmetric, $u$ a unit vector, and $F(t)=\mu_1(W+tuu^\top)$ for $t\in\R$. Then $F$ is $1$-Lipschitz, and for every $t$, every unit eigenvector $v$ of $W+tuu^\top$ with eigenvalue $F(t)$, and every $h>0$,
+\[
+\frac{F(t)-F(t-h)}h\le\ip uv^2\le\frac{F(t+h)-F(t)}h.
+\]
+\end{lemma}
+
+\begin{proof}
+For every $\tau\in\R$, Courant--Fischer gives $F(\tau)\ge\ip v{(W+\tau uu^\top)v}=F(t)+(\tau-t)\ip uv^2$; take $\tau=t\pm h$. The Lipschitz bound is Weyl's inequality, as $\norm{uu^\top}=1$.
+\end{proof}
+
+So $F$ is convex and $\ip uv^2$ is a subgradient: the Hellmann--Feynman formula $\dd\mu_1/\dd t=\ip u{v_1}^2$ without differentiability.\sidenote{In quantum mechanics the derivative of a simple eigenvalue of $H(t)$ is $\ip\psi{H'(t)\psi}$ for the normalized eigenvector $\psi$; here $H'(t)=uu^\top$.}
+
+\begin{proof}[Proof of \cref{thm:spiked:bbp}]
+The plan is to locate the outlier by the secular equation at finitely many points, bound the second eigenvalue by interlacing, read the overlap above the threshold off \eqref{eq:toolkit:overlap}, and bound it for $\theta\le1$ by convexity. Write $r_N(z)=\ip{u_N}{R_{W_N}(z)u_N}$, with derivative $r_N'$. For $\theta=0$, part (i) is (S2), and parts (ii) and (iii) are covered by Steps 3 and 5.
+
+\emph{Step 1: the outlier, $\theta>1$.} Let $z^*=\theta+1/\theta$ and fix $\eps\in(0,z^*-2)$. By \cref{lem:spiked:stieltjes}, $s(z^*-\eps)<-1/\theta<s(z^*+\eps)$. By (S2) and \cref{lem:spiked:isotropic} at $z^*\pm\eps$, almost surely, for all large $N$, $\norm{W_N}<z^*-\eps$ and $1+\theta r_N(z^*-\eps)<0<1+\theta r_N(z^*+\eps)$. As $r_N$ is continuous and increasing on $(\mu_1(W_N),\infty)$, $1+\theta r_N=0$ has a root in $(z^*-\eps,z^*+\eps)$, which is $\mu_1(A_N(\theta))$ by \cref{lem:spiked:secular}(ii).
+
+\emph{Step 2: no outlier, $0<\theta\le1$.} By \cref{lem:spiked:secular}(iii) and (S2), $\liminf\mu_1(A_N(\theta))\ge2$. Fix $\eps>0$. As $s(2+\eps)>-1\ge-1/\theta$, $1+\theta s(2+\eps)>0$, so by (S2) and \cref{lem:spiked:isotropic}, almost surely, for all large $N$, $\mu_1(W_N)<2+\eps$ and $1+\theta r_N(2+\eps)>0$. As $r_N$ increases, every root of $1+\theta r_N=0$ lies below $2+\eps$, and by \cref{lem:spiked:secular}(ii), $\mu_1(A_N(\theta))<2+\eps$.
+
+\emph{Step 3: the second eigenvalue.} By \cref{lem:spiked:secular}(iii), $\mu_2(W_N)\le\mu_2(A_N(\theta))\le\mu_1(W_N)\to2$. For $\eps>0$, by (S1) and the portmanteau theorem the fraction of eigenvalues of $W_N$ above $2-\eps$ has $\liminf$ at least $\spikedsc((2-\eps,2])>0$, so for all large $N$ at least two of them exceed $2-\eps$.
+
+\emph{Step 4: the overlap, $\theta>1$.} By Step 1, almost surely, for all large $N$, $\mu_1(W_N)<z^*-\eps<\mu_1(A_N(\theta))<z^*+\eps$, so \cref{lem:spiked:secular}(i) gives $\ip{u_N}{v_N}^2=1/(\theta^2r_N'(\mu_1(A_N(\theta))))$. As $r_N'$ decreases, this lies between $1/(\theta^2r_N'(z^*-\eps))$ and $1/(\theta^2r_N'(z^*+\eps))$, which tend to $1/(\theta^2s'(z^*\mp\eps))$ by \cref{lem:spiked:isotropic}. Letting $\eps\to0$ along a sequence, $\ip{u_N}{v_N}^2\to1/(\theta^2s'(z^*))=1-\theta^{-2}$ by \cref{lem:spiked:stieltjes}.
+
+\emph{Step 5: the overlap, $\theta\le1$.} Part (i), proved in Steps 1--2 and by (S2), holds almost surely at once for the countably many $t\in\{\theta\}\cup\{\theta+1/k:k\ge1\}$. With $F_N(t)=\mu_1(W_N+tu_Nu_N^\top)$ and $h=1/k$, \cref{lem:spiked:supporting} gives $\limsup_N\ip{u_N}{v_N}^2\le(\Lambda(\theta+h)-\Lambda(\theta))/h$. As $\Lambda(\theta+h)-\Lambda(\theta)=(\theta+h-1)_+^2/(\theta+h)$, which is at most $h^2$ since $\theta\le1$, the overlap tends to $0$.
+
+\emph{The spiked Wigner matrix.} Here $A=W_N+\theta_Nu_Nu_N^\top$ with $u_N=x/\norm x$ (a fixed unit vector if $x=0$) independent of $W_N$, and $\theta_N=\lambda\norm x^2/N\to\lambda$ almost surely by the strong law ($x\ne0$ for all large $N$, as $\Prob(X=0)<1$). Weyl's inequality, $\abs{\mu_k(W_N+\theta_Nu_Nu_N^\top)-\mu_k(W_N+\lambda u_Nu_N^\top)}\le\abs{\theta_N-\lambda}$, transfers (i) and (ii). For (iii) with $\lambda>1$, Step 4 applies with $\theta_N$ in the overlap formula and $\mu_1$ located by (i); for $\lambda\le1$, the bound of \cref{lem:spiked:supporting} at $t=\theta_N$ differs from that at $\lambda$ by at most $2\abs{\theta_N-\lambda}/h$, as $F_N$ is $1$-Lipschitz.
+\end{proof}
+
+\paragraph{What the general theorems add.} The proof used the GOE three times, the last to make $u_N$ look uniformly random. For Wigner matrices whose entries have a symmetric law satisfying a Poincaré inequality, \textcite{CapitaineDonatiMartinFeral2009} prove the same eigenvalue limits and show that the fluctuations of the outlier are not universal for a localized spike; for a delocalized spike they are Gaussian of order $N^{-1/2}$ above the threshold and Tracy--Widom of order $N^{-2/3}$ below \parencite{Peche2006,FeralPeche2007}. \Textcite{BenaychGeorgesNadakuditi2011} treat a general spectral law $\mu$ with edge $b$, one summand being orthogonally invariant: the outlier $\zeta$ solves $s_\mu(\zeta)=-1/\theta$ when $\theta>-1/s_\mu(b^+)$, with squared overlap $1/(\theta^2s_\mu'(\zeta))$ (their Theorems~2.1--2.3; \cref{ex:spiked:bgn}). For sample covariance matrices the threshold is $1+\sqrt{N/M}$, for $M$ samples in dimension $N$ \parencite[Theorem~1.1]{BaikBenArousPeche2005}.
+
+\section{The proof: what Bayes adds, and what message passing reaches}\label{sec:spiked:bayes}
+
+\begin{proposition}[Bayes against PCA]\label[proposition]{prop:spiked:pcabayes}
+Let $P_0$ satisfy $\E X^2=1$. For every $\lambda>1$, every maximizer $q_*$ of $\phi_{\mathrm{RS}}(\lambda,\cdot)$ on $[0,\infty)$ satisfies $q_*\ge1-\lambda^{-2}$, with equality only if $P_0=\Normal(0,1)$. For $P_0=\Normal(0,1)$ the maximizer is unique and equals $(1-\lambda^{-2})_+$ for every $\lambda>0$.
+\end{proposition}
+
+\begin{proof}
+The plan is to compare the overlap map with that of the best linear estimator. \emph{Step 1.} The scalar channel has mutual information $I(\gamma)=\frac\gamma2-\psi(\gamma)\in[0,\frac\gamma2]$, so $\psi$ is continuous on $[0,\infty)$ with $\psi(0)=0$, and $\psi'=G/2$ on $(0,\infty)$ by the I-MMSE relation (\cref{thm:freeentropy:immse} for bounded support, \textcite{GuoShamaiVerdu2005} for finite variance). So $\phi_{\mathrm{RS}}(\lambda,\cdot)$ is continuous, $\phi_{\mathrm{RS}}(\lambda,q)\le\lambda^2(q/2-q^2/4)\to-\infty$, maximizers exist, and $\partial_q\phi_{\mathrm{RS}}(\lambda,q)=\frac{\lambda^2}2(G(\lambda^2q)-q)$ for $q>0$.
+
+\emph{Step 2.} Whatever the prior, the estimator $cY$ with $c=\sqrt\gamma/(1+\gamma)$ has mean-square error $1-2c\sqrt\gamma+c^2(1+\gamma)=1/(1+\gamma)$, so $\spikedmmse(\gamma)\le1/(1+\gamma)$ and $G(\gamma)\ge\gamma/(1+\gamma)$. With $q_G=1-\lambda^{-2}$, for $0<q<q_G$,
+\[
+\partial_q\phi_{\mathrm{RS}}(\lambda,q)\ge\frac{\lambda^2}2\Bigl(\frac{\lambda^2q}{1+\lambda^2q}-q\Bigr)=\frac{\lambda^2q\,(\lambda^2-1-\lambda^2q)}{2(1+\lambda^2q)}>0,
+\]
+so $\phi_{\mathrm{RS}}(\lambda,\cdot)$ is strictly increasing on $[0,q_G]$ and no maximizer lies in $[0,q_G)$.
+
+\emph{Step 3.} At $q_G$, where $\lambda^2q_G=\gamma_G\defeq\lambda^2-1>0$, $\partial_q\phi_{\mathrm{RS}}(\lambda,q_G)=\frac{\lambda^2}2(\frac1{1+\gamma_G}-\spikedmmse(\gamma_G))\ge0$. If $q_G$ is a maximizer this vanishes, so $cY$ is the conditional mean $\E(X\mid Y)$ at $\gamma=\gamma_G$, and $\E[(X-cY)e^{itY}]=0$ for all real $t$. With $\omega$ the characteristic function of $X$, differentiable as $\E\abs X<\infty$, we have $\E[Xe^{itY}]=-i\omega'(\sqrt\gamma t)e^{-t^2/2}$ and $\E[Ye^{itY}]=-i\frac{\dd}{\dd t}(\omega(\sqrt\gamma t)e^{-t^2/2})$; substituting $s=\sqrt\gamma t$ gives $(1-c\sqrt\gamma)\omega'(s)=-\frac c{\sqrt\gamma}s\omega(s)$. As $1-c\sqrt\gamma=c/\sqrt\gamma=1/(1+\gamma)$, $\omega'=-s\omega$ with $\omega(0)=1$, so $\omega(s)=e^{-s^2/2}$ and $P_0=\Normal(0,1)$.
+
+\emph{Step 4.} For $P_0=\Normal(0,1)$, $G(\gamma)=\gamma/(1+\gamma)$, so Step~2 holds with equality and $\partial_q\phi_{\mathrm{RS}}$ has the sign of $\lambda^2-1-\lambda^2q$ on $(0,\infty)$.
+\end{proof}
+
+With \cref{thm:nishimori:rsformula} this is a statement about estimators.\sidenote{For a symmetric prior the posterior is invariant under $x\mapsto-x$, so the posterior mean of $x$ is $0$; the natural targets are $xx^\top$ and the direction of $x$ up to sign.} Where $q_*$ is unique, the matrix MMSE $1-q_*^2$ is at most $1-(1-\lambda^{-2})^2$, the limit of the error of the best multiple of $v_1v_1^\top$, since $\norm{xx^\top/N-cv_1v_1^\top}_F^2\to1-2c(1-\lambda^{-2})+c^2$ by \cref{thm:spiked:bbp}. For the Rademacher prior the gain is large: at $\lambda=1.5$, $q_*=0.6923$ against $0.5556$, and the matrix MMSE is $0.5207$ against $0.6914$ (\cref{fig:spiked:phase}). Yet $\lambda=1$ stays the threshold: for the Rademacher prior the MMSE tends to $1$ exactly when $\lambda\le1$ (\cref{thm:nishimori:z2}; \textcite[Theorem~1.4 of arXiv v1]{DeshpandeAbbeMontanari2016} prove it for the two-group block model), no test detects the spike below $\lambda=1$ \parencite{PerryWeinBandeiraMoitra2018}, and for i.i.d.\ priors detection and estimation share their threshold \parencite{ElAlaouiKrzakalaJordan2020}.
+
+Whether an algorithm reaches $q_*$ is the question of \cref{ch:amp}. For spiked matrices the answer is the following theorem, in this chapter's notation.
+
+\begin{theorem}[Montanari and Venkataramanan 2021, Theorem~2 and Corollary~2.3]\label{thm:spiked:mv}
+Let $x=x(N)$ satisfy $\norm x^2/N\to1$, with empirical distributions converging weakly to $P_0$, $\E X^2=1$. Let $\lambda>1$, and assume that $y\mapsto\E(X\mid\sqrt\gamma X+Z=y)$ is Lipschitz for every $\gamma\in(0,\lambda^2]$, as when $P_0$ has bounded support. Let $\gamma_{\mathrm{ALG}}$ be the smallest positive solution of $\gamma=\lambda^2G(\gamma)$, and $q_{\mathrm{ALG}}=\gamma_{\mathrm{ALG}}/\lambda^2$. Then Bayes-optimal approximate message passing started from the top eigenvector of $A$ produces estimates $\hat x^t$ with
+\[
+\lim_{t\to\infty}\lim_{N\to\infty}\frac{\ip{\hat x^t}{x}^2}{\norm{\hat x^t}^2\norm x^2}=q_{\mathrm{ALG}}(\lambda)\qquad\text{almost surely.}
+\]
+Moreover, $q_{\mathrm{ALG}}(\lambda)=q_*(\lambda)$ if and only if the global maximizer of $\phi_{\mathrm{RS}}(\lambda,\cdot)$ on $(0,\infty)$ is its smallest positive stationary point.
+\end{theorem}
+
+The proof extends state evolution (\cref{thm:amp:se}) to a start that depends on $W$. Their Lemma~B.3 describes the law of $A$ given its top eigenvector and eigenvalue, approximately, as the known outlier term plus the spike and an independent GOE matrix, both projected away from that eigenvector: the spectral analogue of the exact conditioning on $WM$ in \cref{lem:toolkit:conditioning}~(i). With \cref{thm:nishimori:rsformula} the theorem settles where message passing is optimal; and since every positive stationary point satisfies $q=G(\lambda^2q)\ge\lambda^2q/(1+\lambda^2q)$, that is $q\ge1-\lambda^{-2}$, message passing never does worse than PCA. For the sparse Rademacher prior, $q_{\mathrm{ALG}}$ lies on the low branch and $q_*$ on the high one for $\lambda\in(\max\{1,\spikedIT\},\spikedalg)$, so message passing is strictly suboptimal there; and for $\lambda\in(\spikedIT,1]$, not empty when $\rho<\rho_*$, weak recovery is possible while the top eigenvector sees nothing. The thresholds of \cref{tab:spiked:thresholds} are uncertified floating-point evaluations of $L$ and \eqref{eq:spiked:dphi}: these consequences are theorems about the variational formula, with numerical inputs not verified by interval arithmetic.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}S[table-format=1.4]S[table-format=1.6]S[table-format=1.6]S[table-format=1.6]cc@{}}
+\toprule
+{$\rho$} & {$\spikedIT$} & {$\spikeddyn$} & {$\spikedalg$} & {jump of $q_*$} & {$\Delta/\rho^2$ at $\spikedIT$}\\
+\midrule
+0.0909 & 1.011198 & 1.009590 & 1.015268 & $0.032\to0.290$ & 0.97798\\
+0.0863 & 1.001634 & 0.998398 & 1.012570 & $0.003\to0.344$ & 0.99674\\
+0.0800 & 0.985607 & 0.980175 & 1.009744 & $0\to0.400$ & 1.02942\\
+0.0600 & 0.913717 & 0.901649 & 1.004285 & $0\to0.530$ & 1.19778\\
+0.0500 & 0.864471 & 0.849363 & 1.002700 & $0\to0.583$ & 1.33813\\
+0.0300 & 0.727309 & 0.707276 & 1.000824 & $0\to0.682$ & 1.89044\\
+0.0200 & 0.626622 & 0.605267 & 1.000341 & $0\to0.734$ & 2.54677\\
+\bottomrule
+\end{tabular}
+\caption{Thresholds of spiked Wigner with the sparse Rademacher prior: the information threshold, the appearance of the high branch, the end of the low branch, the jump of the Bayes overlap at $\spikedIT$, and the noise level $\Delta/\rho^2=1/\spikedIT^2$ of \textcite{LesieurKrzakalaZdeborova2017}, whose densities $0.0909$, $0.0863$ and $0.08$ show the three orderings of $\spikeddyn$, $\spikedIT$ and $1$. Critical densities: $\rho_{\mathrm{tri}}=0.096416$ (where $\spikedIT=\spikeddyn=\spikedalg=1.019951$), $\rho_*=0.085593$ ($\spikedIT=1$), $0.086914$ ($\spikeddyn=1$). Script: \texttt{figures/scripts/05-spiked-phase.py}.}\label{tab:spiked:thresholds}
+\end{table}
+
+\paragraph{Is the window hard?} As of 2026 the evidence covers restricted classes. Below $\lambda=1$ the low-degree likelihood ratio stays bounded for degrees $o(N/\log N)$, for priors that include the sparse Rademacher prior \parencite[Theorem~3.9 of arXiv v1]{KuniskyWeinBandeira2022}. First-order methods with Lipschitz updates and a fixed number of iterations cannot beat Bayes-optimal message passing \parencite{CelentanoMontanariWu2020}, but a spectral start needs about $\log N$ iterations; and that constant-degree polynomials cannot beat message passing is proved \parencite{MontanariWein2025} only for priors with nonzero mean.
+
+\section{Measuring it}\label{sec:spiked:measuring}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=80mm,height=45mm,
+  xmin=0,xmax=3.2,xlabel={spike strength $\lambda$}]
+\nextgroupplot[ylabel={top eigenvalue $\mu_1(A)$},ymin=1.9,ymax=3.45,legend pos=north west,legend style={font=\scriptsize}]
+\addplot[physpred] table[x=lam,y=eig] {figures/data/05-spiked-bbp-curve.dat};
+\addplot[proofpred] table[x=lam,y=eig] {figures/data/05-spiked-bbp-curve.dat};
+\addplot[measured3,ebars,restrict expr to domain={\thisrow{N}}{500:500}] table[x=lam,y=eig,y error plus=eigci,y error minus=eigci] {figures/data/05-spiked-bbp.dat};
+\addplot[measured,ebars,restrict expr to domain={\thisrow{N}}{2000:2000}] table[x=lam,y=eig,y error plus=eigci,y error minus=eigci] {figures/data/05-spiked-bbp.dat};
+\legend{prediction,theorem,$N=500$,$N=2000$}
+\nextgroupplot[ylabel={squared overlap with $x/\norm x$},ymin=-0.02,ymax=1]
+\addplot[physpred] table[x=lam,y=ov] {figures/data/05-spiked-bbp-curve.dat};
+\addplot[proofpred] table[x=lam,y=ov] {figures/data/05-spiked-bbp-curve.dat};
+\addplot[measured3,ebars,restrict expr to domain={\thisrow{N}}{500:500}] table[x=lam,y=ov,y error plus=ovci,y error minus=ovci] {figures/data/05-spiked-bbp.dat};
+\addplot[measured,ebars,restrict expr to domain={\thisrow{N}}{2000:2000}] table[x=lam,y=ov,y error plus=ovci,y error minus=ovci] {figures/data/05-spiked-bbp.dat};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The BBP transition at finite size, Rademacher spike. Points: mean top eigenvalue (left) and mean squared overlap of the top eigenvector with $x$ (right) over $40$ matrices at $N=500$ (squares) and $10$ at $N=2000$ (dots), with Student-$t$ $95\%$ intervals; the same matrices serve all eleven values of $\lambda$, so errors along a curve are correlated (seeds $5000+100N+r$). Carnelian: the replica prediction; lapis dashed: the limits proved in \cref{thm:spiked:bbp}, which coincide with it. Script: \texttt{figures/scripts/05-spiked-bbp.py}.}\label{fig:spiked:bbp}
+\end{figure}
+
+The script \texttt{05-spiked-bbp.py} computes the top eigenpair of $A$ by Lanczos iteration\sidenote{The routine \texttt{scipy.sparse.linalg.eigsh}: a fraction of a second at $N=2000$ on the machine used, against tens of seconds for a dense eigendecomposition.} at eleven values of $\lambda$. It first checks \cref{lem:spiked:secular} on one matrix: at $\mu=\mu_1(A)$ the secular equation holds to $10^{-15}$, and the overlap formula \eqref{eq:toolkit:overlap} matches the eigenvector to ten digits. Away from $\lambda=1$ the measurements agree with the limits (\cref{fig:spiked:bbp}): at $N=2000$ and $\lambda=2$ the top eigenvalue is $2.523\pm0.026$ (limit $2.5$) and the squared overlap $0.751\pm0.012$ ($0.75$). Near $\lambda=1$ the transition is smeared: the outlier $\lambda+1/\lambda-2\approx(\lambda-1)^2$ shows only when it exceeds the edge fluctuations, of order $N^{-2/3}$ \parencite{FeralPeche2007}, that is when $\abs{\lambda-1}\gtrsim N^{-1/3}$ ($0.13$ at $N=500$, $0.08$ at $N=2000$). So the squared overlap at $\lambda=1$ is $0.113\pm0.032$ at $N=500$ and $0.077\pm0.059$ at $N=2000$, and at $\lambda=1.1$ it is $0.19\pm0.04$ and $0.23\pm0.05$ (limit $0.174$).
+
+The script \texttt{05-spiked-phase.py} evaluates $G$ by the trapezoid rule (agreeing with the kit's quadrature to $10^{-8}$), finds the extrema of $L$ from $G'(\gamma)=\E[\Var(X\mid Y)^2]$ (Gaussian integration by parts; checked against finite differences), and solves Maxwell's construction with \eqref{eq:spiked:dphi}. It reproduces the tricritical point $(\Delta,\Delta/\rho^2,\rho)=(0.008935,0.9612,0.09641)$ of \textcite{LesieurKrzakalaZdeborova2017} as $(0.008936,0.9612,0.096416)$. \Cref{fig:spiked:phase}(b) shows how thin the hard window above $\lambda=1$ is, and \cref{comp:spiked:expansion} why: its width vanishes like $\frac34\rho^2$.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[rplot,height=0.47\linewidth,xlabel={spike strength $\lambda$},ylabel={squared cosine with $x$},xmin=0.78,xmax=1.12,ymin=-0.03,ymax=1,
+  legend style={font=\scriptsize,at={(0.985,0.1)},anchor=south east}]
+\addplot[physpred,restrict expr to domain={\thisrow{branch}}{2:2}] table[x=lam,y=q] {figures/data/05-spiked-branches.dat};
+\addplot[physpred2,restrict expr to domain={\thisrow{branch}}{1:1}] table[x=lam,y=q] {figures/data/05-spiked-branches.dat};
+\addplot[proofpred,unbounded coords=jump] table[x=lam,y=q] {figures/data/05-spiked-bayes.dat};
+\addplot[only marks,mark=*,mark size=1.3pt,color=ink,mark options={fill=ink,draw=white,line width=0.2pt},
+  restrict expr to domain={\thisrow{start}}{0:0}] table[x=lamj,y=cos2] {figures/data/05-spiked-amp-runs.dat};
+\addplot[measured2,restrict expr to domain={\thisrow{start}}{1:1}] table[x=lamj,y=cos2] {figures/data/05-spiked-amp-runs.dat};
+\addplot[physpred,forget plot] coordinates {(0.78,0) (1,0)};
+\addplot[guide,forget plot] coordinates {(0.849363,-0.03) (0.849363,1)};
+\addplot[guide,forget plot] coordinates {(0.864471,-0.03) (0.864471,1)};
+\addplot[guide,forget plot] coordinates {(1,-0.03) (1,1)};
+\legend{high branch,middle branch,Bayes overlap $q_*$,AMP{,} weak start,AMP{,} strong start}
+\node[font=\scriptsize,text=muted,anchor=south east,rotate=90] at (axis cs:0.8475,0.97) {$\spikeddyn$};
+\node[font=\scriptsize,text=muted,anchor=south west,rotate=90] at (axis cs:0.8705,0.36) {$\spikedIT$};
+\node[font=\scriptsize,text=muted,anchor=south west,rotate=90] at (axis cs:0.9985,0.18) {$\lambda=1$};
+\end{axis}
+\end{tikzpicture}
+\caption{The hard phase of sparse PCA at $\rho=0.05$, seen by Bayes-optimal message passing. Each point is one run at $N=3000$ with exactly $150$ nonzero coordinates, after $50$ iterations from side information $g_0x+\sqrt{g_0}\,G$ independent of $W$, with $g_0=0.01$ (dots, shifted left by $0.0035$) or $g_0=3$ (circles, shifted right); six matrices per $\lambda$ (seeds $700$--$705$). Carnelian: the stable branches of the potential ($q=0$ for $\lambda<1$, and the high branch) and the unstable middle branch (dotted); lapis dashed: the Bayes overlap, with its jump at $\spikedIT$. Script: \texttt{figures/scripts/05-spiked-amp.py}.}\label{fig:spiked:amp}
+\end{figure}
+
+The script \texttt{05-spiked-amp.py} runs Bayes-optimal message passing in the normalization of \textcite{MontanariVenkataramanan2021}, with the signal-to-noise ratio estimated from the data and a start independent of $W$, so that the state evolution of \textcite{BayatiMontanari2011} applies. The spike has exactly $\rho N=150$ nonzero coordinates: with i.i.d.\ coordinates $\norm x^2/N$, and with it the effective $\lambda$, would fluctuate by about $(\rho N)^{-1/2}\approx8\%$. \Cref{fig:spiked:amp} shows the hysteresis of the physical picture. From the strong start the runs follow the high branch: the mean squared cosine is $0.770\pm0.062$ at $\lambda=0.92$ (state evolution after $50$ steps: $0.755$) and $0.931\pm0.010$ at $\lambda=1.1$ ($0.934$), with $95\%$ intervals over the six matrices. From the weak start they stay near $0$ (mean at most $0.04$) up to $\lambda=0.94$, where the Bayes overlap exceeds $0.58$; closer to $1$, where $q=0$ is only marginally stable, a growing fraction escape within $50$ iterations ($1$, $2$, $4$, $4$, $5$ runs of six at $\lambda=0.96$, $0.98$, $1$, $1.04$, $1.1$). Two finite-size effects are visible: near $\spikeddyn=0.849$ the strong start beats state evolution ($0.621\pm0.059$ against $0.557$ at $\lambda=0.86$, and four runs of six still high at $\lambda=0.84$, where state evolution has collapsed); and the hard window above $\lambda=1$, of width $0.0027$, lies far inside the finite-size window $N^{-1/3}\approx0.07$.
+
+\section{The status board}\label{sec:spiked:status}
+
+The limits for the top eigenvector are proved, for Wigner matrices well beyond the GOE, and so are the errors of the Bayes estimator and of message passing; the thresholds of sparse priors are theorems about a variational formula evaluated in floating point. The claims about semidefinite relaxations and about all efficient algorithms remain conjectures.
+
+\begin{statusboard}
+\statusrow{Top eigenvalue $\lambda+1/\lambda$ and squared overlap $1-1/\lambda^2$ above $\lambda=1$; edge $2$ and overlap $0$ below}{\proved}{\textcite{Peche2006,FeralPeche2007}; \textcite{CapitaineDonatiMartinFeral2009}; \textcite{BenaychGeorgesNadakuditi2011}, Thms 2.1--2.3; \cref{thm:spiked:bbp}}
+\statusrow{Replica-symmetric formula for the mutual information and the MMSE}{\proved}{\textcite{LelargeMiolane2019}, Thm 1; \cref{thm:nishimori:rsformula}}
+\statusrow{PCA is Bayes-optimal for the Gaussian prior only}{\proved}{\cref{prop:spiked:pcabayes}, from the RS formula}
+\statusrow{Weak recovery and detection start at $\lambda=1$ for the Rademacher prior}{\proved}{\cref{thm:nishimori:z2}; \textcite{DeshpandeAbbeMontanari2016} (block model); \textcite{PerryWeinBandeiraMoitra2018}; \textcite{ElAlaouiKrzakalaJordan2020}}
+\statusrow{Sparse Rademacher: first order for $\rho<\rho_{\mathrm{tri}}=0.0964$; $\spikedIT<1$ for $\rho<\rho_*=0.0856$}{\provedunder}{RS formula proved (\cref{thm:nishimori:rsformula}); read off it by uncertified floating-point evaluation on a grid of densities}
+\statusrow{Bayes-AMP with spectral start reaches the smallest positive stationary point; optimal iff it is the global maximizer}{\provedunder}{\textcite{MontanariVenkataramanan2021}, Thm 2, Cor 2.3: Lipschitz posterior mean, $\lambda>1$, $t\to\infty$ after $N\to\infty$; bounded support for optimality}
+\statusrow{No polynomial-time algorithm beats message passing in the hard window}{\conjectured}{\textcite{LesieurKrzakalaZdeborova2017}; evidence for restricted classes: low degree, first-order methods}
+\statusrow{Error curve of the semidefinite relaxation of $\Z_2$ synchronization above $\lambda=1$}{\conjectured}{\textcite{JavanmardMontanariRicciTersenghi2016}, cavity method and numerics}
+\end{statusboard}
+
+\section{Where the translation fails}\label{sec:spiked:fails}
+
+\paragraph{What was assumed.} \Cref{thm:spiked:bbp} uses orthogonal invariance to make an independent direction look uniformly random. The physical derivation needs only the second moments of the noise and gives the same answer for every Wigner matrix, which proofs reach only with heavier tools: \textcite{CapitaineDonatiMartinFeral2009} for the eigenvalue, \textcite{BenaychGeorgesNadakuditi2011} for the eigenvector when the direction of the spike is uniformly random. The spike must be independent of the noise, of finite rank, and of strength of order one. The Bayes statements assume a known prior, i.i.d.\ coordinates (relaxed in \cref{thm:spiked:mv}), Gaussian noise of known variance, and, for message passing, a Lipschitz posterior mean and $N\to\infty$ before $t\to\infty$. Our message-passing runs fix the number of nonzero coordinates, which \cref{thm:spiked:mv} allows and \cref{thm:nishimori:rsformula} does not cover.
+
+\paragraph{Where the physics is wrong, or not yet right.} For this model the physical predictions about the top eigenvector, the Bayes estimator and message passing have all been proved, and none is known to fail. The derivation is right for a reason specific to the sphere, where the quadratic model is replica symmetric; on the hypercube $\{\pm1\}^N$ the same zero-temperature computation describes the Sherrington--Kirkpatrick ground state, where replica symmetry is broken (\cref{ch:sk}). The physics says nothing exact at simulated sizes: the transition is smeared over $\abs{\lambda-1}\lesssim N^{-1/3}$, and the hard window above $\lambda=1$ at $\rho=0.05$ stays invisible unless $N$ is far beyond $10^7$.
+
+\paragraph{Open problems.} The conjecture of \textcite{LesieurKrzakalaZdeborova2017} that no polynomial-time algorithm beats message passing in the hard window is open; a proof for all algorithms would need average-case lower bounds beyond current complexity theory. Even the low-degree version for symmetric priors is open: the theorem of \textcite{MontanariWein2025} needs a nonzero mean, and their Remark~1.2 extends to symmetric priors, with a sign-invariant loss, only the formulas for the AMP and Bayes errors. Whether first-order methods with a spectral start or a growing number of iterations beat Bayes-optimal message passing is open. The error curve of the semidefinite relaxation of $\Z_2$ synchronization above $\lambda=1$, predicted by \textcite{JavanmardMontanariRicciTersenghi2016} with the cavity method, is, to our knowledge, not proved.
+
+\begin{exercises}
+\item \consolidation (The Stieltjes transform from moments.) The semicircle law has moments $\int x^{2k}\spikedsc(\dd x)=C_k$, the Catalan numbers, and vanishing odd moments. (a) Show that $s(z)=-\sum_{k\ge0}C_kz^{-2k-1}$ for $z>2$. (b) From $C_{k+1}=\sum_{i=0}^kC_iC_{k-i}$ deduce $s^2+zs+1=0$ and \eqref{eq:spiked:s}. (c) Check $s'(z)=-s(z)/\sqrt{z^2-4}$.\label{ex:spiked:catalan}
+
+\item \consolidation (One derivative, two routes.) (a) For $\theta>1$, differentiate $1+\theta s(\Lambda(\theta))=0$ to show $\Lambda'(\theta)=1/(\theta^2s'(\Lambda(\theta)))$: the limit in Step~4 of the proof of \cref{thm:spiked:bbp} is the derivative that the convexity route of \cref{ex:spiked:griffiths} produces. (b) Replace $\spikedsc$ by a compactly supported law $\mu$ with upper edge $b$ and $s_\mu(b^+)>-\infty$. Show that $1+\theta s_\mu(z)=0$ has a root $z(\theta)>b$ if and only if $\theta>-1/s_\mu(b^+)$, that it is unique, and that $z'(\theta)=1/(\theta^2s_\mu'(z(\theta)))$; compare with the outlier and the overlap of \textcite{BenaychGeorgesNadakuditi2011}.\label{ex:spiked:bgn}
+
+\item \consolidation (The other edge.) Show that the lowest eigenvalue of $A_N(\theta)$ tends to $-2$, and that for $\theta>1$ that of $W_N-\theta u_Nu_N^\top$ tends to $-(\theta+1/\theta)$.\label{ex:spiked:negative}
+
+\item \consolidation (The Gaussian prior.) For $P_0=\Normal(0,1)$ show $\psi(\gamma)=\frac\gamma2-\frac12\log(1+\gamma)$ and that $\frac1NI(x;A)$ tends to $\frac{\lambda^2}4$ for $\lambda\le1$ and to $\frac1{4\lambda^2}+\log\lambda$ for $\lambda>1$, a function continuously differentiable at $\lambda=1$; check that the matrix MMSE equals the error $1-(1-\lambda^{-2})^2$ of the best multiple of $v_1v_1^\top$.\label{ex:spiked:gaussian}
+
+\item \byhand (The spherical model at finite temperature.) From \eqref{eq:spiked:phiRS} compute the free entropies $\frac{\beta^2}4$ (paramagnet), $\beta-\frac12\log\beta-\frac34$ (spin glass) and $\frac\beta2(\lambda+\frac1\lambda)-\frac12-\frac12\log(\beta\lambda)-\frac1{4\lambda^2}$ (ferromagnet). (a) Show that they agree on the lines $\beta=1$ ($\lambda\le1$), $\beta\lambda=1$ ($\lambda\ge1$) and $\lambda=1$ ($\beta\ge1$), which bound the three phases. (b) Show $\partial_\lambda\phi_{\mathrm F}=\beta m^2/2$, and deduce that the ferromagnet has the larger free entropy wherever it and the spin glass both exist.\label{ex:spiked:finiteT}
+
+\item \byhand (A two-point prior.) Let $X=\sqrt{(1-p)/p}$ with probability $p$ and $X=-\sqrt{p/(1-p)}$ otherwise. (a) Check $\E X=0$, $\E X^2=1$, $m_3=(1-2p)/\sqrt{p(1-p)}$. (b) Show that $m_3^2>2$ (\cref{comp:spiked:expansion}) exactly when $p<\frac12-\frac1{2\sqrt3}\approx0.211$ or $p>\frac12+\frac1{2\sqrt3}$, the first-order threshold that \textcite{LesieurKrzakalaZdeborova2017} find for two unequal communities.\label{ex:spiked:twopoint}
+
+\item \byhand\hard (The next order.) Carry \cref{comp:spiked:expansion} one order further for a symmetric prior: $G(\gamma)=\gamma-\gamma^2+(\frac{m_4^2}6-m_4+\frac52)\gamma^3+O(\gamma^4)$, which is $\gamma-\gamma^2+\frac53\gamma^3$ for the Rademacher prior. Deduce $\spikedalg\approx1+\frac{3\rho^2}{4(1-3\rho)^2}$ for the sparse Rademacher prior and compare with \cref{tab:spiked:thresholds}. \hint{the order $s^6$ needs $\mathrm{He}_4$ and $\mathrm{He}_5$; a computer algebra system is welcome.}\label{ex:spiked:cubic}
+
+\item \translate (The Lagrange multiplier is the resolvent.) Impose $\norm\sigma^2=N$ with a multiplier $z$: then $\frac1N\log Z_N(\beta)\approx\frac{z-1}2-\frac1{2N}\sum_i\log(z-\beta\mu_i(A))$ at the saddle point $\frac1N\sum_i(z-\beta\mu_i(A))^{-1}=1$. (a) For $A=W$ show that the saddle point is $z=1+\beta^2$ when $\beta\le1$, and recover $\phi(\beta)=\beta^2/4$ with $\int\log(t-x)\spikedsc(\dd x)=-\frac{ts(t)}2-\log(-s(t))-\frac12$ for $t\ge2$. (b) Show that the saddle-point equation becomes $s(z/\beta)=-\beta$ and has no solution above the edge for $\beta>1$: the measure condenses on the top eigenvector. Which step of the proof of \cref{thm:spiked:bbp} plays this role?\label{ex:spiked:lagrange}
+
+\item \translate (Griffiths' lemma.) Let $f_N$ be convex on an open interval, converging pointwise to $f$, differentiable at $t$. Show that every choice of subgradients $d_N\in\partial f_N(t)$ converges to $f'(t)$. Deduce (iii) of \cref{thm:spiked:bbp} from (i), and state the physical identity this lemma replaces.\label{ex:spiked:griffiths}
+
+\item \measurement (The window.) Run the script \texttt{05-spiked-bbp.py} at $N=250$, $500$, $1000$ and $2000$ for $\lambda=1$ and $1.1$, with $40$ matrices each. Check that the squared overlap at $\lambda=1$ decreases roughly like $N^{-1/3}$, describe how the one at $\lambda=1.1$ approaches $0.174$, and explain both by the scale $\abs{\lambda-1}\approx N^{-1/3}$.\label{ex:spiked:window}
+
+\item \measurement (The basin of the high branch.) At $\rho=0.05$ and $\lambda=0.92$, state evolution from $\gamma_0$ reaches the high branch exactly when $\gamma_0>\lambda^2q_{\mathrm{mid}}\approx0.109$, the unstable fixed point ($q_{\mathrm{mid}}=0.1293$). Vary the strength $g_0$ of the start in the script \texttt{05-spiked-amp.py}, at $N=1500$ and $3000$: how sharp is this threshold at finite $N$?\label{ex:spiked:basin}
+
+\item \research (Low degree and symmetric priors.) Formulate a sign-invariant version, for the sparse Rademacher prior, of the equivalence of \textcite{MontanariWein2025} between low-degree polynomial estimators and message passing, and test numerically whether a low-degree polynomial in the entries of $A$ can beat $q_{\mathrm{ALG}}$ for $\lambda\in(1,\spikedalg)$.\label{ex:spiked:lowdegree}
+\end{exercises}
+
+\notesandrefs
+The spike entered random-matrix physics through spin glasses. \Textcite{KosterlitzThoulessJones1976} solved the spherical spin glass with the semicircle law and checked it against replicas, and \textcite{JonesKosterlitzThouless1978} re-derived, against a 1977 claim to the contrary, the prediction of two earlier calculations that a single eigenvalue can split off from the semicircle when the entries of a random symmetric matrix have a nonzero mean; \textcite{FurediKomlos1981} proved it for a fixed mean $\mu>0$: the top eigenvalue is close to $n\mu+\sigma^2/\mu$, our $\lambda+1/\lambda$ far above the threshold. In the statistical mechanics of learning the PCA transition appeared as a critical number of examples needed for the search of the direction of largest variance \parencite{BiehlMietzner1994}. \Textcite{HoyleRattray2004} derived by replicas the spectrum of sample covariance matrices with symmetry-breaking directions, one eigenvalue leaving the bulk at each transition; their paper appeared on 27 February 2004, and \textcite{BaikBenArousPeche2005} posted their proof for complex Gaussian data on 1 March 2004.
+
+The proof of \cref{thm:spiked:bbp} follows the resolvent route of \textcite{BenaychGeorgesNadakuditi2011} for the GOE, the overlap above the threshold included; proving isotropy by a reflection and a fourth moment, and treating the overlap at and below the threshold by convexity, are our choices among standard devices. \Cref{prop:spiked:pcabayes} and its proof are ours; we have not found the statement published, but both ingredients are classical: $\spikedmmse(\gamma)\le1/(1+\gamma)$, with equality only for a Gaussian input. On the Bayes side the physics came first: \textcite{LesieurKrzakalaZdeborova2017} derived the potential, the typology of transitions and the hard phase. The formula was proved for $\Z_2$ synchronization by \textcite{DeshpandeAbbeMontanari2016}, bracketed by \textcite{KrzakalaXuZdeborova2016}, and proved for general priors by \textcite{LelargeMiolane2019} (\cref{ch:nishimori} gives the history).
+
+\paragraph{Translating the literature.} \Textcite{LelargeMiolane2019} and \textcite{DeshpandeAbbeMontanari2016} write $Y=\sqrt{\lambda/n}\,XX^\top+Z$: their $\lambda$ is our $\lambda^2$, their overlap $1-1/\lambda$, their $F(\lambda,q)$ our $\phi_{\mathrm{RS}}(\sqrt\lambda,q)$. \Textcite{MontanariVenkataramanan2021} and \textcite{PerryWeinBandeiraMoitra2018} use our normalization, the first with $\gamma_t$ for our $\lambda^2q_t$; the functional of their Proposition~2.2, as printed in arXiv v4, should read $\gamma^2/(4\lambda^2)$ for $\gamma^2/(4\lambda)$ and is minimized, being a mutual information (so read \enquote{minimum} in their Corollary~2.3; \texttt{05-spiked-phase.py} checks that only the corrected form is stationary at the fixed point). \Textcite{LesieurKrzakalaZdeborova2017} take $x_i\in\{0,\pm1\}$, $\E x_i^2=\rho$, and noise variance $\Delta$, so $\Delta/\rho^2=1/\lambda^2$; their $\Delta_{\mathrm{Alg}}$, $\Delta_{\mathrm{Dyn}}$, $\Delta_{\mathrm{IT}}$, $\Delta_c$ are our $\spikedalg$, $\spikeddyn$, $\spikedIT$, $\lambda=1$. \Textcite{BenaychGeorgesNadakuditi2011} write $\theta$ for our $\lambda$ and $G_\mu$ for $-s_\mu$, with $s_\mu$ as in \cref{def:toolkit:stieltjes}.
+
+\printchapterbib
+\end{refsection}

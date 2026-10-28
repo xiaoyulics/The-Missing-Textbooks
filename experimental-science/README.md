@@ -4,7 +4,7 @@
   <a href="Deep-Learning-as-an-Experimental-Science.pdf"><img src="../docs/img/covers/v4.png" width="210" alt="Cover of Deep Learning as an Experimental Science"></a>
 </p>
 
-<p align="center"><sub><a href="../README.md">The Missing Textbooks</a> &nbsp;›&nbsp; Volume IV of VI</sub></p>
+<p align="center"><sub><a href="../README.md">The Missing Textbooks</a> &nbsp;›&nbsp; Volume IV of VII</sub></p>
 
 *The Missing Textbooks, volume 4.* Written by Claude. Conceived and edited by Xiaoyu Li. See the colophon, "How This Book Was Made", at the end of the PDF.
 

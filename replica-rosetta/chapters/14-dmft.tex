@@ -1,0 +1,492 @@
+% Chapter 14 of The Replica Rosetta Stone: dynamical mean-field theory.
+\rstchapter{Dynamical Mean-Field Theory}{Gradient flow in high dimension}{the generating functional\dict Gaussian conditioning}{ch:dmft}
+\stonefoot{partial}
+\begin{refsection}[chapters/14-dmft.bib]
+
+% local notation
+\newcommand{\dmftC}{\mathcal{C}}          % limiting correlation
+\newcommand{\dmftE}{\mathcal{E}}          % limiting excess risk
+\newcommand{\dmftL}{\mathcal{L}}          % limiting training error
+\newcommand{\dmftM}{\mathcal{M}}          % moment generating function of the semicircle
+\newcommand{\dmftsp}{\mathrm{sp}}         % spherical gradient
+\newcommand{\dmftGP}{\mathrm{GP}}         % Gaussian process
+
+\begin{chaptersummary}
+Run gradient flow or Langevin dynamics in a random landscape and let the dimension tend to infinity at fixed times. Physicists predict, from a generating functional without replicas, that the correlation $C(t,s)$ and the response $R(t,s)$ obey closed equations, which for the spherical $p$-spin model predict a dynamical transition, aging, and an energy that stops at a threshold above the ground state. Rigorous versions hold on fixed time horizons, by stochastic calculus for spin glasses at positive temperature and by Gaussian conditioning for gradient methods with smooth losses on generalized linear models; we prove the theory completely for two linear flows, least squares and the spherical $2$-spin, where the self-consistent kernel is a Marchenko--Pastur or semicircle transform. Integrations of the equations agree with simulations where the equations are a theorem; beyond times of order one results exist only in special cases, and aging for $p\ge3$ remains a conjecture.
+\end{chaptersummary}
+
+\section{The question: where does gradient flow go?}\label{sec:dmft:question}
+
+Most estimators in high dimension are computed by optimization, and the replica and comparison chapters describe the optimum. They do not say what a gradient method finds in a time that does not grow with the dimension, which in a nonconvex landscape can be something else. \term{Dynamical mean-field theory}\index{dynamical mean-field theory} is the physicists' answer: as the dimension grows, the trajectory of a high-dimensional flow is described by a few deterministic functions of two times, which solve closed equations.
+
+\paragraph{A landscape from tensor PCA.} To estimate $v$ from a noisy tensor $Y=\lambda v^{\otimes p}+G$ one maximizes the likelihood over the sphere; when $\lambda$ is small, a gradient method sees the landscape of the noise, the \term{spherical $p$-spin model}\index{spherical $p$-spin model}. On $S_N=\{x\in\R^N:\norm x^2=N\}$,
+\[
+H_N(x)=N^{-(p-1)/2}\sum_{i_1,\dots,i_p=1}^NG_{i_1\cdots i_p}x_{i_1}\cdots x_{i_p},\qquad\E H_N(x)H_N(y)=N\xi\Bigl(\frac{\ip xy}N\Bigr),
+\]
+with i.i.d.\ standard Gaussian entries and $\xi(q)=q^p$, the book's normalization (mixtures have $\xi(q)=\sum_pc_p^2q^p$); we minimize. By \cref{ch:kacrice} the ground state is $-E_0$, $E_0(3)=1.65700$, and the threshold $-E_\infty$, $E_\infty=2\sqrt{(p-1)/p}$. The dynamics is the Langevin diffusion at temperature $T\ge0$ from $x_0$ uniform on $S_N$ and independent of $H_N$,
+\begin{equation}\label{eq:dmft:langevin}
+\dd x_t=-\nabla_{\dmftsp}H_N(x_t)\dd t+\sqrt{2T}\,P^\perp_{x_t}\dd B_t-T\,\frac{N-1}N\,x_t\dd t,
+\end{equation}
+with $P^\perp_x=I-xx^\top/N$, $\nabla_{\dmftsp}=P^\perp_x\nabla$, a Brownian motion $B$ and an Itô correction that keeps $\norm{x_t}^2=N$; $T=0$ is gradient flow.\index{Langevin dynamics} A trajectory is summarized by its energy $e_N(t)=H_N(x_t)/N$, the \term{correlation function}\index{correlation function} $C_N(t,s)=\frac1N\ip{x_t}{x_s}$ and the \term{response function}\index{response function} $R_N(t,s)=\frac1N\sum_i\partial\E[x_{t,i}]/\partial h_i(s)$ to a small field $h$ added to the drift at time $s<t$; in this chapter $R$ is never an overlap.\sidenote{\Textcite{CugliandoloKurchan1993} and \textcite{CrisantiHornerSommers1993} use the covariance $Nq^p/2$; rescaling time shows that their energies and temperatures are ours divided by $\sqrt2$ and their times ours multiplied by $\sqrt2$. Their threshold $-1.154701$, ground state $-1.171675$ and dynamical temperature $\sqrt{3/8}$ for $p=3$ are our $-1.632993$, $-1.656998$ and $\sqrt3/2$. We write the equations for a general $\xi$, valid in both normalizations.}
+
+\begin{physicsbox}[Crisanti, Horner and Sommers 1993; Cugliandolo and Kurchan 1993]
+As $N\to\infty$ at fixed times, $C_N\to C$ and $R_N\to R$, the solution of the closed equations, for $t>s$,
+\begin{equation}\label{eq:dmft:ck}
+\begin{aligned}
+\partial_tC(t,s)&=-\mu(t)C(t,s)+\int_0^t\xi''(C(t,u))R(t,u)C(u,s)\dd u\\
+&\qquad+\int_0^s\xi'(C(t,u))R(s,u)\dd u,\\
+\partial_tR(t,s)&=-\mu(t)R(t,s)+\int_s^t\xi''(C(t,u))R(t,u)R(u,s)\dd u,
+\end{aligned}
+\end{equation}
+with $C(t,t)=R(t,t)=1$ and $\mu(t)=T+\int_0^t[\xi'(C(t,u))+C(t,u)\xi''(C(t,u))]R(t,u)\dd u$; the energy tends to $e(t)=-\int_0^t\xi'(C(t,u))R(t,u)\dd u$. For the pure $p$-spin with $p\ge3$ the dynamics equilibrates above a temperature $T_d$ and ages below it, and the energy it reaches tends, as $T\to0$, to the threshold $-E_\infty$ ($-1.63299$ for $p=3$), strictly above the ground state $-E_0$ ($-1.65700$): gradient methods do not find the bottom of the landscape.
+\end{physicsbox}
+
+In learning, gradient flow $\dot\beta_t=-\nabla\hat L(\beta_t)$ on an empirical risk $\hat L(\beta)=\frac1n\sum_i\mathrm{loss}(\ip{x_i}{\beta},y_i)$, with $x_i\sim\Normal(0,I_d)$ and $n/d\to\alpha$, uses every sample at every time;\index{gradient flow} unlike the online algorithm of \cref{ch:sgd}, the trajectory and the data become dependent and the dynamics acquires memory. Dynamical mean-field theory predicts a closed effective process for one coordinate and one sample \parencite{AgoritsasEtAl2018,MignaccoEtAl2021a}, and for least squares an explicit learning curve, \eqref{eq:dmft:risk} below.
+
+How do physicists derive closed equations for an $N$-dimensional random dynamics, and what has been proved: for which models, on which time scales, and under which hypotheses?
+
+\section{The physics: a generating functional without replicas}\label{sec:dmft:physics}
+
+A physicist computes averages over the noise and the disorder from a generating functional of trajectories, in the formalism of \textcite{MartinSiggiaRose1973}, \textcite{Janssen1976} and \textcite{DeDominicis1976}, first applied to spin glasses by \textcite{SompolinskyZippelius1981}.\index{Martin--Siggia--Rose integral} The functional is normalized by construction, so the disorder can be averaged directly.\sidenote{\Textcite{DeDominicis1978} titled his paper ``Dynamics as a substitute for replicas in systems with quenched random impurities''.}
+
+\begin{heuristic}[The Martin--Siggia--Rose integral]
+\emph{Paths.} Physicists write \eqref{eq:dmft:langevin}, with a field $h$, as $\dot x_i=h_i-\partial_iH-\mu x_i+\eta_i$, with white noise $\eta$ of strength $2T$ and a Lagrange multiplier $\mu(t)$. Noise averages are then integrals over paths of a delta function of this equation, whose Jacobian is $1$ in Itô's convention. Writing the delta function as an integral over a response field $\hat x$ and averaging the noise, $\E e^{i\int\hat x\eta}=e^{-T\int\hat x^2}$, gives
+\begin{gather*}
+\E_\eta\,\mathcal O(x)=\int\mathcal Dx\,\mathcal D\hat x\;\mathcal O(x)\,e^{S[x,\hat x]},\\
+S=\sum_i\int\dd t\,\Bigl\{i\hat x_i\bigl(h_i-\dot x_i-\mu x_i-\partial_iH(x)\bigr)-T\hat x_i^2\Bigr\}.
+\end{gather*}
+The total mass is $1$ for every $h$ and every disorder. Differentiating in $h$ gives $R(t,s)=\frac1N\sum_i\langle x_i(t)\,i\hat x_i(s)\rangle$, and every moment of $\hat x$ alone vanishes.
+
+\emph{Disorder.} The Gaussian $H$ enters linearly, through $-\sum_i\int i\hat x_i\partial_iH(x)$, so its average is the exponential of half the variance. Since $\E[\partial_iH(x)\partial_jH(y)]=\delta_{ij}\xi'(\ip xy/N)+y_ix_j\xi''(\ip xy/N)/N$, the averaged exponent is
+\[
+\frac N2\int\!\!\int\dd t\,\dd s\,\bigl\{\xi'(C(t,s))\,Q(t,s)+\xi''(C(t,s))\,K(t,s)K(s,t)\bigr\},
+\]
+with $C(t,s)=\frac1N\sum_ix_i(t)x_i(s)$, $K(t,s)=\frac1N\sum_ix_i(t)\,i\hat x_i(s)$ and $Q(t,s)=\frac1N\sum_ii\hat x_i(t)\,i\hat x_i(s)$.
+
+\emph{Saddle point and effective process.} Fixing $C$, $K$, $Q$ by delta functions factorizes the integral over coordinates and leaves an integral $\int e^{N\Sigma}$ over the order parameters, dominated as $N\to\infty$ by a saddle point at which $C$ is the correlation, $K=R$ the response, and $Q=0$. There the term in $Q$ becomes a centered Gaussian noise $\phi$ with $\E\phi(t)\phi(s)=\xi'(C(t,s))$, and the term in $KK$ a memory term: each coordinate follows the single-site process
+\begin{equation}\label{eq:dmft:effective}
+\dot x(t)=-\mu(t)x(t)+\int_0^t\xi''(C(t,u))R(t,u)x(u)\dd u+\phi(t)+\eta(t)+h(t),
+\end{equation}
+with $C(t,s)=\E x(t)x(s)$ and $R(t,s)=\E\,\partial x(t)/\partial h(s)$ determined self-consistently.
+\end{heuristic}
+
+The uncontrolled steps are the path integral, which is not a measure, the exchange of the disorder average with it, and the saddle point in a space of functions of two times, with the assumption that the order parameters concentrate. The dynamical cavity method reaches \eqref{eq:dmft:effective} without a path integral, by adding one coordinate to a large system and treating its effect by linear response.\index{dynamical cavity method}
+
+\begin{heuristic}[Closing the equations]
+For a spherical model \eqref{eq:dmft:effective} is linear. Multiply it by $x(s)$, $s<t$, and average. The noise $\eta(t)$ is independent of the past, and \term{Novikov's formula}\index{Novikov's formula}, Gaussian integration by parts for $\phi$, gives
+\[
+\E[\phi(t)x(s)]=\int_0^s\E[\phi(t)\phi(u)]\,\E\frac{\partial x(s)}{\partial\phi(u)}\dd u=\int_0^s\xi'(C(t,u))R(s,u)\dd u,
+\]
+since a change of $\phi(u)$ acts as a field: this is the $C$-equation of \eqref{eq:dmft:ck}. Differentiating \eqref{eq:dmft:effective} in $h(s)$ gives the $R$-equation, and $C(t,t)=1$, with Itô's correction $2T$, fixes $\mu$. Averaging $H(x(t))$ against the Gaussian term of the action gives $\E\langle H(x(t))\rangle=-\int_0^t\dd u\sum_i\langle i\hat x_i(u)\,x_i(t)\rangle\,\xi'(C(t,u))=-N\int_0^t\xi'(C(t,u))R(t,u)\dd u$.
+\end{heuristic}
+
+For a pure model Euler's identity $\ip x{\nabla H}=pH$ gives $\mu=T-pe$. The closure is special to spherical models: with a non-quadratic single-site potential, $C$ and $R$ do not determine the effective process.\sidenote{This is the Sompolinsky--Zippelius theory of soft spins; \textcite{BenArousGuionnet1997} proved that its effective process is the limit at high temperature.}
+
+\subsection{Long times: equilibrium, aging, threshold}
+
+Physicists then let $t\to\infty$ after $N\to\infty$. Above a dynamical temperature the solution becomes invariant under time translations, obeys the \term{fluctuation--dissipation theorem}\index{fluctuation--dissipation theorem} $R(\tau)=-\frac1TC'(\tau)$, and $C(\tau)\to0$. Below it, \textcite{CugliandoloKurchan1993} found, numerically and then analytically, \term{aging}\index{aging}: $C(t_w+\tau,t_w)$ decays to a plateau $q$ and then to $0$ on a time scale that grows with the age $t_w$, with a fluctuation--dissipation relation modified by a factor $x<1$.
+
+\begin{computation}{The dynamical temperature and the threshold}\label{comp:dmft:threshold}
+\step \emph{Two scales.} For large $s$ and $\tau=t-s$, split $C(t,s)$ into a fast part, decaying from $1$ to $q$ with $R=-\frac1T\partial_\tau C$, and a slow part, decaying from $q$ to $0$ with $R=\frac xT\partial_sC$.
+\step \emph{Energy.} On each part $-\int\xi'(C)R$ becomes an integral over the value $c$ of $C$:
+\[
+e_\infty=-\frac1T\int_q^1\xi'(c)\dd c-\frac xT\int_0^q\xi'(c)\dd c=-\frac1T\bigl[\xi(1)-(1-x)\xi(q)\bigr];
+\]
+with $q=0$ this is the equilibrium energy $-\xi(1)/T$.
+\step \emph{Plateau.} The same splitting in the $C$-equation for $1\ll\tau\ll s$, with $\mu$ computed likewise, gives $qT^2=\xi'(q)(1-q)\bigl[(1-q)+xq\bigr]$.
+\step \emph{Dynamical temperature.} At the transition the slow decay still has $x=1$, so $T^2=\xi'(q)(1-q)/q$, and a solution $q>0$ first appears at $T_d^2=\max_q\xi'(q)(1-q)/q$. For $\xi=q^p$: $q_d=(p-2)/(p-1)$, $T_d^2=p(p-2)^{p-2}/(p-1)^{p-1}$, and $T_d=\sqrt3/2=0.86603$ for $p=3$.
+\step \emph{Aging.} Below $T_d$, Cugliandolo and Kurchan impose marginality, $\xi''(q)(1-q)^2=T^2$; with step 3 it gives $x=(p-2)(1-q)/q$. For $p=3$ and $T=0.7$: $q=0.64385$, $x=0.55315$, $e_\infty=-1.25819$.
+\step \emph{Threshold.} As $T\to0$, $1-q\sim T/\sqrt{\xi''(1)}$ and $x\sim(p-2)(1-q)$, and step 2 gives $e_\infty\to-[\xi'(1)+(p-2)\xi(1)]/\sqrt{\xi''(1)}=-2(p-1)/\sqrt{p(p-1)}=-E_\infty$.
+\end{computation}
+
+The separation of scales, the slow part and marginality are ansätze;\sidenote{Marginality and the energy with this $x$ are equations (7) and (8) of \textcite{CugliandoloKurchan1993}, in their normalization.} marginality says that the dynamics settles where the Hessian has a vanishing smallest eigenvalue,\index{marginal stability} and in the landscape of \cref{ch:kacrice} the Hessian at a critical point of energy $E$ is a semicircle of radius $2\sqrt{p(p-1)}$ shifted by $-pE$, which touches zero exactly at the \term{threshold energy}\index{threshold energy} $-E_\infty$.\index{dynamical transition}
+
+\subsection{The same theory for learning}
+
+In coordinates of order one, $w=\sqrt d\,\beta$ and $A=X/\sqrt d$, gradient flow on $\hat L$ reads $\dot w_t=-\frac1\alpha A^\top\ell(Aw_t;y)$, where $\ell(r;y)=\partial_r\mathrm{loss}(r,y)$ acts row by row.
+
+\begin{heuristic}[The dynamical cavity for learning]
+Add a coordinate $w_0$, with a new column $a_0$ of $A$, so that $\dot w_0=-\frac1\alpha a_0^\top\ell(r;y)$. On the old residuals this force is a Gaussian process of covariance $C_\ell/\alpha$, by the central limit theorem; the effect of $w_0$ on its own fields gives $-\Gamma_tw_0$; and the old trajectory's response feeds back with delay. Removing a sample gives the equation for its field, and closing the averages gives
+\begin{equation}\label{eq:dmft:glm}
+\begin{aligned}
+\dot w_t&=-\Gamma_tw_t-\int_0^tR_\ell(t,s)w_s\dd s+\zeta_t,&\zeta&\sim\dmftGP(0,C_\ell/\alpha),\\
+r_t&=-\frac1\alpha\int_0^tR_w(t,s)\,\ell(r_s;y)\dd s+\omega_t,&\omega&\sim\dmftGP(0,C_w),
+\end{aligned}
+\end{equation}
+with $\Gamma_t=\E\ell'(r_t;y)$, $C_w(t,s)=\E w_tw_s$, $C_\ell(t,s)=\E\ell(r_t;y)\ell(r_s;y)$, and responses $R_w$ and $R_\ell=\E\rho$ defined, for $s<t$, by
+\begin{gather*}
+\partial_tR_w(t,s)=-\Gamma_tR_w(t,s)-\int_s^tR_\ell(t,u)R_w(u,s)\dd u,\qquad R_w(s,s)=1,\\
+\rho(t,s)=-\frac{\ell'(r_t;y)}\alpha\Bigl[\int_s^tR_w(t,u)\rho(u,s)\dd u+R_w(t,s)\ell'(r_s;y)\Bigr].\qedhere
+\end{gather*}
+\end{heuristic}
+
+This is the system that \textcite{CelentanoChengMontanari2021} later proved, a planted teacher entering as an extra fixed coordinate. For the square loss it is linear.
+
+\begin{computation}{The memory kernel of least squares}\label{comp:dmft:kernel}
+\step \emph{Square loss.} For $\ell(r;y)=r-y$, $\ell'=1$ and $\Gamma_t=1$; the response equations of \eqref{eq:dmft:glm} are deterministic, linear and invariant under time translations. With $\tau=t-s$ and $\gamma=1/\alpha$,
+\begin{gather*}
+R_w'(\tau)=-R_w(\tau)-\int_0^\tau R_\ell(\tau-u)R_w(u)\dd u,\qquad R_w(0)=1,\\
+R_\ell(\tau)=-\gamma R_w(\tau)-\gamma\int_0^\tau R_w(\tau-u)R_\ell(u)\dd u.
+\end{gather*}
+\step \emph{Laplace transforms.} With $\hat f(p)=\int_0^\infty e^{-p\tau}f(\tau)\dd\tau$: $p\hat R_w-1=-\hat R_w-\hat R_\ell\hat R_w$ and $\hat R_\ell=-\gamma\hat R_w-\gamma\hat R_w\hat R_\ell$.
+\step \emph{Eliminate.} The second gives $\hat R_\ell=-\gamma\hat R_w/(1+\gamma\hat R_w)$, and the first becomes
+\begin{equation}\label{eq:dmft:kernel}
+\hat R_w(p)\Bigl(p+\frac1{1+\gamma\hat R_w(p)}\Bigr)=1,
+\end{equation}
+that is, $\gamma p\hat R_w^2+(p+1-\gamma)\hat R_w-1=0$.
+\step \emph{Recognize.} At $z=-p$ the Marchenko--Pastur equation \eqref{eq:toolkit:mp} is $-\gamma pm^2-(p+1-\gamma)m+1=0$, the same quadratic, whose roots have product $-1/(\gamma p)<0$. So $\hat R_w(p)=m_\gamma(-p)=\int\mu_\gamma(\dd\lambda)/(\lambda+p)$, and $R_w(\tau)=\int e^{-\tau\lambda}\mu_\gamma(\dd\lambda)$.
+\end{computation}
+
+The self-consistent memory kernel is the Laplace transform of the Marchenko--Pastur law,\index{Marchenko--Pastur law!Laplace transform} and it is the limit of the response $\frac1d\tr e^{-\tau S}$ of the flow (\cref{thm:dmft:leastsquares}); time-stepping step 1 reproduces it to $10^{-5}$.\sidenote{\Textcite[Section~4.3]{CelentanoChengMontanari2021} note, in a heuristic sketch for strongly convex risks, a generalized Marchenko--Pastur equation; for the square loss it is exact.} Solving the system, or diagonalizing the flow and replacing the spectrum by its limit \parencite{AdvaniSaxeSompolinsky2020}, gives for $\norm{\beta^*}=r$ and noise variance $\sigma^2$ the excess risk and the training error
+\begin{equation}\label{eq:dmft:risk}
+\begin{aligned}
+\dmftE(t)&=r^2\int e^{-2t\lambda}\mu_\gamma(\dd\lambda)+\sigma^2\gamma\int\frac{(1-e^{-t\lambda})^2}\lambda\,\mu_\gamma(\dd\lambda),\\
+\dmftL(t)&=\frac{r^2}2\int\lambda e^{-2t\lambda}\mu_\gamma(\dd\lambda)+\frac{\sigma^2}2\Bigl(1-\gamma+\gamma\int e^{-2t\lambda}\mu_\gamma(\dd\lambda)\Bigr).
+\end{aligned}
+\end{equation}
+
+\section{The stone}\label{sec:dmft:stone}
+
+\begin{stone}{the generating functional}{fixed horizons, conditioning and concentration}
+\stonestep{Average and saddle point}{The path integral has mass $1$, so the disorder is averaged without replicas; the action is $N$ times a functional of $C$, $R$, $\langle\hat x\hat x\rangle$, and the saddle point is exact.}{Fix a horizon. Itô calculus and concentration of $C_N$ and the integrated response replace the saddle point \parencite{BenArousDemboGuionnet2006}; for learning, gradient descent becomes an AMP iteration with memory, with deterministic state evolution.}
+\stonestep{Effective process}{Each coordinate follows \eqref{eq:dmft:effective}, with memory kernel $\xi''(C)R$ and colored noise of covariance $\xi'(C)$.}{Gaussian conditioning (\cref{lem:toolkit:conditioning}): given the past, the new field is a combination of past fields, the memory, plus a fresh Gaussian vector, the noise \parencite{GerbelotEtAl2024}.}
+\stonestep{Closure}{For spherical models the process is linear, and Novikov's formula closes it on $(C,R)$: the equations \eqref{eq:dmft:ck}.}{Limit points satisfy closed equations because the covariance of the drift is a polynomial in overlaps; uniqueness by Grönwall. For flows, a contraction sends the step to zero \parencite{CelentanoChengMontanari2021}.}
+\stonestep{The linear case}{For least squares the kernel solves the Marchenko--Pastur equation (\cref{comp:dmft:kernel}); for $p=2$ it is a semicircle transform.}{\Cref{thm:dmft:leastsquares,thm:dmft:twospin}: spectral law and Gaussian quadratic forms give every limit, uniformly in time, with no saddle point.}
+\stonestep{Equilibrium and aging}{Above $T_d$: time-translation invariance and FDT; below: aging, with factor $x$ and marginality.}{FDT solution for small $\beta$ only \parencite{DemboGuionnetMazza2007}; up to $T_d$, no counterpart. Aging proved for $p=2$ only \parencite{BenArousDemboGuionnet2001}.}
+\stonestep{Threshold and statics}{As $T\to0$ the energy tends to $-E_\infty$; in benign landscapes the long-time limit is the replica-symmetric optimum.}{The threshold for the pure $p$-spin at low temperature \parencite{Sellke2024}; convex losses, given exponential convergence \parencite[unpublished]{CelentanoChengMontanari2021}. The pure $p$-spin is a counterexample: $-E_\infty>-E_0$.}
+\end{stone}
+
+The rigorous route keeps the physicists' objects but not their method: concentration replaces the saddle point, and Gaussian conditioning, the dynamical cavity method made exact \parencite{GerbelotEtAl2024}, replaces the derivation of the effective process. Every rigorous version of the equations holds at fixed times as $N\to\infty$. The routes part at long times, where each prediction needs a separate theorem; these exist for the energy of the pure $p$-spin \parencite{Sellke2024}, for convex losses in a preprint \parencite{CelentanoChengMontanari2021}, and for the linear flows below, where the self-consistency reconstructs the spectral law of the matrix that drives the flow.
+
+\section{The proof: two linear flows}\label{sec:dmft:proof}
+
+For a linear flow the dynamical mean-field limits reduce to spectral laws and to concentration of Gaussian quadratic forms.
+
+\begin{lemma}[Gaussian quadratic forms]\label{lem:dmft:quadratic}
+Let $g\sim\Normal(0,I_m)$, and let a symmetric $m\times m$ matrix $A$ and a vector $u\in\R^m$ be random and independent of $g$. Then
+\begin{gather*}
+\E\bigl[(g^\top Ag-\tr A)^4\bigm|A\bigr]\le60\norm A_F^4\le60\,m^2\norm A^4,\\
+\E\bigl[(u^\top g)^4\bigm|u\bigr]=3\norm u^4.
+\end{gather*}
+Consequently, if along a sequence $m\to\infty$ each $g_m\sim\Normal(0,I_m)$ is independent of $(A_m,u_m)$, and almost surely $\limsup_m\norm{A_m}<\infty$ and $\limsup_m\norm{u_m}/\sqrt m<\infty$, then almost surely $\frac1m(g_m^\top A_mg_m-\tr A_m)\to0$ and $\frac1mu_m^\top g_m\to0$.
+\end{lemma}
+
+\begin{proof}
+The plan is to diagonalize $A$, compute a fourth moment, and apply the Borel--Cantelli lemma. Given $A=\sum_ka_kv_kv_k^\top$, the $\zeta_k=\ip{v_k}g^2-1$ are independent copies of $Z^2-1$, which has mean $0$, $\E(Z^2-1)^2=2$ and $\E(Z^2-1)^4=105-60+18-4+1=60$. Terms of $\E(\sum_ka_k\zeta_k)^4$ containing some $\zeta_k$ exactly once vanish, so
+\[
+\E\Bigl(\sum_ka_k\zeta_k\Bigr)^4=60\sum_ka_k^4+12\sum_{k\ne l}a_k^2a_l^2\le60\Bigl(\sum_ka_k^2\Bigr)^2=60\norm A_F^4,
+\]
+and $\norm A_F^2\le m\norm A^2$; given $u$, $u^\top g\sim\Normal(0,\norm u^2)$. For the consequence fix $\eps>0$ and $K<\infty$: by Markov's inequality $\Prob(\abs{g_m^\top A_mg_m-\tr A_m}>\eps m,\ \norm{A_m}\le K)\le60K^4/(\eps^4m^2)$, which is summable, so by the Borel--Cantelli lemma, almost surely, for all large $m$ either $\norm{A_m}>K$ or the deviation is at most $\eps m$. Letting $K$ run through the integers and $\eps$ through $1/j$ proves the first claim; the second uses $\Prob(\abs{u_m^\top g_m}>\eps m,\ \norm{u_m}\le K\sqrt m)\le3K^4/(\eps^4m^2)$.
+\end{proof}
+
+\subsection{Least squares}
+
+\begin{theorem}[gradient flow on least squares]\label{thm:dmft:leastsquares}
+Let $X\in\R^{n\times d}$ have i.i.d.\ $\Normal(0,1)$ entries, $\varepsilon\sim\Normal(0,I_n)$, and $\beta^*$ uniform on the sphere of radius $r$ in $\R^d$, independent, and $y=X\beta^*+\sigma\varepsilon$ with $\sigma\ge0$. Let $\beta_t$ be the gradient flow of $\hat L(\beta)=\frac1{2n}\norm{y-X\beta}^2$ from $\beta_0=0$, $S=X^\top X/n$, and $n,d\to\infty$ with $d/n\to\gamma\in(0,\infty)$; let $\mu_\gamma$ be the Marchenko--Pastur law (\cref{thm:toolkit:mp}) and $m_\gamma$ its Stieltjes transform. Then, almost surely:
+\begin{enumerate}
+\item (Response.) The response $R_d(t,s)=\frac1d\tr e^{-(t-s)S}$ satisfies $\sup_{0\le s\le t}\abs{R_d(t,s)-R(t-s)}\to0$, with $R(\tau)=\int e^{-\tau\lambda}\mu_\gamma(\dd\lambda)$, whose Laplace transform at $p>0$ is $m_\gamma(-p)$, the unique positive solution of \eqref{eq:dmft:kernel}.
+\item (Correlation and risk.) For every $t_{\max}<\infty$, uniformly in $s,t\le t_{\max}$, $\hat L(\beta_t)\to\dmftL(t)$ and $\ip{\beta_t-\beta^*}{\beta_s-\beta^*}\to\dmftC(t,s)$, where
+\begin{align*}
+\dmftC(t,s)&=r^2\int e^{-(t+s)\lambda}\mu_\gamma(\dd\lambda)\\
+&\quad+\sigma^2\gamma\int\frac{(1-e^{-t\lambda})(1-e^{-s\lambda})}\lambda\,\mu_\gamma(\dd\lambda),
+\end{align*}
+the last integrand being $0$ at $\lambda=0$; in particular $\norm{\beta_t-\beta^*}^2\to\dmftE(t)=\dmftC(t,t)$.
+\item (Long times.) If $\gamma\ne1$, the convergence of $\norm{\beta_t-\beta^*}^2$ and $\hat L(\beta_t)$ is uniform in $t\ge0$; as $t\to\infty$, $\dmftE(t)\to\sigma^2\gamma/(1-\gamma)$ and $\dmftL(t)\to\frac{\sigma^2}2(1-\gamma)$ if $\gamma<1$, and $\dmftE(t)\to r^2(1-1/\gamma)+\sigma^2/(\gamma-1)$, $\dmftL(t)\to0$ if $\gamma>1$. If $\gamma=1$ and $\sigma>0$, $\dmftE(t)\to\infty$.
+\end{enumerate}
+For a deterministic $\beta^*$ with $\norm{\beta^*}=r$ the same conclusions hold in probability.
+\end{theorem}
+
+With $\alpha=1/\gamma$ the limits in (iii) are the ridgeless risks of \cref{thm:ridge:risk}: the flow converges to the minimum-norm least-squares solution, and away from the interpolation threshold the limits $d\to\infty$ and $t\to\infty$ can be taken in either order.\sidenote{For the excess risk averaged over the teacher and the noise (the Bayes risk), at each fixed $t$, the limit $\dmftE(t)$ is Theorem~5 of \textcite{AliKolterTibshirani2019}, who allow i.i.d.\ entries with mean $0$ and variance $1$, not necessarily Gaussian, and a general covariance.}
+
+\begin{proof}
+The plan is to write the flow in closed form, to express each quantity through normalized traces, handled by the Marchenko--Pastur law, and Gaussian quadratic and linear forms, handled by \cref{lem:dmft:quadratic}, and to obtain uniformity from Lipschitz bounds in time and the case $t=\infty$ from the spectral gap. The cases $r=0$ or $\sigma=0$ are included.
+
+\emph{Closed form.} Let $b=X^\top y/n$ and $g_t(\lambda)=(1-e^{-t\lambda})/\lambda$, with $g_t(0)=t$. Since $\nabla\hat L(\beta)=S\beta-b$ and $\frac{\dd}{\dd t}g_t(\lambda)=e^{-t\lambda}=1-\lambda g_t(\lambda)$, $\beta_t=g_t(S)b$, and a field $h$ added to the drift changes $\beta_t$ by $\int_0^te^{-(t-s)S}h(s)\dd s$. With $\underline S=XX^\top/n$, $Xf(S)X^\top/n=f(\underline S)\underline S$ for every $f$, as for polynomials. Since $b=S\beta^*+\sigma X^\top\varepsilon/n$ and $g_t(S)S=I-e^{-tS}$,
+\[
+\beta_t-\beta^*=-e^{-tS}\beta^*+\frac\sigma ng_t(S)X^\top\varepsilon,\qquad y-X\beta_t=Xe^{-tS}\beta^*+\sigma e^{-t\underline S}\varepsilon.
+\]
+Hence, with $u_{ts}=X(g_s(S)e^{-tS}+g_t(S)e^{-sS})\beta^*$, $B_{ts}=Xg_t(S)g_s(S)X^\top$ and $v_t=e^{-t\underline S}Xe^{-tS}\beta^*$,
+\begin{gather*}
+\ip{\beta_t-\beta^*}{\beta_s-\beta^*}=\beta^{*\top}e^{-(t+s)S}\beta^*-\frac\sigma n\,u_{ts}^\top\varepsilon+\frac{\sigma^2}n\,\varepsilon^\top\frac{B_{ts}}n\varepsilon,\\
+\hat L(\beta_t)=\frac12\beta^{*\top}Se^{-2tS}\beta^*+\frac\sigma n\,v_t^\top\varepsilon+\frac{\sigma^2}{2n}\varepsilon^\top e^{-2t\underline S}\varepsilon.
+\end{gather*}
+
+\emph{Spectrum.} By \cref{thm:toolkit:mp}, almost surely $\mu_S$, the spectral distribution of $S$, converges weakly to $\mu_\gamma$ and $\lambda_{\max}(S)\to(1+\sqrt\gamma)^2$; so for large $d$ the spectrum lies in $[0,K_0]$, $K_0=(1+\sqrt\gamma)^2+1$, and $\frac1d\tr f(S)\to\int f\dd\mu_\gamma$ for every continuous $f$ on $[0,K_0]$. The spectral distribution of $\underline S$ is $\frac dn\mu_S+(1-\frac dn)\delta_0\to\gamma\mu_\gamma+(1-\gamma)\delta_0$. And $\norm b\le r\norm S+\sigma\norm S^{1/2}\norm\varepsilon/\sqrt n$ is bounded for large $d$.
+
+\emph{Fixed times.} Write $\beta^*=r\,g/\norm g$ with $g\sim\Normal(0,I_d)$ independent of $(X,\varepsilon)$. Since $1-e^{-x}\le\min(1,x)$, we have $\lambda g_t(\lambda)^2\le t$ and $\lambda g_t(\lambda)g_s(\lambda)\le\min(t,s)$. Hence $\norm{B_{ts}}/n\le\min(t,s)$, $\norm{u_{ts}}^2\le2(t+s)nr^2$, and $\norm{v_t}^2=n\,\beta^{*\top}Se^{-4tS}\beta^*$ is at most $n\norm Sr^2$, while $e^{-(t+s)S}$, $Se^{-2tS}$ and $e^{-2t\underline S}$ have norms at most $1$, $\norm S$ and $1$. \Cref{lem:dmft:quadratic}, applied to $g$ with matrices depending on $X$ and to $\varepsilon$ with matrices and vectors depending on $(X,g)$, replaces each quadratic form by its trace and each linear form by $0$, up to $o(m)$. The traces converge, since $\frac1n\tr\frac{B_{ts}}n=\frac dn\cdot\frac1d\tr(Sg_t(S)g_s(S))$:
+\begin{gather*}
+\tfrac1d\tr e^{-(t+s)S}\to\textstyle\int e^{-(t+s)\lambda}\dd\mu_\gamma,\qquad\tfrac1n\tr\tfrac{B_{ts}}n\to\gamma\textstyle\int\lambda g_tg_s\dd\mu_\gamma,\\
+\tfrac1d\tr(Se^{-2tS})\to\textstyle\int\lambda e^{-2t\lambda}\dd\mu_\gamma,\qquad\tfrac1n\tr e^{-2t\underline S}\to1-\gamma+\gamma\textstyle\int e^{-2t\lambda}\dd\mu_\gamma,
+\end{gather*}
+and $\norm g^2/d\to1$. So the limits hold almost surely at every $(t,s)$ of a countable set.
+
+\emph{Uniformity.} Since $\dot\beta_t=e^{-tS}b$, $\norm{\dot\beta_t}\le\norm b$ and $\norm{\beta_t-\beta^*}\le r+t_{\max}\norm b$, so the correlation is Lipschitz in each variable on $[0,t_{\max}]^2$ with constant $\norm b(r+t_{\max}\norm b)$, and $\abs{\frac{\dd}{\dd t}\hat L(\beta_t)}=\norm{\dot\beta_t}^2\le\norm b^2$; the limits are Lipschitz too, their integrands having bounded $t$-derivatives on $[0,K_0]$. A grid of mesh $\eta$ gives $\limsup_d\sup\abs{\cdot}\le c\eta$, proving (ii). The response $\frac1d\tr e^{-\tau S}=\int e^{-\tau\lambda}\dd\mu_S$ converges for every $\tau$, uniformly on compact sets by the same argument. For $\tau\ge\tau_0$ and $\delta>0$ it is within $\mu_S((0,\delta])+e^{-\tau_0\delta}$ of $\mu_S(\{0\})=(1-n/d)_+$, which tends to $\mu_\gamma(\{0\})$, since $X$ has full rank; so the portmanteau theorem for $[0,\delta]$ gives $\limsup_d\mu_S((0,\delta])\le\mu_\gamma((0,\delta])$, which is small for small $\delta$. With the same bound for $R$, the convergence is uniform in $\tau\ge0$. By Fubini's theorem the Laplace transform of $R$ is $m_\gamma(-p)$, which solves \eqref{eq:dmft:kernel} by \cref{comp:dmft:kernel}. This proves (i).
+
+\emph{Long times.} Let $\gamma\ne1$ and $a=(1-\sqrt\gamma)^2>0$. The smallest positive eigenvalue $\lambda_+$ of $S$ tends to $a$: for $\gamma<1$ it is $\lambda_{\min}(S)$, and for $\gamma>1$ it is $\frac dn\lambda_{\min}(XX^\top/d)\to\gamma(1-\gamma^{-1/2})^2=a$ by \cref{thm:toolkit:mp} applied to $X^\top$. Since $b$ lies in the range of $S$, $\beta_\infty=S^+b$ minimizes $\hat L$, and on that range $g_t(\lambda)\le1/\lambda$, so $\norm{\beta_t-\beta_\infty}=\norm{e^{-tS}S^+b}\le e^{-ta/2}\,2\norm b/a$ for large $d$. With $\norm{\beta_t-\beta^*}\le r+2\norm b/a$ and $\hat L(\beta_t)-\hat L(\beta_\infty)=\frac12(\beta_t-\beta_\infty)^\top S(\beta_t-\beta_\infty)$, the excess risk and the training error at every $t\ge\tau_0$ are within $Ke^{-\tau_0a/2}$ of their values at $\beta_\infty$, with $K$ bounded for large $d$; the limits converge exponentially too, because $\mu_\gamma$ has no mass in $(0,a)$. It remains to take $d\to\infty$ at $t=\infty$. With $P_0$ the projection onto $\ker S$, $\beta_\infty-\beta^*=-P_0\beta^*+\frac\sigma nS^+X^\top\varepsilon$, and $P_0S^+=0$, so
+\[
+\norm{\beta_\infty-\beta^*}^2=\beta^{*\top}P_0\beta^*+\frac{\sigma^2}n\,\varepsilon^\top\frac{XS^{+2}X^\top}n\varepsilon.
+\]
+The first term tends to $r^2(1-1/\gamma)_+$, as $\tr P_0=(d-n)_+$. In the second $\norm{XS^{+2}X^\top/n}=\norm{S^+}\le2/a$, and $\frac1n\tr(XS^{+2}X^\top/n)=\frac dn\cdot\frac1d\sum_{\lambda_k>0}\lambda_k^{-1}\to\gamma\int_{\lambda>0}\lambda^{-1}\dd\mu_\gamma$, the positive eigenvalues lying in $[a/2,K_0]$. The Marchenko--Pastur equation at $z=0$ gives $\int\lambda^{-1}\dd\mu_\gamma=1/(1-\gamma)$ for $\gamma<1$, and applied to $XX^\top/d$ it gives $\int_{\lambda>0}\lambda^{-1}\dd\mu_\gamma=1/(\gamma(\gamma-1))$ for $\gamma>1$; these are the values in (iii). Next, $y-X\beta_\infty=\sigma(I-P_X)\varepsilon$, with $P_X$ the projection onto the column space of $X$, of rank $\min(n,d)$, so $\hat L(\beta_\infty)\to\frac{\sigma^2}2(1-\gamma)_+$. If $\gamma=1$, the density of $\mu_1$ is about $1/(\pi\sqrt\lambda)$ near $0$, so $\int\lambda^{-1}\dd\mu_1=\infty$ and $\dmftE(t)\to\infty$ by monotone convergence.
+
+\emph{A deterministic teacher.} Each quantity is a function $F(X,\varepsilon,\beta^*)$ with $F(XO,\varepsilon,O^\top\beta^*)=F(X,\varepsilon,\beta^*)$ for orthogonal $O$, since this leaves $y$ unchanged and replaces $\beta_t$ by $O^\top\beta_t$. For Haar-distributed $O$ independent of $(X,\varepsilon)$, $(XO,\varepsilon)$ has the law of $(X,\varepsilon)$, so $F(X,\varepsilon,\beta^*)$ has, for each $d$, the law of $F(X,\varepsilon,O\beta^*)$, with a uniform teacher; convergence in probability depends only on these laws.
+\end{proof}
+
+\subsection{The spherical 2-spin at zero temperature}
+
+\begin{theorem}[gradient flow on the spherical $2$-spin]\label{thm:dmft:twospin}
+Let $W\sim\mathrm{GOE}(N)$ and $H_N(x)=-\frac1{\sqrt2}\ip x{Wx}$ on $S_N$, so that $\E H_N(x)H_N(y)=N(\ip xy/N)^2$. Let $x_t$ be the gradient flow $\dot x_t=-\nabla_{\dmftsp}H_N(x_t)$ from $x_0$ uniform on $S_N$ and independent of $W$, and let $\dmftM(u)=\int e^{u\lambda}\sigma_{\mathrm{sc}}(\dd\lambda)=I_1(2u)/u$, with $\sigma_{\mathrm{sc}}$ the semicircle law and $I_1$ a modified Bessel function.
+\begin{enumerate}
+\item For all $t\ge0$, $x_t=\sqrt N\,e^{\sqrt2tW}x_0/\norm{e^{\sqrt2tW}x_0}$.
+\item Almost surely, uniformly on $[0,t_{\max}]^2$ for every $t_{\max}$, $C_N(t,s)\to\dmftC(t,s)$ and $e_N(t)\to e(t)$, where
+\[
+\dmftC(t,s)=\frac{\dmftM(\sqrt2(t+s))}{\sqrt{\dmftM(2\sqrt2t)\,\dmftM(2\sqrt2s)}},\qquad e(t)=-\frac{\dmftM'(2\sqrt2t)}{\sqrt2\,\dmftM(2\sqrt2t)}.
+\]
+\item The energy decreases strictly to the ground-state energy $-\sqrt2$, with $t\,(e(t)+\sqrt2)\to\frac38$. For fixed $\tau\ge0$, $\dmftC(t_w+\tau,t_w)\to1$ as $t_w\to\infty$, while for fixed $c>0$, $\dmftC((1+c)t_w,t_w)\to(4(1+c)/(2+c)^2)^{3/4}$.
+\end{enumerate}
+\end{theorem}
+
+Part (iii) is aging at zero temperature: after a long wait the correlation does not decay on times of order one, but it decays on times proportional to the age, along a universal curve. \Textcite{CugliandoloDean1995} found this curve, their equation~(III.25) at $T=0$, in their physical solution of the $2$-spin dynamics, and \textcite{BenArousDemboGuionnet2001} proved aging for the soft-constraint dynamics at positive temperature.
+
+\begin{proof}
+The plan is to verify the explicit solution, to reduce $C_N$ and $e_N$ to Gaussian quadratic forms, and to evaluate the limits by Laplace's method at the edge of the semicircle. The covariance follows from $\E\tr(AW)\tr(BW)=2\tr(AB)/N$ for symmetric $A$, $B$ (\cref{def:toolkit:goe}).
+
+(i) Since $\nabla H_N(x)=-\sqrt2Wx$, the flow is $\dot x=\sqrt2(Wx-\frac1N\ip x{Wx}x)$, a smooth field tangent to $S_N$ with a unique solution. For $v_t=e^{\sqrt2tW}x_0$, differentiating $\sqrt N\,v_t/\norm{v_t}$ gives $\sqrt N\bigl(\sqrt2Wv_t/\norm{v_t}-v_t\ip{v_t}{\sqrt2Wv_t}/\norm{v_t}^3\bigr)$, which is the field at $x_t$.
+
+(ii) Write $x_0=\sqrt N\,g/\norm g$ with $g\sim\Normal(0,I_N)$ independent of $W$. Then
+\[
+C_N(t,s)=\frac{g^\top e^{\sqrt2(t+s)W}g}{\sqrt{g^\top e^{2\sqrt2tW}g\cdot g^\top e^{2\sqrt2sW}g}},\qquad e_N(t)=-\frac{g^\top We^{2\sqrt2tW}g}{\sqrt2\,g^\top e^{2\sqrt2tW}g}.
+\]
+By \cref{thm:toolkit:semicircle}, almost surely $\norm W\to2$ and the spectral distribution of $W$ converges weakly to $\sigma_{\mathrm{sc}}$; so for large $N$, $\frac1N\tr f(W)\to\int f\dd\sigma_{\mathrm{sc}}$ and $\norm{f(W)}\le\max_{[-3,3]}\abs f$ for continuous $f$ on $[-3,3]$, and \cref{lem:dmft:quadratic} gives $\frac1Ng^\top f(W)g-\frac1N\tr f(W)\to0$. Taking $f(\lambda)=e^{u\lambda}$ and $\lambda e^{u\lambda}$ at countably many $u$, with denominators at least $e^{-3\abs u}\norm g^2/N$, gives convergence on a dense set of times; numerators and denominators are Lipschitz in $t,s\le t_{\max}$ with constants bounded when $\norm W\le3$, so the convergence is uniform.
+
+(iii) The derivative of $\dmftM'/\dmftM$ is the variance of $\lambda$ under the law proportional to $e^{u\lambda}\sigma_{\mathrm{sc}}(\dd\lambda)$, so $e$ decreases strictly, and the mean is below $2$, so $e>-\sqrt2$. Substituting $\lambda=2-y/u$,
+\[
+\dmftM(u)=\frac{e^{2u}}{2\pi u^{3/2}}J_0(u),\qquad J_k(u)=\int_0^{4u}y^ke^{-y}\sqrt{y(4-y/u)}\dd y\to2\Gamma\bigl(k+\tfrac32\bigr)
+\]
+by dominated convergence. So $\dmftM(u)\sim e^{2u}/(2\sqrt\pi\,u^{3/2})$, and the tilted mean of $\lambda$ is $2-J_1(u)/(uJ_0(u))$ with $J_1/J_0\to\frac32$; with $u=2\sqrt2t$, $t(e(t)+\sqrt2)=J_1(u)/(4J_0(u))\to\frac38$. In $\dmftC(t,s)$ the exponentials cancel, as $2\sqrt2(t+s)=\frac12(4\sqrt2t+4\sqrt2s)$, and as $t,s\to\infty$ with $t/s$ fixed
+\[
+\dmftC(t,s)=\Bigl(\frac{(2\sqrt2t)(2\sqrt2s)}{(\sqrt2(t+s))^2}\Bigr)^{3/4}(1+o(1))=\Bigl(\frac{4ts}{(t+s)^2}\Bigr)^{3/4}(1+o(1)),
+\]
+which gives the aging limit for $t=(1+c)t_w$, $s=t_w$, and $1$ for $t=t_w+\tau$.
+\end{proof}
+
+At $T=0$ these limits, with $\mu=-2e$ and an explicit response, solve \eqref{eq:dmft:ck} for $\xi(q)=q^2$: the response equation becomes a convolution identity for $\dmftM$ (\cref{ex:dmft:catalan}), the counterpart of the Marchenko--Pastur equation of \cref{comp:dmft:kernel}, and our integrator reproduces $e(t)$ to $10^{-4}$.
+
+\section{The proof: the general theorems}\label{sec:dmft:general}
+
+\begin{theorem}[dynamical mean-field theory on fixed time horizons]\label{thm:dmft:fixedhorizon}
+\leavevmode
+\begin{enumerate}
+\item (Spherical spin glasses; \textcite[Theorem~1.2]{BenArousDemboGuionnet2006}, \textcite[Theorem~4.3]{Sellke2024}.) For a mixed model, $\xi(q)=\sum_{p\le m}c_p^2q^p$, run the Langevin dynamics at $T>0$ with a soft spherical constraint, a confining potential $Nf(\norm x^2/N)$ with $f'$ locally Lipschitz, of polynomial growth and growing fast enough at infinity, from $x_0$ independent of the disorder and satisfying a tensorizing concentration hypothesis. For every horizon $t_{\max}$, $C_N(t,s)$ and the integrated response $\chi_N(t,s)=\frac1N\ip{x_t}{B_s}$ converge uniformly on $[0,t_{\max}]^2$, almost surely, to the unique bounded continuous solution of the soft-constraint analogue of \eqref{eq:dmft:ck}. For the pure $p$-spin with the hard constraint \eqref{eq:dmft:langevin} and $T>0$, they converge to the solution of \eqref{eq:dmft:ck}.
+\item (Gradient descent and SGD; \textcite[Theorem~3.2]{GerbelotEtAl2024}.) For first-order iterations driven by a matrix with i.i.d.\ $\Normal(0,1/d)$ entries, $n/d\to\alpha$, with pseudo-Lipschitz updates, a deterministic start, and conditions ensuring that certain limits exist, including gradient descent, SGD with batches of size proportional to $n$, momentum and Langevin noise: for every fixed number of iterations, pseudo-Lipschitz functions of the iterates converge in probability to their expectations under the time discretization of \eqref{eq:dmft:glm}.
+\item (Gradient flow; \textcite[Theorem~2, Corollary~4.1]{CelentanoChengMontanari2021}, unpublished.) Let $A_{ij}=\bar X_{ij}/\sqrt d$ with $\bar X_{ij}$ i.i.d., centered, of variance $1$ and sub-Gaussian, let $\ell(r;z)$ be Lipschitz in $r$ with Lipschitz Jacobian, uniformly in $z$, with $\E\,\ell(0;z)^2<\infty$, and let $(w_0,z)$ be independent of $A$ with converging empirical laws and second moments. Then \eqref{eq:dmft:glm} has a solution, unique among those with locally bounded kernels, and the empirical laws of $(w_{t,i})_{t\le t_{\max}}$, $i\le d$, and of $(z_i,(r_{t,i})_{t\le t_{\max}})$, $i\le n$, converge in probability, weakly on path space, to the laws of the processes of \eqref{eq:dmft:glm}.
+\end{enumerate}
+\end{theorem}
+
+\begin{proofsketch}
+(i) After moment bounds, tightness and concentration of $C_N$, $\chi_N$ and auxiliary functions, Proposition~1.3 of \textcite{BenArousDemboGuionnet2006} shows, by Itô's formula and Gaussian change of measure, that every limit point solves closed equations, because $\E[\nabla H(x)\nabla H(y)^\top]$ is a polynomial in overlaps; Grönwall's inequality gives uniqueness. Sellke couples the hard sphere with steeper and steeper soft constraints, whose limit equations \textcite{DemboGuionnetMazza2007} identified. (ii) Induction on the iterations by Gaussian conditioning (\cref{lem:toolkit:conditioning}, part~(iv)): the known part of the matrix produces the memory kernels, the fresh part the Gaussian processes. (iii) Time is discretized, gradient descent becomes message passing with memory \parencite{CelentanoMontanariWu2020}, state evolution applies, and a contraction controls the vanishing step.
+\end{proofsketch}
+
+In the linear flows of \cref{sec:dmft:proof} independence handles the dependence between path and disorder, and the spectral law replaces the saddle point; with a nonlinear drift, Girsanov's theorem or the conditioning lemma must untangle it, and the closed equations must be derived. None of the three parts goes beyond fixed horizons or covers gradient flow on a spin glass with $p\ge3$, since the spin-glass proofs need $T>0$.\sidenote{\Textcite{DemboSubag2020} extend part~(i) to starts uniform in the spherical bands where the low-temperature Gibbs measure concentrates, for pure models and small perturbations, by conditioning on a critical point.}
+
+Long times need different tools. For the pure $p$-spin the energy is settled at low temperature; Sellke maximizes $H_N$ with drift $\beta\nabla_{\dmftsp}H_N$ and unit noise: our dynamics \eqref{eq:dmft:langevin} for $-H_N$ at $T=1/(2\beta)$, our time being $\beta$ times his.
+
+\begin{theorem}[{the threshold energy; \textcite[Theorems~1.1 and~1.7]{Sellke2024}}]\label{thm:dmft:sellke}
+Let $p\ge2$, let $H_N$ be the pure $p$-spin Hamiltonian, and let $x_s$ solve $\dd x_s=\bigl(\beta\nabla_{\dmftsp}H_N(x_s)-\frac{N-1}{2N}x_s\bigr)\dd s+P^\perp_{x_s}\dd B_s$ on $S_N$, with invariant law proportional to $e^{2\beta H_N}$. Let $c>0$ denote a constant that may depend on all parameters but $N$.
+\begin{enumerate}
+\item For every $\eta>0$ there are $s_0(p,\eta)$ and $\beta_0(p,\eta)$ such that for $\beta\ge\beta_0$, $N$ large and every $x_0\in S_N$, possibly depending on $H_N$, with probability at least $1-e^{-cN}$, $H_N(x_s)/N\ge E_\infty-\eta$ for all $s\in[s_0,s_0+e^{cN}]$.
+\item For every $\beta_0<\infty$ there is $\delta(p,\beta_0)>0$ such that for $\beta\le\beta_0$, every $s_{\max}$, $N$ large and $x_0$ independent of $H_N$, with probability at least $1-e^{-cN}$, $H_N(x_s)/N\le E_\infty-\delta$ for all $s\le s_{\max}$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proofsketch}
+(i) Near an approximate saddle point the low-temperature dynamics is close to an Ornstein--Uhlenbeck process that gains energy along directions of positive curvature, so it climbs to the lowest energy of an approximate local maximum, at least $E_\infty-o(1)$ because the bulk of the Hessian spectrum is a semicircle shifted by a multiple of the energy. (ii) On bounded times the dynamics is close to a Lipschitz function of the disorder, and no such algorithm exceeds $E_\infty+o(1)$ \parencite{HuangSellke2025}; a lower bound on the gradient at finite $\beta$ improves this to $E_\infty-\delta$.
+\end{proofsketch}
+
+So for the pure $p$-spin, low-temperature Langevin dynamics reaches $-E_\infty$ in the limit $T\to0$ after $N\to\infty$, after a time of order $1/T$ in our units. Since $E_\infty<E_0$ for $p\ge3$, where $-E_0$ is the zero of the annealed complexity \parencite{AuffingerBenArousCerny2013} and the typical ground state \parencite{Subag2017a}, dynamics and statics differ. For convex learning problems they agree, under a hypothesis.\sidenote{In inference, \textcite{LiangSenSur2023} prove the closed equations for Langevin dynamics in a spiked matrix model and, for semicircular noise, its overlap as $t\to\infty$. The unrefereed preprint of \textcite{FanEtAl2025b} (arXiv:2504.15558v2) shows, for an adaptive Langevin sampler in Bayesian linear regression under approximate time-translation invariance, convergence to an equilibrium given by scalar fixed-point equations.}
+
+\begin{proposition}[{dynamics and statics for convex losses; \textcite[Theorems~3--4, Proposition~4.3]{CelentanoChengMontanari2021}, unpublished}]\label{prop:dmft:convex}
+In \cref{thm:dmft:fixedhorizon}(iii) for a planted model, let $\ell=\partial_r\mathrm{loss}$ be time-independent and add a ridge $\lambda\ge0$. If the solution of \eqref{eq:dmft:glm} converges exponentially fast (their Definition~4.2), its limit solves explicit fixed-point equations; if the loss is twice differentiable and convex and the teacher and the noise are nondegenerate, these are equivalent to the equations characterizing the empirical risk minimizer, whose solution, if one exists, is unique when $\lambda>0$ or the loss is strictly convex. Exponential convergence holds for strongly convex losses with $\alpha>1$, and for convex losses with $\lambda>0$.
+\end{proposition}
+
+\section{Measuring it}\label{sec:dmft:measuring}
+
+Four scripts, each under two minutes, measure the chapter's claims; \texttt{14-dmft-\allowbreak ck.py} integrates \eqref{eq:dmft:ck} by Heun's method with trapezoidal quadrature, a second-order scheme, and Richardson extrapolation from steps $0.05$ and $0.025$.\sidenote{For $p=2$, $T=0$ the error in $e(t)$ on $[0,10]$ is $4.7\times10^{-3}$ and $1.1\times10^{-3}$ at the two steps, and $9.1\times10^{-5}$ after extrapolation. For $p=3$, $T=1.2$, $e(50)=-0.83328$, against $-1/T=-0.83333$. An Euler integrator in the normalization of Cugliandolo and Kurchan (steps $0.02$ and $0.01$, extrapolated, converted) gives $e(5)=-1.5012$ and $e(10)=-1.5518$ at $T=0$, against our $-1.5007$ and $-1.5513$.}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=82mm,height=37mm]
+\nextgroupplot[xmode=log,xmin=0.04,xmax=130,ymin=0,ymax=1.05,xlabel={time $t$},ylabel={error},
+  title={(a) excess risk and training error},xtick={0.1,1,10,100},xticklabels={$0.1$,$1$,$10$,$100$}]
+\addplot[guide,forget plot] coordinates {(0.04,0.25) (130,0.25)};
+\addplot[guide,forget plot] coordinates {(0.04,0.833333) (130,0.833333)};
+\addplot[physpred] table[x=t,y=risk05] {figures/data/14-dmft-ls-curves.dat};
+\addplot[proofpred] table[x=t,y=risk05] {figures/data/14-dmft-ls-curves.dat};
+\addplot[physpred,forget plot] table[x=t,y=train05] {figures/data/14-dmft-ls-curves.dat};
+\addplot[proofpred,forget plot] table[x=t,y=train05] {figures/data/14-dmft-ls-curves.dat};
+\addplot[physpred,forget plot] table[x=t,y=risk15] {figures/data/14-dmft-ls-curves.dat};
+\addplot[proofpred,forget plot] table[x=t,y=risk15] {figures/data/14-dmft-ls-curves.dat};
+\addplot[physpred,forget plot] table[x=t,y=train15] {figures/data/14-dmft-ls-curves.dat};
+\addplot[proofpred,forget plot] table[x=t,y=train15] {figures/data/14-dmft-ls-curves.dat};
+\addplot[measured,ebars] table[x=t,y=risk05,y error plus=risk05ci,y error minus=risk05ci] {figures/data/14-dmft-ls-sim.dat};
+\addplot[measured2,ebars] table[x=t,y=risk15,y error plus=risk15ci,y error minus=risk15ci] {figures/data/14-dmft-ls-sim.dat};
+\addplot[measured,ebars,forget plot] table[x=t,y=train05,y error plus=train05ci,y error minus=train05ci] {figures/data/14-dmft-ls-sim.dat};
+\addplot[measured2,ebars,forget plot] table[x=t,y=train15,y error plus=train15ci,y error minus=train15ci] {figures/data/14-dmft-ls-sim.dat};
+\node[font=\scriptsize,text=physics,anchor=south] at (axis cs:1.4,0.60) {risk, $\gamma=\frac32$};
+\node[font=\scriptsize,text=physics,anchor=south] at (axis cs:4,0.27) {risk, $\gamma=\frac12$};
+\node[font=\scriptsize,text=physics,anchor=south west] at (axis cs:0.05,0.25) {training};
+\nextgroupplot[xmin=0,xmax=10,ymin=0,ymax=1.02,xlabel={lag $\tau$},ylabel={response $R(\tau)$},title={(b) the memory kernel},
+  legend columns=2,legend style={at={(0.98,0.97)},anchor=north east,font=\scriptsize}]
+\addplot[physpred] table[x=tau,y=dmft05] {figures/data/14-dmft-ls-response.dat};
+\addplot[proofpred] table[x=tau,y=mp05] {figures/data/14-dmft-ls-response.dat};
+\addplot[measured] table[x=tau,y=meas05] {figures/data/14-dmft-ls-response-sim.dat};
+\addplot[measured2] table[x=tau,y=meas15] {figures/data/14-dmft-ls-response-sim.dat};
+\addplot[physpred,forget plot] table[x=tau,y=dmft15] {figures/data/14-dmft-ls-response.dat};
+\addplot[proofpred,forget plot] table[x=tau,y=mp15] {figures/data/14-dmft-ls-response.dat};
+\legend{DMFT prediction,theorem,simulation $\gamma=\frac12$,simulation $\gamma=\frac32$}
+\addplot[guide,forget plot] coordinates {(0,0.333333) (10,0.333333)};
+\node[font=\scriptsize,text=physics,anchor=north west] at (axis cs:3.2,0.31) {$\gamma=\frac32$: atom $1-\frac1\gamma$ at $0$};
+\node[font=\scriptsize,text=physics,anchor=south west] at (axis cs:2.2,0.07) {$\gamma=\frac12$};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Gradient flow on least squares, $r=1$, $\sigma=\frac12$. (a) Excess risk and training error: the prediction \eqref{eq:dmft:risk} (carnelian) and \cref{thm:dmft:leastsquares} (lapis dashed), which coincide, and simulations with $n=2000$, $d=1000$ ($\gamma=\frac12$, filled) and $n=1000$, $d=1500$ ($\gamma=\frac32$, hollow): means over $10$ independent data sets with Student-$t$ $95\%$ intervals (seeds $1400+100\lfloor10\gamma\rfloor+k$). All $44$ intervals contain the curves; dashed lines mark the limits $0.25$ and $0.8333$ at $t=\infty$. (b) The response: the kernel equations of \cref{comp:dmft:kernel} integrated in time (carnelian), the Laplace transform of $\mu_\gamma$ (lapis dashed), and $\frac1d\tr e^{-\tau S}$ averaged over the same data sets (points; intervals below $10^{-3}$). Script: \texttt{14-dmft-leastsquares.py}.}\label{fig:dmft:leastsquares}
+\end{figure}
+
+\paragraph{Least squares.} The curves of \cref{fig:dmft:leastsquares}(a) show early stopping:\index{early stopping} the risk is smallest at $t=4.00$ ($0.1822$, against $0.25$ at convergence) for $\gamma=\frac12$, and at $t=1.58$ ($0.5502$, against $0.8333$) for $\gamma=\frac32$ (\cref{ex:dmft:early}). In (b), for $\gamma=\frac32$, the response tends to the mass $\frac13$ of the null space of $S$, which the flow never leaves.\sidenote{At step $0.01$ the kernel equations agree with the Laplace transform of $\mu_\gamma$ to $5.8\times10^{-6}$ ($\gamma=\frac12$) and $9.8\times10^{-6}$ ($\gamma=\frac32$), four times better than at step $0.02$; the measured $\frac1d\tr e^{-2S}$ is $0.26774$ and $0.48504$, against $0.26759$ and $0.48483$.}
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=82mm,height=37mm,
+  xmode=log,ymin=0.25,ymax=1.03,ylabel={$C(t_w+\tau,t_w)$}]
+\nextgroupplot[xmin=0.005,xmax=300,xlabel={lag $\tau$},title={(a) against the lag},
+  xtick={0.01,0.1,1,10,100},xticklabels={$0.01$,$0.1$,$1$,$10$,$100$}]
+\addplot[physpred] table[x expr=\thisrow{x}*0.5,y=tw05] {figures/data/14-dmft-twospin-curves.dat};
+\addplot[proofpred] table[x expr=\thisrow{x}*0.5,y=tw05] {figures/data/14-dmft-twospin-curves.dat};
+\addplot[physpred] table[x expr=\thisrow{x}*2,y=tw2] {figures/data/14-dmft-twospin-curves.dat};
+\addplot[proofpred] table[x expr=\thisrow{x}*2,y=tw2] {figures/data/14-dmft-twospin-curves.dat};
+\addplot[physpred] table[x expr=\thisrow{x}*8,y=tw8] {figures/data/14-dmft-twospin-curves.dat};
+\addplot[proofpred] table[x expr=\thisrow{x}*8,y=tw8] {figures/data/14-dmft-twospin-curves.dat};
+\addplot[measured,ebars] table[x expr=\thisrow{x}*\thisrow{tw},y=C,y error plus=ci,y error minus=ci] {figures/data/14-dmft-twospin-sim.dat};
+\node[font=\scriptsize,text=physics,anchor=east] at (axis cs:2.2,0.55) {$t_w=\frac12$};
+\node[font=\scriptsize,text=physics,anchor=west] at (axis cs:5,0.85) {$2$};
+\node[font=\scriptsize,text=physics,anchor=west] at (axis cs:40,0.80) {$8$};
+\nextgroupplot[xmin=0.01,xmax=32,xlabel={$\tau/t_w$},title={(b) against the scaled lag},
+  xtick={0.01,0.1,1,10},xticklabels={$0.01$,$0.1$,$1$,$10$}]
+\addplot[stone,line width=1.0pt,densely dotted,no marks] table[x=x,y=aging] {figures/data/14-dmft-twospin-curves.dat};
+\addplot[proofpred] table[x=x,y=tw05] {figures/data/14-dmft-twospin-curves.dat};
+\addplot[proofpred] table[x=x,y=tw2] {figures/data/14-dmft-twospin-curves.dat};
+\addplot[proofpred] table[x=x,y=tw8] {figures/data/14-dmft-twospin-curves.dat};
+\addplot[measured,ebars] table[x=x,y=C,y error plus=ci,y error minus=ci] {figures/data/14-dmft-twospin-sim.dat};
+\node[font=\scriptsize,text=stone,anchor=north east] at (axis cs:28,0.42) {$t_w\to\infty$};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Aging of zero-temperature gradient flow on the spherical $2$-spin. (a) $C(t_w+\tau,t_w)$ for $t_w=\frac12$, $2$, $8$: \cref{thm:dmft:twospin}(ii) (carnelian with lapis dashes, which coincide) and simulations at $N=1500$ (means over $10$ independent GOE matrices and starts, seeds $1420+k$, with Student-$t$ $95\%$ intervals); the decay time grows with the age. (b) The same against $\tau/t_w$, with the aging limit $(4(1+c)/(2+c)^2)^{3/4}$ of part~(iii) dotted: the curves collapse. All $18$ intervals contain the limits. Script: \texttt{14-dmft-twospin.py}.}\label{fig:dmft:twospin}
+\end{figure}
+
+\paragraph{The $2$-spin.} In \cref{fig:dmft:twospin}(b) the scaled curves approach the limit of \cref{thm:dmft:twospin}(iii) slowly, $C(2t_w,t_w)$ being $0.915968$ at $t_w=10$ and $0.915503$ at $t_w=100$, against $0.915452$.\sidenote{For the energy, $e(10)+\sqrt2=0.037331$, against $3/(8t)=0.0375$, and the simulated $e(10)$ is $-1.3751\pm0.0081$, against $-1.3769$.} The intervals widen at large times ($\pm0.13$ at $t_w=8$, $\tau=80$): the top eigenvalue gap of $W$ is about $0.019$ at $N=1500$, and once $2\sqrt2t$ exceeds its inverse the finite system begins to align with the top eigenvector.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=17mm},rplot,width=82mm,height=37mm]
+\nextgroupplot[xmode=log,xmin=0.3,xmax=55,ymin=-1.72,ymax=-0.5,xlabel={time $t$},ylabel={energy $e(t)$},
+  title={(a) energy},xtick={1,10,50},xticklabels={$1$,$10$,$50$}]
+\addplot[guide,forget plot] coordinates {(0.3,-1.632993) (55,-1.632993)};
+\addplot[muted,line width=0.5pt,densely dotted,forget plot] coordinates {(0.3,-1.657) (55,-1.657)};
+\addplot[proofpred] table[x=t,y=e12] {figures/data/14-dmft-ck-energy.dat};
+\addplot[proofpred,forget plot] table[x=t,y=e07] {figures/data/14-dmft-ck-energy.dat};
+\addplot[physpred] table[x=t,y=e00] {figures/data/14-dmft-ck-energy.dat};
+\addplot[measured,ebars] table[x=t,y=n100e12,y error plus=n100c12,y error minus=n100c12] {figures/data/14-dmft-pspin-sim.dat};
+\addplot[measured,ebars,forget plot] table[x=t,y=n100e07,y error plus=n100c07,y error minus=n100c07] {figures/data/14-dmft-pspin-sim.dat};
+\addplot[measured,ebars,forget plot] table[x=t,y=n100e00,y error plus=n100c00,y error minus=n100c00] {figures/data/14-dmft-pspin-sim.dat};
+\addplot[measured2,ebars] table[x=t,y=n50e00,y error plus=n50c00,y error minus=n50c00] {figures/data/14-dmft-pspin-sim.dat};
+\node[font=\scriptsize,text=proof,anchor=south] at (axis cs:12,-0.83) {$T=1.2$};
+\node[font=\scriptsize,text=proof,anchor=south] at (axis cs:12,-1.15) {$T=0.7$};
+\node[font=\scriptsize,text=physics,anchor=south] at (axis cs:2.2,-1.37) {$T=0$};
+\node[font=\scriptsize,text=muted,anchor=north west] at (axis cs:0.32,-1.635) {$-E_\infty$};
+\nextgroupplot[xmin=0,xmax=30,ymin=0,ymax=1.02,xlabel={lag $\tau$},ylabel={$C(t_w+\tau,t_w)$},title={(b) correlation}]
+\addplot[proof!35,line width=0.9pt,no marks] table[x=tau,y=a07w1] {figures/data/14-dmft-ck-aging.dat};
+\addplot[proof!55,line width=0.9pt,no marks] table[x=tau,y=a07w2] {figures/data/14-dmft-ck-aging.dat};
+\addplot[proof!80,line width=0.9pt,no marks] table[x=tau,y=a07w3] {figures/data/14-dmft-ck-aging.dat};
+\addplot[proof,line width=1.0pt,no marks] table[x=tau,y=a07w4] {figures/data/14-dmft-ck-aging.dat};
+\addplot[muted!50,line width=0.8pt,no marks] table[x=tau,y=a12w1] {figures/data/14-dmft-ck-aging.dat};
+\addplot[muted,line width=0.8pt,no marks] table[x=tau,y=a12w4] {figures/data/14-dmft-ck-aging.dat};
+\addplot[guide] coordinates {(0,0.64385) (30,0.64385)};
+\node[font=\scriptsize,text=proof,anchor=south west] at (axis cs:17,0.52) {$T=0.7$};
+\node[font=\scriptsize,text=muted,anchor=south west] at (axis cs:7,0.06) {$T=1.2$};
+\node[font=\scriptsize,text=muted,anchor=south east] at (axis cs:29.5,0.65) {$q=0.644$};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The spherical $3$-spin, $T_d=0.866$. (a) Energy at $T=1.2$, $0.7$ and $0$: the equations \eqref{eq:dmft:ck} with Richardson extrapolation (lapis dashed for $T>0$, where \cref{thm:dmft:fixedhorizon}(i) makes them the limit; carnelian for $T=0$, a prediction), and simulations of \eqref{eq:dmft:langevin}: means over $12$ disorder samples at $N=100$ (seeds $1430+k$, filled) and $24$ at $N=50$ (seeds $2440+k$, hollow, $T=0$ only), with Student-$t$ $95\%$ intervals. Dashed: the threshold $-E_\infty=-1.633$; dotted: the ground state $-E_0=-1.657$. (b) $C(t_w+\tau,t_w)$ from the equations for $t_w=2.5$, $5$, $10$, $20$, darker for larger $t_w$: aging at $T=0.7$, with the predicted plateau $q=0.644$ dashed, and time-translation invariance at $T=1.2$ (curves for $t_w=2.5$ and $20$). Scripts: \texttt{14-dmft-ck.py} and \texttt{14-dmft-pspin.py}.}\label{fig:dmft:pspin}
+\end{figure}
+
+\paragraph{The Cugliandolo--Kurchan equations.} The integrator reproduces \cref{thm:dmft:twospin} for $p=2$, the equilibrium energy at $T=1.2$, and an independent integrator. At $T=0.7$ the energy is $-1.2228$ at $t=50$, descending toward the predicted aging value $-1.2582$; at $T=0$ it is $-1.5821$ and $-1.6054$ at $t=20$ and $50$, approaching $-1.6330$ from above. In (b), $C(t_w+20,t_w)$ at $T=0.7$ is $0.293$, $0.367$, $0.448$, $0.525$ for $t_w=2.5$, $5$, $10$, $20$, while at $T=1.2$ it settles at $0.0107$, $0.0122$, $0.0131$, $0.0133$. That aging persists as $t_w\to\infty$ is the conjecture; these curves are evidence, not proof.
+
+The simulations agree with the equations where these are a theorem: at $T=1.2$ and $0.7$, $15$ of the $18$ intervals at $N=100$ contain the curves, and the others miss by less than $0.01$. At $T=0$ the finite systems lag from $t\approx7$: at $t=20$ the energy is $-1.519\pm0.028$ at $N=100$ and $-1.495\pm0.032$ at $N=50$, against $-1.582$, a gap that shrinks by a factor $1.4$ from $N=50$ to $100$ (two sizes do not determine a rate). At fixed $N$ gradient flow converges to a critical point, and at these sizes the energy has nearly stopped decreasing by $t=20$; the equations describe $N\to\infty$ first.\sidenote{Renormalizing a noisy step to the sphere lowers the effective temperature by a factor of about $1-T\,\dd t$; the script corrects for it.}
+
+\section{The status board}\label{sec:dmft:status}
+
+On fixed time horizons the theory is a theorem for spherical spin glasses at positive temperature and for gradient methods with smooth updates; for gradient flow in learning it is, as of October 2026, proved only in an unrefereed preprint. Linear flows are settled at all times. Beyond times of order one, the threshold is a theorem for the pure $p$-spin at low temperature, dynamics agrees with statics for convex losses under a hypothesis (in the same preprint), and aging for $p\ge3$ is a conjecture.
+
+\begin{statusboard}
+\statusrow{Equations \eqref{eq:dmft:ck}, fixed horizons, start independent of the disorder}{\provedunder}{$T>0$: pure \parencite[Thm.~4.3]{Sellke2024}; mixed, soft constraint \parencite[Thm.~1.2]{BenArousDemboGuionnet2006}; open at $T=0$, $p\ge3$}
+\statusrow{Linear flows: least squares, all times; $2$-spin at $T=0$, aging}{\proved}{\cref{thm:dmft:leastsquares,thm:dmft:twospin}; Bayes risk, fixed $t$: \textcite[Thm.~5]{AliKolterTibshirani2019}; $T>0$: \textcite{BenArousDemboGuionnet2001}}
+\statusrow{Equilibrium (TTI, FDT) solution above $T_d$}{\provedunder}{small $\beta$ only \parencite[Thm.~1.3]{DemboGuionnetMazza2007}}
+\statusrow{Dynamical transition at $T_d$, aging below it, $p\ge3$}{\conjectured}{numerics \parencite{KimLatz2001}, \cref{fig:dmft:pspin}; mixing dichotomy far from $T_d$ \parencite{GheissariJagannath2019}}
+\statusrow{Low-temperature dynamics reaches $-E_\infty$ (pure $p$-spin)}{\proved}{\textcite[Thms.~1.1, 1.7]{Sellke2024}, $T\to0$ after $N\to\infty$}
+\statusrow{The same threshold picture for mixed models}{\openq}{bounds do not match; numerics depend on preparation \parencite{FolenaFranzRicciTersenghi2020}}
+\statusrow{DMFT for gradient descent and SGD, finitely many steps}{\provedunder}{Gaussian design, pseudo-Lipschitz updates \parencite[Thm.~3.2]{GerbelotEtAl2024}}
+\statusrow{DMFT for gradient flow, fixed horizons; its limit $=$ empirical risk minimizer, convex losses}{\provedpreprint}{smooth losses, sub-Gaussian design; limit given exponential convergence: \textcite[Thms.~2--4]{CelentanoChengMontanari2021}, arXiv:2112.07572v3}
+\statusrow{Long-time dynamics $=$ statics in general}{\knownfalse}{pure $p$-spin: $-E_\infty>-E_0$ \parencite{Sellke2024,AuffingerBenArousCerny2013,Subag2017a}}
+\statusrow{DMFT for persistent SGD, non-smooth losses, phase retrieval}{\heuristicstatus}{\textcite{MignaccoEtAl2021a,MignaccoEtAl2021b}; outside the theorems' hypotheses}
+\end{statusboard}
+
+\section{Where the translation fails}\label{sec:dmft:fails}
+
+\paragraph{What was assumed.} Every theorem takes $N\to\infty$ at a fixed horizon, the order in which physicists derive the equations but not the one in which they use them. The spin-glass theorems need $T>0$ and, except for \textcite{DemboSubag2020} and Sellke's lower bound, a start independent of the disorder; the hard constraint is covered only for pure models. The learning theorems need smooth losses and Gaussian or sub-Gaussian designs in the proportional regime. Our proofs add linearity: \cref{thm:dmft:leastsquares} uses the square loss and the rotation invariance of the Gaussian design, \cref{thm:dmft:twospin} uses $p=2$ and $T=0$.
+
+\paragraph{Where the physics is wrong, or not yet right.} Long-time dynamics is not statics: the pure $p$-spin stops at $-E_\infty$, above the ground state, and in the convex case agreement needs exponential convergence. For mixed spherical models the threshold picture fails: \textcite{FolenaFranzRicciTersenghi2020} find, integrating the equations, that the asymptotic energy depends on how the system was prepared, and the rigorous bounds do not match \parencite{Sellke2024}. On times that grow with $N$ the equations lose their meaning, as activated jumps and, at modest sizes, convergence to a critical point take over (\cref{fig:dmft:twospin,fig:dmft:pspin}). The predictions most used in machine learning, for persistent mini-batch SGD, phase retrieval with the square loss, hinge losses and ReLU networks, rest on the same derivation outside every theorem's hypotheses \parencite{MignaccoEtAl2021a,MignaccoEtAl2021b}.
+
+\paragraph{Open problems.} First, the equations for zero-temperature gradient flow with $p\ge3$, which the limit $T\to0$ of Sellke's results does not give \parencite[Remark~1.5]{Sellke2024}. Second, the transition at $T_d$ and the aging solution for $p\ge3$, announced as future work by \textcite{BenArousDemboGuionnet2006}; only the solution at small $\beta$ is proved \parencite{DemboGuionnetMazza2007}. Third, when the dynamical mean-field solution of a learning problem converges exponentially, which \textcite{CelentanoChengMontanari2021} call open, and its long-time limit for nonconvex losses. Fourth, horizons that grow with the dimension, such as the $\log d$ needed to escape a saddle. Fifth, the asymptotic energy of mixed models.
+
+\begin{exercises}
+\item \consolidation (The explicit flow.) Verify \cref{thm:dmft:twospin}(i) and the covariance of $H_N$, and show that $e(0)=0$ and $e'(0)=-2=-\xi'(1)$, the initial slope predicted by \eqref{eq:dmft:ck}.\label{ex:dmft:flow}
+
+\item \consolidation (The ridgeless limits.) Derive $\int\lambda^{-1}\mu_\gamma(\dd\lambda)=1/(1-\gamma)$ for $\gamma<1$ from \eqref{eq:toolkit:mp} at $z=0$, and $\int_{\lambda>0}\lambda^{-1}\mu_\gamma(\dd\lambda)=1/(\gamma(\gamma-1))$ for $\gamma>1$, and check that the limits in \cref{thm:dmft:leastsquares}(iii) are those of \cref{thm:ridge:risk} with $\alpha=1/\gamma$.\label{ex:dmft:ridgeless}
+
+\item \consolidation (Early stopping.) Show that $\dmftE'(0)=-2r^2$ and that for $\gamma\ne1$ and $\sigma>0$, $\dmftE(t)<\dmftE(\infty)$ for large $t$. For $\gamma=\frac12$, $r=1$, $\sigma=\frac12$, find the best time numerically ($t=4.00$).\label{ex:dmft:early}
+
+\item \consolidation (The dictionary.) For $p=4$ compute $T_d$, $q_d$ and $E_\infty$ in our normalization and in that of Cugliandolo and Kurchan (answers: $0.769800$ and $0.544331$; $\frac23$; $1.732051$ and $1.224745$). Show that for $p=2$ the maximum in step 4 of \cref{comp:dmft:threshold} is approached as $q\to0$, giving $T_d=\sqrt2$, the static critical temperature of the spherical $2$-spin in our normalization.\label{ex:dmft:dictionary}
+
+\item \byhand (The semicircle solves the response equation.) Show that $\dmftM(u)=\sum_kC_ku^{2k}/(2k)!$ with the Catalan numbers $C_k$, and use $C_{k+1}=\sum_{i+j=k}C_iC_j$ to prove $\dmftM'(u)=\int_0^u\dmftM(v)\dmftM(u-v)\dd v$. Deduce that $R(t,s)=\dmftM(\sqrt2(t-s))\sqrt{\dmftM(2\sqrt2s)/\dmftM(2\sqrt2t)}$ solves the response equation of \eqref{eq:dmft:ck} for $\xi(q)=q^2$, $T=0$, $\mu=-2e$.\label{ex:dmft:catalan}
+
+\item \byhand (The interpolation threshold.) For $\gamma=1$ show that $R(\tau)\sim(\pi\tau)^{-1/2}$ and $\dmftE(t)\sim\frac{2(2-\sqrt2)}{\sqrt\pi}\sigma^2\sqrt t$. \hint{use $\int_0^\infty(1-e^{-u})^2u^{-3/2}\dd u=2\sqrt\pi(2-\sqrt2)$.}\label{ex:dmft:threshold}
+
+\item \byhand\hard (Edges and aging.) Let the spectral law of a symmetric $J$ tend to $\rho$, with largest point $\lambda_+$ and $\rho([\lambda_+-\eps,\lambda_+])\sim\kappa_0\eps^{a+1}$, $a>-1$, and run the spherical gradient flow of $-\frac12\ip x{Jx}$. Show that $\dmftC((1+c)t_w,t_w)\to(4(1+c)/(2+c)^2)^{(a+1)/2}$. What does the Marchenko--Pastur edge give? \hint{the Laplace transform of $\rho$ behaves like $e^{u\lambda_+}u^{-(a+1)}$.}\label{ex:dmft:edges}
+
+\item \translate (The fluctuation--dissipation theorem as a theorem.) For $\gamma<1$ let $\dd w_t=-S(w_t-\hat w)\dd t+\sqrt{2T}\dd B_t$, with $\hat w$ the least-squares solution, started from its stationary law. Show that the correlation of $w_t-\hat w$, $C(\tau)=\frac Td\tr(e^{-\tau S}S^{-1})$, and $R(\tau)=\frac1d\tr e^{-\tau S}$ satisfy $R=-C'/T$ exactly at every $d$, and find their limits. Which physical step does this replace?\label{ex:dmft:fdt}
+
+\item \translate\hard (What the saddle point needs.) Let $X=UDV^\top$ with $V$ Haar-distributed and independent of $(U,D)$, and let the spectral law of $X^\top X/n$ tend to $\nu$, with bounded norm. Show that \cref{thm:dmft:leastsquares}(i)--(ii) hold with $\nu$ in place of $\mu_\gamma$, while \eqref{eq:dmft:kernel} fails in general: the saddle point encodes the spectral law, and the closed equation the i.i.d.\ design. \hint{rotation invariance of $V$ replaces the uniform teacher.}\label{ex:dmft:rotation}
+
+\item \measurement (Universality and size.) In \texttt{14-dmft-leastsquares.py} replace the Gaussian design by Rademacher entries and the teacher by $re_1$: do the simulations still match \eqref{eq:dmft:risk}, which step of the proof fails, and how does a random teacher repair it? Then run \texttt{14-dmft-pspin.py} at $N=150$ and check whether the lag at $T=0$ shrinks further.\label{ex:dmft:universality}
+
+\item \research\harder (Gradient flow on the $3$-spin.) Prove \eqref{eq:dmft:ck} for zero-temperature gradient flow on the pure spherical $3$-spin on fixed horizons, or identify which step of the argument of \textcite{CelentanoChengMontanari2021}, written for flows driven by a rectangular i.i.d.\ matrix, fails for a Gaussian $3$-tensor with a hard constraint.\label{ex:dmft:research}
+\end{exercises}
+
+\notesandrefs
+
+In 1993 \textcite{CrisantiHornerSommers1993} wrote the equations for the spherical $p$-spin and \textcite{CugliandoloKurchan1993} found the aging solution and the threshold; \textcite{CugliandoloDean1995} solved the $2$-spin exactly, and \textcite{Cugliandolo2024} surveys the field. The rigorous theory began with soft spins at high temperature \parencite{BenArousGuionnet1997} and continued with the spherical models \parencite{BenArousDemboGuionnet2001,BenArousDemboGuionnet2006,DemboGuionnetMazza2007,Sellke2024}. For learning, \textcite{AgoritsasEtAl2018} derived the equations for the perceptron, by the dynamical cavity method and by a path integral, \textcite{MignaccoEtAl2021a,MignaccoEtAl2021b} applied them to SGD and phase retrieval, and \textcite{AdvaniSaxeSompolinsky2020} computed the learning curves of linear models through the Marchenko--Pastur spectrum; \textcite{CelentanoMontanariWu2020} reduced first-order methods to message passing, the step on which \textcite{GerbelotEtAl2024} and \textcite{CelentanoChengMontanari2021} build.
+
+\Cref{lem:dmft:quadratic}, the proofs of \cref{thm:dmft:leastsquares,thm:dmft:twospin}, and \cref{comp:dmft:threshold,comp:dmft:kernel} were written for this book. For isotropic Gaussian designs, \cref{thm:dmft:leastsquares} strengthens Theorem~5 of \textcite{AliKolterTibshirani2019} from the Bayes risk at each fixed time to the risk itself, almost surely, uniformly in time and at $t=\infty$, and adds the correlation, the training error and the response. \Cref{thm:dmft:twospin} is the zero-temperature, hard-constraint case of the dynamics that \textcite{CugliandoloDean1995} solved by physical arguments.
+
+\paragraph{Translating the literature.} \Textcite{CugliandoloKurchan1993} write $G(t,t')$ for the response and $z(t)$ for the multiplier, with noise strength $2T$; their normalization is converted in \cref{sec:dmft:question}. \Textcite{BenArousDemboGuionnet2006} use unit noise, the drift $-\frac\beta2\nabla H_J$ and covariance $4N\nu(q)$, which is our system with $T=\frac12$ and $\xi=\beta^2\nu$; they track $\chi(s,t)=\int_0^tR(s,u)\dd u$ and put the later time first, as does \textcite{Sellke2024}. \Textcite{CelentanoChengMontanari2021} write $\delta$ for our $\alpha$, $X$ for our $A=X/\sqrt d$, $\theta$ for our $w=\sqrt d\,\beta$, $u$ and $w$ for our $\zeta$ and $\omega$, and $R_\theta$, $C_\theta$ for our $R_w$, $C_w$; \textcite{GerbelotEtAl2024} also take $X_{ij}\sim\Normal(0,1/d)$, in discrete time.
+
+\printchapterbib
+\end{refsection}

@@ -1,0 +1,432 @@
+% Chapter 6 of The Replica Rosetta Stone: message passing -- the cavity, TAP and AMP.
+\rstchapter{Message Passing}{The cavity, TAP and AMP}{the cavity\dict Gaussian conditioning}{ch:amp}
+\stonefoot{proved}
+\begin{refsection}[chapters/06-amp.bib]
+
+\newcommand{\ampmmse}{\mathrm{mmse}}
+\newcommand{\ampnorm}[1]{\lVert #1\rVert_N}
+\newcommand{\ampto}{\xrightarrow{\ \Prob\ }}
+\newcommand{\ampGOE}{\mathrm{GOE}}
+\newcommand{\ampTAP}{\mathrm{TAP}}
+\newcommand{\ampPL}{\mathrm{PL}(2)}
+
+\begin{chaptersummary}
+Bayes-optimal inference in $\Z_2$ synchronization asks for the magnetizations of a planted Sherrington--Kirkpatrick model. The cavity method derives the TAP equations they satisfy, with their Onsager reaction term, turns them into approximate message passing (AMP), and predicts its iterates through a scalar recursion, state evolution. We derive all three as a physicist does, then prove state evolution for every fixed number of iterations by Bolthausen's conditioning, which removes the past iterates instead of a spin and makes the Gaussian cavity field and the reaction term exact. Simulations at $N=3000$ confirm the predicted overlaps at every step, show what goes wrong without the Onsager term and with a wrongly scaled spectral start, and reach the Bayes-optimal overlap. Open: state evolution over many more than $\log N/\log\log N$ iterations for general denoisers, and the global landscape of the TAP free energy.
+\end{chaptersummary}
+
+\section{The question: a posterior mean in polynomial time}\label{sec:amp:question}
+
+In \term{$\Z_2$ synchronization}\index{Z2 synchronization@$\mathbb{Z}_2$ synchronization} a uniform vector of signs $x\in\{-1,+1\}^N$ is observed through the spiked matrix of \cref{ch:spiked},
+\[
+A=\frac\lambda N\,xx^\top+W,\qquad W\sim\ampGOE(N),
+\]
+with independent entries $W_{ij}\sim\Normal(0,1/N)$ above the diagonal and $W_{ii}\sim\Normal(0,2/N)$ on it: each entry is a noisy report on whether $x_i$ and $x_j$ agree.\sidenote{The name comes from synchronizing clocks, phases or rotations from noisy measurements of their pairwise offsets; $\Z_2=\{\pm1\}$ is the simplest group.} Since $\sigma_i^2=1$, the likelihood $\exp(-\frac N2\sum_{i<j}(A_{ij}-\lambda\sigma_i\sigma_j/N)^2)$ depends on $\sigma$ only through $\lambda\sum_{i<j}A_{ij}\sigma_i\sigma_j$ (the diagonal carries no information), and the posterior is the Gibbs measure
+\begin{equation}\label{eq:amp:posterior}
+\Prob(x=\sigma\mid A)=\frac1{Z_N(A)}\exp\Bigl(\lambda\sum_{i<j}A_{ij}\sigma_i\sigma_j\Bigr),\qquad\sigma\in\{-1,+1\}^N.
+\end{equation}
+With $g_{ij}=\sqrt N\,W_{ij}$ its exponent is the Sherrington--Kirkpatrick Hamiltonian of \cref{ch:sk} at $\beta=\lambda$, without field, plus the planted term $\frac{\lambda^2}N\sum_{i<j}x_ix_j\sigma_i\sigma_j$; the temperature is tied to the signal, as on the Nishimori line of \cref{ch:nishimori}. The posterior is invariant under $\sigma\mapsto-\sigma$, so its mean is zero. The targets are the posterior mean of $xx^\top$ and, in the physicist's language, the \term{magnetizations}\index{magnetization} $m_i=\gibbs{\sigma_i}$ inside one of the two symmetric halves of the posterior, the half that an algorithm selects by its start. Here $m\in\R^N$ is a vector of magnetizations or of their estimates, as in the TAP literature, and its overlap with the truth is the number $\frac1N\ip{m}{x}$.
+
+How well can they be estimated? For the scalar channel $Y=\sqrt\gamma X+Z$ with $X$ uniform on $\{\pm1\}$, let $q(\gamma)=1-\ampmmse(\gamma)=\E\tanh(\gamma+\sqrt\gamma\,Z)$. By the theorem of Lelarge and Miolane (\cref{ch:nishimori}), the Bayes-optimal mean-square error for $xx^\top$ is $1-q_*^2$, with $q_*=\gamma_*/\lambda^2$ and $\gamma_*$ the largest solution of
+\begin{equation}\label{eq:amp:fixedpoint}
+\gamma=\lambda^2q(\gamma)
+\end{equation}
+(\cref{thm:nishimori:rsformula}), while the top eigenvector of $A$ reaches only the squared cosine $1-1/\lambda^2$ with $x$ (\cref{thm:spiked:bbp}). At $\lambda=1.5$ these numbers are $0.692$ and $0.556$. But the Bayes estimator averages over $2^N$ configurations. Is there a cheap algorithm that computes the magnetizations, and can its accuracy be predicted at every step?
+
+\begin{physicsbox}[Thouless, Anderson and Palmer 1977; Donoho, Maleki and Montanari 2009]
+Inside one half of the posterior the magnetizations solve the TAP equations
+\[
+m_i=\tanh\Bigl(\lambda\sum_jA_{ij}m_j-\lambda^2(1-q)\,m_i\Bigr),\qquad q=\frac1N\sum_jm_j^2,
+\]
+whose last term is the Onsager reaction term. Iterated with the correct time indices they become approximate message passing,
+\[
+y^{t+1}=Am^t-b_tm^{t-1},\qquad m^t=\tanh(\lambda y^t),\qquad b_t=\lambda\Bigl(1-\frac1N\sum_i(m_i^t)^2\Bigr),
+\]
+and at every iteration the field $\lambda y_i^t$ is distributed over the coordinates as $\gamma_tx_i+\sqrt{\gamma_t}\,Z_i$, with $Z_i$ standard Gaussian and $\gamma_{t+1}=\lambda^2q(\gamma_t)$. This state evolution converges to $\gamma_*$, so the iteration reaches the Bayes-optimal overlap $q_*$.
+\end{physicsbox}
+
+\Textcite{ThoulessAndersonPalmer1977} proposed the equations for the Sherrington--Kirkpatrick model. The iteration, \term{approximate message passing}\index{approximate message passing}, and its state evolution are the form that \textcite{DonohoMalekiMontanari2009} gave to message passing in compressed sensing,\sidenote{They stated state evolution as an empirical ``Finding~2'': in their simulations it predicted the mean-square error, the false alarms, the missed detections and the convergence of the algorithm.} and for $\Z_2$ synchronization the iteration appears in \textcite{DeshpandeAbbeMontanari2016} and \textcite{MontanariVenkataramanan2021}. How do physicists derive the box, and what is proved?
+
+\section{The physics: removing a spin}\label{sec:amp:physics}
+
+The \term{cavity method}\index{cavity method} of \textcite{MezardParisiVirasoro1986} computes a property of $N$ spins from the response of the system to one added spin.\sidenote{The title of the cavity paper, \emph{SK model: the replica solution without replicas}, states its program: to recover the replica results by an argument about one added spin.} We apply it to \eqref{eq:amp:posterior}, with couplings $J_{ij}=\lambda A_{ij}$.
+
+\begin{heuristic}[The cavity derivation of the TAP equations]
+Write $\gibbs{\cdot}^{(i)}$ for the Gibbs measure without spin $i$ and $m_j^{(i)}$ for its magnetizations. Spin $i$ sees the others only through its \emph{cavity field} $h_i=\sum_{j\ne i}J_{ij}\sigma_j$, so summing over $\sigma_i=\pm1$ gives the exact identity $m_i=\gibbs{\sinh h_i}^{(i)}/\gibbs{\cosh h_i}^{(i)}$.
+\emph{First assumption: the cavity field is Gaussian.} The couplings $J_{ij}$ do not enter $\gibbs{\cdot}^{(i)}$, so $h_i$ is a sum of many terms with independent random coefficients; inside a single pure state, where correlations decay, take it Gaussian with mean $\sum_jJ_{ij}m_j^{(i)}$ and some variance $v$. Since $\E\sinh(\mu+\sqrt vZ)=e^{v/2}\sinh\mu$ and $\E\cosh(\mu+\sqrt vZ)=e^{v/2}\cosh\mu$, the variance cancels and $m_i=\tanh(\sum_jJ_{ij}m_j^{(i)})$.
+\emph{Second assumption: linear response.} Putting spin $i$ back adds the field $J_{ki}\sigma_i$ to every spin $k$. Keep only the response of $m_j$ to its own added field, through the susceptibility $1-m_j^2$, and drop the off-diagonal responses, small inside a pure state: $m_j\approx m_j^{(i)}+(1-m_j^2)J_{ji}m_i$. Hence
+\[
+\sum_jJ_{ij}m_j^{(i)}\approx\sum_jJ_{ij}m_j-m_i\sum_jJ_{ij}^2(1-m_j^2).
+\]
+\emph{Third assumption: the reaction self-averages.} Each $J_{ij}^2=\lambda^2A_{ij}^2$ has mean close to $\lambda^2/N$; replacing the sum by its average, $\sum_jJ_{ij}^2(1-m_j^2)\approx\lambda^2(1-q)$, gives the \term{TAP equations}\index{TAP equations}
+\begin{equation}\label{eq:amp:tap}
+m_i=\tanh\bigl(\lambda(Am)_i-\lambda^2(1-q)\,m_i\bigr),\qquad q=\frac1N\sum_jm_j^2.\qedhere
+\end{equation}
+\end{heuristic}
+
+The last term is the \term{Onsager reaction term}\index{Onsager reaction term}, the part of the field on spin $i$ that spin $i$ has itself induced in the others.\sidenote{The name recalls the reaction field of \textcite{Onsager1936}'s theory of polar liquids, the field that a molecule induces in its surroundings and that acts back on it. \Textcite{DonohoMalekiMontanari2009} kept the physicists' name for the corresponding term of their algorithm.} It is a sum of $N$ terms of order $1/N$ and survives because $\sum_jA_{ij}^2\approx1$, which is why \textcite{Bolthausen2014} calls it an Itô-type correction. Without it one gets the \term{naive mean-field} equations\index{naive mean field} $m=\tanh(\lambda Am)$, which are wrong (\cref{sec:amp:measure,sec:amp:fails}).
+
+\begin{heuristic}[From belief propagation to approximate message passing]
+On a tree, \term{belief propagation}\index{belief propagation} computes the marginals exactly by passing, for each ordered pair $(i,j)$, the magnetization $m_{i\to j}$ of spin $i$ without the edge $ij$: $m_{i\to j}^{t+1}=\tanh\bigl(\sum_{k\ne j}\operatorname{artanh}(\tanh(J_{ik})m_{k\to i}^t)\bigr)$. On the complete graph $J_{ik}=O(N^{-1/2})$, so $\operatorname{artanh}(\tanh(J)m)=Jm+O(J^3)$, and the cubic terms add up to $O(N^{-1/2})$. With $h_i^{t+1}=\sum_kJ_{ik}m_{k\to i}^t$ and $m_i^{t+1}=\tanh(h_i^{t+1})$, an expansion to first order in $J_{ij}$ gives $m_{i\to j}^{t+1}\approx m_i^{t+1}-(1-(m_i^{t+1})^2)J_{ij}m_j^t$. Inserting this expansion of $m^t_{k\to i}$ into $h_i^{t+1}$ and replacing $J_{ik}^2$ by $\lambda^2/N$,
+\[
+h_i^{t+1}\approx\sum_kJ_{ik}m_k^t-m_i^{t-1}\sum_kJ_{ik}^2\bigl(1-(m_k^t)^2\bigr)\approx\lambda(Am^t)_i-\lambda^2(1-q_t)\,m_i^{t-1}.
+\]
+The reaction carries the index $t-1$ because the message from $k$ to $i$ at time $t$ was computed from the message from $i$ to $k$ at time $t-1$. With $y^t=h^t/\lambda$ this is the AMP of the box: $N$ numbers per iteration instead of $N^2$ messages.
+\end{heuristic}
+
+\begin{heuristic}[State evolution]
+Assume that each message $m^t_{k\to i}$ is independent of $A_{ik}$, as on a tree. Then $h_i^{t+1}=\lambda\sum_kA_{ik}m_{k\to i}^t$ is the signal part $\lambda^2\mu_tx_i$, with $\mu_t=\frac1N\ip{x}{m^t}$, plus $\lambda\sum_kW_{ik}m_{k\to i}^t$, a sum of $N$ independent terms given the messages, hence Gaussian with variance $\lambda^2q_t$, $q_t=\frac1N\abs{m^t}^2$. If $m^t$ is a Bayes posterior mean, the Nishimori identity (\cref{lem:freeentropy:nishimori}) gives $\mu_t=q_t$, so $h^{t+1}\approx\gamma_{t+1}x+\sqrt{\gamma_{t+1}}Z$ with $\gamma_{t+1}=\lambda^2q_t$. In this scalar channel the posterior mean of $x_i$ is $\tanh(h_i^{t+1})=m_i^{t+1}$, so $m^{t+1}$ is again a posterior mean, with overlap $q(\gamma_{t+1})$. This closes the recursion $\gamma_{t+1}=\lambda^2q(\gamma_t)$, called \term{state evolution}\index{state evolution}.
+\end{heuristic}
+
+The fixed points of state evolution solve \eqref{eq:amp:fixedpoint}, the stationary points of the replica-symmetric free entropy of \cref{ch:nishimori}; that the algorithm stops at the Bayes-optimal one is the physicist's reason to trust it. The uncontrolled steps were Gaussianity inside one pure state, linear response, self-averaging of the reaction, independence of messages and couplings at all times, and the order of limits, $N\to\infty$ at fixed $t$, then $t\to\infty$.
+
+\begin{computation}{State evolution of Bayes-AMP at $\lambda=1.5$}\label{comp:amp:se}
+\step \emph{The scalar channel.} Let $X$ be uniform on $\{\pm1\}$ and $Y=\gamma X+\sqrt\gamma Z$. The posterior of $X$ is proportional to $e^{XY}$, so $\E[X\mid Y]=\tanh Y$. Given $X=x$, $xY=\gamma+\sqrt\gamma\,xZ$ has the law of $\gamma+\sqrt\gamma Z$, and $x\tanh Y=\tanh(xY)$, so $\E[X\tanh Y]=q(\gamma)$; by the tower property $\E\tanh^2Y=\E[X\,\E(X\mid Y)]=q(\gamma)$ too. Overlap and squared norm agree: the Nishimori identity in its simplest form. Since $\frac{\dd}{\dd y}\tanh(\lambda y)=\lambda(1-\tanh^2(\lambda y))$, when $\lambda y^t$ has the law of $\gamma_tX+\sqrt{\gamma_t}Z$ the average derivative is $\lambda(1-q(\gamma_t))$, the Onsager coefficient $b_t$ of the box.
+\step \emph{The numbers.} Gauss--Hermite quadrature (\cref{sec:toolkit:numerics}) gives, from the value $\gamma_0=\lambda^2-1=1.25$ of a spectral start (\cref{comp:amp:pca}), $\gamma_1=1.3991$, $\gamma_2=1.4807$, $\gamma_3=1.5215$, $\gamma_4=1.5409$, converging to $\gamma_*=1.5577$, so that $q_*=0.6923$ and the cosine with $x$ is $\sqrt{q_*}=0.8320$, against $\sqrt{1-1/\lambda^2}=0.7454$ for the top eigenvector. The distances $\gamma_*-\gamma_t$ ($0.308$, $0.159$, $0.077$, $0.036$, $0.017$) roughly halve at each step: the slope of $\gamma\mapsto\lambda^2q(\gamma)$ at $\gamma_*$ is $0.457$. At the fixed point $b=\lambda(1-q_*)=0.462$.
+\end{computation}
+
+\paragraph{The TAP free energy.} The TAP equations are the stationarity conditions of the \term{TAP free entropy}\index{TAP free energy} on $(-1,1)^N$,
+\[
+\Phi_{\ampTAP}(m)=\frac\lambda{2N}\ip{m}{Am}+\frac1N\sum_{i=1}^N\mathsf h(m_i)+\frac{\lambda^2}4\Bigl(1-\frac{\abs m^2}N\Bigr)^2,
+\]
+with $\mathsf h(m)=-\frac{1+m}2\log\frac{1+m}2-\frac{1-m}2\log\frac{1-m}2$: energy and entropy of a product measure with means $m$, plus the Onsager correction. Since $\mathsf h'=-\operatorname{artanh}$, its critical points solve \eqref{eq:amp:tap}. \Textcite{Plefka1982} obtained it by expanding the free entropy at fixed magnetizations to second order in the couplings, and gave a condition for the expansion to converge; for SK at inverse temperature $\beta$, \term{Plefka's condition}\index{Plefka's condition} reads $\beta^2\frac1N\sum_i(1-m_i^2)^2<1$, and at the replica-symmetric solution it becomes the strict de Almeida--Thouless condition. Physically, the posterior is a mixture of pure states centered at local maximizers of $\Phi_\ampTAP$, the informative one being the posterior mean of its half. Mathematicians minimize $F_\ampTAP=-\Phi_\ampTAP$.
+
+\section{The stone}\label{sec:amp:stone}
+
+\begin{stone}{the cavity method and state evolution}{Bolthausen's conditioning}
+\stonestep{Remove a spin, or remove the past}
+{Remove spin $i$: the couplings $A_{ij}$ do not enter $\gibbs{\cdot}^{(i)}$, so they are independent of the $m_j^{(i)}$.}
+{Condition on $\cF_t=\sigma(u,s^1,\dots,s^t)$: the iterates reveal only $W\Pi_t$, and $\Pi_t^\perp W\Pi_t^\perp$ is a fresh GOE block (\cref{lem:amp:past}).}
+\stonestep{The cavity field is Gaussian}
+{A central limit theorem under $\gibbs{\cdot}^{(i)}$, assuming one pure state.}
+{Exact at every $N$: given $\cF_t$, the new part $\Pi_t^\perp W\Pi_t^\perp m^t$ is Gaussian (\cref{lem:amp:past}).}
+\stonestep{The Onsager term and its time index}
+{Linear response gives $-\lambda^2(1-q)m_i$; a BP message excludes its recipient, so the correction multiplies $m^{t-1}_i$.}
+{Gaussian integration by parts gives $\frac1N\ip{s^q}{m^t}\to\Cov(Z_q,Z_t)\,b_t$ \eqref{eq:amp:stein}; as $\E Z_qZ_t=\E M_{q-1}M_{t-1}$, only $m^{t-1}$ survives.}
+\stonestep{State evolution}
+{Messages independent of couplings at all times, as on a tree.}
+{Induction on $t$, at fixed $t$ as $N\to\infty$, plus non-degeneracy $\rho_t>0$ (\cref{thm:amp:se}).}
+\stonestep{One pure state, and $t=\infty$}
+{A fixed point inside a pure state; choice of state and convergence assumed.}
+{No counterpart at fixed $t$; the posterior needs Lelarge--Miolane, Montanari--Venkataramanan and Celentano--Fan--Mei.}
+\stonestep{The TAP free energy, and universality}
+{Plefka's expansion; a pure state's mean maximizes $\Phi_\ampTAP$. Only a central limit theorem was used.}
+{Chen--Panchenko's representation; a local maximizer at the posterior mean for every $\lambda>1$ (\cref{thm:amp:cfm}). Non-Gaussian entries need moments or interpolation.}
+\end{stone}
+
+Both routes isolate a part of the system, show that the field on the rest is Gaussian once the correlated part is subtracted, and identify that part as a self-reaction proportional to an average susceptibility. Removing the past instead of a site makes three assumptions exact: Gaussianity holds at every $N$, the reaction comes from Gaussian integration by parts, and nothing is assumed independent, because projections carry the dependence on the past. The price is a fixed number of iterations and a Gaussian matrix; the steps without counterpart concern the Gibbs measure. The idea is Bolthausen's: he presented it at a EURANDOM workshop in September 2009, as \textcite{BayatiMontanari2011} record,\sidenote{The workshop was titled \emph{Order, disorder and double disorder}.} and proved the case of the SK iteration \parencite{Bolthausen2014}.\sidenote{Bolthausen stresses that his paper proves nothing about the SK Gibbs measure itself: its subject is the iteration.}
+
+\section{The proof: conditioning on the past}\label{sec:amp:proof}
+
+We prove state evolution for an AMP driven by a GOE matrix, with Lipschitz denoisers that may use side information, for every fixed number of iterations; \cref{sec:amp:z2} deduces $\Z_2$ synchronization.
+
+\paragraph{Notation.} For $a\in\R^N$, $\ampnorm a=(\abs a^2/N)^{1/2}$, and for an array of rows $a_1,\dots,a_N\in\R^d$, $\ampnorm a^2=\frac1N\sum_i\abs{a_i}^2$. Functions of scalars act coordinate by coordinate, functions of several vectors row by row. A function $\psi\colon\R^d\to\R$ is \term{pseudo-Lipschitz of order 2}\index{pseudo-Lipschitz function}, $\psi\in\ampPL$, if for some $L$ and all $a,b$
+\begin{equation}\label{eq:amp:pl}
+\abs{\psi(a)-\psi(b)}\le L\bigl(1+\abs a+\abs b\bigr)\abs{a-b}.
+\end{equation}
+Then $\abs{\psi(a)}\le\abs{\psi(0)}+L(\abs a+\abs a^2)$. Lipschitz functions, products of two Lipschitz functions, and compositions of functions in $\ampPL$ with linear maps are in $\ampPL$. We write $\ampto$ for convergence in probability as $N\to\infty$.
+
+\begin{assumption}[Symmetric AMP with side information]\label[assumption]{ass:amp:setting}
+\leavevmode
+\begin{enumerate}
+\item $W\sim\ampGOE(N)$.
+\item The side information is an array $u=(u_1,\dots,u_N)$ of rows $u_i\in\R^k$, independent of $W$, and there is a random vector $U\in\R^k$ with $\E\abs U^2<\infty$ such that $\frac1N\sum_i\psi(u_i)\ampto\E\psi(U)$ for every $\psi\in\ampPL$ on $\R^k$.
+\item The denoisers $\eta_0\colon\R^k\to\R$ and $\eta_t\colon\R\times\R^k\to\R$, $t\ge1$, are Lipschitz.
+\item $\E\eta_0(U)^2>0$, and for every $t\ge1$ the function $s\mapsto\eta_t(s,U)$ is not constant with positive probability.
+\end{enumerate}
+\end{assumption}
+
+Part 2 holds, by the weak law of large numbers, when the $u_i$ are independent copies of $U$. The iteration is
+\begin{equation}\label{eq:amp:amp}
+m^0=\eta_0(u),\quad s^1=Wm^0;\qquad m^t=\eta_t(s^t,u),\quad s^{t+1}=Wm^t-b_tm^{t-1},
+\end{equation}
+for $t\ge1$, with deterministic Onsager coefficients $b_t$, defined with the limit:
+
+\begin{definition}[State evolution]\label[definition]{def:amp:se}
+Let $M_0=\eta_0(U)$ and $\Gamma_{00}=\E M_0^2$. For $t\ge1$, given $Z_1,\dots,Z_{t-1}$ and $\Gamma_{rs}$ for $r,s\le t-1$, let $Z_t$ be such that $(Z_1,\dots,Z_t)$ is a centered Gaussian vector, independent of $U$, with $\E Z_rZ_s=\Gamma_{r-1,s-1}$; set $M_t=\eta_t(Z_t,U)$, $\Gamma_{rt}=\Gamma_{tr}=\E M_rM_t$ for $r\le t$, and $b_t=\E\,\partial_s\eta_t(Z_t,U)$. Let $\Gamma_t=(\Gamma_{rs})_{0\le r,s\le t-1}$.
+\end{definition}
+
+The prescribed covariance is a Gram matrix in $L^2$, so $Z_t$ exists, as a linear combination of $Z_1,\dots,Z_{t-1}$ plus an independent Gaussian. The derivative $\partial_s\eta_t(s,u)$ exists for almost every $s$ and is bounded, because $\eta_t(\cdot,u)$ is Lipschitz, and $Z_t$ has positive variance (\cref{lem:amp:nondeg}), so $b_t$ is well defined.\sidenote{A measurable version is $\limsup_n n(\eta_t(s+1/n,u)-\eta_t(s,u))$. Gaussian integration by parts gives the derivative-free form $b_t=\E[Z_tM_t]/\Gamma_{t-1,t-1}$.}
+
+\begin{lemma}[Non-degeneracy]\label[lemma]{lem:amp:nondeg}
+Under parts 2--4 of \cref{ass:amp:setting}, $\Gamma_t$ is positive definite for every $t\ge1$.
+\end{lemma}
+
+\begin{proof}
+The plan is an induction on $t$: a linear relation among $M_0,\dots,M_t$ would make $\eta_t(Z_t,U)$ a function of the past, which the fresh Gaussian part of $Z_t$ forbids. For $t=1$, $\Gamma_1=\E M_0^2>0$. Suppose $\Gamma_t$ positive definite and $\E(\sum_{r\le t}a_rM_r)^2=0$. If $a_t=0$, then $a=0$. Otherwise $M_t=F(Z_1,\dots,Z_{t-1},U)$ almost surely for a measurable $F$. As $\Gamma_t$ is the covariance of $(Z_1,\dots,Z_t)$, $Z_t=\sum_{r<t}c_rZ_r+\zeta$ with $\zeta\sim\Normal(0,v)$, $v>0$, independent of $(Z_1,\dots,Z_{t-1},U)$. By Fubini's theorem, for almost every value $(z,u)$ of $(Z_1,\dots,Z_{t-1},U)$, $\eta_t(\sum_rc_rz_r+\zeta,u)=F(z,u)$ for almost every $\zeta$, so the continuous function $\eta_t(\cdot,u)$ is constant. Since $U$ is independent of $(Z_1,\dots,Z_{t-1})$, this holds for almost every value $u$ of $U$, contradicting part 4.
+\end{proof}
+
+\begin{theorem}[State evolution]\label{thm:amp:se}
+Assume \cref{ass:amp:setting}, and let $s^1,s^2,\dots$ be the iterates \eqref{eq:amp:amp}. For every fixed $t\ge1$ and every $\psi\in\ampPL$ on $\R^t\times\R^k$,
+\[
+\frac1N\sum_{i=1}^N\psi\bigl(s^1_i,\dots,s^t_i,u_i\bigr)\ampto\E\,\psi(Z_1,\dots,Z_t,U)\qquad(N\to\infty).
+\]
+\end{theorem}
+
+The randomness is that of $W$ and $u$, the limit is deterministic, and $t$ is fixed as $N\to\infty$: the rows $(s^1_i,\dots,s^t_i)$ look like independent draws of the Gaussian vector of state evolution, independent of the side information. With $\psi(s,u)=s_q\,\eta_r(s_r,u)$ and Gaussian integration by parts given $U$ (\cref{thm:toolkit:gaussianibp}, which extends to the Lipschitz $\eta_r(\cdot,u)$ by mollification, $Z_r$ having a density), the theorem gives
+\begin{equation}\label{eq:amp:stein}
+\frac1N\ip{s^q}{m^r}\ampto\E Z_q\eta_r(Z_r,U)=\Gamma_{q-1,r-1}\,b_r\qquad(1\le q,r\le t),
+\end{equation}
+and $\frac1N\ip{s^q}{m^0}\ampto\E Z_qM_0=0$. This identity is where the Onsager coefficient comes from.
+
+\begin{lemma}[Two estimates]\label[lemma]{lem:amp:pl}
+Let $\psi\in\ampPL$ on $\R^d$ with constant $L$.
+\begin{enumerate}
+\item For arrays $a,a'$ of rows in $\R^d$, $\bigl|\frac1N\sum_i\psi(a_i)-\frac1N\sum_i\psi(a'_i)\bigr|\le\sqrt3\,L\,\bigl(1+\ampnorm a^2+\ampnorm{a'}^2\bigr)^{1/2}\ampnorm{a-a'}$.
+\item If $d=d'+1$ and $\zeta\sim\Normal(0,1)$, then $\bar\psi(a)=\E\psi(a,\zeta)$ is in $\ampPL$ on $\R^{d'}$, and $\E(\psi(a,\zeta)-\psi(a,0))^2\le12L^2(1+\abs a^2)$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+Part 1: apply \eqref{eq:amp:pl} to each pair, then Cauchy--Schwarz and $(1+x+y)^2\le3(1+x^2+y^2)$. Part 2: $\abs{\bar\psi(a)-\bar\psi(b)}\le L\,\E(1+\abs a+\abs b+2\abs\zeta)\abs{a-b}\le L(1+2\E\abs\zeta)(1+\abs a+\abs b)\abs{a-b}$, and $\abs{\psi(a,\zeta)-\psi(a,0)}\le L(1+2\abs a+\abs\zeta)\abs\zeta$, whose square has mean at most $3L^2\E[(1+4\abs a^2+\zeta^2)\zeta^2]=12L^2(1+\abs a^2)$.
+\end{proof}
+
+The next lemma combines parts (i) and (iii) of the conditioning lemma (\cref{lem:toolkit:conditioning}) in the form the proof uses; its proof is a covariance computation.
+
+\begin{lemma}[A fresh Gaussian block]\label[lemma]{lem:amp:fresh}
+Let $\Pi$ be an orthogonal projection of $\R^N$, $v\ne0$ in its range, $\hat v=v/\abs v$, $\Pi'=\Pi-\hat v\hat v^\top$, and $\tilde W\sim\ampGOE(N)$. Then $\Pi\tilde Wv$ and $\Pi'\tilde W\Pi'$ are independent, and $\Pi\tilde Wv$ is centered Gaussian with covariance $\frac{\abs v^2}N(\Pi+\hat v\hat v^\top)$.
+\end{lemma}
+
+\begin{proof}
+Both are linear in the Gaussian entries of $\tilde W$, hence jointly Gaussian, and it suffices to compute covariances. For the GOE, $\E\tilde W_{ab}\tilde W_{cd}=\frac1N(\delta_{ac}\delta_{bd}+\delta_{ad}\delta_{bc})$. Since $\Pi'v=0$ and $\Pi v=v$,
+\begin{gather*}
+\E(\Pi\tilde Wv)_i(\Pi'\tilde W\Pi')_{kl}=\tfrac1N\bigl((\Pi\Pi')_{ik}(\Pi'v)_l+(\Pi\Pi')_{il}(\Pi'v)_k\bigr)=0,\\
+\E(\Pi\tilde Wv)_i(\Pi\tilde Wv)_k=\tfrac1N\bigl(\Pi_{ik}\abs v^2+v_iv_k\bigr).
+\end{gather*}
+Uncorrelated jointly Gaussian vectors are independent.
+\end{proof}
+
+Part 2 of the next lemma is part (ii) of \cref{lem:toolkit:conditioning}, with side information and without its rank condition.
+
+\begin{lemma}[Conditioning on the past]\label[lemma]{lem:amp:past}
+Let $\cF_t=\sigma(u,s^1,\dots,s^t)$, let $\Pi_t$ be the orthogonal projection onto the span of $m^0,\dots,m^{t-1}$ ($\Pi_0=0$), and $\Pi_t^\perp=I-\Pi_t$. For every $t\ge0$:
+\begin{enumerate}
+\item $W\Pi_t$ and $s^{t+1}-\Pi_t^\perp W\Pi_t^\perp m^t$ are $\cF_t$-measurable;
+\item conditionally on $\cF_t$, $\Pi_t^\perp W\Pi_t^\perp$ has the law of $\Pi_t^\perp\tilde W\Pi_t^\perp$, with $\tilde W\sim\ampGOE(N)$ independent of $\cF_t$;
+\item conditionally on $\cF_t$, $\Pi_t^\perp W\Pi_t^\perp m^t$ is centered Gaussian with covariance $\frac1N\abs{m^t_\perp}^2(\Pi_t^\perp+\hat m\hat m^\top)$, where $m^t_\perp=\Pi_t^\perp m^t$ and $\hat m=m^t_\perp/\abs{m^t_\perp}$ ($\hat m=0$ if $m^t_\perp=0$).
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to show that the iterates reveal $W$ only through $W\Pi_t$, and to peel off one direction per iteration with \cref{lem:amp:fresh}.
+\emph{Part 1.} For $r<t$ the vectors $m^r$ and $Wm^r=s^{r+1}+b_rm^{r-1}$ ($m^{-1}=0$) are $\cF_t$-measurable. Gram--Schmidt gives an orthonormal basis $e_1,\dots,e_k$ of $\mathrm{span}(m^0,\dots,m^{t-1})$ whose vectors are combinations of the $m^r$ with $\cF_t$-measurable coefficients, so $W\Pi_t=\sum_j(We_j)e_j^\top$ and $\Pi_tW=(W\Pi_t)^\top$ are $\cF_t$-measurable. Splitting $m^t=\Pi_tm^t+m^t_\perp$ and $Wm^t_\perp=\Pi_tWm^t_\perp+\Pi_t^\perp Wm^t_\perp$,
+\begin{equation}\label{eq:amp:split}
+s^{t+1}=W\Pi_tm^t+\Pi_tWm^t_\perp-b_tm^{t-1}+\Pi_t^\perp W\Pi_t^\perp m^t,
+\end{equation}
+and the first three terms are $\cF_t$-measurable.
+\emph{Part 2.} For $t=0$ this is the independence of $W$ and $u$. Suppose it holds at $t$; write $B=\Pi_t^\perp W\Pi_t^\perp$ and $v=m^t_\perp$, both $\Pi_t^\perp$ and $v$ being $\cF_t$-measurable. By \eqref{eq:amp:split}, $\cF_{t+1}=\cF_t\vee\sigma(Bv)$. If $v=0$, then $\cF_{t+1}=\cF_t$ and $\Pi_{t+1}=\Pi_t$. Otherwise $\Pi_{t+1}^\perp=\Pi_t^\perp-\hat v\hat v^\top$ and $\Pi_{t+1}^\perp W\Pi_{t+1}^\perp=\Pi_{t+1}^\perp B\Pi_{t+1}^\perp$. Given $\cF_t$, the pair $(Bv,\Pi^\perp_{t+1}B\Pi^\perp_{t+1})$ has the law of $(\Pi_t^\perp\tilde Wv,\Pi^\perp_{t+1}\tilde W\Pi^\perp_{t+1})$, whose components are independent by \cref{lem:amp:fresh}. So they are conditionally independent given $\cF_t$, and conditioning further on $Bv$ does not change the conditional law of $\Pi^\perp_{t+1}B\Pi^\perp_{t+1}$, by the characterization of conditional independence; that law is the law of $\Pi^\perp_{t+1}\tilde W\Pi^\perp_{t+1}$.
+\emph{Part 3.} By part 2, given $\cF_t$ the vector $Bv$ has the law of $\Pi_t^\perp\tilde Wv$, which \cref{lem:amp:fresh} identifies.
+\end{proof}
+
+\begin{proof}[Proof of \cref{thm:amp:se}]
+The plan is an induction on $t$. Let $\mathrm H_t$ be the statement of the theorem at $t$, and $\mathrm H_0$ part 2 of \cref{ass:amp:setting}. Assuming $\mathrm H_t$, $t\ge0$, we write $s^{t+1}$ as a fixed combination of past iterates plus an independent Gaussian vector plus a remainder that vanishes in $\ampnorm\cdot$, and read off $\mathrm H_{t+1}$. For $t=0$ the sums over $r$ below are empty, $\Pi_0=0$ and $R=0$.
+
+\emph{Step 1: inner products.} Let $Q_t=[m^0|\cdots|m^{t-1}]$ and $S_t=[s^1|\cdots|s^t]$, and $\hat\Gamma_t=Q_t^\top Q_t/N$. By $\mathrm H_t$, $\hat\Gamma_t\ampto\Gamma_t$, $\frac1NQ_t^\top m^t\ampto\Gamma_{\cdot t}=(\Gamma_{rt})_{r<t}$, $\ampnorm{m^t}^2\ampto\Gamma_{tt}$, \eqref{eq:amp:stein} holds, and the norms $\ampnorm{s^q}$ are bounded in probability. By \cref{lem:amp:nondeg}, $E_N=\{\lambda_{\min}(\hat\Gamma_t)\ge\frac12\lambda_{\min}(\Gamma_t)\}$ has probability tending to one. On $E_N$, $a=\hat\Gamma_t^{-1}Q_t^\top m^t/N$ satisfies $\Pi_tm^t=Q_ta$, $a\ampto a^\infty=\Gamma_t^{-1}\Gamma_{\cdot t}$, and $\ampnorm{m^t_\perp}^2=\ampnorm{m^t}^2-a^\top\hat\Gamma_ta\ampto\Gamma_{tt}-\Gamma_{\cdot t}^\top\Gamma_t^{-1}\Gamma_{\cdot t}=\rho_t^2$, a Schur complement of $\Gamma_{t+1}$, positive by \cref{lem:amp:nondeg}.
+
+\emph{Step 2: the old part, and the Onsager cancellation.} On $E_N$, in \eqref{eq:amp:split}, $W\Pi_tm^t=\sum_{r<t}a_r(s^{r+1}+b_rm^{r-1})$, and $\Pi_tWm^t_\perp=Q_t\hat\Gamma_t^{-1}(WQ_t)^\top m^t_\perp/N=Q_t\hat\Gamma_t^{-1}c$ with $c=S_t^\top m^t_\perp/N$, because the columns of $WQ_t$ are $s^{r+1}+b_rm^{r-1}$ and $m^{r-1}\perp m^t_\perp$. Index $c$ like the columns of $Q_t$, $c_j=\frac1N\ip{s^{j+1}}{m^t_\perp}$ for $0\le j<t$, and define $d\in\R^t$ by $Q_td=b_tm^{t-1}-\sum_{r=1}^{t-1}a_rb_rm^{r-1}$, that is, $d_j=b_t\ind\{j=t-1\}-a_{j+1}b_{j+1}\ind\{j\le t-2\}$. Then
+\[
+s^{t+1}=\sum_{r<t}a_rs^{r+1}+\Pi_t^\perp W\Pi_t^\perp m^t+R,\qquad R=Q_t\bigl(\hat\Gamma_t^{-1}c-d\bigr).
+\]
+Since $\ampnorm{Q_tw}^2=w^\top\hat\Gamma_tw$, we get $\ampnorm R^2=(c-\hat\Gamma_td)^\top\hat\Gamma_t^{-1}(c-\hat\Gamma_td)\le2\abs{c-\hat\Gamma_td}^2/\lambda_{\min}(\Gamma_t)$. By Step 1 and \eqref{eq:amp:stein}, $c_j=\frac1N\ip{s^{j+1}}{m^t}-\sum_ra_r\frac1N\ip{s^{j+1}}{m^r}$ converges to $\Gamma_{j,t-1}b_t-\sum_{r=1}^{t-1}\Gamma_{j,r-1}b_ra^\infty_r$, which is also the limit of $(\hat\Gamma_td)_j$. So $\ampnorm R\ampto0$: in the limit, the Onsager term $-b_tm^{t-1}$ cancels the part of $\Pi_tWm^t_\perp$ that is not a combination of past iterates.
+
+\emph{Step 3: the new part.} By part 3 of \cref{lem:amp:past}, given $\cF_t$ the vector $\Pi_t^\perp W\Pi_t^\perp m^t$ has the conditional law of $\ampnorm{m^t_\perp}\Pi_t^\perp z+N^{-1/2}m^t_\perp\xi$, where $z\sim\Normal(0,I_N)$ and $\xi\sim\Normal(0,1)$ are independent of each other and of $\cF_t$ (on an enlarged space): both have covariance $\ampnorm{m^t_\perp}^2\Pi_t^\perp+m^t_\perp m^{t\top}_\perp/N$. As the rest of $s^{t+1}$ is $\cF_t$-measurable, this replacement leaves the law of $(u,s^1,\dots,s^{t+1})$, which is all that $\mathrm H_{t+1}$ concerns, unchanged; we make it. With $\hat s=\sum_{r<t}a^\infty_rs^{r+1}+\rho_tz$, on $E_N$
+\[
+s^{t+1}-\hat s=\sum_{r<t}(a_r-a^\infty_r)s^{r+1}+R+\bigl(\ampnorm{m^t_\perp}-\rho_t\bigr)z-\ampnorm{m^t_\perp}\Pi_tz+N^{-1/2}m^t_\perp\xi.
+\]
+Each term tends to zero in $\ampnorm\cdot$: by Steps 1 and 2, because $\ampnorm z\ampto1$, because $\E[\abs{\Pi_tz}^2\mid\cF_t]=\rank\Pi_t\le t$, and because the last norm is $\ampnorm{m^t_\perp}\abs\xi/\sqrt N$. So $\ampnorm{s^{t+1}-\hat s}\ampto0$.
+
+\emph{Step 4: $\mathrm H_{t+1}$.} Let $\psi\in\ampPL$ on $\R^{t+1}\times\R^k$, $y_i=(s^1_i,\dots,s^t_i,u_i)$, and $\varphi(y,\zeta)=\psi(s_1,\dots,s_t,\sum_{r<t}a^\infty_rs_{r+1}+\rho_t\zeta,u)$, which is in $\ampPL$, with constant $L$ say. By part 1 of \cref{lem:amp:pl} and Step 3, whose norms are bounded in probability by $\mathrm H_t$ and part 2 of \cref{ass:amp:setting}, $\frac1N\sum_i\psi(s^1_i,\dots,s^{t+1}_i,u_i)-\frac1N\sum_i\varphi(y_i,z_i)\ampto0$. With $\bar\varphi(y)=\E\varphi(y,\zeta)$, in $\ampPL$ by part 2, $\mathrm H_t$ gives
+\[
+\frac1N\sum_i\bar\varphi(y_i)\ampto\E\,\bar\varphi(Z_1,\dots,Z_t,U)=\E\,\psi\Bigl(Z_1,\dots,Z_t,\sum_{r<t}a^\infty_rZ_{r+1}+\rho_t\zeta,U\Bigr),
+\]
+which equals $\E\psi(Z_1,\dots,Z_{t+1},U)$: the vector $(Z_1,\dots,Z_t,\sum_ra^\infty_rZ_{r+1}+\rho_t\zeta)$, with $\zeta$ independent, is centered Gaussian, independent of $U$, with $\E Z_q\sum_ra^\infty_rZ_{r+1}=(\Gamma_ta^\infty)_{q-1}=\Gamma_{q-1,t}$ and $a^{\infty\top}\Gamma_ta^\infty+\rho_t^2=\Gamma_{tt}$, the covariance of $(Z_1,\dots,Z_{t+1})$. Finally $D_N=\frac1N\sum_i(\varphi(y_i,z_i)-\bar\varphi(y_i))$ has conditional mean zero given $\cF_t$ and, the $z_i$ being independent, conditional variance
+\[
+\frac1{N^2}\sum_i\Var\varphi(y_i,\zeta)\le\frac1{N^2}\sum_i\E\bigl(\varphi(y_i,\zeta)-\varphi(y_i,0)\bigr)^2\le\frac{12L^2}N\bigl(1+\ampnorm y^2\bigr)
+\]
+by part 2 of \cref{lem:amp:pl}. The conditional Chebyshev inequality gives $\Prob(\abs{D_N}>\epsilon\mid\cF_t)\le\min\{1,12L^2(1+\ampnorm y^2)/(N\epsilon^2)\}\ampto0$, and taking expectations $D_N\ampto0$. This is $\mathrm H_{t+1}$.
+\end{proof}
+
+Gaussianity of $W$ entered only through \cref{lem:amp:fresh}, the Lipschitz property through the estimates of \cref{lem:amp:pl}, non-degeneracy through $E_N$ and $\rho_t>0$, and the Onsager coefficient through \eqref{eq:amp:stein}. Denoisers with memory need Onsager terms $\sum_{r\le t}b_{t,r}m^{r-1}$ (\cref{ex:amp:memory}).
+
+\section{The proof: from the theorem to \texorpdfstring{$\Z_2$}{Z2} synchronization}\label{sec:amp:z2}
+
+\begin{corollary}[State evolution with a spike]\label[corollary]{cor:amp:spiked}
+Let $A=\frac\lambda Nxx^\top+W$ with $W\sim\ampGOE(N)$, and let the side information $u_i=(x_i,\tilde u_i)\in\R^k$, whose first coordinate is the signal, satisfy part 2 of \cref{ass:amp:setting} with limit $U=(X,\tilde U)$. Let $f_0\colon\R^k\to\R$ be Lipschitz with $\E f_0(U)^2>0$ and $f_t\colon\R\to\R$, $t\ge1$, Lipschitz and not constant. Let $Z\sim\Normal(0,1)$ be independent of $U$, $\mu_1=\lambda\E[Xf_0(U)]$, $\sigma_1^2=\E f_0(U)^2$, and for $t\ge1$
+\begin{equation}\label{eq:amp:spikedse}
+\mu_{t+1}=\lambda\E\bigl[Xf_t(\mu_tX+\sigma_tZ)\bigr],\qquad\sigma_{t+1}^2=\E\bigl[f_t(\mu_tX+\sigma_tZ)^2\bigr],
+\end{equation}
+and $b_t=\E f_t'(\mu_tX+\sigma_tZ)$. Let $m^0=f_0(u)$, $y^1=Am^0$, and for $t\ge1$
+\begin{equation}\label{eq:amp:spikedamp}
+m^t=f_t(y^t),\qquad y^{t+1}=Am^t-b_tm^{t-1}.
+\end{equation}
+Then for every $t\ge1$ and $\psi\in\ampPL$ on $\R\times\R^k$, $\frac1N\sum_i\psi(y^t_i,u_i)\ampto\E\psi(\mu_tX+\sigma_tZ,U)$. If moreover each $f_t$, $t\ge1$, has a bounded Lipschitz derivative, the same holds for the iterates $\hat y^t$ of \eqref{eq:amp:spikedamp} with $b_t$ replaced by the empirical $\hat b_t=\frac1N\sum_if_t'(\hat y^t_i)$.
+\end{corollary}
+
+\begin{proof}
+The plan is to compare with an AMP driven by $W$ alone whose denoisers absorb the spike. Let $\eta_0=f_0$ and $\eta_t(s,u)=f_t(s+\mu_tx)$, with $x$ the first coordinate of $u$. They satisfy parts 3 and 4 of \cref{ass:amp:setting}; by induction, \cref{def:amp:se} gives $\Gamma_{t-1,t-1}=\sigma_t^2$ and $\E\partial_s\eta_t(Z_t,U)=b_t$. By \cref{thm:amp:se}, $\frac1N\sum_i\psi(s^t_i+\mu_tx_i,u_i)\ampto\E\psi(\mu_tX+\sigma_tZ,U)$, so by part 1 of \cref{lem:amp:pl} it suffices that $e^t=y^t-s^t-\mu_tx$ satisfies $\ampnorm{e^t}\ampto0$. Set $e^0=0$. First, $e^1=(\frac\lambda N\ip{x}{m^0}-\mu_1)x\to0$, by part 2 of \cref{ass:amp:setting}. With $\tilde m^r=\eta_r(s^r,u)$ ($\tilde m^0=m^0$) and $L$ a Lipschitz constant of $f_1,\dots,f_t$,
+\[
+e^{t+1}=\Bigl(\frac\lambda N\ip{x}{m^t}-\mu_{t+1}\Bigr)x+W(m^t-\tilde m^t)-b_t(m^{t-1}-\tilde m^{t-1}),
+\]
+with $\ampnorm{m^r-\tilde m^r}\le L\ampnorm{e^r}$. By the theorem $\frac1N\ip{x}{\tilde m^t}\ampto\E Xf_t(Z_t+\mu_tX)=\mu_{t+1}/\lambda$, and $\frac1N\abs{\ip{x}{m^t-\tilde m^t}}\le L\ampnorm x\ampnorm{e^t}$. Since $\norm W\to2$ (\cref{thm:toolkit:semicircle}), induction gives
+\[
+\ampnorm{e^{t+1}}\le\lambda\ampnorm x\Bigl|\frac1N\ip{x}{m^t}-\frac{\mu_{t+1}}\lambda\Bigr|+L\norm W\ampnorm{e^t}+L\abs{b_t}\ampnorm{e^{t-1}}\ampto0.
+\]
+For the empirical coefficients we show $\ampnorm{\hat y^t-y^t}\ampto0$ by the same kind of induction, from $\hat y^1=y^1$. With $\hat m^r=f_r(\hat y^r)$, $\hat y^{t+1}-y^{t+1}=A(\hat m^t-m^t)-(\hat b_t-b_t)\hat m^{t-1}-b_t(\hat m^{t-1}-m^{t-1})$, where $\norm A\le\lambda\ampnorm x^2+\norm W$ and $\ampnorm{\hat m^{t-1}}$ are bounded in probability, $\ampnorm{\hat m^r-m^r}\le L\ampnorm{\hat y^r-y^r}$, and $\abs{\hat b_t-b_t}\le\mathrm{Lip}(f_t')\ampnorm{\hat y^t-y^t}+\abs{\frac1N\sum_if_t'(y^t_i)-b_t}\ampto0$, the last term by the first part applied to $f_t'\in\ampPL$.
+\end{proof}
+
+\begin{corollary}[Bayes-AMP for $\Z_2$ synchronization]\label[corollary]{cor:amp:bayes}
+Let $x_1,\dots,x_N$ be independent and uniform on $\{\pm1\}$, let $\gamma_0>0$, and let the side observation $\tilde y=\sqrt{\gamma_0}\,x+g$, $g\sim\Normal(0,I_N)$, be independent of $W$. Run \eqref{eq:amp:spikedamp} with $m^0=\tanh(\sqrt{\gamma_0}\,\tilde y)$, $f_t(y)=\tanh(\lambda y)$, and Onsager coefficients $b_t$ or $\lambda(1-\ampnorm{m^t}^2)$, and let $\gamma_{t+1}=\lambda^2q(\gamma_t)$. Then for every $t\ge0$, $\frac1N\ip{x}{m^t}\ampto q(\gamma_t)$ and $\ampnorm{m^t}^2\ampto q(\gamma_t)$, and for $t\ge1$ the empirical law of $(\lambda y^t_i,x_i)$ converges, in the sense of \cref{cor:amp:spiked}, to the law of $(\gamma_tX+\sqrt{\gamma_t}Z,X)$.
+\end{corollary}
+
+\begin{proof}
+Apply \cref{cor:amp:spiked} with $u_i=(x_i,g_i)$, independent copies of $(X,G)$, and $f_0(u)=\tanh(\gamma_0x+\sqrt{\gamma_0}\,g)$; note that $\frac1N\sum_if_t'(\hat y^t_i)=\lambda(1-\ampnorm{\hat m^t}^2)$. By step 1 of \cref{comp:amp:se}, $\mu_1=\lambda q(\gamma_0)$ and $\sigma_1^2=q(\gamma_0)$; and if $\mu_t=\lambda q(\gamma_{t-1})$, $\sigma_t^2=q(\gamma_{t-1})$, then $\lambda(\mu_tX+\sigma_tZ)$ has the law of $\gamma_tX+\sqrt{\gamma_t}Z$, so $\mu_{t+1}=\lambda q(\gamma_t)$ and $\sigma_{t+1}^2=q(\gamma_t)$. The limits follow from the functions $x\tanh(\lambda y)$ and $\tanh^2(\lambda y)$, in $\ampPL$, for $t\ge1$, and from part 2 of \cref{ass:amp:setting} for $t=0$.
+\end{proof}
+
+The scalar recursion does the rest. Since $q$ is increasing, $(\gamma_t)$ is monotone and bounded by $\lambda^2$, hence converges to a fixed point. The function $q$ is strictly concave on $[0,\infty)$, with $q(\gamma)=\gamma-\gamma^2+O(\gamma^3)$: \cref{ch:nishimori} proves it by writing $1-q$ as a mixture of decaying exponentials, and \textcite[App.~B.2]{DeshpandeAbbeMontanari2016} from $q'(\gamma)=\E\operatorname{sech}^4(\gamma+\sqrt\gamma Z)$ (\cref{ex:amp:concave}). So $q(\gamma)/\gamma$ decreases strictly from $1$ to $0$: for $\lambda>1$ the only positive fixed point is $\gamma_*$, and $\gamma_t\to\gamma_*$ from every $\gamma_0>0$; for $\lambda\le1$, $\gamma_t\to0$. Hence $\lim_{t\to\infty}\lim_{N\to\infty}\frac1N\ip{x}{m^t}=q_*$ in probability, the Bayes-optimal overlap, with the limits in this order. The warm start uses side information; the spectral start removes it.
+
+\begin{computation}{PCA as message passing, and the spectral start}\label{comp:amp:pca}
+\step \emph{Linear AMP.} With $f_t(y)=y/c$ in \eqref{eq:amp:spikedamp}, $b_t=1/c$ and $y^{t+1}=Ay^t/c-y^{t-1}/c^2$, whose fixed points satisfy $Ay=(c+c^{-1})y$; for $c=\lambda$ the eigenvalue is the BBP value $\lambda+1/\lambda$ (\cref{thm:spiked:bbp}). By \eqref{eq:amp:spikedse}, $\mu_{t+1}=\lambda\mu_t/c$ and $\sigma_{t+1}^2=(\mu_t^2+\sigma_t^2)/c^2$, so $r_t=\sigma_t^2/\mu_t^2$ satisfies $r_{t+1}=(1+r_t)/\lambda^2$ and tends to $1/(\lambda^2-1)$ at the rate $\lambda^{-2}$: normalized, $\mu^2=1-\lambda^{-2}$, the squared cosine of the top eigenvector; the scale is stationary exactly when $c=\lambda$.
+\step \emph{The spectral start.}\index{spectral initialization} \Textcite{MontanariVenkataramanan2021} start from $y^0=\sqrt N\varphi_1$, $\varphi_1$ the top eigenvector of $A$, read as the fixed point of step 1 with $c=\lambda$: the previous estimate is $f_{-1}(y^{-1})=y^0/\lambda$, the convention $\E\{Lf(\tilde X_{-1};-1)\}=1/\lambda$ of their proof. As $y^0$ behaves as $\mu_0X+\sigma_0Z$ with $\mu_0=\sqrt{1-\lambda^{-2}}$, $\sigma_0=\lambda^{-1}$, the Bayes estimate is $m^0=\tanh(\lambda\sqrt{\lambda^2-1}\,y^0)$, at the signal-to-noise ratio $\gamma_0=\mu_0^2/\sigma_0^2=\lambda^2-1$, and $y^1=Am^0-b_0y^0/\lambda$ with $b_0=\lambda\sqrt{\lambda^2-1}\,(1-\ampnorm{m^0}^2)$.
+\step \emph{In the variables of Celentano, Fan and Mei.} With $h^0=\lambda\sqrt{\lambda^2-1}\,y^0=\sqrt{\lambda^2(\lambda^2-1)N}\,\varphi_1$ and $h^t=\lambda y^t$ for $t\ge1$, so that $m^t=\tanh(h^t)$, the first step reads $h^1=\lambda Am^0-\lambda^2(1-\ampnorm{m^0}^2)\,m^{-1}$ with $m^{-1}=h^0/\lambda^2$. Version 3 of their arXiv paper prints $m^{-1}=\lambda h^0$, in its definition (SI) and in the proof of its Lemma A.7, which derives it from the same fixed-point reading of linear AMP; this multiplies the first Onsager correction by $\lambda^3$, and \cref{sec:amp:measure} shows the effect.
+\end{computation}
+
+The spectral vector depends on all of $W$, so \cref{thm:amp:se} does not apply; Montanari and Venkataramanan show that given the top eigenpair, $A$ is close in total variation to the eigenpair part plus the spiked matrix with a fresh GOE, projected on the orthogonal complement of $\varphi_1$, and argue as we did on the modified matrix:
+
+\begin{theorem}[\cite{MontanariVenkataramanan2021}, Theorems 1 and 2]\label{thm:amp:spectral}
+Let $\lambda>1$, $\ampnorm x\to1$, and let the empirical law of the coordinates of $x$ converge weakly to a law $\nu$ with unit second moment. Run $y^{t+1}=Af_t(y^t)-b_tf_{t-1}(y^{t-1})$, $b_t=\frac1N\sum_if_t'(y_i^t)$, with Lipschitz $f_t$, from $y^0=\sqrt N\varphi_1$, where $\varphi_1$ is a top eigenvector of $A$ with $\ip{\varphi_1}{x}\ge0$ and the first Onsager term is read as in step 2 of \cref{comp:amp:pca}. Then for $t\ge0$ and $\psi\in\ampPL$, almost surely $\frac1N\sum_i\psi(x_i,y^t_i)\to\E\psi(X,\mu_tX+\sigma_tZ)$, with $X\sim\nu$, $\mu_0=\sqrt{1-\lambda^{-2}}$, $\sigma_0=\lambda^{-1}$ and \eqref{eq:amp:spikedse}. For the Rademacher prior and the Bayes denoisers, $\lambda y^t$, $t\ge1$, behaves as $\gamma_tX+\sqrt{\gamma_t}Z$ with $\gamma_0=\lambda^2-1$.
+\end{theorem}
+
+\subsection{What the general theory adds}\label{sec:amp:general}
+
+\paragraph{Other matrices, denoisers and times.} \Textcite{BayatiMontanari2011} proved state evolution for compressed sensing and for a general rectangular AMP; their symmetric Theorem~4, our setting with one denoiser for all $t$, no side information and empirical Onsager coefficients, is stated with its proof omitted as similar. \Textcite{JavanmardMontanari2013} treat vector iterates and block-structured matrices with Lipschitz nonlinearities (spatial coupling; they state that generalized AMP is covered, without the reduction), \textcite{BerthierMontanariNguyen2020} non-separable denoisers, and \textcite{Fan2022} rotationally invariant matrices, whose Onsager terms involve all past estimates through free cumulants, as \textcite{OpperCakmakWinther2016} had derived. Universality is proved by moments for polynomial denoisers \parencite[Thms.~3--4]{BayatiLelargeMontanari2015} and by interpolation for sub-Gaussian entries and Lipschitz denoisers, with Lipschitz derivatives once Onsager terms are present, including a spike and the spectral start \parencite[Thms.~2.1--2.3]{ChenLam2021}. For compressed sensing, \textcite[Thm.~1]{RushVenkataramanan2018} keep state evolution for $t=o(\log N/\log\log N)$ iterations; for $\Z_2$ synchronization the preprint of \textcite[v2, Thm.~4]{LiWei2022} tracks a normalized AMP from the spectral start for $o(N(\lambda-1)^{10}/\log^7N)$ iterations when $1+\log N/N^{1/16}<\lambda\le1.2$.
+
+\paragraph{The TAP free energy.} For Ising mixed $p$-spin models the free energy is the limit of the maximum of the TAP functional over magnetizations whose self-overlap lies to the right of the support of the Parisi measure \parencite[Thm.~1]{ChenPanchenko2018}, and, with a generalized Onsager correction, at every point of that support \parencite{ChenPanchenkoSubag2023}. For $\Z_2$ synchronization, \textcite{FanMeiMontanari2021} bound the number of critical points of $F_\ampTAP$ by a Kac--Rice computation (\cref{ch:kacrice}) and show, for $\lambda$ above an absolute constant $\lambda_0$, that its low critical points are near the posterior mean while those of naive mean field are not (their Theorems 1.2, 1.3). Locally, at every $\lambda>1$:
+
+\begin{theorem}[\cite{CelentanoFanMei2023}, Theorem 2.1 and Corollary 2.2]\label{thm:amp:cfm}
+Fix $\lambda>1$. There are $\varepsilon,\tau>0$ and $r<1$ such that for every $\iota>0$, with probability tending to one, $F_\ampTAP$ has a local minimizer $m_\star$ with $N^{-2}\norm{m_\star m_\star^\top-\E[xx^\top\mid A]}_F^2<\iota$, unique up to sign among such critical points for small $\iota$; $\lambda_{\min}(N\nabla^2F_\ampTAP(m))>\tau$ when $\abs{m-m_\star}\le\sqrt{\varepsilon N}$; and the Jacobian of the AMP map at $(m_\star,m_\star)$ has spectral radius below $r$. If $\lambda>\lambda_0$, $\pm m_\star$ are the global minimizers.
+\end{theorem}
+
+AMP from the spectral start followed by natural gradient descent converges to $\pm m_\star$ for every $\lambda>1$, and either alone does when $\lambda>\lambda_0$ (their Theorems 2.3 and 2.4).
+
+\section{Measuring it}\label{sec:amp:measure}
+
+\texttt{06-amp-iterations.py} runs Bayes-AMP at $N=3000$, $\lambda=1.5$, on $24$ matrices (seeds $6000+r$), five ways per matrix: a warm start with $\gamma_0=0.1$ (\cref{cor:amp:bayes}), the same without Onsager term, and the spectral start with $m^{-1}=h^0/\lambda^2$ (\cref{thm:amp:spectral}), with $m^{-1}=\lambda h^0$, and without Onsager term. Its iteration is the kit's \texttt{amp\_z2} (the script checks this); it runs in $28$~s. \texttt{06-amp-lambda.py} compares AMP with the top eigenvector at $N=2000$ ($43$~s), and \texttt{06-amp-finite.py} measures the approach to the limit and a non-Gaussian matrix ($49$~s). Intervals are Student-$t$ $95\%$ intervals over matrices.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=15mm},rplot,width=72mm,height=52mm]
+\nextgroupplot[xlabel={iteration $t$},ylabel={cosine of $m^t$ with $x$},xmin=-0.5,xmax=12.5,ymin=0.26,ymax=0.875,
+  xtick={0,2,4,6,8,10,12},title={(a) estimates},legend pos=south east,legend style={font=\scriptsize}]
+\addplot[physpred] table[x=t,y=se_warm] {figures/data/06-amp-iterations.dat};
+\addplot[physpred2] table[x=t,y=se_spec] {figures/data/06-amp-iterations.dat};
+\addplot[measured,ebars] table[x=t,y=warm_cos,y error plus=warm_ci,y error minus=warm_ci] {figures/data/06-amp-iterations.dat};
+\addplot[measured3,ebars] table[x=t,y=spec_cos,y error plus=spec_ci,y error minus=spec_ci] {figures/data/06-amp-iterations.dat};
+\addplot[measured2,ebars] table[x=t,y=warm_no_cos,y error plus=warm_no_ci,y error minus=warm_no_ci] {figures/data/06-amp-iterations.dat};
+\legend{{state evolution, warm start},{state evolution, spectral start},{AMP, warm start},{AMP, spectral start},{no Onsager term, warm start}}
+\nextgroupplot[xlabel={coefficient $\frac1N\ip{\lambda y^t}{x}$},ylabel={residual variance},xmin=0,xmax=2.3,ymin=0,ymax=3.7,
+  ytick={0,1,2,3},title={(b) fields},legend pos=north west,legend style={font=\scriptsize}]
+\addplot[physpred,domain=0:2.3,samples=2,forget plot] {x};
+\addplot[measured] table[x=warm_coef,y=warm_var] {figures/data/06-amp-iterations.dat};
+\addplot[measured3] table[x=spec_coef,y=spec_var] {figures/data/06-amp-iterations.dat};
+\addplot[measured2] table[x=warm_no_coef,y=warm_no_var] {figures/data/06-amp-iterations.dat};
+\addplot[only marks,mark=triangle,mark size=2pt,color=physics!60,mark options={line width=0.6pt,fill=white}] table[x=spec_no_coef,y=spec_no_var] {figures/data/06-amp-iterations.dat};
+\legend{{AMP, warm},{AMP, spectral},{naive, warm},{naive, spectral}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Bayes-AMP against state evolution, $N=3000$, $\lambda=1.5$, $24$ matrices (seeds $6000+r$). (a) Cosine of $m^t$ with $x$, with Student-$t$ $95\%$ intervals, against $\sqrt{q(\gamma_t)}$ (carnelian: the cavity prediction, a theorem by \cref{cor:amp:bayes,thm:amp:spectral}); warm start $\gamma_0=0.1$, spectral start $m^{-1}=h^0/\lambda^2$; hollow circles: no Onsager term. (b) Coefficient $\hat\mu_t=\frac1N\ip{\lambda y^t}{x}$ of the field against its residual variance $\ampnorm{\lambda y^t-\hat\mu_tx}^2$, $t\le12$, means over the matrices, for AMP and for the naive iteration; state evolution puts every iterate on the diagonal, at $(\gamma_t,\gamma_t)$. Script: \texttt{figures/scripts/06-amp-iterations.py}.}\label{fig:amp:iterations}
+\end{figure}
+
+\paragraph{Iteration by iteration.} In \cref{fig:amp:iterations}(a) the state-evolution value lies inside the interval at all $13$ iterations, from both starts: from the warm start the cosine climbs from $0.30$ to $0.83$ ($0.653\pm0.013$ against $0.650$ at $t=3$), and from the spectral start it goes from $0.790\pm0.006$ (predicted $0.789$) to $0.834\pm0.007$ (predicted $0.832$). \Cref{fig:amp:iterations}(b) shows what state evolution asserts about the field: coefficient and variance both equal $\gamma_t$ ($0.662$ and $0.656$ against $\gamma_3=0.654$ from the warm start).
+
+\paragraph{Without the Onsager term.} The naive iteration $y^{t+1}=Am^t$ agrees with AMP for one step and leaves state evolution at the second: from the warm start its cosine at $t=2$ is $0.575\pm0.011$ against $0.539$, and its field has coefficient $0.562$ and variance $0.673$, off the diagonal, where \cref{cor:amp:spiked} itself predicts $0.559$ and $0.677$ (\cref{ex:amp:naive}). Its cosine then climbs in alternating long and short steps; from the spectral start it settles at $0.824$ with coefficient $2.16$ and variance $2.62$. On the same matrices AMP beats it at $t=12$ by $0.010\pm0.003$ (spectral start) and $0.009\pm0.004$ (warm start), paired: the finite-$\lambda$ face of the inconsistency of naive mean field \parencite{FanMeiMontanari2021}.
+
+\paragraph{The spectral convention.} With $m^{-1}=h^0/\lambda^2$ the iterates follow state evolution from the first step (\cref{fig:amp:iterations}(a): $0.812\pm0.007$ against $0.811$ at $t=1$). With $m^{-1}=\lambda h^0$, as printed in version 3 of the arXiv paper of Celentano, Fan and Mei, the first step is wrong: the field at $t=1$ has coefficient $0.284$ and variance $0.163$, against $\gamma_1=1.399$ for both, and the cosine falls from $0.790$ to $0.580\pm0.028$ at $t=1$ and to $-0.472\pm0.040$ at $t=2$. The iteration still settles, near $-m_\star$ (cosine $-0.834\pm0.007$ at $t=12$), so the wrong scaling is easy to miss; their proofs take state evolution from the theorem of Montanari and Venkataramanan, whose proof uses $m^{-1}=h^0/\lambda^2$.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[rplot,height=0.42\linewidth,xlabel={signal strength $\lambda$},ylabel={squared cosine with $x$},xmin=0.8,xmax=2.6,ymin=0,ymax=1.02,
+  legend pos=south east,legend style={font=\scriptsize}]
+\addplot[physpred] table[x=lam,y=qstar] {figures/data/06-amp-lambda-curve.dat};
+\addplot[proofpred] table[x=lam,y=bbp] {figures/data/06-amp-lambda-curve.dat};
+\addplot[measured,ebars] table[x=lam,y=amp,y error plus=ampci,y error minus=ampci] {figures/data/06-amp-lambda-sim.dat};
+\addplot[measured3,ebars] table[x=lam,y=pca,y error plus=pcaci,y error minus=pcaci] {figures/data/06-amp-lambda-sim.dat};
+\legend{{Bayes-optimal overlap $q_*(\lambda)$},{top eigenvector, $1-1/\lambda^2$},{Bayes-AMP, $t=30$},{top eigenvector}}
+\end{axis}
+\end{tikzpicture}
+\caption{Squared cosine with $x$ of Bayes-AMP after $30$ iterations from the spectral start, and of the top eigenvector, $N=2000$, ten matrices per $\lambda$ (seeds $7000+100j+r$), Student-$t$ $95\%$ intervals. Carnelian: the fixed point $q_*(\lambda)$ of \eqref{eq:amp:fixedpoint}, Bayes-optimal by \cref{thm:nishimori:rsformula}. Lapis dashed: $1-1/\lambda^2$ (\cref{thm:spiked:bbp}). Script: \texttt{figures/scripts/06-amp-lambda.py}.}\label{fig:amp:lambda}
+\end{figure}
+
+\paragraph{What AMP reaches.} In \cref{fig:amp:lambda} AMP after $30$ iterations agrees with $q_*(\lambda)$, and the top eigenvector with $1-1/\lambda^2$, within the intervals at all ten values of $\lambda$ (at $\lambda=2$: $0.913\pm0.008$ against $0.917$, and $0.752\pm0.007$ against $0.750$). The intervals widen near $\lambda=1$, where $\lambda-1$ approaches the width $N^{-1/3}$ of the window of \cref{ch:spiked} over which the transition is smeared, and AMP inherits the fluctuations of its start. The gain of AMP is largest near $\lambda=1.9$ ($0.17$ in squared cosine); near $\lambda=1$ the curves agree to first order (\cref{ex:amp:threshold}).
+
+\paragraph{The approach to the limit, and universality.} \Cref{thm:amp:se} has no rate. At the fixed iteration $t=3$ from the warm start, the mean overlap lies within its interval of $q(\gamma_3)=0.4222$ for $N=500$, $1000$, $2000$, $4000$ ($200$, $100$, $60$, $30$ matrices), and $\sqrt N$ times its root-mean-square deviation is $1.57$, $1.53$, $1.37$, $1.92$: fluctuations of order $N^{-1/2}$. With independent entries $\pm1/\sqrt N$ in place of $W$ ($N=3000$, $20$ matrices) the predictions lie inside all $13$ intervals: our proof does not cover that matrix, but the theorem of \textcite{ChenLam2021} does.
+
+\section{The status board}\label{sec:amp:board}
+
+State evolution at fixed $t$ is a theorem for Gaussian matrices; universality holds under extra hypotheses; AMP reaches the Bayes-optimal overlap in $\Z_2$ synchronization, $t\to\infty$ after $N\to\infty$. Long times and the global landscape are open.
+
+\begin{statusboard}
+\statusrow{State evolution at fixed $t$: GOE, Lipschitz denoisers}{\proved}{Bolthausen 2014; Bayati--Montanari 2011; Javanmard--Montanari 2013; \cref{thm:amp:se}}
+\statusrow{The same with a spectral start, non-separable denoisers, or rotationally invariant noise}{\proved}{Montanari--Venkataramanan 2021; Berthier et al.\ 2020; Fan 2022}
+\statusrow{Universality: non-Gaussian independent entries}{\provedunder}{polynomial denoisers (Bayati et al.\ 2015); sub-Gaussian entries (Chen--Lam 2021)}
+\statusrow{State evolution for $t$ growing with $N$}{\provedunder}{$t=o(\log N/\log\log N)$, compressed sensing (Rush--Venkataramanan 2018)}
+\statusrow{$\Z_2$ synchronization up to $N/\mathrm{polylog}\,N$ iterations}{\provedpreprint}{Li--Wei, arXiv:2208.03313v2, Thm.~4: a normalized AMP, $1+\log N/N^{1/16}<\lambda\le1.2$}
+\statusrow{TAP equations at high temperature; Bolthausen's iteration below the AT line}{\provedunder}{Talagrand 2011, \S1.7; Bolthausen 2014, Thm.~2.1 ($h>0$); Chen--Tang 2021}
+\statusrow{TAP free energy $=$ free energy (Ising mixed $p$-spin)}{\proved}{Chen--Panchenko 2018; Chen--Panchenko--Subag 2023 (generalized correction)}
+\statusrow{Bayes-AMP reaches the Bayes risk in $\Z_2$ synchronization ($t\to\infty$ after $N\to\infty$), at a local TAP minimizer}{\proved}{Deshpande et al.\ 2016; Montanari--Venkataramanan 2021 with Lelarge--Miolane 2019; Celentano et al.\ 2023}
+\statusrow{That minimizer is global for every $\lambda>1$}{\conjectured}{numerics (Celentano et al.\ 2023, Rem.~4.5); proved for $\lambda>\lambda_0$}
+\statusrow{Naive mean field finds the posterior mean}{\knownfalse}{Fan et al.\ 2021, Thm.~1.3 ($\lambda>\lambda_0$); observed at $\lambda=1.5$}
+\end{statusboard}
+
+\section{Where the translation fails}\label{sec:amp:fails}
+
+\paragraph{What was assumed.} The theorem needs a Gaussian matrix, where the physics needs only independent entries of the right variance; a fixed number of iterations, where the physics speaks of fixed points; Lipschitz denoisers, an initialization independent of $W$, and a non-degeneracy condition that the physics never meets. Bayes-AMP needs the prior and $\lambda$: with a misspecified prior state evolution still holds, but the Nishimori relations and the one-dimensional recursion are lost. The model is idealized: a rank-one signal, Gaussian noise, $N\to\infty$.
+
+\paragraph{Where the physics is wrong, or not yet right.} The naive mean-field equations are wrong: their critical points stay away from the posterior mean when $\lambda>\lambda_0$ \parencite[Thm.~1.3]{FanMeiMontanari2021}, and at $\lambda=1.5$ the measured naive iteration settles below AMP. At low temperature the derivation fails as stated, because the Gibbs measure is not one pure state: the TAP equations have many solutions \parencite{BrayMoore1980}, and Bolthausen's iteration, whose overlap recursion loses stability exactly at the de Almeida--Thouless line (\cref{ex:amp:at}), does not converge beyond it. For the pieces of an approximately ultrametric decomposition of the Gibbs measure, the TAP equations hold at every site for generic models whose Parisi measure has a jump at the top of its support \parencite{AuffingerJagannath2019}, and the generalized Onsager correction reduces to the classical one only where Plefka's condition holds \parencite{ChenPanchenkoSubag2023}. The physicist's $t=\infty$ took \textcite{CelentanoFanMei2023} a separate argument; and the wrongly scaled spectral start of \cref{sec:amp:measure} shows how delicate the bookkeeping of the reaction term is.
+
+\paragraph{Open problems.} State evolution for many more than $\log N/\log\log N$ iterations, for general denoisers and an initialization independent of $W$. The conjectures of \textcite[Remarks 2.5 and 4.5]{CelentanoFanMei2023} that AMP alone converges to $m_\star$, and that $m_\star$ minimizes $F_\ampTAP$ globally, for every $\lambda>1$; for a normalized AMP and $\lambda\le1.2$, the preprint of \textcite{LiWei2022} shows that no refinement stage is needed. A proof of the TAP representation of the free energy that avoids the Parisi formula, which \textcite{ChenPanchenko2018} ask for, and of the sufficiency of Plefka's condition.
+
+\begin{exercises}
+\item \consolidation (Blocks of a GOE matrix.) Check that $\E W_{ab}W_{cd}$ equals $\frac1N(\delta_{ac}\delta_{bd}+\delta_{ad}\delta_{bc})$, and show that for a fixed projection $\Pi$ of rank $k$ the block $\Pi^\perp W\Pi^\perp$, in an orthonormal basis of the range of $\Pi^\perp$, is $\sqrt{(N-k)/N}$ times a $\ampGOE(N-k)$ matrix.\label{ex:amp:goe}
+
+\item \consolidation (The Bayes denoiser.) For $Y=\mu X+\sigma Z$ with $X$ uniform on $\{\pm1\}$, show $\E[X\mid Y]=\tanh(\mu Y/\sigma^2)$; deduce that $\tanh(\lambda y)$ is the posterior mean in \cref{cor:amp:bayes} because $\mu_t=\lambda\sigma_t^2$, and evaluate the limit of $\lambda(1-\ampnorm{m^t}^2)$ at the fixed point for $\lambda=1.5$.\label{ex:amp:nishimori}
+
+\item \consolidation (Linear denoisers.) Verify step 1 of \cref{comp:amp:pca}. Then show that for a Gaussian input, $X\sim\Normal(0,1)$, the error is $\ampmmse(\gamma)=1/(1+\gamma)$, so that $\gamma_{t+1}=\lambda^2\gamma_t/(1+\gamma_t)$; find the fixed point and the slope there, and conclude that Bayes-AMP then does no better than the top eigenvector.\label{ex:amp:gaussian}
+
+\item \consolidation (The concavity of $q$.) For $T=\tanh(\gamma+\sqrt\gamma Z)$, show that $\E T^{2k-1}=\E T^{2k}$ for $k\ge1$, and, by Gaussian integration by parts, that $q'(\gamma)=\E(1-T^2)^2=\E\operatorname{sech}^4(\gamma+\sqrt\gamma Z)$. Deduce that $q$ is strictly concave on $[0,\infty)$: $\abs{\gamma+\sqrt\gamma Z}$ is stochastically increasing in $\gamma$, and $\operatorname{sech}^4$ is even and decreasing on $[0,\infty)$.\label{ex:amp:concave}
+
+\item \byhand (TAP for SK.) For the Hamiltonian of \cref{ch:sk} with field $h$, derive $m_i=\tanh(h+\frac\beta{\sqrt N}\sum_jg_{ij}m_j-\beta^2(1-q)m_i)$ by the cavity method, and check that Bolthausen's iteration $m^{(k+1)}=\tanh(h+\beta gm^{(k)}-\beta^2(1-q)m^{(k-1)})$, with couplings $g_{ij}/\sqrt N$, is an AMP.\label{ex:amp:sk}
+
+\item \byhand\hard (Bolthausen's iteration and the AT line.) For $h>0$ let $\mathrm{Th}(x)=\tanh(h+\beta x)$, let $q$ solve $q=\E\,\mathrm{Th}(\sqrt qZ)^2$, and let
+\[
+\psi(t)=\E\,\mathrm{Th}\bigl(\sqrt tZ+\sqrt{q-t}Z'\bigr)\,\mathrm{Th}\bigl(\sqrt tZ+\sqrt{q-t}Z''\bigr),\qquad t\in[0,q].
+\]
+(a) Show $\psi(q)=q$ and, by Gaussian integration by parts, $\psi'(q)=\beta^2\E\cosh^{-4}(h+\beta\sqrt qZ)$. (b) Bolthausen shows that the overlaps of his iterates follow $\rho_{k+1}=\psi(\rho_k)$ from a point of $(0,q)$, and that $\psi$ is increasing and convex with $\psi(0)>0$. Show that $\rho_k\to q$ under the AT condition $\psi'(q)\le1$, and that otherwise $\rho_k$ tends to a fixed point below $q$. (c) Check: at $\beta=0.8$, $h=0.3$, $q=0.1404$, $\psi'(q)=0.486$; at $\beta=1.5$, $h=0.3$, $q=0.3880$, $\psi'(q)=1.059$, $\rho_k\to0.2932$. \hint{compare $\psi$ with its tangent at $q$.}\label{ex:amp:at}
+
+\item \translate (The second iteration by hand.) Take $t=1$ in the proof of \cref{thm:amp:se}: show that $s^2=a_0s^1+\Pi_1^\perp W\Pi_1^\perp m^1+R$ with $a_0=\ip{m^0}{m^1}/\abs{m^0}^2$, $R=(c_0/\ampnorm{m^0}^2-b_1)m^0$ and $c_0=\frac1N\ip{s^1}{m^1_\perp}\to\Gamma_{00}b_1$, and name the line of the cavity derivation that each step replaces.\label{ex:amp:second}
+
+\item \translate (The naive iteration after one step.) Show that without Onsager term the second iterate is $y^2+b_1m^0$, with empirical law tending to that of $\mu_2X+\sigma_2Z+b_1f_0(U)$, not of the form $\mu X+\sigma Z$. For the warm start of \cref{cor:amp:bayes}, show that its field has coefficient $\gamma_2+\lambda^2(1-q_1)q_0$ and residual variance $\gamma_2+\lambda^4(1-q_1)^2q_0(1-q_0)$, $q_r=q(\gamma_r)$, and check $0.559$ and $0.677$ at $\lambda=1.5$, $\gamma_0=0.1$.\label{ex:amp:naive}
+
+\item \translate\hard (Denoisers with memory.) For $m^t=\eta_t(s^1,\dots,s^t,u)$, show that the proof of \cref{thm:amp:se} goes through for $s^{t+1}=Wm^t-\sum_{r=1}^tb_{t,r}m^{r-1}$, $b_{t,r}=\E\partial_r\eta_t(Z_1,\dots,Z_t,U)$. What replaces \eqref{eq:amp:stein}?\label{ex:amp:memory}
+
+\item \byhand (Near the threshold.) From $q(\gamma)=\gamma-\gamma^2+\frac53\gamma^3+O(\gamma^4)$, show $q_*=\delta+\frac23\delta^2+O(\delta^3)$ with $\delta=1-1/\lambda^2$; at $\lambda=1.05$, $\delta+\frac23\delta^2=0.09873$ and $q_*=0.09842$.\label{ex:amp:threshold}
+
+\item \measurement (Universality and its limits.) In \texttt{06-amp-finite.py}, say which step of the proof fails for entries $\pm1/\sqrt N$, then try heavy-tailed entries (Student $t$ with three degrees of freedom, scaled to variance $1/N$) at $N=500$, $1000$, $2000$ and $3000$, and fit the mean deviation at $t=3$ to $CN^{-\theta}$.\label{ex:amp:universality}
+
+\item \research (Long times.) The preprint of \textcite{LiWei2022} tracks a normalized AMP from the spectral start for $N/\mathrm{polylog}\,N$ iterations when $\lambda\le1.2$. Decide whether the Bayes-AMP of \cref{cor:amp:bayes}, with its deterministic Onsager coefficients and its warm start, follows state evolution for $t\le N^c$ iterations at every $\lambda>1$, by adapting their decomposition or by finding where it fails \parencite{CelentanoFanMei2023}.\label{ex:amp:long}
+\end{exercises}
+
+\notesandrefs
+
+\textcite{ThoulessAndersonPalmer1977} proposed the TAP equations, \textcite{Plefka1982} derived them and the TAP functional from an expansion in the couplings, and \textcite{MezardParisiVirasoro1986} gave the cavity derivation. \Textcite{Kabashima2003} reduced dense belief propagation to $N$ numbers for CDMA detection; \textcite{DonohoMalekiMontanari2009} derived approximate message passing for compressed sensing, named its correction after the Onsager reaction term, and introduced state evolution as an empirical finding of extensive simulations. \Textcite{MezardMontanari2009} is a textbook account of belief propagation and the cavity method; \textcite{ZdeborovaKrzakala2016} review their use in inference.
+
+Bolthausen's conditioning \parencite{Bolthausen2014} became a general proof in \textcite{BayatiMontanari2011}; the tutorial of \textcite{FengEtAl2022} unifies its extensions, and \textcite{MontanariSen2024} and the 2024 lecture notes of \textcite{KrzakalaZdeborova2024} set the cavity derivation next to Bolthausen's argument, which Montanari and Sen sketch. The TAP equations are theorems at high temperature \parencite{Talagrand2011a}, the TAP free energy a variational formula for the free energy \parencite{ChenPanchenko2018}, and its landscape in $\Z_2$ synchronization is partly mapped \parencite{FanMeiMontanari2021,CelentanoFanMei2023}; \textcite{ChenTang2021} showed that Bolthausen's iteration converges to the magnetizations when the overlap concentrates. Conditioning along an iteration is also a rigorous route to dynamical mean-field theory (\cref{ch:dmft}); AMP for the LASSO and for generalized linear models appears in \cref{ch:lasso,ch:glm}.
+
+The organization of the proof of \cref{thm:amp:se} around one induction hypothesis, with side information and the variance bound of Step~4, is this book's arrangement of the arguments of Bolthausen and of Bayati and Montanari. Celentano, Fan and Mei read the spectral start as a fixed point of linear AMP in the proof of their Lemma A.7; \cref{comp:amp:pca} carries out that reading with the scaling of Montanari and Venkataramanan's proof and obtains $m^{-1}=h^0/\lambda^2$, where version 3 of their arXiv paper prints $\lambda h^0$. We checked this against their text and by simulation, not against the published version.
+
+\paragraph{Translating the literature.} \Textcite{Bolthausen2014} writes the SK Hamiltonian with a minus sign and couplings $g_{ij}\sim\Normal(0,1/N)$, our $g_{ij}/\sqrt N$, with zero diagonal; his $\ip{x}{y}$ is our $\frac1N\ip{x}{y}$. In the symmetric case of \textcite{BayatiMontanari2011}, $G=A+A^*$ with $A_{ij}\sim\Normal(0,1/(2N))$ is our $W$, and, as their iteration starts from $m^0=0$, their $h^{t+1}$, $m^t$, $\lambda_t$, $\tau_t^2$ are our $s^t$, $m^{t-1}$, empirical $b_{t-1}$, $\Gamma_{t-1,t-1}$. \Textcite{MontanariVenkataramanan2021} write $x^t$ for our $y^t$, but their Bayes-AMP builds $\lambda$ into $f_t=\lambda F(\cdot;\gamma_t)$, so its iterate is our $\lambda y^t$, the $h^t$ of \textcite{CelentanoFanMei2023}, who write $Y$ for $A$, $Q(m)$ for $\ampnorm m^2$, and minimize $F_\ampTAP=-\Phi_\ampTAP$. \Textcite{LelargeMiolane2019} use the signal-to-noise ratio $\lambda^2$.
+
+\printchapterbib
+\end{refsection}

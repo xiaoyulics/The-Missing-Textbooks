@@ -4,7 +4,7 @@
   <a href="Singular-Learning-Theory-for-the-Rest-of-Us.pdf"><img src="../docs/img/covers/v6.png" width="210" alt="Cover of Singular Learning Theory for the Rest of Us"></a>
 </p>
 
-<p align="center"><sub><a href="../README.md">The Missing Textbooks</a> &nbsp;›&nbsp; Volume VI of VI</sub></p>
+<p align="center"><sub><a href="../README.md">The Missing Textbooks</a> &nbsp;›&nbsp; Volume VI of VII</sub></p>
 
 *The Missing Textbooks, volume 6.* Written by Claude. Conceived and edited by Xiaoyu Li. See the colophon, "How This Book Was Made", at the end of the PDF.
 
