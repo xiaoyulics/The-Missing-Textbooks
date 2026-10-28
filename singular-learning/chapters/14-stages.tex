@@ -1,0 +1,376 @@
+% Chapter 14 of Singular Learning Theory for the Rest of Us: stages.
+\newcommand{\stagesH}{H}
+\newcommand{\stagesphi}{\phi}
+
+\sltchapter{Stages}{Learning coefficients along training}{the toy model of superposition}{ch:stages}
+\newtonfoot{2/4,4/2}{3}{\tfrac13}{a^4b^2+a^2b^4}
+\begin{refsection}[chapters/14-stages.bib]
+
+\begin{chaptersummary}
+Training curves of small networks have long plateaus and sudden drops. In the toy model of superposition, an autoencoder with eighteen parameters, the plateaus sit at critical points shaped like regular polygons, and we compute their learning coefficients by hand: $7$ at the $5$-gon, whose set of equally good parameters is four-dimensional, and $\frac{17}2$ at the $5^+$-gon and the $6$-gon, where it is a circle of rotations. The theorem behind the count: a manifold of critical points across which the Hessian is positive definite has learning coefficient half its codimension. Along runs of stochastic gradient descent the estimated coefficient steps up at each drop of the loss, from $4.6$ to $7.6$ and from $5.2$ to $7.8$ in our two runs; but at the sample size of the runs the estimator cannot tell the $5$-gon from the $5^+$-gon, and it reaches the hand-computed values only near $n=10^6$. That training visits critical points in the order a Bayesian posterior would is a conjecture, and the results on transformers are observations.
+\end{chaptersummary}
+
+\section{The question: do the plateaus of training have learning coefficients?}\label{sec:stages:question}
+
+Train a small network and plot its loss against the number of steps: the curve is often a staircase, with long plateaus that end in sudden drops. Plateaus of this kind were analyzed for multilayer perceptrons, where they arise near singularities of the parameter space, at parameters where two hidden units coincide or one is switched off \parencite{FukumizuAmari2000,AmariEtAl2006}; in transformers, induction heads form at a visible bump in the training loss \parencite{OlssonEtAl2022}. In the toy model of superposition of \textcite{ElhageEtAl2022}, an autoencoder that stores sparse features in fewer dimensions, \textcite{ChenEtAl2023} report, for six features in two dimensions, plateaus separated by sudden drops, during each of which the weights sit near a critical point whose columns form a regular polygon.
+
+A plateau is a long stay near a critical point $\wstar$, and \cref{ch:llc} gave a local minimum a number, the local learning coefficient $\lambda(\wstar)$ of \cref{def:llc:llc}, the exponent with which the volume of nearly optimal parameters near $\wstar$ shrinks. Does it change at the drops? If so, its changes could mark stages of development that the loss curve hides; this is the program of \textcite{HooglandEtAl2025}, who estimate it along the training of transformers.
+
+\begin{regularanswer}[complexity along training]
+If every critical point that training visits is a nondegenerate minimum, the Laplace approximation charges each of them $\frac d2\log n$ (\cref{thm:regular:laplace}): a complexity read off the Hessian's rank is $\frac d2$ on every plateau and cannot mark stages. About the training dynamics the regular theory says nothing.
+\end{regularanswer}
+
+In the toy model with $d=18$ parameters no critical point with $W\ne0$ is nondegenerate: rotating the plane of the columns does not change the loss, so such a point lies on a circle of critical points, and the Hessian, where it exists, has a zero eigenvalue. Moreover the critical points on the staircase differ in their flat directions. At the $5$-gon a switched-off sixth column moves freely in three directions, and we will find $\lambda=7$; at the $6$-gon only the rotation is free, and $\lambda=\frac{17}2$; both are below $\frac d2=9$. This chapter asks two questions. What are the learning coefficients of the critical points that a training run visits, and how are they computed? And what is known, proved, argued or observed, about the order in which training moves between them?
+
+\section{By hand: the polygons of the toy model of superposition}\label{sec:stages:byhand}
+
+The \term{toy model of superposition}\index{toy model of superposition} maps $x\in\R^6$ to
+\[
+f(x,w)=\relu\bigl(W^\top Wx+b\bigr),\qquad W\in\R^{2\times6},\quad b\in\R^6,
+\]
+so that $w=(W,b)$ has $d=18$ coordinates; $W_1,\dots,W_6\in\R^2$ are the columns of $W$ and $b_1,\dots,b_6$ the biases. The inputs are in the \term{high-sparsity limit}\index{high-sparsity limit} of \textcite{ChenEtAl2023}: one feature is active, $x=\mu e_i$ with $i$ uniform on $\{1,\dots,6\}$ and $\mu$ uniform on $[0,1]$. Their loss is the mean squared reconstruction error, which we call $\ell(w)=\E\norm{x-f(x,w)}^2$. Following them we treat the model as $p(x\mid w)\propto\exp(-\frac12\norm{x-f(x,w)}^2)$, ignoring that the normalizing constant depends on $w$; equivalently, as a regression of the target $y=x$ with unit Gaussian noise. The book's population loss is then $L=\frac12\ell$ up to a constant, $K(w)=\frac12(\ell(w)-\ell(\wstar))$ near a local minimum $\wstar$, and the energy of the posterior is $nL_n$.\sidenote{The truth is not in the model: no parameter reconstructs every input, the smallest value of $\ell$ is positive, and $K$ is measured from a local minimum $\wstar$, as in \cref{ch:llc}.} Learning coefficients do not change when $K$ is multiplied by a positive constant, so the factor $\frac12$ matters only where $n$ appears.
+
+\begin{computation}{The loss in the high-sparsity limit}\label{comp:stages:loss}
+\step For $x=\mu e_j$ the hidden vector is $Wx=\mu W_j$, and output $o$ is $\relu(\mu\,W_o\cdot W_j+b_o)$. So $\norm{x-f}^2=(\mu-\relu(\mu\norm{W_j}^2+b_j))^2+\sum_{o\ne j}\relu(\mu\,W_o\cdot W_j+b_o)^2$.
+\step Averaging over $j$ and $\mu$, $\ell=\frac16\sum_{o,j}I_{oj}$, where $I_{oj}$ integrates over $\mu\in[0,1]$ the term of output $o$ for input $j$, a piecewise quadratic in $\mu$ with at most one kink. Write $\alpha=W_o\cdot W_j$ and $\beta=b_o$.
+\step Interference, $o\neq j$. If $\beta\le0$, the ReLU is active on $[-\beta/\alpha,1]$ when $\alpha+\beta>0$, giving $3I_{oj}=(\alpha+\beta)^3/\alpha$, and nowhere otherwise, giving $0$. If $\beta>0$, it is active on all of $[0,1]$ when $\alpha\ge-\beta$, giving $\alpha^2+3\alpha\beta+3\beta^2$, and on $[0,-\beta/\alpha)$ when $\alpha<-\beta$, giving $-\beta^3/\alpha$.
+\step Reconstruction, $o=j$, with $\alpha=\norm{W_o}^2$, $\beta=b_o$. If $\beta\le0\le\alpha+\beta$, the error is $\mu$ for $\mu<\mu_0=-\beta/\alpha$ and $(1-\alpha)\mu-\beta$ beyond, so
+\[
+\begin{aligned}
+3I_{oo}&=\mu_0^3+\frac{(1-\alpha-\beta)^3-\mu_0^3}{1-\alpha}\\
+&=(1-\alpha)^2-3(1-\alpha)\beta+3\beta^2+\beta^3\Bigl(\frac1{\alpha^2}+\frac1\alpha\Bigr),
+\end{aligned}
+\]
+the second line holding also at $\alpha=1$. If $\beta\le0$ and $\alpha+\beta<0$ the output never fires and $3I_{oo}=1$; if $\beta>0$ it always fires and $3I_{oo}=(1-\alpha)^2-3(1-\alpha)\beta+3\beta^2$.
+\step So $\ell=\frac1{18}\stagesH$, where $\stagesH=\sum_{o,j}3I_{oj}$, the \term{TMS potential}\index{TMS potential} of \textcite{ChenEtAl2023}, is a sum of $36$ closed forms (their Lemma~3.1). Where strict inequalities fix the case of every term, it is a rational function of $(W,b)$ with nonvanishing denominators: analytic. At three polygons and three random points it agrees with quadrature of the $36$ integrals to $10^{-15}$, and with Monte Carlo averages of $10^6$ draws within $2.6$ standard errors (script \texttt{14-stages-kgons.py}).
+\end{computation}
+
+What one had to notice is that a single active feature turns the reconstruction into thirty-six one-dimensional ReLU integrals. The formula divides parameter space into \emph{chambers}, according to which case of each integral applies; inside a chamber $\stagesH$ is analytic, on the walls between chambers it need not be.
+
+\subsection*{The polygons}
+
+In a \term{$k$-gon}\index{k-gon@$k$-gon} the columns $W_1,\dots,W_k$ have a common length $l$ and point at the vertices of a regular $k$-gon, the biases $b_1,\dots,b_k$ have a common value $b\le0$ (negative except at the $4$-gons, where it is $0$), and the other $6-k$ columns are \emph{vestigial}: zero, with negative biases, so that their outputs never fire. In a $k^+$-gon one vestigial bias is positive instead, in a $k^{++}$-gon two are (\cref{fig:stages:polygons}). Two tools make the polygons computable by hand.
+
+\begin{lemma}[Symmetric points]\label{lem:stages:symmetric}
+Let $G$ be a group of orthogonal linear maps of $\R^d$, let $\stagesH\colon\R^d\to\R$ satisfy $\stagesH(gw)=\stagesH(w)$ for all $g\in G$ and $w\in\R^d$, and let $F=\{w:gw=w\text{ for all }g\in G\}$. If $\stagesH$ is differentiable at a point $w\in F$, then $\nabla\stagesH(w)\in F$; so $w$ is a critical point of $\stagesH$ if and only if it is a critical point of the restriction of $\stagesH$ to the subspace $F$.
+\end{lemma}
+
+\begin{proof}
+For $g\in G$ and $v\in\R^d$ we have $\stagesH(w+gv)=\stagesH(g(w+v))=\stagesH(w+v)$, because $gw=w$. Differentiating in $v$ at $v=0$ gives $g^\top\nabla\stagesH(w)=\nabla\stagesH(w)$, and multiplying by $g=(g^\top)^{-1}$ gives $\nabla\stagesH(w)=g\nabla\stagesH(w)$ for every $g$, so the gradient lies in $F$. The gradient of the restriction at $w$ is the orthogonal projection of $\nabla\stagesH(w)$ onto $F$, which is $\nabla\stagesH(w)$ itself.
+\end{proof}
+
+\begin{lemma}[Circulant Hessians]\label{lem:stages:circulant}
+Let $\mathcal H$ be a real symmetric $kp\times kp$ matrix of $p\times p$ blocks $\mathcal H_{ij}$, indices modulo $k$, with $\mathcal H_{i+1,j+1}=\mathcal H_{ij}$; put $C_q=\mathcal H_{0q}$ and $\omega=e^{2\pi\mathrm i/k}$. Then the eigenvalues of $\mathcal H$, with multiplicity, are those of the $k$ Hermitian matrices $\hat C(r)=\sum_{q=0}^{k-1}\omega^{qr}C_q$, $r=0,\dots,k-1$.
+\end{lemma}
+
+\begin{proof}
+The plan is to write down eigenvectors. The hypothesis gives $\mathcal H_{ij}=C_{j-i}$, and symmetry gives $C_q^\top=\mathcal H_{q0}=C_{-q}$, so $\hat C(r)^*=\sum_q\omega^{-qr}C_{-q}=\hat C(r)$. If $\hat C(r)u=\kappa u$, the vector $v$ with blocks $v_j=\omega^{jr}u$ satisfies $(\mathcal Hv)_i=\sum_jC_{j-i}\omega^{jr}u=\omega^{ir}\hat C(r)u=\kappa v_i$. Orthonormal eigenbases of the $k$ matrices give $kp$ such vectors; two with different $r$ are orthogonal because $\sum_j\omega^{j(r-r')}=0$, and two with the same $r$ have $k$ times the inner product of their $u$'s. So they form an orthogonal basis of $\C^{kp}$.
+\end{proof}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=9mm,y=9mm,>={Stealth[length=1.5mm]}]
+\begin{scope}
+\draw[vellumline,line width=0.4pt] (-1.45,0) -- (1.45,0) (0,-1.45) -- (0,1.45);
+\draw[singular!45,line width=0.6pt] (90:1.1705) -- (162:1.1705) -- (234:1.1705) -- (306:1.1705) -- (18:1.1705) -- cycle;
+\foreach \t in {90,162,234,306,18} \draw[->,ink,line width=0.8pt] (0,0) -- (\t:1.1705);
+\fill[regular] (0,0) circle (0.075);
+\node[font=\footnotesize,align=center,anchor=north] at (0,-1.5) {$5$-gon, $b_6<0$\\ $\ell=0.0687$, $s=4$, $\lambda=7$};
+\end{scope}
+\begin{scope}[xshift=40mm]
+\draw[vellumline,line width=0.4pt] (-1.45,0) -- (1.45,0) (0,-1.45) -- (0,1.45);
+\draw[singular!45,line width=0.6pt] (90:1.1705) -- (162:1.1705) -- (234:1.1705) -- (306:1.1705) -- (18:1.1705) -- cycle;
+\foreach \t in {90,162,234,306,18} \draw[->,ink,line width=0.8pt] (0,0) -- (\t:1.1705);
+\fill[singular] (0,0) circle (0.075);
+\node[font=\footnotesize,singulardeep,anchor=south west,inner sep=1pt] at (0.06,0.06) {$+$};
+\node[font=\footnotesize,align=center,anchor=north] at (0,-1.5) {$5^+$-gon, $b_6=\frac1{12}$\\ $\ell=0.0618$, $s=1$, $\lambda=\frac{17}2$};
+\end{scope}
+\begin{scope}[xshift=80mm]
+\draw[vellumline,line width=0.4pt] (-1.45,0) -- (1.45,0) (0,-1.45) -- (0,1.45);
+\draw[singular!45,line width=0.6pt] (90:1.3205) -- (150:1.3205) -- (210:1.3205) -- (270:1.3205) -- (330:1.3205) -- (30:1.3205) -- cycle;
+\foreach \t in {90,150,210,270,330,30} \draw[->,ink,line width=0.8pt] (0,0) -- (\t:1.3205);
+\node[font=\footnotesize,align=center,anchor=north] at (0,-1.5) {$6$-gon\\ $\ell=0.0482$, $s=1$, $\lambda=\frac{17}2$};
+\end{scope}
+\end{tikzpicture}
+\caption{The three polygons whose learning coefficients this chapter computes, to scale, in the plane of the columns $W_i$ (arrows). The dot is a vestigial column $W_6=0$: with a negative bias its output never fires (left); with the bias $\frac1{12}$ it outputs a constant (center). Under each: the loss $\ell=\E\norm{x-f}^2$, the dimension $s$ of the set of equally good parameters nearby, and $\lambda=\frac{18-s}2$ (\cref{prop:stages:polygons}).}\label{fig:stages:polygons}
+\end{figure}
+
+\begin{computation}{The $6$-gon}\label{comp:stages:hexagon}
+\step The map $g$ that rotates every column by $60^\circ$ and shifts the indices, $W_i\mapsto RW_{i-1}$, $b_i\mapsto b_{i-1}$, is orthogonal and leaves $\stagesH$ unchanged: rotations preserve the inner products $W_o\cdot W_j$, and the shift permutes the $36$ terms. Its fixed points are the regular hexagons $W_i=R^{i-1}W_1$ with a common bias $b$, and by \cref{lem:stages:symmetric} a hexagon at which $\stagesH$ is differentiable is critical if and only if it is critical for $\stagesH$ restricted to them, a function of $a=\norm{W_1}^2$ and $b$.
+\step In the chamber $b<0<\frac a2+b$, neighbors interfere ($W_o\cdot W_j=\frac a2$) and the others do not ($-\frac a2$ and $-a$), and \cref{comp:stages:loss} gives $\stagesH=6\stagesphi(a,b)$ with
+\begin{equation}\label{eq:stages:phi}
+\stagesphi(a,b)=\frac{4(\frac a2+b)^3}{a}+(1-a)^2-3(1-a)b+3b^2+b^3\Bigl(\frac1{a^2}+\frac1a\Bigr).
+\end{equation}
+\step The equations $\partial_a\stagesphi=\partial_b\stagesphi=0$ have the solution $a^*=1.74379$, $b^*=-0.61814$, so the columns have length $l^*=1.32053$, as in Table~A.1 of \textcite{ChenEtAl2023}. It lies inside the chamber, $\frac{a^*}2+b^*=0.2538$, and $\ell=\stagesH/18=\stagesphi(a^*,b^*)/3=0.048192$.
+\step Describe a nearby parameter by the radial and tangential displacements of each column and the change of its bias. In these coordinates $g$ shifts the triples cyclically, so the Hessian of $\stagesH$ satisfies \cref{lem:stages:circulant} with $k=6$, $p=3$; only neighbors interact, so its eigenvalues are those of $\hat C(r)=C_0+\omega^rC_1+\omega^{-r}C_1^\top$. The frames are orthonormal at the hexagon, so these are the eigenvalues in the coordinates $(W,b)$ as well.
+\step The script computes
+\[
+C_0=\begin{pmatrix}14.105&0&7.756\\0&6.334&0\\7.756&0&6.146\end{pmatrix},\qquad C_1=\begin{pmatrix}1.322&-2.291&0.985\\2.291&-3.167&1.706\\0.985&-1.706&0\end{pmatrix}.
+\]
+In mode $r=0$ the tangential direction decouples with eigenvalue $6.334+2(-3.167)=0$: the rotation. The radial--bias block $\bigl(\begin{smallmatrix}16.750&9.727\\9.727&6.146\end{smallmatrix}\bigr)$ has trace $22.896$ and determinant $8.337$, so its eigenvalues $0.370$ and $22.53$ are positive. The other modes give $0.700$, $2.068$, $21.97$ ($r=1,5$), $1.896$, $7.084$, $19.45$ ($r=2,4$) and $2.436$, $12.67$, $15.17$ ($r=3$).
+\step The Hessian is positive semidefinite with one zero eigenvalue, along the circle of rotations: rank $17$, $s=1$, and \cref{thm:stages:minimal} below gives $\lambda=\frac{18-1}2=\frac{17}2$, $m=1$.
+\end{computation}
+
+\begin{computation}{The $5$-gon and the $5^+$-gon}\label{comp:stages:pentagon}
+\step For a regular pentagon of five columns only neighbors interfere again, with $W_o\cdot W_j=a\cos72^\circ$; the restricted potential is $5\stagesphi_5$, where $\stagesphi_5$ is \eqref{eq:stages:phi} with its first term replaced by $2(a\cos72^\circ+b)^3/(a\cos72^\circ)$. Its critical point is $a^*=1.36998$, $b^*=-0.28230$, $l^*=1.17046$, inside the chamber ($a^*\cos72^\circ+b^*=0.1410$); as a model with five features the pentagon has $\ell^{(5)}=\stagesphi_5(a^*,b^*)/3=0.015826$.
+\step Add a sixth column $W_6=0$ with bias $b_6<0$. Its output never fires, contributing $3I_{66}=1$, and no output fires for input $6$, since $b_j=b^*<0$. These strict inequalities survive small changes, so with $\stagesH^{(5)}$ the potential of the five-feature model, on a neighborhood of the $5$-gon
+\[
+\stagesH=\stagesH^{(5)}(W_1,\dots,W_5,b_1,\dots,b_5)+1,
+\]
+and $\ell=(15\,\ell^{(5)}+1)/18=0.068744$, independent of $(W_6,b_6)$.
+\step The Hessian of $\stagesH$ is that of $\stagesH^{(5)}$, with one zero eigenvalue (the rotation) and fourteen from $1.035$ to $19.02$, bordered by a $3\times3$ block of zeros for $(W_6,b_6)$: rank $14$. The equally good parameters nearby form a circle of rotations times the three free coordinates of the dead column: $s=4$, $\lambda=\frac{18-4}2=7$.
+\step With $W_6=0$ and $b_6>0$ the sixth output fires for every input, adding $3b_6^2$ for each of the five other inputs and $1-3b_6+3b_6^2$ for its own: $18b_6^2-3b_6+1$, against the $1$ of the $5$-gon. The minimum is at $b_6=\frac1{12}$, the $5^+$-gon, where $\ell$ drops by $\frac1{144}$ to $0.061799$; and $\partial^2\stagesH/\partial b_6^2=36$ is an eigenvalue of the Hessian.
+\step The gradient in $W_6$ is $3b_6\sum_{j\le5}W_j=0$, since the pentagon's columns sum to zero. The script finds one zero eigenvalue and seventeen from $1.035$ to $36$: $s=1$, $\lambda=\frac{17}2$.
+\end{computation}
+
+What one had to notice is that $\lambda$ is here a dimension count: the hexagon's columns are locked together and only a rotation moves them, while the $5$-gon carries a dead column whose three parameters are free. The count is legitimate because the Hessian is positive definite in every other direction; that is the theorem. It says nothing at the $4$-gons, whose biases sit at $0$, on the walls between chambers, where $\stagesH$ is not twice differentiable (\cref{ex:stages:fourgon}).
+
+\section{The theorem: minimally singular critical sets}\label{sec:stages:theorem}
+
+The computations used one principle: at a critical point whose Hessian is positive definite across a manifold of critical points, the learning coefficient is half the codimension of the manifold. \textcite{WeiEtAl2023} call such points \term{minimally singular}\index{minimally singular point}; the function is Morse--Bott along the manifold, after \textcite{Bott1954}. \Cref{prop:blowups:morsebott} proves the rule when the zero set of $K$ is known to be the manifold. For the polygons we know less, a manifold of critical points from rotations and dead columns and a Hessian at one point, and the version we need concludes the rest. As in \cref{ch:llc}, $V_B(\eps)=\int_{B\cap\{K<\eps\}}\varphi\dd w$ for a ball $B$ and a prior density $\varphi$.
+
+\begin{theorem}[Minimally singular critical sets]\label{thm:stages:minimal}
+Let $L$ be twice continuously differentiable on an open set $U\subseteq\R^d$, and let $S\subseteq U$ be a $C^2$ submanifold of dimension $s<d$ on which $\nabla L$ vanishes. Let $\wstar\in S$, suppose that $\nabla^2L(\wstar)$ is positive semidefinite of rank $d-s$, let $\varphi$ be continuous near $\wstar$ with $\varphi(\wstar)>0$, and put $K=L-L(\wstar)$. Then there is $\rho_0>0$ such that every closed ball $B$ centered at $\wstar$ with radius at most $\rho_0$ satisfies:
+\begin{enumerate}[label=(\roman*)]
+\item $K\ge0$ on $B$, and $\{w\in B:K(w)=0\}=S\cap B$;
+\item there are constants $0<c_B\le C_B$ with $c_B\,\eps^{(d-s)/2}\le V_B(\eps)\le C_B\,\eps^{(d-s)/2}$ for all sufficiently small $\eps>0$.
+\end{enumerate}
+In particular $\wstar$ is a local minimum of $L$, $\lambda(\wstar)=\frac{d-s}2$ and $m(\wstar)=1$.
+\end{theorem}
+
+The tangent space of $S$ always lies in the kernel of the Hessian (differentiate $\nabla L\equiv0$ along a curve in $S$), so the rank is at most $d-s$; the hypothesis is that it is as large as it can be and that the Hessian is positive semidefinite. That $\wstar$ is a minimum and that $S$ is the whole zero set are not assumed; they follow.
+
+\begin{proof}
+The plan is to write $S$ as a graph over its tangent space, bound $K$ from below on each normal slice by strong convexity and from above near $S$ by Taylor's formula, and so trap the sublevel sets between two tubes of radius of order $\sqrt\eps$ around $S$. Put $r=d-s$.
+
+\emph{Coordinates.} Translate and rotate so that $\wstar=0$ and the tangent space of $S$ at $0$ is $\{0\}\times\R^s$; balls, volumes, and the rank and definiteness of the Hessian do not change. Write $w=(u,z)$ with $u\in\R^r$, $z\in\R^s$. A $C^2$ submanifold is locally the graph of a $C^2$ function over its tangent space: there are $\delta_1>0$, a neighborhood $N$ of $0$, and a $C^2$ map $g$ on $\{\abs z_\infty<\delta_1\}$ with $g(0)=0$, $Dg(0)=0$, such that $S\cap N$ consists of the points $(g(z),z)$ that lie in $N$.
+
+\emph{The normal block.} The kernel of $A=\nabla^2L(0)$ contains $\{0\}\times\R^s$, of dimension $s$, and $A$ has rank $r$, so the kernel is $\{0\}\times\R^s$. For positive semidefinite $A$, $v^\top Av=0$ forces $Av=0$; hence $u^\top A_{uu}u=(u,0)^\top A(u,0)>0$ for $u\ne0$, and $A_{uu}=\nabla^2_{uu}L(0)$ is positive definite. Let $h>0$ be its smallest eigenvalue.
+
+\emph{A box.} By continuity there is $\delta\in(0,\delta_1)$ such that the cube $Q=[-\delta,\delta]^d$ lies in $U\cap N$ and, on $Q$, $\nabla^2_{uu}L\succeq\frac h2I$, the operator norm of $\nabla^2L$ is at most some $M\ge h$, and $0<\varphi_{\min}\le\varphi\le\varphi_{\max}$. Choose $\delta'\in(0,\delta]$ with $\abs{g(z)}_\infty\le\frac\delta2$ for $\abs z_\infty\le\delta'$, put $Q'=[-\delta,\delta]^r\times[-\delta',\delta']^s$, and let $\rho_0=\delta'$, so that every ball of radius at most $\rho_0$ about $0$ lies in $Q'$.
+
+\emph{The lower bound on $K$; proof of (i).} Fix $z$ with $\abs z_\infty\le\delta'$, let $k(u)=L(u,z)$ on the convex cube $[-\delta,\delta]^r$, and $u_z=g(z)$. Since $(u_z,z)\in S$, $\nabla k(u_z)=0$, and Taylor's formula with integral remainder and $\nabla^2k\succeq\frac h2I$ give $k(u)\ge k(u_z)+\frac h4\abs{u-u_z}^2$. The function $z\mapsto L(g(z),z)$ has derivative $\nabla_uL\,Dg+\nabla_zL=0$ on the connected cube, so it equals $L(0)$. Hence
+\begin{equation}\label{eq:stages:below}
+K(u,z)\ \ge\ \frac h4\,\abs{u-g(z)}^2\qquad\text{on }Q'.
+\end{equation}
+So $K\ge0$ on $Q'$, and $K(u,z)=0$ forces $u=g(z)$, a point of $S$; conversely $K=0$ at the points $(g(z),z)$, which make up $S\cap Q'$. This is (i).
+
+\emph{The upper bound on $V_B$.} By \eqref{eq:stages:below}, for $\abs z_\infty\le\delta'$ the section $\{u:K(u,z)<\eps\}$ lies in the ball of radius $2\sqrt{\eps/h}$ around $g(z)$, of volume $\omega_r(4\eps/h)^{r/2}$, where $\omega_r$ is the volume of the unit ball of $\R^r$. By Fubini every ball $B\subseteq Q'$ has $V_B(\eps)\le\varphi_{\max}(2\delta')^s\omega_r(4/h)^{r/2}\eps^{r/2}$.
+
+\emph{The lower bound on $V_B$.} On $Q'$, Taylor's formula from $(g(z),z)$, where $K$ and $\nabla K$ vanish, gives $K(u,z)\le\frac M2\abs{u-g(z)}^2$. Let $B$ have radius $\rho\le\rho_0$, and choose $\eta\in(0,\delta']$ with $\abs{g(z)}+\abs z\le\frac\rho2$ when $\abs z_\infty\le\eta$. For $\eps\le M\rho^2/8$ the tube $T_\eps=\{(u,z):\abs z_\infty\le\eta,\ \abs{u-g(z)}<\sqrt{2\eps/M}\}$ lies in $B$, since $\abs{(u,z)}\le\abs{u-g(z)}+\abs{g(z)}+\abs z<\rho$, and $K<\eps$ on it. By Fubini its volume is $(2\eta)^s\omega_r(2\eps/M)^{r/2}$, so $V_B(\eps)\ge\varphi_{\min}(2\eta)^s\omega_r(2/M)^{r/2}\eps^{r/2}$. This is (ii); by (i) $\wstar$ is a local minimum, and by (ii) and \cref{def:llc:llc}, $\lambda(\wstar)=\frac r2$ and $m(\wstar)=1$.
+\end{proof}
+
+The proof needs two derivatives and no resolution of singularities. Its upper bound on the volume is that of the Hessian sandwich, \cref{thm:llc:hessian}, which gives $\lambda\ge\frac r2$ at every local minimum; the manifold of critical points raises the lower bound on the volume to the same order, which is why minimally singular points attain the lower end of the sandwich.
+
+\begin{proposition}[The polygons of the toy model]\label{prop:stages:polygons}
+Let $\ell$ be the loss of the toy model with six features in the high-sparsity limit, $L=\frac12\ell$, and let $\varphi$ be continuous and positive at the points below.
+\begin{enumerate}[label=(\alph*)]
+\item If $(a^*,b^*)$ is a critical point of $\stagesphi$ in \eqref{eq:stages:phi} with $b^*<0<\frac{a^*}2+b^*$, the hexagon with $\norm{W_i}^2=a^*$ and $b_i=b^*$ is a critical point with $\ell=\stagesphi(a^*,b^*)/3$. If its Hessian is positive semidefinite of rank $17$, it is a local minimum with $\lambda=\frac{17}2$ and $m=1$.
+\item If the pentagon $(a^*,b^*)$ of \cref{comp:stages:pentagon} is critical with $b^*<0<a^*\cos72^\circ+b^*$, then for every $b_6<0$ the $5$-gon is a critical point; if its Hessian is positive semidefinite of rank $14$, it is a local minimum with $\lambda=7$ and $m=1$.
+\item Under the hypotheses of (b) the $5^+$-gon is a critical point; if its Hessian is positive semidefinite of rank $17$, it is a local minimum with $\lambda=\frac{17}2$ and $m=1$.
+\end{enumerate}
+The script \texttt{14-stages-kgons.py} finds the critical points with gradients below $4\cdot10^{-15}$, and Hessians with exactly $1$, $4$ and $1$ eigenvalues below $10^{-10}$ and all others at least $0.37$, $1.03$ and $1.03$ (in units of $\stagesH=18\ell$).
+\end{proposition}
+
+\begin{proof}
+The plan is to exhibit at each polygon a manifold of critical points of the right dimension and apply \cref{thm:stages:minimal}. In each case strict inequalities fix which case of \cref{comp:stages:loss} applies to each of the $36$ terms, with no kink at an end of $[0,1]$; they persist on a neighborhood, where $\stagesH$ is a finite sum of rational functions with nonvanishing denominators, hence twice continuously differentiable.
+
+(a) By \cref{lem:stages:symmetric} and \cref{comp:stages:hexagon} the hexagon is critical. Rotations $R_\theta$ of the plane preserve $\stagesH$, so $\nabla\stagesH(R_\theta w)=R_\theta\nabla\stagesH(w)=0$, and the orbit $\{R_\theta w\}$ is an embedded circle of critical points, since $W\ne0$: $s=1$.
+
+(b) On the neighborhood of \cref{comp:stages:pentagon}, $\stagesH$ does not depend on $(W_6,b_6)$, and in the other coordinates it is the five-feature potential, critical at the pentagon by \cref{lem:stages:symmetric} with the rotation by $72^\circ$. The points $(R_\theta W_1,\dots,R_\theta W_5,b_1,\dots,b_5,W_6,b_6)$ with $\theta$ and $(W_6,b_6)$ near their values form the image of an injective immersion of an open set of $\R\times\R^2\times\R$, an embedded four-dimensional manifold of critical points: $s=4$.
+
+(c) Near the $5^+$-gon the sixth output always fires, and its terms are $\sum_{j\le5}\bigl((W_6\cdot W_j)^2+3(W_6\cdot W_j)b_6+3b_6^2\bigr)+(1-\norm{W_6}^2)^2-3(1-\norm{W_6}^2)b_6+3b_6^2$. At $W_6=0$ their gradient is $(2W_6\cdot W_j+3b_6)W_6=0$ in each $W_j$, $3b_6\sum_{j\le5}W_j=0$ in $W_6$, and $36b_6-3=0$ in $b_6$ at $b_6=\frac1{12}$; the outputs $j\le5$ still never fire for input $6$, and the other terms are those of the critical pentagon. So the $5^+$-gon is critical, and its rotation orbit gives $s=1$.
+\end{proof}
+
+Two steps are numerical: the solution $(a^*,b^*)$ of two equations, and the eigenvalues of three $18\times18$ matrices. The residual of the computed solution is below $10^{-14}$ and the Hessian of the reduced function is positive definite there (eigenvalues $0.142$ and $8.41$ for the hexagon), so by the Newton--Kantorovich theorem, with a numerically estimated bound on the third derivatives of $\stagesphi$, an exact solution lies within $10^{-12}$; and the gaps between the zero eigenvalues, forced by symmetry and by the dead coordinates, and the smallest positive ones exceed the numerical errors by eight orders of magnitude. The proposition is in this sense computer-assisted, as Chen et al.'s results are: its implications are proved, but their hypotheses are checked in floating point, not certified with interval arithmetic, so the values $\frac{17}2$, $7$, $\frac{17}2$ rest on numerical evidence.
+
+\paragraph{What is proved in the source.} \textcite{ChenEtAl2023} prove the closed form of $\stagesH$ (their Lemma~3.1) and, given a solution of two polynomial equations that they compute with Mathematica, that the standard $k$-gons are critical points for $k\in\{4,\dots,8\}$ (their Appendix~H, with Theorem~H.1), and so is the $5^+$-gon (Appendix~I). The values $\lambda=7,\frac{17}2,\frac{17}2$ of their Table~1 rest, like ours, on numerical Hessians: a computed non-degeneracy modulo rotations for the $6$-gon (Appendix~H.1), a reduction to the five-feature model for the $5$-gon (H.3), and computed eigenvalues for the $5^+$-gon (Lemma~I.1). That $c$-gons are critical points for $c>8$ exactly when $c$ is a multiple of $4$ is their conjecture. At the $4$-gons the potential is not analytic (Appendix~J); for four features they report the list $\{4,4.5,5,5.5\}$ ``when approached from these different subspaces'', and for six features they state that the values are unknown and give SGLD estimates (Remark~J.1, Table~K.1). \Cref{tab:stages:status} summarizes.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+critical point & $\ell$ & $s$ & Hessian rank & $\lambda$ & $\frac d2$ \\
+\midrule
+$6$-gon & $0.048192$ & $1$ & $17$ & $\frac{17}2$ & $9$ \\
+$5^+$-gon & $0.061799$ & $1$ & $17$ & $\frac{17}2$ & $9$ \\
+$5$-gon & $0.068744$ & $4$ & $14$ & $7$ & $9$ \\
+$4^{++}$, $4^+$, $4$-gon & $0.0972$, $0.1042$, $\frac19$ & -- & -- & unknown & $9$ \\
+\bottomrule
+\end{tabular}
+\caption{The critical points of the toy model with $d=18$ that training visits: the loss $\ell=\E\norm{x-f}^2$ from the closed form (Chen et al.\ print $0.04819$, $0.06180$, $0.06874$), the dimension $s$ of the set of equally good parameters nearby, and $\lambda=\frac{18-s}2$ (\cref{prop:stages:polygons}), computer-assisted here and in the source. The $4$-gons lie on walls between chambers, where the potential is not analytic; only estimates of their coefficients exist. Script \texttt{14-stages-kgons.py}.}\label{tab:stages:status}
+\end{table}
+
+\section{The theorem: from learning coefficients to stages}\label{sec:stages:transitions}
+
+What do the learning coefficients say about the order in which a posterior, or a training run, visits the polygons? For the posterior there is a principle with a proof in simple cases; for training, observations and a conjecture.
+
+\subsection*{Phases of the posterior}
+
+Split the parameter space into regions $U_\alpha$, the \emph{phases}, each around one critical point $w_\alpha$. The posterior mass of a phase is governed by its local free energy $F_n(U_\alpha)=-\log\int_{U_\alpha}\varphi e^{-nL_n}$, and \cref{thm:phases:local} proves, for models linear in their coefficients, that $F_n(U_\alpha)=nL_n(w_\alpha)+\lambda_\alpha\log n-(m_\alpha-1)\log\log n+O_p(1)$ and that the posterior concentrates on the phase with the smallest leading terms. The toy model is not of that form, and its loss is not analytic everywhere, so that theorem does not cover it; \textcite{ChenEtAl2023} assume Watanabe's conditions for each phase and use the same expansion.\sidenote{They build on Watanabe's discussions of phase transitions, citing Section~7.6 of \textcite{Watanabe2009} and Section~9.4 of \textcite{Watanabe2018}.} With the lower-order terms absorbed into constants, $F_n(U_\alpha)\approx nL(w_\alpha)+\lambda_\alpha\log n+c_\alpha$, the posterior switches from phase $\alpha$ to phase $\beta$ where
+\begin{equation}\label{eq:stages:crossing}
+n\,\Delta L+\Delta\lambda\,\log n+\Delta c=0,
+\end{equation}
+with $\Delta L=L(w_\beta)-L(w_\alpha)$ and so on. If $\Delta c=0$, a phase of lower loss loses to one of higher loss only at small $n$ and only if its learning coefficient is larger: as $n$ grows the posterior moves from simple, inaccurate phases to complex, accurate ones, which Chen et al.\ call \term{internal model selection}\index{internal model selection}.
+
+\begin{observation}[\textcite{ChenEtAl2023}, Section~4.2 and Appendices~C and F]
+With a standard Gaussian prior on $\R^{18}$ and the constant $c_\alpha=\frac12\norm{w_\alpha}^2$ from the prior density at the critical point, the crossing \eqref{eq:stages:crossing} of the $5$-gon and the $6$-gon is at $n_{\mathrm{cr}}\approx600$ ($601$ in their Appendix~C.2). With NUTS (six chains of $5000$ draws after $500$ of burn-in, thinned by $10$; ten data sets per $n$), samples classified by the vertices of the convex hull of the columns and the number of positive biases show the dominant phase switch from the $5$-gon to the $6$-gon between $n=600$ and $n=700$; below $n\approx400$ the classification is unreliable. The authors call it a ``fundamental tension'' that an asymptotic formula is applied at finite $n$.
+\end{observation}
+
+Where the crossing lands depends on a factor of two and on the constants; \texttt{14-stages-kgons.py} recomputes it each way. As we read the preprint, its text is inconsistent about the factor: Table~1 and Appendix~C.2 use our $\ell$, for which Section~3 drops the $\frac12$ of the likelihood $p(x\mid w)\propto e^{-\norm{x-f}^2/2}$, while Section~4.1 and Appendix~F say that the posterior and the sampler use that likelihood, whose energy is $nL_n$ with $L=\frac\ell2$. With $\frac\ell2$ the same constants put the crossing at $n\approx1317$, not $601$. We have not seen the authors' code, which may scale the likelihood differently. The constant is a further choice, which Laplace's method makes exact as $n\to\infty$.
+
+\begin{heuristic}[Laplace's method on a critical set]
+Near a compact piece of the set $S$ of \cref{thm:stages:minimal}, $K(u,z)$ is $\frac12(u-g(z))^\top A(z)(u-g(z))$ up to higher-order terms, with $A(z)$ the Hessian on the normal space. Integrating $e^{-nK}$ over the normal directions gives $(2\pi/n)^{(d-s)/2}\det A(z)^{-1/2}$, and integrating over $S$ against the prior, with $\dd\sigma$ the volume on $S$, gives for a small neighborhood $U$ of $S$
+\[
+\begin{aligned}
+-\log\int_U\varphi e^{-nL}&=nL(\wstar)+\frac{d-s}2\log\frac n{2\pi}\\
+&\quad-\log\int_S\frac{\varphi}{\sqrt{\det A}}\dd\sigma+o(1).
+\end{aligned}
+\]
+The integral over $S$ is what $c_\alpha$ replaces by the prior density at one point.
+\end{heuristic}
+
+For the prior of Chen et al.\ the integral is computable. The $6$-gon's set is $120$ circles, one for each cyclic order of the labeled columns, each of length $2\pi\sqrt6\,l^*$; the $5$-gon's is $144$ pieces (a dead column and a cyclic order of the others), each a circle of length $2\pi\sqrt5\,l^*$ (the pentagon's $l^*$) times the region of the dead column's $(W_6,b_6)$ where none of its ReLUs fires, of prior mass $0.0141$. With the Hessian determinants of \cref{comp:stages:hexagon,comp:stages:pentagon}, the constant becomes $-5.81$ (energy $nL$) or $-4.77$ (energy $n\ell$) instead of $+2.75$, and the $5$-gon is preferred only for $88<n<225$, or $44<n<113$. The predicted crossing thus ranges from about $110$ to about $1300$, against an observed $600$ to $700$. The asymptotic constant is not a better finite-$n$ approximation: beyond the walls of its region the loss rises only at third order in the distance, and beyond its tip it falls (\cref{ex:stages:region}), so at $n$ of a few hundred the posterior spreads far beyond it. The agreement of $601$ with the sampler is an observation about this model at these sample sizes, not a test of the free energy formula.
+
+\subsection*{Stages of stochastic gradient descent}
+
+Training does not sample a posterior, and the order of the phases in $n$ need not be the order of plateaus in time. \textcite{ChenEtAl2023} measured both.
+
+\begin{observation}[\textcite{ChenEtAl2023}, Section~5 and Appendices~B and K]
+Minibatch SGD on $n=1000$ samples (batch $20$, learning rate $0.005$, $4500$ epochs) from a $4$-gon plus Gaussian noise of standard deviation $0.01$, with the local learning coefficient estimated along training by full-batch SGLD ($\epsilon=0.001$, $\gamma=1$, $500$ steps; the inverse temperature is not stated). Plateaus sit at classified critical points, and the transitions seen are $4^{++-}\to4^+\to5\to5^+$ and three other sequences of $4$-gon variants; each drop of the loss comes with a jump of the estimate, ``opposing staircases''. In $400$ runs started from posterior samples at $n=100$, lower-loss plateaus have higher estimates; at highly singular points the estimate is negative unless the sampler's hyperparameters are retuned, though its order is still right.
+\end{observation}
+
+\begin{conjecture}[Bayesian antecedent hypothesis; \textcite{ChenEtAl2023}]\label{conj:stages:bah}
+``The dynamical transitions $\alpha\to\beta$ encountered in neural network training have Bayesian antecedents'': for each such transition there is a Bayesian phase transition $\alpha\to\beta$ as $n$ grows.
+\end{conjecture}
+
+The authors call it a hypothesis and offer evidence, not a proof: the observed transitions go from higher to lower loss and from lower to higher estimated coefficient, the direction in which \eqref{eq:stages:crossing} can have a solution, and an analysis with the constants $c_\alpha$ ``suggests'' antecedents for all but two, where it is inconclusive (their Appendix~D.1). They do not claim the converse, and it fails here: the Bayesian $5\to6$ transition has not been seen in SGD (they note that it may occur with low probability per step), and in our runs no trajectory reached the $6$-gon (\cref{sec:stages:measuring}). No theorem connects the plateaus of SGD with the phases of the posterior. For Langevin diffusion at a large inverse temperature on a nonnegative real-analytic potential, \textcite{Larsson2026}, in a preprint, derives a candidate limiting evolution on the zero set and shows that the Dirichlet forms converge, in a certain sense, to a hierarchy on strata indexed by the local learning coefficient and multiplicity, strongly biased toward the more singular strata. The program's position paper states the bridge it uses, that the preference of SGD at step $t$ evolves as that of the posterior at some sample size $n$ increasing with $t$, as a hypothesis \parencite{PepinLehalleurEtAl2025}.
+
+\subsection*{Stages in transformers}
+
+In transformers no learning coefficient is known, and the estimate is the only handle.
+
+\begin{observation}[\textcite{HooglandEtAl2025}]
+A two-layer attention-only language model ($3{,}355{,}016$ parameters, a subset of the Pile) and a transformer of about $50{,}000$ parameters trained on in-context linear regression \parencite{GargEtAl2022}, with the coefficient estimated at checkpoints (for the language model $20$ chains of $200$ SGLD steps, $\epsilon=0.001$, $\gamma=100$, $n\beta=21.7$). Critical points of the estimated curve divide training into five stages in each model, ending at steps $900$, $6.5$k, $8.5$k, $17$k, $50$k and $1$k, $40$k, $126$k, $320$k, $500$k, with changes of the estimate $+26.4$, $+22.5$, $-1.57$, $+8.62$, $+1.77$ and $+21.4$, $+149$, $-12.3$, $-44.1$, $+3.56$. Most stages coincide with changes in internal structure or behavior, such as the formation of induction heads \parencite{OlssonEtAl2022}; similar divisions appear for other seeds; the trace and the largest eigenvalue of the Hessian detected only one of the four boundaries of the regression model. The authors call this ``suggestive evidence'', and note that the checkpoints are typically not local minima, violating the conditions under which the coefficient is defined.
+\end{observation}
+
+\begin{observation}[\textcite{WangEtAl2025a}]
+On the same language model, estimates refined to the weights of one attention head, or computed on a different data distribution, separate the heads by the shapes of their curves over training; the clusters match functional types and revealed a previously unknown multigram circuit. The authors write that they cannot guarantee the accuracy of the estimates, whose definition presumes a local minimum, but have reason to believe that their ordering is correct.
+\end{observation}
+
+Later work keeps this status. \Textcite{CarrollEtAl2025} (a preprint) find transformers on in-context regression first approximating ridge regression and then specializing, and read the estimates as a trade-off between loss and complexity. \Textcite{ElliottEtAl2026a} (a preprint) prove that the coefficient of the regret governs a generalized posterior over policies in reinforcement learning, and observe opposing staircases in a gridworld. \Textcite{BakerEtAl2026} turn to susceptibilities, responses of local posterior averages to changes of the data distribution. None of these estimates can be checked against a known coefficient; as of 2026 exact benchmarks at scale exist only for deep linear networks \parencite{HitchcockHoogland2025}.
+
+\section{Measuring it}\label{sec:stages:measuring}
+
+Three scripts check the chapter on the toy model, where the answers are known. The two that sample use the estimator of \textcite{LauEtAl2025} with the book's conventions (\cref{ch:llc}): $\hat\lambda(\wstar)=n\beta\,(\overline{L_n}-L_n(\wstar))$, with $\overline{L_n}$ the average of $L_n$ along full-batch SGLD chains for the localized posterior $\propto\exp\{-n\beta L_n(w)-\frac\gamma2\abs{w-\wstar}^2\}$, $n\beta=n/\log n$, $\gamma=1$ and step $\epsilon=0.1/(n\beta)$. The empirical loss is exact and fast: for output $o$ and input feature $j$ the sum of $\relu(\mu\,W_o\cdot W_j+b_o)^2$ over the training points of that feature is a quadratic in $W_o\cdot W_j$ and $b_o$ whose coefficients are sums of $1$, $\mu$ and $\mu^2$ over a tail of the sorted magnitudes, so a step costs $O(\log n)$.
+
+\texttt{14-stages-kgons.py} (under $20$ seconds) checks every number of \cref{sec:stages:byhand}; the Fourier blocks reproduce the full spectrum to $7\cdot10^{-10}$. Local minimization (L-BFGS) from $300$ random starts ends at the loss of the $6$-gon $31$ times, of the $5^+$-gon $60$ times and of the $5$-gon $75$ times, and otherwise at losses of $4$-gon variants or of configurations that ignore three or more features; no start found a loss below the $6$-gon's.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,height=0.45\linewidth,xmode=log,xlabel={sample size $n$},ylabel={$\hat\lambda$ at the exact critical point},
+  xmin=650,xmax=1.6e6,ymin=6,ymax=11,ytick={6,7,8,9,10,11},
+  legend columns=3,legend style={font=\scriptsize,at={(0.5,-0.24)},anchor=north}]
+\addplot[regularpred,domain=650:1.6e6,samples=2] {9};
+\addplot[theory,domain=650:1.6e6,samples=2] {8.5};
+\addplot[theory2,domain=650:1.6e6,samples=2] {7};
+\addplot[measured,ebars] table[x expr=\thisrow{n}*1.13,y=hex,y error plus=hexhi,y error minus=hexlo] {figures/data/14-stages-calib.dat};
+\addplot[measured2,ebars] table[x=n,y=pentplus,y error plus=pentplushi,y error minus=pentpluslo] {figures/data/14-stages-calib.dat};
+\addplot[measured3,ebars] table[x expr=\thisrow{n}/1.13,y=pent,y error plus=penthi,y error minus=pentlo] {figures/data/14-stages-calib.dat};
+\legend{{regular: $\frac d2=9$},{$\lambda=\frac{17}2$ ($6$, $5^+$)},{$\lambda=7$ ($5$-gon)},{$6$-gon},{$5^+$-gon},{$5$-gon}}
+\end{axis}
+\end{tikzpicture}
+\caption{The estimator at the three polygons as the sample size grows: for each $n$ and each of $4$ data sets (seed $1440+10j+r$ for the $r$th data set at the $j$th sample size), gradient descent on $L_n$ from the exact polygon to the nearby critical point of $L_n$, then $4$ SGLD chains of $9000$ steps ($2250$ discarded; sampler seed $1450$) with $n\beta=n/\log n$, $\gamma=1$, $\epsilon=0.1/(n\beta)$; the $5$-gon's dead column has bias $-3$. Means with Student-$t$ $95\%$ intervals over the data sets; points shifted sideways for legibility. Bronze: $\frac{17}2$ and $7$ (\cref{prop:stages:polygons}); slate: $\frac d2$. Script \texttt{14-stages-calib.py}.}\label{fig:stages:calib}
+\end{figure}
+
+\paragraph{The estimator at the polygons.} \texttt{14-stages-calib.py} (one to two minutes) runs the estimator at the exact polygons for $n$ from $10^3$ to $10^6$ (\cref{fig:stages:calib}). At $n=10^6$ it gives $7.06$, $8.34$ and $8.73$ for the $5$-gon, the $5^+$-gon and the $6$-gon, against $7$, $\frac{17}2$ and $\frac{17}2$: the intervals of the $5$-gon and the $6$-gon contain the predictions, and that of the $5^+$-gon, $[8.21,8.48]$, ends just below. At smaller $n$ the estimator is far off. At $n=10^3$ the three read $8.21$, $8.32$ and $9.63$, so the $5$-gon and the $5^+$-gon are not told apart; with three further sampler seeds the four means range over $[8.21,8.56]$, $[8.14,8.41]$ and $[9.11,9.63]$, and the two pentagons swap places, so the intervals, which cover the data sets for one seed, understate the uncertainty; at $n=10^4$ the $5^+$-gon and the $6$-gon read $10.14$ and $9.39$, above $\frac d2=9$, and the $5$-gon $8.0$ to $9.0$ on three data sets and $11.3$ on the fourth; the order is right only from $n=10^5$ on. The same chains on the closed-form population loss, without data noise, give $8.68$, $8.57$ and $9.62$ at $n\beta=144.8$ and $7.07$, $8.64$ and $8.51$ at $n=10^6$: the error at small $n$ comes from the geometry of the loss at the scale of the tempered posterior, not from the data. The Hessians show it. The softest normal direction of the $6$-gon has eigenvalue $0.0103$ in units of $K$, so at $n\beta=145$ the posterior has width $1/\sqrt{1.49}\approx0.8$ along it, a sizeable fraction of the columns' length $1.32$, and the quadratic approximation fails there: with the localizer it predicts $7.69$ at $\gamma=1$ and $5.24$ at $\gamma=10$, where the chains on the population loss read $9.62$ at $\gamma=1$. The dead column of the $5$-gon adds the walls of its region, which no quadratic approximation sees.
+
+\paragraph{Stages of SGD.} \texttt{14-stages-tms.py} (under two minutes) repeats the protocol of \textcite{ChenEtAl2023} on $32$ runs: $n=1000$, minibatches of $20$, step $0.005$ on $\ell$, $4500$ epochs ($225{,}000$ steps), from the standard $4$-gon plus $\Normal(0,0.01^2)$ noise (data seeds $1000$ to $1031$, initialization seeds $2000$ to $2031$). After $5000$ steps every run is on the plateau of a $4$-gon variant: $9$ at the $4$-gon ($\ell=\frac19$), $13$ at the $4^+$-gon ($0.1042$), $10$ at the $4^{++}$-gon ($0.0972$). By the end, $7$ of the $13$ $4^+$-runs have dropped to the $5$-gon and $2$ of the $10$ $4^{++}$-runs to the $5^+$-gon, after $32{,}500$ to $135{,}000$ steps; no other run dropped, and none reached the $6$-gon. \Cref{fig:stages:runs} shows the two that dropped first. In both, the column that becomes the fifth vertex is a vestigial column with a positive bias near $\frac1{12}$ that grows slowly through the plateau, from norm $0.04$ to $0.27$ over $25{,}000$ steps in run $17$, before the loss falls within about $7500$ steps: a slow escape along a nearly flat direction, as in the plateaus of \textcite{FukumizuAmari2000}.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 2,horizontal sep=14mm,vertical sep=6mm,x descriptions at=edge bottom},
+  splot,width=0.5\linewidth,xmin=0,xmax=83000,
+  xtick={0,20000,40000,60000,80000},xticklabels={$0$,$20$k,$40$k,$60$k,$80$k},xlabel={SGD step $t$}]
+\nextgroupplot[height=0.25\linewidth,ylabel={loss $\ell(w_t)$},ymin=0.055,ymax=0.115,ytick={0.06,0.08,0.1},
+  yticklabels={$0.06$,$0.08$,$0.10$},title={run $17$: $4^+\to5$}]
+\addplot[guide,domain=0:83000,samples=2,forget plot] {0.10417};
+\addplot[guide,domain=0:83000,samples=2,forget plot] {0.068744};
+\addplot[ink,line width=0.9pt] table[x=step,y=ellA] {figures/data/14-stages-tms-loss.dat};
+\nextgroupplot[height=0.25\linewidth,ymin=0.055,ymax=0.115,ytick={0.06,0.08,0.1},yticklabels={$0.06$,$0.08$,$0.10$},
+  title={run $13$: $4^{++}\to5^+$}]
+\addplot[guide,domain=0:83000,samples=2,forget plot] {0.097222};
+\addplot[guide,domain=0:83000,samples=2,forget plot] {0.061799};
+\addplot[ink,line width=0.9pt] table[x=step,y=ellB] {figures/data/14-stages-tms-loss.dat};
+\nextgroupplot[height=0.31\linewidth,ylabel={$\hat\lambda(w_t)$},ymin=2.5,ymax=10.5,ytick={3,5,7,9}]
+\addplot[regularpred,domain=0:83000,samples=2] {9};
+\addplot[theory,domain=32500:83000,samples=2] {7};
+\addplot[measured,ebars] table[x=step,y=llcA,y error plus=hiA,y error minus=loA] {figures/data/14-stages-tms-llc.dat};
+\nextgroupplot[height=0.31\linewidth,ymin=2.5,ymax=10.5,ytick={3,5,7,9},
+  legend style={font=\scriptsize,at={(0.03,0.77)},anchor=north west,legend columns=1}]
+\addplot[regularpred,domain=0:83000,samples=2] {9};
+\addplot[theory,domain=57500:83000,samples=2] {8.5};
+\addplot[measured,ebars] table[x=step,y=llcB,y error plus=hiB,y error minus=loB] {figures/data/14-stages-tms-llc.dat};
+\legend{{regular: $\frac d2=9$},{$\lambda$ of the polygon},{estimate $\hat\lambda(w_t)$}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Two SGD runs of the toy model ($n=1000$, batch $20$, step $0.005$ on $\ell$, from the standard $4$-gon plus noise), the two of $32$ whose loss dropped first. Top: the population loss $\ell(w_t)$ every $500$ steps, with the losses of the $4^+$-gon and the $5$-gon (left) and of the $4^{++}$-gon and the $5^+$-gon (right) in gray. Bottom: the estimate every $2500$ steps from $6$ SGLD chains of $6000$ steps ($1500$ discarded; seed $1414$) on the training data, $n\beta=144.8$, $\gamma=1$, $\epsilon=6.9\cdot10^{-4}$, with Student-$t$ $95\%$ intervals over the chains; bronze: the learning coefficient of the polygon reached; slate: $\frac d2$. Script \texttt{14-stages-tms.py}.}\label{fig:stages:runs}
+\end{figure}
+
+Along both runs the estimate steps up when the loss steps down: from a mean of $4.58$ over the $4^+$ plateau of run $17$ (interval $[4.32,4.84]$ over $10$ checkpoints) to $7.56$ ($[7.41,7.72]$, $20$ checkpoints) at the $5$-gon, and from $5.20$ ($[5.05,5.35]$) at the $4^{++}$-gon of run $13$ to $7.83$ ($[7.62,8.05]$) at the $5^+$-gon. These are the opposing staircases of Chen et al., reproduced. The levels must be read against the calibration, not against $\lambda$: on the same two data sets the estimator gives $8.21$ and $8.00$ at the exact $5$-gon, $7.64$ and $7.94$ at the $5^+$-gon, and $9.20$ and $8.98$ at the $6$-gon, with chain-to-chain intervals of half-width up to $1.3$; the plateau values agree with these. That the $5$-gon plateau of run $17$ reads $7.56$, close to $\lambda=7$, is no evidence that the estimator measures $\lambda$ there, since on the same data it reads $7.64$ at the $5^+$-gon, whose coefficient is $\frac{17}2$. What the staircase shows reliably is a step of about $3$ between the $4$-gon plateaus and the $5$-gon plateaus; it does not resolve $7$ against $\frac{17}2$, and on the $4$-gon plateaus, where the loss is not twice differentiable and from which these two runs escape, there is no $\lambda$ to compare with. The regular count $\frac d2=9$ is constant along both runs and wrong on every plateau.
+
+\section{The ledger}\label{sec:stages:ledger}
+
+The plateaus of the toy model of superposition are critical points with computable learning coefficients: the count of flat directions gives $7$ at the $5$-gon and $\frac{17}2$ at the $5^+$-gon and the $6$-gon, and \cref{thm:stages:minimal} justifies the count whenever the Hessian is positive definite across the manifold of critical points. The posterior orders phases by $nL+\lambda\log n$, with a proof in simple cases, but where transitions are observed the switch point depends on constants and conventions. Along training the estimated coefficient steps up at each drop of the loss in the toy model, and in most stages of the transformers studied; at those sample sizes the estimator misses $\lambda$ by a unit or more, and that training follows the posterior's order is a conjecture.
+
+\ledgercard{the local learning coefficient $\lambda(w^*)$ at the critical points that training visits, and its estimate $\hat\lambda(w_t)$ along training}{$\frac d2=9$ at every nondegenerate minimum; nothing about the order of plateaus}{$\lambda=\frac{d-s}2$, $m=1$ at a minimally singular critical set of dimension $s$ (\cref{thm:stages:minimal}); phases ordered by $nL+\lambda\log n$ (\cref{thm:phases:local}, linear models); Bayesian antecedents conjectured (\cref{conj:stages:bah})}{toy model of superposition, $d=18$: $5$-gon $\lambda=7$ ($s=4$); $5^+$-gon and $6$-gon $\lambda=\frac{17}2$ ($s=1$) (\cref{prop:stages:polygons})}{at the exact polygons $\hat\lambda=7.06$, $8.34$, $8.73$ at $n=10^6$, but $8.21$, $8.32$, $9.63$ at $n=10^3$; along SGD at $n=1000$, $4.58\to7.56$ ($4^+\to5$) and $5.20\to7.83$ ($4^{++}\to5^+$); $9$ of $32$ runs dropped, none to the $6$-gon}{a $C^2$ loss near a manifold of critical points; a Hessian rank computed in floating point; for estimates along training, SGLD at points that are not minima ($n\beta=n/\log n$, $\gamma=1$); no theorem for SGD}
+
+\section{Where the theory stops}\label{sec:stages:stops}
+
+\paragraph{What was assumed.} The learning coefficients of the polygons need a twice differentiable loss near a manifold of critical points; the toy model provides it at the $5$-, $5^+$- and $6$-gons, inside the chambers of its potential, but not at the $4$-gons, which sit on the walls (\cref{ex:stages:fourgon}). They also need the rank of an $18\times18$ Hessian, computed numerically. The Bayesian side needs more: a likelihood, which for this autoencoder is a convention (its normalizing constant depends on $w$ and is dropped); a model that is not realizable, so that $K$ is measured from a local minimum; Watanabe's conditions on each phase, which as far as we know nobody has checked for the toy model; and an asymptotic formula applied at $n$ in the hundreds. The training side assumes that an estimate computed at a point that is not a minimum, from a few thousand SGLD steps with a Gaussian localizer, measures something stable; \textcite{HooglandEtAl2025} state that their checkpoints violate the conditions under which the coefficient is defined, and \textcite{Cai2026} (a preprint) points out that at transient checkpoints the baseline $L_n(w_t)$ of the estimator is itself ambiguous.
+
+\paragraph{Where it breaks.} At the sample size of the training runs the estimator does not measure the coefficients computed here: at $n=1000$ it puts the $5$-gon at $8.21$ and the $5^+$-gon at $8.32$, whose values are $7$ and $\frac{17}2$, and it orders the polygons correctly only from $n\approx10^5$ (\cref{fig:stages:calib}); the staircase of \cref{fig:stages:runs} is real, but its heights are set by the geometry of the loss at the scale of the tempered posterior, by the localizer and by the step size. The Bayesian $5\to6$ prediction is not robust: the same losses and coefficients give a crossing at $n\approx601$, $1317$, $225$ or $113$, depending on the energy convention and the constant. The $5\to6$ transition, the clearest Bayesian transition of the model, is not seen in SGD \parencite{ChenEtAl2023}; in our $32$ runs no trajectory reached the $6$-gon in $225{,}000$ steps, though it is the lowest critical point found. In transformers, stages with decreasing estimates exist, $-12.3$ and $-44.1$ in two of the five stages of the regression model \parencite{HooglandEtAl2025}, so ``loss down, complexity up'' is not a rule of training; and above a threshold of task diversity, transformers trained on in-context regression stay at ridge regression, against what Bayesian internal model selection suggests \parencite{CarrollEtAl2025}.
+
+\paragraph{Open problems.} (1) A theory of stages for SGD: conditions under which the plateaus of training visit critical points in the order of the posterior's phases, as the Bayesian antecedent hypothesis of \textcite{ChenEtAl2023} conjectures (\cref{conj:stages:bah}), or a proof of the hypothesis that SGD at step $t$ resembles the posterior at some $n(t)$ \parencite{PepinLehalleurEtAl2025}. (2) The local learning coefficients of the $4$-gons, where several chambers meet; Chen et al.\ state that they are unknown for more than four features. (3) Their conjecture that regular $c$-gons are critical points for $c>8$ exactly when $c$ is a multiple of $4$. (4) Finite-$n$ theory of phase transitions: the constants of local free energies at the sample sizes where transitions are observed, including regions, such as the dead column's, bounded by walls of higher order. (5) Calibrated estimates along training, with intervals that cover bias as well as variance.
+
+\begin{exercises}
+\item \consolidation (The integrals.) Derive the cases of the interference and reconstruction integrals in \cref{comp:stages:loss}. Check that the standard $4$-gon, with columns $\pm e_1,\pm e_2$, zero biases and two dead columns, has $\ell=\frac19$, and that a positive dead bias $\frac1{12}$ lowers it by $\frac1{144}$.\label{ex:stages:integrals}
+
+\item \consolidation (Modes of the hexagon.) From $C_0$ and $C_1$ in \cref{comp:stages:hexagon}, compute $\hat C(0)$ and $\hat C(3)$, check that the tangential entry of $\hat C(0)$ vanishes, and find the eigenvalues of both. Show that the reflection of the plane combined with the reversal of the indices also preserves $\stagesH$, and deduce a relation between $C_1$ and $C_1^\top$.\label{ex:stages:modes}
+
+\item \consolidation (The $5^+$-gon.) Show that with $W_6=0$ the sixth output of the $5^+$-gon contributes $18b_6^2-3b_6+1$ to $\stagesH$, find its minimum, and show that $b_6$ decouples in the Hessian with eigenvalue $36$. Show that the block of $W_6$ alone is $(5a^*-4+6b_6)I_2$, and evaluate it.\label{ex:stages:fiveplus}
+
+\item \consolidation (Two derivatives.) Where does the proof of \cref{thm:stages:minimal} use that $S$ consists of critical points, and where that the Hessian is positive semidefinite? Give an example with $d=2$, $s=1$ in which the Hessian has rank $1$ but is not positive semidefinite, and describe the sublevel sets.\label{ex:stages:hypotheses}
+
+\item \byhand (The standard $4$-gon.) For four features, show that the standard $4$-gon reconstructs every input exactly, that nearby the parameters with $\ell=0$ form its circle of rotations, and that along the bias $b_1$ alone $\stagesH=9b_1^2+b_1^3$ for $b_1>0$ and $3b_1^2+2b_1^3$ for $b_1<0$. Conclude that $\stagesH$ is not twice differentiable there and \cref{thm:stages:minimal} does not apply.\label{ex:stages:fourgon}
+
+\item \byhand (The dead column's region.) At the $5$-gon, show that no ReLU involving the sixth feature fires for $\mu\in[0,1]$ if and only if $b_6\le0$, $\norm{W_6}^2\le\abs{b_6}$ and $W_j\cdot W_6\le\min(\abs{b_6},\abs{b^*})$ for $j\le5$, and that the condition on $\norm{W_6}^2$ follows from the others ($\max_jW_j\cdot W_6\ge l^*\cos36^\circ\norm{W_6}$). Show that beyond the last walls the loss rises at third order in the distance, and that beyond the tip $W_6=0$, $b_6=0$ a positive $b_6$ lowers it at first order. Estimate by Monte Carlo the mass of the region under the standard Gaussian prior on $(W_6,b_6)$ (it is $0.0141$).\label{ex:stages:region}
+
+\item \byhand (A circle of minima.) For $K(a,b)=(a^2+b^2-1)^2$ with the uniform prior on $[-2,2]^2$, show that $V(\eps)=\frac\pi8\sqrt\eps$ for $\eps<1$, and check $\lambda=\frac12$, $m=1$ against \cref{thm:stages:minimal} with $d=2$, $s=1$.\label{ex:stages:circle}
+
+\item \byhand (The $7$-gon.) For seven features, write the reduced function of the regular $7$-gon (neighbors interfere; second neighbors have $a\cos\frac{4\pi}7<0$), solve its two equations numerically, and check $l^*=1.44839$, $b^*=-0.96691$ and $\ell=0.08327$. What is $\lambda$ if the Hessian has rank $20$?\label{ex:stages:heptagon}
+
+\item \variation (The prior and the crossing.) Replace the Gaussian prior by the uniform prior on a large box containing both polygons, so that Chen et al.'s $c_\alpha$ is the same for all phases, and solve \eqref{eq:stages:crossing} for the $5\to6$ crossing with $\Delta c=0$, with the energy $n\ell$ and with $nL=n\ell/2$ (the script prints $445$ and $1010$).\label{ex:stages:prior}
+
+\item \measurement (The localizer.) From the eigenvalues of \cref{comp:stages:hexagon}, divided by $36$ for the Hessian of $K$, compute the localized quadratic prediction $\sum_i\frac12\frac{n\beta h_i}{n\beta h_i+\gamma}$ at $n\beta=144.8$ for $\gamma=1$ and $\gamma=10$, and compare with \texttt{14-stages-calib.py} at $n=10^3$ run with each $\gamma$. How much of the difference does the localizer explain?\label{ex:stages:localizer}
+
+\item \measurement (Escape.) In \texttt{14-stages-calib.py}, set the dead bias of the $5$-gon to $-0.1$ instead of $-3$, and look at $n=10^5$. Record for each chain the fraction of steps with $L_n$ below $L_n(\wstar)$, and explain the change of the estimate with \cref{comp:stages:pentagon} and \cref{ex:stages:region}.\label{ex:stages:escape}
+
+\item \research (The $4$-gons.) Compute the local learning coefficient of the standard $4$-gon for four features from the volume definition, chamber by chamber. Show that if each chamber's sublevel volume behaves like $\eps^{\lambda_C}$, then $\lambda$ is the smallest $\lambda_C$, and decide whether the list $\{4,4.5,5,5.5\}$ of Chen et al.\ consists of such exponents. The case of six features is open.\label{ex:stages:research4}
+\end{exercises}
+
+\notesandrefs
+The toy model of superposition is due to \textcite{ElhageEtAl2022}, who used it to study how networks store more sparse features than they have dimensions, and found the features arranged in polygons and polytopes. \textcite{ChenEtAl2023} computed its loss in closed form in the high-sparsity limit, classified the polygon critical points with two hidden dimensions, compared Bayesian phase transitions in $n$ with transitions during SGD, and proposed the Bayesian antecedent hypothesis; the preprint was submitted to ICLR 2024 and rejected (OpenReview), and as of October 2026 we found no refereed version. Plateaus near the singularities of multilayer perceptrons are classical \parencite{FukumizuAmari2000,AmariEtAl2006}.
+
+The local learning coefficient and its SGLD estimator are those of \textcite{LauEtAl2025}, built on Watanabe's widely applicable Bayesian information criterion \parencite{Watanabe2013} and on stochastic-gradient Langevin dynamics \parencite{WellingTeh2011}. Estimating it along training to find stages is the program of \textcite{HooglandEtAl2025}, refined to components and data by \textcite{WangEtAl2025a}; the \texttt{devinterp} library implements the estimator \parencite{vanWingerdenEtAl2024}, and \textcite{HitchcockHoogland2025} benchmark its samplers on deep linear networks.
+
+Critical manifolds along which the Hessian is nondegenerate in the normal directions are the nondegenerate critical manifolds of \textcite{Bott1954}; that half their codimension is the learning coefficient at a minimum is used by \textcite{WeiEtAl2023}, Section~4, and by Chen et al., and is \cref{prop:blowups:morsebott} of this book. Finding symmetric critical points by restricting to symmetric configurations is the principle of symmetric criticality \parencite{Palais1979}, which for a group of orthogonal maps reduces to \cref{lem:stages:symmetric}; block circulant matrices are diagonalized by the discrete Fourier transform. \Cref{thm:stages:minimal} in this form and its proof, the Fourier computation of the hexagon's Hessian, the Laplace constants of the phases, and the calibration of the estimator at the polygons are the book's own; we did not find them in the literature.
+
+\paragraph{Translating the literature.} \Textcite{ChenEtAl2023} write $L$ for our $\ell=\E\norm{x-f}^2$, twice our $L$ up to a constant; $H=3cL$ for the TMS potential (our $\stagesH$, with $c=6$); $r$ and $c$ for the numbers of hidden dimensions and features; $(l,\theta,b)$ for lengths, angles between consecutive columns and biases; and $k^{\sigma+,\phi-}$ for a $k$-gon with $\sigma$ positive and $\phi$ large negative biases ($4^{+-}$ has one of each). Their ``non-degenerate'' and ``minimally singular'' are meant modulo rotations and permutations; our $s$ counts the rotations. \Textcite{LauEtAl2025} write $\beta^*=1/\log n$ for our $\beta$ and $\epsilon$ for the step size; \textcite{HooglandEtAl2025} write $\ell$ for the population loss and report $n\beta$ directly, and the localizing drift of their SGLD update carries $\gamma/2$ where ours carries $\gamma$, although their localized posterior is ours (\cref{ch:llc}). In \texttt{devinterp}, \texttt{nbeta} is our $n\beta$ and \texttt{localization} our $\gamma$.
+
+\printchapterbib
+\end{refsection}

@@ -1,0 +1,393 @@
+% Chapter 1 of Singular Learning Theory for the Rest of Us: the regular theory, the baseline of the book.
+\sltchapter{Regular Models}{What the Laplace approximation promises}{$y=ax_1+bx_2$}{ch:regular}
+\newtonfoot{0/2,2/0}{1}{1}{a^2+b^2}
+\begin{refsection}[chapters/01-regular.bib]
+
+\begin{chaptersummary}
+What does a parameter cost? When the true parameter is a single interior point at which the Hessian of the loss is invertible, the classical answer is $\tfrac12\log n$ in the free energy and $\tfrac1{2n}$ in the generalization error. We compute both by hand for the regular plane $y=ax_1+bx_2$, whose posterior, marginal likelihood and predictive distribution are exactly Gaussian; with a flat prior its generalization error is exactly $1/(n-1)$. We prove the Laplace approximation of the free energy, $F_n=nL_n(\hat w)+\frac d2\log\frac n{2\pi}+\frac12\log\det J-\log\varphi(w_0)+o_p(1)$, and with it BIC, and we prove the generalization error $\frac d{2n}$ for Gaussian linear models. Quadrature on three regular models, one of them a normal mixture whose likelihood is not Gaussian, confirms every prediction, down to the $1/n$ error of the Laplace approximation. Everything rests on identifiability, an invertible Hessian and an interior truth, and neural networks violate the first two.
+\end{chaptersummary}
+
+\section{The question: what does a parameter cost?}\label{sec:regular:question}
+
+Suppose we have trained two networks on the same data, a small one and a large one, and must decide which to trust. A Bayesian compares their marginal likelihoods; a frequentist estimates their test losses. Both comparisons have classical large-sample answers, and both answers count parameters. \Textcite{MacKay1992} built a Bayesian framework for backpropagation networks on the Laplace approximation of the marginal likelihood, in which the evidence penalizes overflexible models and an effective number of well-determined parameters measures complexity; in 2021 the approximation was offered again, with a software library, for the posteriors of deep networks \parencite{DaxbergerEtAl2021}. The frequentist counterpart is Akaike's criterion, which penalizes the maximized log-likelihood in proportion to the number of parameters \parencite{Akaike1974}. This chapter asks what these classical answers promise, under which hypotheses, and why. Every later chapter measures against them.
+
+\paragraph{The setting.} The data $X^n=(X_1,\dots,X_n)$ are independent with distribution $q$, the truth. A model is a family of densities $p(x\mid w)$ indexed by $w\in W\subset\R^d$, with a prior density $\varphi$ on $W$. The empirical and the population loss are $L_n(w)=-\frac1n\sum_i\log p(X_i\mid w)$ and $L(w)=-\E_q[\log p(X\mid w)]$, a true parameter $w_0$ minimizes $L$, and $K(w)=L(w)-L(w_0)\ge0$. The \term{free energy}\index{free energy} is the negative logarithm of the \term{marginal likelihood}\index{marginal likelihood},
+\[
+F_n=-\log\int_W\varphi(w)e^{-nL_n(w)}\dd w ;
+\]
+the posterior odds of two models are their prior odds times $e^{F_n^{(2)}-F_n^{(1)}}$, so a Bayesian prefers the smaller free energy.\sidenote{The name is from statistical physics: with $nL_n(w)$ as the energy of the configuration $w$, $F_n$ is the free energy at temperature $1$. \Cref{ch:temperature} varies the temperature.} The truth is \term{realizable} if $q=p(\cdot\mid w_0)$. Then $nL_n(w_0)=nS_n$, and the normalized free energy $F_n-nS_n=-\log\int\varphi e^{-nK_n}$, with $K_n=L_n-L_n(w_0)$, is what the data charge the model for not knowing $w_0$. The posterior predicts with the \term{predictive density}\index{predictive density} $p^*(x)=\Ew{p(x\mid w)}$, whose \term{Bayes generalization loss}\index{generalization error} is $G_n=-\E_X[\log p^*(X)]$ for a fresh $X\sim q$; in the realizable case the generalization error $G_n-S=\KL(q\,\|\,p^*)$ is what we lose per test point by not knowing $w_0$. In a regression model the observation is a pair $X=(x,y)$ and the densities are conditional on the input.\sidenote{The input density, the same for every $w$, cancels from every quantity in this book except $S$ and $S_n$, which we therefore define with the conditional density $q(y\mid x)$.}
+
+\begin{definition}[Regular and singular truths]\label{def:regular:regular}
+The truth $q$ is \term{regular}\index{regular truth} for the model if $L$ has a single minimizer $w_0$ on $W$, the point $w_0$ lies in the interior of $W$, and the Hessian $J=\nabla^2L(w_0)$ is positive definite. Otherwise it is \term{singular}.
+\end{definition}
+
+Regularity is a property of the truth relative to the model, a convention the book takes from \textcite{Watanabe2013}. In the realizable case $J$ is the Hessian of the Kullback--Leibler divergence $K$, and it equals the \term{Fisher information}\index{Fisher information} at $w_0$ whenever $\int p(x\mid w)\dd x=1$ may be differentiated twice under the integral sign. The running model of this chapter is the \emph{regular plane} $y=ax_1+bx_2+\varepsilon$, with $x\sim\Normal(0,I_2)$, $\varepsilon\sim\Normal(0,1)$, the prior uniform on $[-1,1]^2$ and the truth $0$. Its loss is $L(w)=L(w_0)+\frac12\abs{w-w_0}^2$, so $J=I_2$ at every truth.
+
+\begin{regularanswer}[the price of a parameter]
+If the truth is regular and realizable, each of the $d$ parameters costs $\tfrac12\log n$ in the free energy \parencite{Schwarz1978},
+\[
+F_n=nS_n+\frac d2\log n+O_p(1),
+\]
+and $\frac1{2n}$ in the expected generalization error, while the training loss underestimates the test loss by $\frac dn$ \parencite{Akaike1974}:
+\[
+\E[G_n]-S=\frac d{2n}+o\Bigl(\frac1n\Bigr).
+\]
+\end{regularanswer}
+
+For the product model $y=abx$ of the prologue at its truth $ab=0$, neither formula is right. Its loss $K(a,b)=\tfrac12a^2b^2$ vanishes on the whole cross $\{ab=0\}$, and its Hessian at the origin is zero. The free energy grows like $\tfrac12\log n-\log\log n$, not $\log n$ (\cref{fig:prologue:free}; \cref{ch:coefficient}), and the generalization error is $\frac1{2n}$ to first order, not $\frac1n$ (\cref{ch:generalization}). The regular answer's hypotheses fail, and its formula overcharges. To see what replaces it we must know exactly what it promises, under which hypotheses, and where in its proof each hypothesis is used. That is this chapter's question; its answers are the slate dashed lines that every later figure draws for comparison.
+
+\section{By hand: the regular plane}\label{sec:regular:byhand}
+
+Every quantity of the regular plane is a Gaussian integral, because its energy is exactly quadratic in the parameter. We work in $d$ dimensions: the model is $y=w^\top x+\varepsilon$ with $w\in\R^d$, $x\sim\Normal(0,I_d)$ and $\varepsilon\sim\Normal(0,1)$; $d=2$ is the regular plane and $d=1$ the regular line $y=ax+\varepsilon$. The data enter through $S_{xx}=\sum_ix_ix_i^\top$ and $S_{xy}=\sum_ix_iy_i$, and the least-squares estimate $\hat w=S_{xx}^{-1}S_{xy}$ maximizes the likelihood.\sidenote{The law of $S_{xx}$ is the Wishart distribution with $n$ degrees of freedom and scale $I_d$; \cref{lem:regular:wishart} collects the three facts about it that we need.} The tool is the Gaussian integral $\int_{\R^d}e^{-\frac12(w-m)^\top P(w-m)}\dd w=(2\pi)^{d/2}\det(P)^{-1/2}$ (\cref{lem:toolkit:gaussian}).
+
+\begin{computation}{The regular plane with a Gaussian prior}\label{comp:regular:gauss}
+\step \emph{The energy is a quadratic.} Expanding $nL_n(w)=\frac12\sum_i(y_i-w^\top x_i)^2+\frac n2\log(2\pi)$ around $\hat w$, the linear term vanishes:
+\[
+nL_n(w)=nL_n(\hat w)+\tfrac12(w-\hat w)^\top S_{xx}(w-\hat w).
+\]
+\step \emph{The posterior is Gaussian.} Take the prior $\Normal(0,\tau^2I_d)$. Completing the square after adding its exponent $\abs w^2/2\tau^2$ shows that the posterior is $\Normal(m_n,P_n^{-1})$, with precision $P_n=S_{xx}+\tau^{-2}I$ and mean $m_n=P_n^{-1}S_{xy}$, the ridge-regression estimate with penalty $\tau^{-2}$. The constant left over is $\frac12\hat w^\top(\tau^2I+S_{xx}^{-1})^{-1}\hat w$, by the identity $S_{xx}-S_{xx}P_n^{-1}S_{xx}=(\tau^2I+S_{xx}^{-1})^{-1}$.
+\step \emph{The free energy is explicit.} The prior's constant is $(2\pi\tau^2)^{-d/2}$, the Gaussian integral gives $(2\pi)^{d/2}\det(P_n)^{-1/2}$, and $\tau^2P_n=I+\tau^2S_{xx}$, so
+\begin{equation}\label{eq:regular:Fgauss}
+F_n=nL_n(\hat w)+\tfrac12\log\det\bigl(I+\tau^2S_{xx}\bigr)+\tfrac12\hat w^\top\bigl(\tau^2I+S_{xx}^{-1}\bigr)^{-1}\hat w .
+\end{equation}
+\step \emph{Each parameter costs $\frac12\log n$.} By the law of large numbers $S_{xx}/n\to I$ and $\hat w\to w_0$ almost surely, so the second term of \eqref{eq:regular:Fgauss} is $\frac d2\log n+d\log\tau+o(1)$ and the third tends to $\abs{w_0}^2/2\tau^2$. The first is exact: with the noise vector $\boldsymbol\varepsilon$ and the projection $Q$ onto the span of the input columns, $nL_n(\hat w)-nL_n(w_0)=-\frac12\boldsymbol\varepsilon^\top Q\boldsymbol\varepsilon$, a $-\frac12\chi^2_d$ variable for every $n\ge d$. Hence
+\[
+F_n-nS_n=\frac d2\log n+d\log\tau+\frac{\abs{w_0}^2}{2\tau^2}-\frac12\chi^2_d+o_p(1).
+\]
+\step \emph{The predictive is Gaussian.} At a new input, $y=w^\top x+\varepsilon$ with $w\sim\Normal(m_n,P_n^{-1})$, so $p^*(y\mid x)=\Normal\bigl(y;\,m_n^\top x,\,1+s_n(x)\bigr)$ with $s_n(x)=x^\top P_n^{-1}x$: the uncertainty about $w$ widens the predictive.
+\step \emph{The generalization error.} The divergence from $\Normal(\mu_1,1)$ to $\Normal(\mu_2,1+s)$ is $\frac12\log(1+s)+\frac{1+(\mu_1-\mu_2)^2}{2(1+s)}-\frac12$. With $\mu_1=w_0^\top x$, $\mu_2=m_n^\top x$ and $s=s_n(x)$, averaging over the test input gives
+\begin{equation}\label{eq:regular:Ggauss}
+G_n-S=\E_x\biggl[\frac12\log(1+s)-\frac{s}{2(1+s)}+\frac{\bigl(x^\top(m_n-w_0)\bigr)^2}{2(1+s)}\biggr].
+\end{equation}
+\step \emph{Each parameter costs $\frac1{2n}$.} Since $s_n(x)\approx\abs x^2/n$, the first two terms are $O(n^{-2})$; the vector $m_n-w_0$ has covariance about $I/n$, so the last term has mean about $\E\abs x^2/2n=\frac d{2n}$. \Cref{thm:regular:aic} makes this exact.
+\end{computation}
+
+A quadratic energy turns every integral into a Gaussian one, and the only work is completing squares. Three facts about Gaussian inputs make the expectations over the data exact as well.
+
+\begin{lemma}[Inverse Wishart facts]\label{lem:regular:wishart}
+Let $x_1,\dots,x_n$ be independent $\Normal(0,I_d)$ vectors, $n\ge d$, and $S_{xx}=\sum_ix_ix_i^\top$. Then $S_{xx}$ is invertible with probability one, and:
+\begin{enumerate}
+\item for every unit vector $u$, $1/(u^\top S_{xx}^{-1}u)$ has the $\chi^2_{n-d+1}$ law;
+\item if $n\ge d+2$, then $\E\tr(S_{xx}^{-1})=d/(n-d-1)$;
+\item if $x\sim\Normal(0,I_d)$ is independent of $S_{xx}$, then $x^\top S_{xx}^{-1}x$ has the law of $U/V$, with $U\sim\chi^2_d$ and $V\sim\chi^2_{n-d+1}$ independent.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+The plan is to reduce everything to one diagonal entry of $S_{xx}^{-1}$. Let $\mathbf X$ be the $n\times d$ matrix with rows $x_i^\top$, so that $S_{xx}=\mathbf X^\top\mathbf X$. Conditionally on the other columns of $\mathbf X$, which span a subspace of dimension at most $d-1<n$, column $j$ is a standard Gaussian vector of $\R^n$ and lies in that subspace with probability zero; so the columns are linearly independent and $S_{xx}$ is invertible almost surely.
+
+\emph{Part (i).} For an orthogonal $O$, $\mathbf XO$ has the law of $\mathbf X$, and $(\mathbf XO)^\top\mathbf XO=O^\top S_{xx}O$; choosing $Oe_1=u$ shows that $u^\top S_{xx}^{-1}u$ has the law of $(S_{xx}^{-1})_{11}$. Write $\mathbf X=[\mathbf x^{(1)},\mathbf X']$ and let $Q'$ project onto the orthogonal complement of the column space of $\mathbf X'$, of dimension $n-d+1$ almost surely ($Q'=I$ if $d=1$). Block inversion gives $(S_{xx}^{-1})_{11}=1/\abs{Q'\mathbf x^{(1)}}^2$, and conditionally on $\mathbf X'$ the squared length of the projection of the standard Gaussian vector $\mathbf x^{(1)}$ onto a fixed subspace of dimension $n-d+1$ is $\chi^2_{n-d+1}$, whatever $\mathbf X'$ is.
+
+\emph{Part (ii).} For $V\sim\chi^2_k$ with $k\ge3$, the Gamma integral (\cref{def:toolkit:gamma}) gives $\E[1/V]=2^{k/2-1}\Gamma(\frac k2-1)/(2^{k/2}\Gamma(\frac k2))=1/(k-2)$. By (i) with $u=e_j$, each diagonal entry of $S_{xx}^{-1}$ is such a $1/V$ with $k=n-d+1\ge3$; add $d$ of them.
+
+\emph{Part (iii).} Write $x=\abs x\,u$. The length and the direction of a standard Gaussian vector are independent, $\abs x^2\sim\chi^2_d$, and both are independent of $S_{xx}$. By (i), conditionally on $(u,\abs x)$ the variable $V=1/(u^\top S_{xx}^{-1}u)$ is $\chi^2_{n-d+1}$ whatever $u$ is; so $V$ is independent of $(u,\abs x)$, and $x^\top S_{xx}^{-1}x=\abs x^2/V$.
+\end{proof}
+
+\begin{computation}{The exact generalization error of the regular plane}\label{comp:regular:flat}
+\step \emph{The flat prior.} As $\tau\to\infty$ in \cref{comp:regular:gauss}, the posterior becomes $\Normal(\hat w,S_{xx}^{-1})$ and the predictive $\Normal(\hat w^\top x,1+s(x))$ with $s(x)=x^\top S_{xx}^{-1}x$. (With the uniform prior on the square, the posterior is this Gaussian restricted to the square, which by \cref{comp:regular:box} removes an exponentially small mass.)
+\step \emph{Average over the noise.} Given the inputs, $\hat w-w_0=S_{xx}^{-1}\sum_ix_i\varepsilon_i$ has covariance $S_{xx}^{-1}$, so the conditional mean of $(x^\top(\hat w-w_0))^2$ is $s(x)$, which cancels the second term of \eqref{eq:regular:Ggauss}:
+\[
+\E\bigl[G_n-S\bigm|x_1,\dots,x_n\bigr]=\tfrac12\E_x\log\bigl(1+x^\top S_{xx}^{-1}x\bigr).
+\]
+\step \emph{Average over the inputs.} By \cref{lem:regular:wishart}(iii), $\log(1+x^\top S_{xx}^{-1}x)$ has the law of $\log(U+V)-\log V$ with $U+V\sim\chi^2_{n+1}$. Since $\E\log\chi^2_k=\psi(k/2)+\log2$, with $\psi=\Gamma'/\Gamma$,
+\begin{equation}\label{eq:regular:Gexact}
+\E[G_n]-S=\frac12\Bigl(\psi\bigl(\tfrac{n+1}2\bigr)-\psi\bigl(\tfrac{n-d+1}2\bigr)\Bigr).
+\end{equation}
+\step \emph{The regular plane.} For $d=2$, the recurrence $\psi(z+1)=\psi(z)+1/z$ at $z=\frac{n-1}2$ gives $\E[G_n]-S=\frac1{n-1}$ exactly, for every $n\ge2$ and every truth $w_0$. For the regular line, \eqref{eq:regular:Gexact} is $\frac1{2n}+\frac1{4n^2}+O(n^{-3})$. The plug-in predictive $\Normal(\hat w^\top x,1)$ does worse: its error $K(\hat w)=\frac12\abs{\hat w-w_0}^2$ has mean $\frac d{2(n-d-1)}$ for $n\ge d+2$ by \cref{lem:regular:wishart}(ii), which is $\frac1{n-3}$ for the plane.
+\end{computation}
+
+\begin{computation}{The uniform prior: Laplace's error is a box probability}\label{comp:regular:box}
+\step \emph{The free energy.} With the uniform prior on $[-1,1]^d$, of density $2^{-d}$, step~1 of \cref{comp:regular:gauss} gives, exactly,
+\begin{equation}\label{eq:regular:Fbox}
+F_n=nL_n(\hat w)-\frac d2\log(2\pi)+\frac12\log\det S_{xx}+d\log2-\log\Pi_n,
+\end{equation}
+where $\Pi_n$ is the probability that a $\Normal(\hat w,S_{xx}^{-1})$ vector lies in the box.
+\step \emph{The comparison.} The Laplace approximation of \cref{thm:regular:laplace} below, with the observed information $J_n=S_{xx}/n$ and $\varphi(\hat w)=2^{-d}$, is the same expression without $-\log\Pi_n$. Its error is exactly $-\log\Pi_n$, which lies between $1-\Pi_n$ and $(1-\Pi_n)/\Pi_n$.
+\step \emph{The boundary is far.} Coordinate $j$ of the Gaussian leaves $[-1,1]$ with probability at most $2\bar\Phi((1-\abs{\hat w_j})/\sigma_j)$, where $\sigma_j^2=(S_{xx}^{-1})_{jj}\approx\frac1n$ and $\bar\Phi$ is the standard normal tail. At the truth $0$, $\hat w=O_p(n^{-1/2})$, so the boundary is $\sqrt n+O_p(1)$ posterior standard deviations away and $1-\Pi_n=e^{-n/2+O_p(\sqrt n)}$: for the plane at $n=100$ its median over data sets is $3\cdot10^{-18}$. When the box does cut the posterior the error is not small: its mean is $0.15$ at $n=10$, and $0.36$ at $n=100$ for the truth $(0.9,0)$ (\cref{ex:regular:small}).
+\end{computation}
+
+\paragraph{Where $\frac d2$ comes from.} The coefficient of $\log n$ is a scaling exponent of volume. At the truth $0$, $K(w)=\frac12\abs w^2$, and the prior mass of the parameters within $\eps$ of the truth's loss is the area of a disc of radius $\sqrt{2\eps}$ times the density $\frac14$: $V(\eps)=\frac\pi2\eps$ for $\eps\le\frac12$. By Fubini's theorem $\int\varphi e^{-nK}=\int_0^\infty ne^{-nt}V(t)\dd t=\frac\pi{2n}+O(e^{-n/2})$, so the population free energy is $\bar F(n)=-\log\int\varphi e^{-nK}=\log n-\log\frac\pi2+O(e^{-n/2})$. Each direction in which $K$ grows quadratically contributes a factor $\eps^{1/2}$ to the volume and $\frac12\log n$ to the free energy. This exponent is the \term{learning coefficient}\index{learning coefficient} $\lambda$, which algebraic geometers call the real log canonical threshold of $K$ (the same number; \cref{ch:volume}): $\lambda=1=\frac d2$ for the plane, with multiplicity $m=1$. For the product model, $K=\frac12a^2b^2$ gives $V(\eps)=\sqrt{2\eps}\,(1+\frac12\log\frac1{2\eps})$: the exponent of a single parameter, and a logarithm.
+
+\section{The theorem: Laplace's approximation of the free energy}\label{sec:regular:laplace}
+
+The regular plane is typical: for every regular truth the energy is quadratic where it matters, and the free energy is a Gaussian integral up to a vanishing error. We write $\ell(x,w)=\log p(x\mid w)$, $\abs\cdot$ for the Euclidean norm, and $\norm\cdot$ for the operator norm.
+
+\begin{assumption}[Regularity]\label{ass:regular:laplace}
+The data $X_1,X_2,\dots$ are independent with law $q$, and:
+\begin{enumerate}[label=(R\arabic*),leftmargin=*]
+\item $W\subset\R^d$ is compact, $\varphi$ is a probability density on $W$, and for $q$-almost every $x$ the map $w\mapsto\ell(x,w)$ is continuous on $W$.
+\item $L$ is finite and continuous on $W$ and has a unique minimizer $w_0$, which lies in the interior of $W$.
+\item $\sup_{w\in W}\abs{L_n(w)-L(w)}\to0$ in probability.
+\item For some $r_0>0$ the ball $U=\{w:\abs{w-w_0}<r_0\}$ lies in $W$, and for $q$-almost every $x$ the map $w\mapsto\ell(x,w)$ is three times continuously differentiable on $U$, with all partial derivatives of orders one to three bounded on $U$ by $M(x)$, where $\E_q[M(X)]<\infty$.
+\item The Hessian $J=\nabla^2L(w_0)$ is positive definite.
+\item $\varphi$ is continuous at $w_0$ and $\varphi(w_0)>0$.
+\item (For \cref{cor:regular:bic}(ii) only.) $\E_q\abs{\nabla\ell(X,w_0)}^2<\infty$.
+\end{enumerate}
+\end{assumption}
+
+Conditions (R2) and (R5) say that the truth is regular, and (R3), a \term{uniform law of large numbers}\index{uniform law of large numbers}, holds whenever $w\mapsto\ell(x,w)$ is continuous and $\E_q\sup_W\abs{\ell(X,w)}<\infty$ (\cref{ex:regular:ulln}). Under (R4), dominated convergence allows us to differentiate under the expectation on $U$, so $\nabla L(w_0)=-\E\nabla\ell(X,w_0)=0$ and $J=-\E\nabla^2\ell(X,w_0)$.\sidenote{Statisticians call $J$ the expected and $J_n=\nabla^2L_n(\hat w)$ the observed information. In the realizable case the information identity $\E[\nabla\ell\,\nabla\ell^\top]=-\E[\nabla^2\ell]$ makes $J$ the Fisher information.} A minimizer $\hat w$ of $L_n$ over $W$ exists by (R1); when there are several, every statement holds for each.\sidenote{We ignore measurability: $L_n$ is continuous, so the infima over compact sets that define our events are measurable.}
+
+\begin{theorem}[The Laplace approximation of the free energy]\label{thm:regular:laplace}\index{Laplace approximation}
+Under (R1)--(R6), every minimizer $\hat w$ of $L_n$ over $W$ satisfies
+\begin{equation}\label{eq:regular:laplace}
+F_n=nL_n(\hat w)+\frac d2\log\frac n{2\pi}+\frac12\log\det J-\log\varphi(w_0)+o_p(1),
+\end{equation}
+and the same holds with $J$ replaced by the \term{observed information}\index{observed information} $J_n=\nabla^2L_n(\hat w)$ and $\varphi(w_0)$ by $\varphi(\hat w)$.
+\end{theorem}
+
+The proof cuts $W$ into the three regions of \cref{fig:regular:regions}, and it needs to know how $L_n$ behaves near its minimum.\sidenote{The inner radius $\delta_n=n^{-a}$ needs $n\delta_n^2\to\infty$, so that the inner ball holds the whole Gaussian, and $n\delta_n^3\to0$, so that the cubic term is negligible on it: every $a$ strictly between $\frac13$ and $\frac12$ works, and we take $a=\frac25$.}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=1cm,y=1cm,font=\footnotesize]
+\fill[regularwash] (0,0) rectangle (4.4,2.7);
+\draw[vellumline,line width=0.5pt] (0,0) rectangle (4.4,2.7);
+\fill[singular!12] (1.75,1.35) circle (1.05);
+\fill[singular!38] (1.75,1.35) circle (0.5);
+\draw[singular,line width=0.6pt] (1.75,1.35) circle (1.05);
+\draw[singular,line width=0.6pt] (1.75,1.35) circle (0.5);
+\draw[singular!80!black,line width=0.4pt,-{Stealth[length=1.4mm]}] (1.75,1.35) -- ++(-30:1.03) node[pos=0.8,anchor=north east,inner sep=1pt] {$r$};
+\fill[ink] (1.75,1.35) circle (1.2pt);
+\node[anchor=north east,inner sep=1pt] at (1.75,1.35) {$\hat w$};
+\fill[regular] (1.93,1.52) circle (1.2pt);
+\node[anchor=west,inner sep=1.5pt,text=regular] at (1.93,1.56) {$w_0$};
+\node[font=\footnotesize\bfseries] at (1.48,1.62) {I};
+\node[font=\footnotesize\bfseries] at (1.75,2.13) {II};
+\node[font=\footnotesize\bfseries] at (3.75,2.2) {III};
+\node[anchor=south east,text=muted] at (4.4,0) {$W$};
+\node[anchor=west,align=left] at (4.75,1.35) {\textbf{I}\enspace $\abs{w-\hat w}<\delta_n$: a Gaussian integral\\[0.8ex]
+  \textbf{II}\enspace $\delta_n\le\abs{w-\hat w}<r$: a Gaussian tail\\[0.8ex]
+  \textbf{III}\enspace $\abs{w-\hat w}\ge r$: at most $e^{-n\eta}$};
+\end{tikzpicture}
+\caption{The three regions of the proof of \cref{thm:regular:laplace}, with $\delta_n=n^{-2/5}$ and a fixed radius $r$.}\label{fig:regular:regions}
+\end{figure}
+
+\begin{lemma}[The empirical loss near its minimum]\label{lem:regular:local}
+Assume (R1)--(R5), let $\hat w$ minimize $L_n$ over $W$, and let $\mu>0$ be the smallest eigenvalue of $J$. There is $r_1>0$ such that for every $r\in(0,r_1]$ there are $\eta>0$ and events $\Omega_n$ with $\Prob(\Omega_n)\to1$ on which:
+\begin{enumerate}
+\item $\abs{\hat w-w_0}<r/2$ and $\nabla L_n(\hat w)=0$;
+\item $L_n(w)-L_n(\hat w)\ge\eta$ for every $w\in W$ with $\abs{w-\hat w}\ge r$;
+\item the eigenvalues of $J_n=\nabla^2L_n(\hat w)$ are at least $\mu/2$, and for $\abs{w-\hat w}<r$ we have $L_n(w)-L_n(\hat w)\ge\frac\mu4\abs{w-\hat w}^2$ and
+\[
+\bigl|L_n(w)-L_n(\hat w)-\tfrac12(w-\hat w)^\top J_n(w-\hat w)\bigr|\le C\abs{w-\hat w}^3,
+\]
+with the constant $C=\frac16d^{3/2}(\E M+1)$.
+\end{enumerate}
+Moreover $\hat w\to w_0$ and $J_n\to J$ in probability, and $\sup_{\abs{w-w_0}\le r_n}\norm{\nabla^2L_n(w)-J}\to0$ in probability whenever $r_n\to0$ in probability.
+\end{lemma}
+
+\begin{proof}
+The plan is to get (i) and (ii) from uniform convergence and identifiability, and (iii) from Taylor's theorem with the envelope $M$. Let $\bar M_n=\frac1n\sum_iM(X_i)$, which tends to $\E M$ almost surely. On the convex set $U$ the third derivatives of $L_n$ are bounded by $\bar M_n$, so each entry of $\nabla^2L_n$ changes by at most $\sqrt d\,\bar M_n\abs{w'-w}$ between points $w,w'$ of $U$; as the operator norm is at most $d$ times the largest entry,
+\begin{equation}\label{eq:regular:lip}
+\norm{\nabla^2L_n(w')-\nabla^2L_n(w)}\le d^{3/2}\bar M_n\abs{w'-w}\qquad(w,w'\in U).
+\end{equation}
+Taylor's theorem with the Lagrange remainder bounds the remainder of order three of $L_n$ at $w$ by $\frac16\bar M_n(\sum_j\abs{w'_j-w_j})^3\le\frac16d^{3/2}\bar M_n\abs{w'-w}^3$. By the strong law, whose hypothesis is (R4), $\nabla^2L_n(w_0)=-\frac1n\sum_i\nabla^2\ell(X_i,w_0)\to J$ almost surely.
+
+Choose $r_1\le r_0/2$ with $2d^{3/2}(\E M+1)r_1\le\mu/4$, and let $r\le r_1$. On the event $\{\bar M_n\le\E M+1\}\cap\{\norm{\nabla^2L_n(w_0)-J}\le\mu/4\}$, \eqref{eq:regular:lip} gives $\norm{\nabla^2L_n(w)-J}\le\mu/2$ on $B(w_0,2r)$, so every eigenvalue of $\nabla^2L_n$ there is at least $\mu/2$. The set $W_r=\{w\in W:\abs{w-w_0}\ge r/2\}$ is compact and, by (R2), $L$ has on it a minimum larger than $L(w_0)$, which we write $L(w_0)+3\eta$. Let $\Omega_n$ be the intersection of the event above with $\{\sup_W\abs{L_n-L}<\eta\}$; then $\Prob(\Omega_n)\to1$ by (R3). On $\Omega_n$, for every $w\in W_r$,
+\[
+L_n(w)>L(w)-\eta\ge L(w_0)+2\eta>L_n(w_0)+\eta\ge L_n(\hat w)+\eta .
+\]
+So $\hat w\notin W_r$, that is, $\abs{\hat w-w_0}<r/2$; then $\hat w$ is interior to $U$ and $\nabla L_n(\hat w)=0$, which is (i). If $\abs{w-\hat w}\ge r$, then $w\in W_r$, and the display gives (ii). For (iii), let $\abs{w-\hat w}<r$, so that the segment from $\hat w$ to $w$ lies in $B(w_0,2r)$, and let $\tilde H=\int_0^1(1-t)\nabla^2L_n(\hat w+t(w-\hat w))\dd t$, whose eigenvalues are at least $\frac12\cdot\frac\mu2$. Taylor's theorem with integral remainder and $\nabla L_n(\hat w)=0$ give
+\[
+L_n(w)-L_n(\hat w)=(w-\hat w)^\top\tilde H(w-\hat w)\ge\frac\mu4\abs{w-\hat w}^2,
+\]
+and the bound on the remainder of order three at $\hat w$, with $\bar M_n\le\E M+1$, gives the second inequality. Finally, (i) for every $r\le r_1$ gives $\hat w\to w_0$; on $\abs{w-w_0}\le r_n<r_0$, \eqref{eq:regular:lip} gives $\norm{\nabla^2L_n(w)-J}\le\norm{\nabla^2L_n(w_0)-J}+d^{3/2}\bar M_nr_n\to0$, and $r_n=\abs{\hat w-w_0}$ gives $J_n\to J$.
+\end{proof}
+
+\begin{proof}[Proof of \cref{thm:regular:laplace}]
+The plan is to cut $W$ into the three regions of \cref{fig:regular:regions} and to show that the integral
+\[
+Z_n=\int_W\varphi(w)e^{-n(L_n(w)-L_n(\hat w))}\dd w
+\]
+satisfies $n^{d/2}Z_n\to(2\pi)^{d/2}\varphi(w_0)\det(J)^{-1/2}$ in probability. Since $F_n=nL_n(\hat w)-\log Z_n$ and the limit is positive, taking logarithms then gives \eqref{eq:regular:laplace}.
+
+By (R6) there is $r_\varphi>0$ with $\varphi\le2\varphi(w_0)$ on $B(w_0,r_\varphi)$. Fix $r\le\min(r_1,r_\varphi/2)$ in \cref{lem:regular:local}, with its $\eta$, $C$ and $\Omega_n$, and let $\delta_n=n^{-2/5}$, so that $n\delta_n^2=n^{1/5}\to\infty$ and $n\delta_n^3=n^{-1/5}\to0$. Let $\xi\sim\Normal(0,I_d)$. We work on $\Omega_n$, with $n$ so large that $\delta_n<r$.
+
+\emph{Region III, $\abs{w-\hat w}\ge r$.} By \cref{lem:regular:local}(ii) the integrand is at most $\varphi(w)e^{-n\eta}$, so this part of $Z_n$ is at most $e^{-n\eta}=o(n^{-d/2})$.
+
+\emph{Region II, $\delta_n\le\abs{w-\hat w}<r$.} Here $\abs{w-w_0}<\frac32r<r_\varphi$, and \cref{lem:regular:local}(iii) bounds the integrand by $2\varphi(w_0)e^{-n\mu\abs{w-\hat w}^2/4}$, which is a Gaussian density of covariance $\frac2{n\mu}I$ times $2\varphi(w_0)(4\pi/n\mu)^{d/2}$. So this part of $Z_n$ is at most $2\varphi(w_0)(4\pi/n\mu)^{d/2}\Prob(\abs\xi\ge\delta_n\sqrt{n\mu/2})$, which is $o(n^{-d/2})$ because $\delta_n\sqrt n\to\infty$.
+
+\emph{Region I, $\abs{w-\hat w}<\delta_n$.} By \cref{lem:regular:local}(iii), $n(L_n(w)-L_n(\hat w))$ differs from $\frac n2(w-\hat w)^\top J_n(w-\hat w)$ by at most $\rho_n=Cn\delta_n^3\to0$. Let $\omega_n$ be the largest value of $\abs{\varphi(v)-\varphi(w_0)}$ for $\abs{v-w_0}\le\delta_n+\abs{\hat w-w_0}$; it tends to zero in probability by (R6), since $\hat w\to w_0$. So this part of $Z_n$ lies between $(\varphi(w_0)\mp\omega_n)e^{\mp\rho_n}\gamma_n$, where by the Gaussian integral
+\[
+\gamma_n=\int_{\abs u<\delta_n}e^{-nu^\top J_nu/2}\dd u=\Bigl(\frac{2\pi}n\Bigr)^{d/2}\frac{1-\Prob\bigl(\abs{J_n^{-1/2}\xi}\ge\delta_n\sqrt n\bigr)}{\det(J_n)^{1/2}} .
+\]
+The eigenvalues of $J_n$ are at least $\mu/2$, so $\abs{J_n^{-1/2}\xi}\le\abs\xi\sqrt{2/\mu}$ and the probability tends to zero; with $J_n\to J$, $n^{d/2}\gamma_n\to(2\pi)^{d/2}\det(J)^{-1/2}$ in probability.
+
+Adding the three parts gives the plan's limit. For the second form of the theorem, $\log\det J_n\to\log\det J$ and $\log\varphi(\hat w)\to\log\varphi(w_0)$ in probability, by \cref{lem:regular:local} and (R6).
+\end{proof}
+
+Every hypothesis was used once: compactness (R1) gave $\hat w$; uniform convergence and identifiability (R2, R3) disposed of region~III; smoothness with an integrable envelope (R4) made the energy quadratic; the invertible Hessian (R5) made the quadratic a Gaussian; the interior truth kept the ball $B(w_0,2r)$, and with it the Gaussian, inside $W$; and the prior (R6) produced $\varphi(w_0)$. The theorem is Laplace's method for a fixed function (\cref{thm:toolkit:laplace}), made random; the lemma controls how $L_n$ changes with $n$. If $\varphi(w_0)=0$, the right side of \eqref{eq:regular:laplace} is infinite and the free energy grows faster than $\frac d2\log n$; if $w_0$ is on the boundary, region~I is cut and a random term survives (\cref{ex:regular:boundary}). The factor $\varphi(\hat w)(2\pi/n)^{d/2}\det(J_n)^{-1/2}$, the prior density at the fit times the volume of the posterior, multiplies the best-fit likelihood $e^{-nL_n(\hat w)}$ in the evidence; MacKay calls it the \term{Occam factor}\index{Occam factor} \parencite[Chapter~28]{MacKay2003}. For a regular truth it shrinks like $n^{-1/2}$ per parameter.\sidenote{For one parameter with a uniform prior of width $\sigma_w$, MacKay's Occam factor is $\sigma_{w\mid D}/\sigma_w$, the posterior width over the prior width.}
+
+\begin{corollary}[BIC and the regular answer]\label{cor:regular:bic}\index{Bayesian information criterion}
+Assume (R1)--(R6).
+\begin{enumerate}
+\item With $\BIC=nL_n(\hat w)+\frac d2\log n$, $F_n-\BIC\to\frac12\log\det J-\log\varphi(w_0)-\frac d2\log(2\pi)$ in probability.
+\item If also (R7) holds, let $\cI=\E_q[\nabla\ell(X,w_0)\nabla\ell(X,w_0)^\top]$ and $Z\sim\Normal(0,\cI)$. Then $\sqrt n(\hat w-w_0)\to\Normal(0,J^{-1}\cI J^{-1})$ and $n(L_n(w_0)-L_n(\hat w))\to\frac12Z^\top J^{-1}Z$ in law, and, also in law,
+\[
+F_n-nL_n(w_0)-\tfrac d2\log\tfrac n{2\pi}-\tfrac12\log\det J+\log\varphi(w_0)\to-\tfrac12Z^\top J^{-1}Z.
+\]
+\item If moreover the truth is realizable and $\cI=J$, then $Z^\top J^{-1}Z\sim\chi^2_d$, $nL_n(w_0)=nS_n$, and $F_n-nS_n=\frac d2\log n+O_p(1)$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+Part (i) is \cref{thm:regular:laplace} rearranged. For (ii) the plan is to linearize $\nabla L_n$ around $w_0$ and then expand $L_n$ around $\hat w$. By (R4) the score has mean $\E\nabla\ell(X,w_0)=-\nabla L(w_0)=0$, so by (R7) and the central limit theorem $\sqrt n\,\nabla L_n(w_0)\to\Normal(0,\cI)$ in law. On $\Omega_n$, $\nabla L_n(\hat w)=0$, and the fundamental theorem of calculus gives $0=\nabla L_n(w_0)+\bar H_n(\hat w-w_0)$ with $\bar H_n=\int_0^1\nabla^2L_n(w_0+t(\hat w-w_0))\dd t\to J$ in probability (\cref{lem:regular:local}). By Slutsky's lemma (\cref{def:toolkit:convergence}), $\sqrt n(\hat w-w_0)=-\bar H_n^{-1}\sqrt n\,\nabla L_n(w_0)$ converges in law to $J^{-1}Z$. Taylor's theorem around $\hat w$ gives $L_n(w_0)-L_n(\hat w)=(w_0-\hat w)^\top\tilde H_n(w_0-\hat w)$ with $\tilde H_n=\int_0^1(1-t)\nabla^2L_n(\hat w+t(w_0-\hat w))\dd t\to\frac12J$, so $n(L_n(w_0)-L_n(\hat w))$ converges in law to $\frac12(J^{-1}Z)^\top J(J^{-1}Z)=\frac12Z^\top J^{-1}Z$; subtracting it from \eqref{eq:regular:laplace} gives the last statement. For (iii), $J^{-1/2}Z\sim\Normal(0,I_d)$ when $\cI=J$.
+\end{proof}
+
+The limit in (ii) is random: $F_n-nS_n-\frac d2\log n$ converges in law, not in probability, and its fluctuation is the likelihood ratio of the fitted model against the truth.\sidenote{In the realizable case with $\cI=J$, part (ii) contains Wilks's theorem for a simple hypothesis: twice the log-likelihood ratio, $2n(L_n(w_0)-L_n(\hat w))$, tends to $\chi^2_d$.} Every free energy theorem of the book has this form, with $\frac d2$ replaced by the learning coefficient (\cref{thm:coefficient:free,thm:freeenergy:main}). Taking expectations in (iii), and granting the uniform integrability that convergence in law does not supply,
+\begin{equation}\label{eq:regular:meanF}
+\E[F_n-nS_n]=\frac d2\log\frac n{2\pi e}+\frac12\log\det J-\log\varphi(w_0)+o(1),
+\end{equation}
+which is $\log n-\log\frac{\pi e}2$ for the regular plane, the slate dashed line of \cref{fig:prologue:free}.
+
+\paragraph{The posterior and the choice between models.} The same three regions show that the posterior law of $\sqrt n(w-\hat w)$ converges in total variation to $\Normal(0,J^{-1})$, in probability (\cref{ex:regular:bvm}). The classical statement asks less. In the \term{Bernstein--von Mises theorem}\index{Bernstein--von Mises theorem} of \textcite[Theorem~10.1]{vanderVaart1998}, the data are independent with law $P_{\theta_0}$, $\theta_0$ an interior point of $\Theta\subset\R^d$, and the model is dominated and differentiable in quadratic mean at $\theta_0$ with nonsingular Fisher information $I_{\theta_0}$; for every $\eps>0$ there are tests $\phi_n$ with $P^n_{\theta_0}\phi_n\to0$ and $\sup_{\abs{\theta-\theta_0}\ge\eps}P^n_\theta(1-\phi_n)\to0$; and the prior has a Lebesgue density continuous in a neighborhood of $\theta_0$ and positive at $\theta_0$. Then the posterior law of $\sqrt n(\theta-\theta_0)$ is within $o_p(1)$ in total variation of $\Normal(\Delta_n,I_{\theta_0}^{-1})$, with $\Delta_n=I_{\theta_0}^{-1}n^{-1/2}\sum_i\dot\ell_{\theta_0}(X_i)$ the normalized score. The hypothesis that fails in a singular model is the nonsingular information: wherever the true parameters form a curve the Fisher information is singular (\cref{prop:singular:fisher}), and the posterior of the product model spreads uniformly over scales (\cref{thm:singular:scales}).
+
+\Textcite{Schwarz1978} derived his criterion as the leading terms of the asymptotic expansion of the Bayes solution to the problem of choosing among models of different dimensions, terms that do not depend on the prior.\sidenote{Schwarz's paper fills four pages of the \emph{Annals of Statistics}.} His setting, as \textcite{Haughton1988} describes it, was independent observations from an exponential family with models that are affine subspaces of the natural parameter space. Haughton extended the expansion, with its next term, to models that are smooth curved submanifolds, and proved that the criterion made of the three leading terms selects the true model with probability tending to one. Under our hypotheses \cref{cor:regular:bic} gives the consistency of Bayesian model choice and of BIC: a model with a larger population loss pays order $n$ more free energy, and of two models that contain the truth the one with $d_2-d_1$ more parameters pays $\frac{d_2-d_1}2\log n+O_p(1)$ more (\cref{ex:regular:nested}). Akaike's criterion, on the book's per-sample scale $\AIC=L_n(\hat w)+\frac dn$,\index{Akaike information criterion} is not consistent: between nested true models $2n(\AIC^{(1)}-\AIC^{(2)})$ is the likelihood-ratio statistic minus $2(d_2-d_1)$, the statistic tends to $\chi^2_{d_2-d_1}$ in law \parencite{Wilks1938}, and AIC picks the larger model with probability tending to $\Prob(\chi^2_{d_2-d_1}>2(d_2-d_1))$, $0.157$ for one extra parameter. AIC is built for prediction, the subject of the next section.
+
+\section{The theorem: the generalization error is \texorpdfstring{$\frac d{2n}$}{d/2n}}\label{sec:regular:aic}
+
+\begin{theorem}[The generalization error of a regular model]\label{thm:regular:aic}
+\begin{enumerate}
+\item Let $x\sim\Normal(0,I_d)$ and $y=w_0^\top x+\varepsilon$ with $\varepsilon\sim\Normal(0,1)$ independent of $x$ and $w_0\in\R^d$, and let the model be $y=w^\top x+\Normal(0,1)$ with the prior $\Normal(0,\tau^2I_d)$, $0<\tau<\infty$. Then $n(\E[G_n]-S)\to\frac d2$.
+\item Let the truth be realizable by a model that satisfies the conditions (A.1)--(A.3) of \textcite{Watanabe2010a}: $W$ is compact and defined by analytic inequalities, the prior is a smooth positive function times a nonnegative analytic one, and $w\mapsto\log(q(x)/p(x\mid w))$ extends to an analytic map from a complex neighborhood of $W$ into $L^s(q)$, $s\ge6$, with moment conditions on its supremum. If the truth is regular and $\varphi(w_0)>0$, then $\E[G_n]-S=\frac d{2n}+o(\frac1n)$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}[Proof of (i)]
+The plan is to compute the expectation over the noise exactly, as in \cref{comp:regular:flat}, and to pass to the limit over the inputs with \cref{lem:regular:wishart}. Write $\kappa=\tau^{-2}$, $P_n=S_{xx}+\kappa I$, $s(x)=x^\top P_n^{-1}x$, so that \eqref{eq:regular:Ggauss} holds with $m_n=P_n^{-1}S_{xy}$.
+
+\emph{The noise.} Since $P_n^{-1}S_{xx}=I-\kappa P_n^{-1}$, we have $m_n-w_0=P_n^{-1}\sum_ix_i\varepsilon_i-\kappa P_n^{-1}w_0$, whose second-moment matrix given the inputs is $P_n^{-1}-\kappa P_n^{-2}+\kappa^2P_n^{-1}w_0w_0^\top P_n^{-1}$. In \eqref{eq:regular:Ggauss} the term $s(x)$ then cancels as in \cref{comp:regular:flat}, and
+\[
+\E\bigl[G_n-S\bigm|x_1,\dots,x_n\bigr]=\tfrac12\E_x\log\bigl(1+s(x)\bigr)+\E_x\biggl[\frac{\kappa^2(x^\top P_n^{-1}w_0)^2-\kappa\abs{P_n^{-1}x}^2}{2(1+s(x))}\biggr].
+\]
+\emph{Bounds.} For $s\ge0$, $s-\frac{s^2}2\le\log(1+s)\le s$. For a positive semidefinite $B$, $\E_x[x^\top Bx]=\tr B$ and $\E_x[(x^\top Bx)^2]=(\tr B)^2+2\tr(B^2)\le3(\tr B)^2$ (diagonalize $B$ and use $\E Z^4=3$, \cref{lem:toolkit:gaussian}). With $B=P_n^{-1}$, $(x^\top P_n^{-1}w_0)^2\le\abs{P_n^{-1}x}^2\abs{w_0}^2$ and $\E_x\abs{P_n^{-1}x}^2=\tr(P_n^{-2})\le(\tr P_n^{-1})^2$, these give
+\[
+\Bigl|\E\bigl[G_n-S\bigm|x_1,\dots,x_n\bigr]-\tfrac12\tr P_n^{-1}\Bigr|\le c\,(\tr P_n^{-1})^2,\qquad c=\tfrac34+\tfrac12(\kappa^2\abs{w_0}^2+\kappa).
+\]
+\emph{The limit.} It remains to show that $n\E[\tr P_n^{-1}]\to d$ and $n\E[(\tr P_n^{-1})^2]\to0$. Almost surely $S_{xx}/n\to I$, so $n\tr P_n^{-1}\to d$ and $n(\tr P_n^{-1})^2\to0$. Since $P_n\succeq S_{xx}$ and $P_n\succeq\kappa I$, both are dominated: $0\le n\tr P_n^{-1}\le g_n$ and $0\le n(\tr P_n^{-1})^2\le\frac d\kappa g_n$ with $g_n=n\tr S_{xx}^{-1}$, where $g_n\to d$ almost surely and $\E g_n=\frac{nd}{n-d-1}\to d$ by \cref{lem:regular:wishart}(ii). If $0\le f_n\le g_n$, $f_n\to f$ and $g_n\to g$ almost surely, and $\E g_n\to\E g<\infty$, then $\E f_n\to\E f$, by Fatou's lemma applied to $f_n$ and to $g_n-f_n$. Applied twice, this gives the two limits.
+\end{proof}
+
+\begin{proofsketch}[Proof sketch of (ii)]
+Under (A.1)--(A.3), \textcite{Watanabe2010a} proves that $n\E[G_n-S]$ converges (Theorem~1) and that the limit is the learning coefficient $\lambda$ for the posterior at inverse temperature $1$ (Corollary~2); for a regular truth with $w_0$ interior and $\varphi(w_0)>0$, $\lambda=\frac d2$ \parencite[Lemma~3]{Watanabe2013}. This is \cref{thm:generalization:main} with $\lambda=\frac d2$. The mechanism, as a heuristic: let $\dot\ell=\nabla\ell(\cdot,w_0)$, $\ddot\ell=\nabla^2\ell(\cdot,w_0)$, and let the posterior mean and covariance of $u=w-w_0$ be $\mu_n=O_p(n^{-1/2})$ and $\Sigma_n=O_p(n^{-1})$. Expanding $e^{\ell(x,w)-\ell(x,w_0)}$ to second order and averaging over the posterior, $p^*/q=1+r$ with $r=\mu_n^\top\dot\ell+\frac12\tr[(\ddot\ell+\dot\ell\dot\ell^\top)(\Sigma_n+\mu_n\mu_n^\top)]+O_p(n^{-3/2})$. Then $G_n-S=-\E_q\log(1+r)=-\E_qr+\frac12\E_qr^2+O_p(n^{-3/2})$, where $\E_qr=0$ exactly, as $p^*$ and $q$ are densities, and $\E_qr^2=\mu_n^\top J\mu_n+O_p(n^{-3/2})$, as $\E_q[\dot\ell\dot\ell^\top]=J$. The posterior spread has dropped out: $G_n-S=\frac12\mu_n^\top J\mu_n+O_p(n^{-3/2})$, and since $\mu_n$ differs from $\hat w-w_0$ by $O_p(\frac1n)$, \cref{cor:regular:bic} gives $n(G_n-S)\to\frac12\chi^2_d$ in law, of mean $\frac d2$. Omitted is the control of the remainders and of the posterior's tails in expectation, which Watanabe obtains from his general theory \parencite[Chapter~6]{Watanabe2009}; \textcite[Chapter~4]{Watanabe2018} treats the regular case.
+\end{proofsketch}
+
+\paragraph{Akaike's penalty.} For the least-squares plug-in, step~4 of \cref{comp:regular:gauss} gives $L_n(\hat w)-S_n=-\frac1{2n}\chi^2_d$, so with \cref{comp:regular:flat} the training loss underestimates the test loss by $\frac d{2(n-d-1)}+\frac d{2n}=\frac dn+O(n^{-2})$. In every regular realizable model the expansions of \cref{cor:regular:bic} give $n(L(\hat w)-S)$ and $n(S_n-L_n(\hat w))$ the same limit $\frac12\chi^2_d$, so the gap is $\frac dn$ to first order, granting uniform integrability. Correcting for it is the criterion $\AIC=L_n(\hat w)+\frac dn$, which \textcite{Akaike1998} introduced in 1973 as an estimate of the expected log-likelihood of the fitted model.\sidenote{Software reports AIC on the deviance scale, $-2\log(\text{maximum likelihood})+2d$, which is $2n$ times the book's per-sample value.} The Bayes predictive has the same gap between its generalization and training losses \parencite{Watanabe2010a}, and WAIC estimates it without counting parameters (\cref{ch:waic}).
+
+\paragraph{The free energy and the generalization error are one fact.} The predictive density $p^*$ of the first $n$ observations satisfies $F_{n+1}-F_n=-\log p^*(X_{n+1})$, the ratio of the two marginal likelihoods; taking expectations, $\E[G_n]=\E[F_{n+1}]-\E[F_n]$, and summing, $\E[F_n-nS_n]=\sum_{k<n}(\E[G_k]-S)$. So $\frac d{2n}$ is the increment of $\frac d2\log n$, although an expansion with an $o(1)$ error cannot be differenced to prove it, which is why \cref{thm:regular:aic} needs its own proof. \Textcite{ClarkeBarron1990} proved the cumulative statement: the relative entropy between the distribution of $n$ observations and the Bayes mixture, which is $\E[F_n-nS_n]$, is $\frac d2\log n+c+o(1)$, with a constant $c$ that they identify and that depends only on the prior density and the Fisher information at the truth; \eqref{eq:regular:meanF} has exactly this form.
+
+\section{Measuring it}\label{sec:regular:measuring}
+
+Two scripts measure the two promises on three regular models. For the regular line and the regular plane, at the truth $0$ with the uniform prior on $[-1,1]^d$, every quantity of \cref{sec:regular:byhand} is exact, (R1)--(R7) hold because the log-likelihood is quadratic in $w$, and the measurement checks those computations and the limits of \cref{cor:regular:bic,thm:regular:aic}. The third model tests the theorem where the Laplace approximation is not exact: the normal mixture $(1-a)\Normal(0,1)+a\Normal(b,1)$ of \cref{ch:waic}, at the truth $(\frac12,2)$, with the prior uniform on $[0,1]\times[-4,4]$ (a wider range of $b$ than the running one, to keep the posterior inside the box). At this truth the mixture is regular: distinct Gaussian translates are linearly independent, so only $(\frac12,2)$ gives the truth; quadrature gives $J=\bigl(\begin{smallmatrix}2.20&0.45\\0.45&0.32\end{smallmatrix}\bigr)$, with eigenvalues $0.22$ and $2.30$; and near $(\frac12,2)$ the derivatives of the log-likelihood up to order three are bounded by a multiple of $(1+\abs x)^3$. At the truth $\Normal(0,1)$ of \cref{ch:waic} the same model is singular, since every parameter with $a=0$ or $b=0$ is then true: regularity belongs to the truth.
+
+\paragraph{The free energy.} The script \texttt{01-regular-free.py} computes $F_n$ by quadrature, for $200$ data sets at nine sizes from $10^2$ to $10^6$ for the linear models and for $100$ data sets at five sizes up to $10^4$ for the mixture (on a $20\times20$ grid in coordinates whitened by the observed information, which agrees with finer grids to $3\cdot10^{-7}$). In \cref{fig:regular:free}(a) the least-squares slopes of the means against $\log n$ are $0.499$, $0.998$ and $0.992$, against $\frac d2=\frac12$, $1$ and $1$, and $22$ of the $23$ intervals contain the prediction \eqref{eq:regular:meanF}; the miss (the plane at $n=10^{4.5}$, by $2.6$ standard errors) is what one should expect of one interval in twenty. For the linear models, $F_n$ minus the Laplace approximation is $-\log\Pi_n$, at most $3\cdot10^{-9}$ in these runs. For the mixture the error is real (\cref{fig:regular:free}(b)): $n$ times its mean is $0.61$, $0.56$, $0.59$, $0.59$ and $0.596$ at $n=10^2,10^{2.5},\dots,10^4$, against $0.594$ from the next term of Laplace's method (\cref{ex:regular:error}). The theorem's $o_p(1)$ is an $O(1/n)$ here, with the predicted coefficient.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},splot,
+  width=0.47\linewidth,height=0.34\linewidth,xmode=log,xlabel={sample size $n$}]
+\nextgroupplot[ylabel={$\E[F_n-nS_n]$},ymin=0,ymax=13.5,xmin=60,xmax=1.7e6,
+  title={(a) the free energy},legend pos=north west,legend style={font=\scriptsize}]
+\addplot[theory,forget plot] table[x=n,y=planeexact] {figures/data/01-regular-free.dat};
+\addplot[theory,forget plot] table[x=n,y=lineexact] {figures/data/01-regular-free.dat};
+\addplot[regularpred,forget plot] table[x=n,y=planepred] {figures/data/01-regular-free.dat};
+\addplot[regularpred,forget plot] table[x=n,y=linepred] {figures/data/01-regular-free.dat};
+\addplot[regularpred,forget plot] table[x=n,y=mixpred] {figures/data/01-regular-free.dat};
+\addplot[measured,ebars] table[x=n,y=plane,y error plus=planehi,y error minus=planelo] {figures/data/01-regular-free.dat};
+\addplot[measured2,ebars] table[x=n,y=mix,y error plus=mixhi,y error minus=mixlo] {figures/data/01-regular-free.dat};
+\addplot[measured3,ebars] table[x=n,y=line,y error plus=linehi,y error minus=linelo] {figures/data/01-regular-free.dat};
+\legend{plane ($d=2$),mixture ($d=2$),line ($d=1$)}
+\nextgroupplot[ylabel={$\E[F_n-\text{Laplace}]$},ymode=log,xmin=60,xmax=1.7e4,ymin=2e-5,ymax=2e-2,
+  title={(b) the error of Laplace's approximation}]
+\addplot[regularpred,domain=80:13000,samples=2] {0.5941/x};
+\addplot[measured2,ebars] table[x=n,y=err,y error plus=errhi,y error minus=errlo] {figures/data/01-regular-laplace.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{The free energy of three regular models, by quadrature. (a) The mean of $F_n-nS_n$ for the regular line (squares) and the regular plane (dots), $200$ data sets per point, and for the mixture $(1-a)\Normal(0,1)+a\Normal(b,1)$ at its regular truth $(\frac12,2)$ (circles), $100$ data sets per point, with Student-$t$ $95\%$ intervals. Dashed: the regular prediction \eqref{eq:regular:meanF}, which is $\frac12\log\frac n{2\pi e}+\log2$, $\log\frac n{2\pi e}+\log4$ and $\log\frac n{2\pi e}+\frac12\log\det J+\log8$; the singular theory predicts the same lines, since $\lambda=\frac d2$ and $m=1$. Solid, under the dashed lines: the exact means of the linear models, from the Wishart expectation of $\log\det S_{xx}$, within $0.016$ of the dashed lines. (b) The mean of $F_n$ minus its Laplace approximation with the observed information, for the mixture, with $95\%$ intervals; dashed: the second-order prediction $0.594/n$. Seeds are fixed in \texttt{figures/scripts/01-regular-free.py}.}\label{fig:regular:free}
+\end{fullwidth}
+\end{figure}
+
+\paragraph{The generalization error.} The script \texttt{01-regular-gen.py} averages $n(G_n-S)$ over $2000$ data sets per size for the linear models and over $200$ for the mixture. For the linear models it draws $(S_{xx},S_{xy})$ from their exact joint law (Wishart, and Gaussian given $S_{xx}$; at $n=100$ this agrees with data drawn point by point, $1.009\pm0.043$ against $1.048\pm0.044$, exact $1.010$) and evaluates \eqref{eq:regular:Ggauss} by Gauss--Hermite quadrature, neglecting the posterior mass outside the box, at most $2\cdot10^{-8}$. For the mixture it integrates $q\log(q/p^*)$ with the predictive $p^*$ of the whitened grid. In \cref{fig:regular:gen} all $18$ intervals of the linear models contain the exact values of \cref{comp:regular:flat}; four of the five intervals of the mixture contain $1$, and the fifth, $0.87\pm0.13$ at $n=10^{3.5}$, misses it by $0.006$. Each script runs in one to two minutes.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,height=0.42\linewidth,xmode=log,xlabel={sample size $n$},ylabel={$n(\E[G_n]-S)$},xmin=60,xmax=1.7e6,ymin=0,ymax=1.3,
+  ytick={0,0.5,1},legend columns=3,legend style={font=\footnotesize,at={(0.5,1.03)},anchor=south,/tikz/every even column/.append style={column sep=3mm}}]
+\addplot[theory,forget plot] table[x=n,y=planeexact] {figures/data/01-regular-gen.dat};
+\addplot[theory,forget plot] table[x=n,y=lineexact] {figures/data/01-regular-gen.dat};
+\addplot[regularpred,domain=60:1.7e6,samples=2,forget plot] {1};
+\addplot[regularpred,domain=60:1.7e6,samples=2,forget plot] {0.5};
+\addplot[measured,ebars] table[x=n,y=plane,y error plus=planehi,y error minus=planelo] {figures/data/01-regular-gen.dat};
+\addplot[measured2,ebars] table[x=n,y=mix,y error plus=mixhi,y error minus=mixlo] {figures/data/01-regular-gen.dat};
+\addplot[measured3,ebars] table[x=n,y=line,y error plus=linehi,y error minus=linelo] {figures/data/01-regular-gen.dat};
+\legend{regular plane,{mixture at $(\frac12,2)$},regular line}
+\end{axis}
+\end{tikzpicture}
+\caption{The Bayes generalization error times $n$ for the regular line (squares) and plane (dots), $2000$ data sets per point, and for the mixture at its regular truth (circles), $200$ data sets per point, with Student-$t$ $95\%$ intervals. Dashed: $\frac d2$ (\cref{thm:regular:aic}), which is also the singular theory's $\lambda$. Solid: the exact values \eqref{eq:regular:Gexact}. Seeds are fixed in \texttt{figures/scripts/01-regular-gen.py}.}\label{fig:regular:gen}
+\end{figure}
+
+Nothing in these figures departs from the regular theory, and nothing should: they are the reference from which the bronze curves of later chapters depart. In \cref{ch:coefficient} the product model, with the same two parameters as the regular plane, pays $\frac12\log n-\log\log n$, and in \cref{ch:generalization} the cubic cusp has $n(\E[G_n]-S)\to\frac16$.
+
+\section{The ledger}\label{sec:regular:ledger}
+
+For a regular truth the classical theory keeps its promises, with explicit constants and complete proofs. The free energy is the Laplace approximation up to $o_p(1)$, and each parameter costs $\frac12\log n$ (\cref{thm:regular:laplace,cor:regular:bic}); the posterior is asymptotically normal; Bayesian model choice and BIC are consistent; and each parameter costs $\frac1{2n}$ in the expected generalization error (\cref{thm:regular:aic}), exactly $\frac1{n-1}$ in all for the regular plane with a flat prior. In the language of the rest of the book a regular truth has learning coefficient $\lambda=\frac d2$ and multiplicity $m=1$, and every formula of the singular theory reduces to the regular one.
+
+\ledgercard{the free energy $F_n-nS_n$ and the Bayes generalization error $\E[G_n]-S$}
+{$\frac d2\log n+O_p(1)$ and $\frac d{2n}+o(\frac1n)$: half a unit of $\log n$, and $\frac1{2n}$, per parameter (\cref{thm:regular:laplace,thm:regular:aic})}
+{the same, with $\lambda=\frac d2$ and $m=1$: a regular truth is the special case}
+{the regular plane: $\lambda=1$; $\E[F_n-nS_n]=\log n-\log\frac{\pi e}2+o(1)$; $\E[G_n]-S=\frac1{n-1}$ exactly with a flat prior}
+{slopes $0.499$, $0.998$, $0.992$ of $\E[F_n-nS_n]$ against $\log n$ (line, plane, mixture at a regular truth); $n(\E[G_n]-S)$ at $\frac d2$; Laplace's error $0.594/n$ on the mixture, as predicted}
+{a unique true parameter, interior to $W$, with a positive definite Hessian; smoothness with integrable envelopes; uniform convergence of $L_n$; a prior positive at the truth; $d$ fixed as $n\to\infty$}
+
+\section{Where the theory stops}\label{sec:regular:stops}
+
+\paragraph{What was assumed.} The theorem needs a single true parameter. Networks have many: permuting the hidden units of a layer, or flipping the signs of a $\tanh$ unit's weights, gives finitely many copies of each true parameter, which only lowers the free energy by the logarithm of their number (\cref{ex:regular:copies}); but rescaling the two sides of a ReLU unit, or switching a unit off, gives curves and higher-dimensional sets of true parameters (\cref{ch:singular}), on which the Hessian is singular (\cref{prop:singular:fisher}). The interior truth fails when the truth sits at the edge of the parameter space, such as a variance component equal to zero or a weight at the end of its range; the posterior is then a cut Gaussian and a random term survives in the free energy (\cref{ex:regular:boundary}). ReLU networks are not smooth everywhere, and they are not analytic, as part~(ii) of \cref{thm:regular:aic} requires. The prior must be positive at the truth; a prior that vanishes there changes the exponent of $n$ (\cref{ch:blowups}). The posterior is the exact Bayesian posterior, not a training run. And $d$ is fixed while $n\to\infty$, whereas networks are often trained with more parameters than examples.
+
+\paragraph{Where it breaks.} The classical theory fails in models much simpler than networks, and in networks themselves. For a normal mixture the likelihood-ratio statistic for one component against two does not have the $\chi^2$ limit of \textcite{Wilks1938}: with the means restricted to $[-M,M]$ its limit is governed by the supremum of a Gaussian process over $[-M,M]$, which tends to infinity with $M$ \parencite{Hartigan1985,BrazzaleMameli2024}. With the truth on the boundary the limits are typically mixtures of $\chi^2$ laws \parencite{SelfLiang1987}. For multilayer networks whose truth is a smaller network the likelihood ratio has a larger order, at least $\log n$ with two redundant hidden units \parencite{Fukumizu2003}. On the Bayesian side, \textcite{Watanabe2001a} proved that for nonidentifiable models such as layered networks the free energy is $\lambda\log n-(m-1)\log\log n$ plus a constant, with $2\lambda$ at most the number of parameters, so BIC can only overcharge; \textcite{DrtonPlummer2017} show that BIC's penalty does not follow the large-sample behavior of the marginal likelihood of singular models, and \textcite{AmariEtAl2006} survey how AIC, BIC and MDL fail for multilayer perceptrons and mixtures. The approximation also breaks when the dimension grows: it is not valid when $d$ is comparable with $n$, and \textcite{ShunMcCullagh1995} give an example with $d$ of order $n^{1/2}$ in which its relative error is of order one. In deep learning the Laplace approximation is evaluated at a trained network, whose Hessian is degenerate wherever the network is singular; \textcite{WeiEtAl2023} argue that it is inappropriate for singular models, and \textcite{LotfiEtAl2022} report that the marginal likelihood itself can be negatively correlated with generalization when it is used to compare architectures.
+
+\paragraph{Open problems.} Within its hypotheses the regular theory answers this chapter's questions completely, and its refinements to order $1/n$ (\cref{ex:regular:error}) have long been standard. The open problems begin where the hypotheses fail, and they are the subject of this book. What replaces $\frac d2$ when the Hessian is singular has an answer, the learning coefficient, but computing it for networks of realistic size is open (\cref{ch:catalogue}). Whether a Laplace-type formula built from local information at a trained network can approximate the free energy of a singular model to order $\log n$ is open in general; the singular BIC of \textcite{DrtonPlummer2017} and the local learning coefficient of \cref{ch:llc} are partial answers (\cref{ex:regular:network}).
+
+\begin{exercises}
+\item \consolidation (A uniform law of large numbers.) Let $W$ be compact, $w\mapsto\ell(x,w)$ continuous for every $x$, and $\E\sup_W\abs{\ell(X,w)}<\infty$. Show that $L$ is continuous and $\sup_W\abs{L_n-L}\to0$ almost surely. \hint{for $w\in W$ let $u_\rho$ and $l_\rho$ be the supremum and infimum of $\ell(x,\cdot)$ over the ball of radius $\rho$ around $w$; then $\E[u_\rho-l_\rho]\to0$ as $\rho\to0$; cover $W$ by finitely many such balls and apply the strong law to their $u$'s and $l$'s.}\label{ex:regular:ulln}
+
+\item \consolidation (Posterior normality.) Under (R1)--(R6), show that the total variation distance between the posterior law of $\sqrt n(w-\hat w)$ and $\Normal(0,J^{-1})$ tends to zero in probability. \hint{on region~I of \cref{fig:regular:regions}, the ratio of the posterior density to the density of $\Normal(\hat w,(nJ_n)^{-1})$ is a product of three factors that tend to $1$ uniformly; both laws put vanishing mass outside region~I; and Scheff\'e's lemma compares $\Normal(0,J_n^{-1})$ with $\Normal(0,J^{-1})$.}\label{ex:regular:bvm}
+
+\item \consolidation (Symmetric copies.) Let $g_1,\dots,g_K$ be maps of $W$ onto itself that preserve volume and leave $p(x\mid w)$ and $\varphi$ unchanged, let $W$ be the union of the sets $g_k(W_1)$, which overlap only in null sets, and let (R1)--(R6) hold on $W_1$ for the prior $K\varphi$, with true parameter $w_1$. Show that the free energy is the Laplace approximation \eqref{eq:regular:laplace} at $w_1$ minus $\log K$, up to $o_p(1)$. For the tanh neuron $y=a\tanh(bx)$ at a truth with $a_0b_0\ne0$, the symmetry $(a,b)\mapsto(-a,-b)$ lowers the free energy by $\log2$. Why does this not contradict \cref{thm:regular:laplace}?\label{ex:regular:copies}
+
+\item \consolidation (The volume of a nondegenerate minimum.) Under (R1), (R2) and (R4)--(R6), show that as $\eps\to0$
+\[
+V(\eps)=\int_{K<\eps}\varphi\ \sim\ \frac{\varphi(w_0)(2\pi\eps)^{d/2}}{\Gamma(\frac d2+1)\sqrt{\det J}},
+\]
+and check it against the regular plane. Deduce with \cref{lem:volume:abelian} that $\bar F(n)=\frac d2\log\frac n{2\pi}+\frac12\log\det J-\log\varphi(w_0)+o(1)$, so that a regular truth has $\lambda=\frac d2$ and $m=1$. \hint{near $w_0$, $K$ lies between $\frac12(1\mp\eta)(w-w_0)^\top J(w-w_0)$.}\label{ex:regular:volume}
+
+\item \consolidation\hard (The error term of Laplace's method.) (a) Let $f$ have a unique minimum at an interior point $w^*$ of an interval, with $f''(w^*)>0$, and let $g$ be smooth. With $f_k$, $g_k$ the derivatives at $w^*$, show that $\int e^{-n(f-f(w^*))}g=\sqrt{2\pi/(nf_2)}\,\bigl[g_0+\frac1n\bigl(\frac{g_2}{2f_2}-\frac{g_1f_3}{2f_2^2}-\frac{g_0f_4}{8f_2^2}+\frac{5g_0f_3^2}{24f_2^3}\bigr)+O(n^{-2})\bigr]$. (b) For $n$ tosses of a coin with $k$ heads, the uniform prior and $\hat\theta=k/n$ in a fixed compact subset of $(0,1)$, compute $F_n$ from the Beta integral and show, from (a) and from Stirling's series, that it exceeds the approximation of \cref{thm:regular:laplace} by $\frac1n(\frac{13}{12}-\frac1{12\hat\theta(1-\hat\theta)})+O(n^{-2})$. (c) In $d$ dimensions with a flat prior, show that the excess is $-c/n+O(n^{-2})$ with $c=-\frac18f_{ijkl}H^{ij}H^{kl}+\frac18f_{ijk}f_{lmn}H^{ij}H^{kl}H^{mn}+\frac1{12}f_{ijk}f_{lmn}H^{il}H^{jm}H^{kn}$, summed over repeated indices, $H^{ij}$ the inverse Hessian. This is the prediction $0.594/n$ of \cref{fig:regular:free}(b). \hint{expand $e^{-n(\text{cubic}+\text{quartic})}$ to second order and use the Gaussian moments of orders four and six.}\label{ex:regular:error}
+
+\item \byhand (BIC by hand.) (a) Under the hypotheses of \cref{cor:regular:bic}(ii) for two models, prove that the posterior probability of the model with the smaller population loss, or of the smaller of two models that contain the truth, tends to one. (b) Compare the regular line $y=ax_1$ with the regular plane $y=ax_1+bx_2$, uniform priors, on data from $y=a_0x_1+\varepsilon$, $\abs{a_0}<1$. Neglecting the box probabilities in \eqref{eq:regular:Fbox}, show that $F_n^{\mathrm{plane}}-F_n^{\mathrm{line}}=\frac12\log V-\frac12\chi-\frac12\log(2\pi)+\log2$, where the likelihood-ratio statistic $\chi\sim\chi^2_1$ and $V=S_{22}-S_{12}^2/S_{11}\sim\chi^2_{n-1}$ are independent. Deduce that the posterior prefers the plane with probability $\Prob(\chi^2_1>\log(2V/\pi))$, about $0.042$ at $n=100$ and $0.003$ at $n=10^4$, whereas AIC prefers it with probability $0.157$ at every $n$.\label{ex:regular:nested}
+
+\item \byhand (The ridge prior and the evidence.) In \cref{comp:regular:gauss} let $S_{xx}=nI_d$. Show that $F_n$ is smallest at $\hat\tau^2=\abs{\hat w}^2/d-1/n$ when this is positive and at $\tau=0$ otherwise (MacKay's evidence maximization). At the truth $0$, show that the evidence switches the parameters off with probability $\Prob(\chi^2_d\le d)$, which is $1-e^{-1}\approx0.63$ for $d=2$; at a truth $w_0\ne0$, $\hat\tau^2\to\abs{w_0}^2/d$.\label{ex:regular:ridge}
+
+\item \byhand (A truth on the boundary.) Fit the regular line with the prior uniform on $[0,1]$ to data from $a_0=0$. With $A=\sum_ix_i^2$, the unconstrained $\hat a=\sum_ix_iy_i/A$ and $Z=\hat a\sqrt A\sim\Normal(0,1)$, show that up to exponentially small terms $F_n-nS_n=\frac12\log\frac A{2\pi}-\frac12Z^2-\log\Phi(Z)$ and that the posterior of $\sqrt Aa$ is $\Normal(Z,1)$ cut to $[0,\infty)$. Using that $\Phi(Z)$ is uniform, show that $\E[F_n-nS_n]=\frac12\log\frac n{2\pi}+\frac12+O(\frac1n)$, one unit more than for an interior truth with the same prior density. Which hypothesis fails?\label{ex:regular:boundary}
+
+\item \variation (Unknown noise variance.) Give the regular plane an unknown noise standard deviation $\sigma$, with the prior uniform on $[-1,1]^2\times[\frac12,2]$ and the truth $(0,0,1)$. Show that \cref{ass:regular:laplace} holds with $d=3$ and $J=\diag(1,1,2)$, and that \eqref{eq:regular:meanF} becomes $\frac32\log\frac n{2\pi e}+\frac12\log2+\log6$.\label{ex:regular:sigma}
+
+\item \variation (A misspecified regular model.) Fit the regular line, with unit noise variance in the model, to data $y=\sigma_0\varepsilon$, $\sigma_0\ne1$. Show that $J=1$ and $\cI=\sigma_0^2$, so that \cref{cor:regular:bic}(ii) gives the fluctuation $-\frac12\sigma_0^2\chi^2_1$. Show that the plug-in predictive has $\E[L(\hat a)]-L(w_0)=\frac{\sigma_0^2}{2(n-2)}\approx\frac{\tr(\cI J^{-1})}{2n}$, while the Bayes predictive with the flat prior has $\E[G_n]-L(w_0)=\frac12(\psi(\frac{n+1}2)-\psi(\frac n2))$, exactly as in the realizable case: Watanabe's $\lambda/n$ does not need realizability (\cref{ch:generalization}).\label{ex:regular:misspec}
+
+\item \measurement (The Laplace error at small $n$.) Compute $-\log\Pi_n$ of \cref{comp:regular:box} for the regular plane at $n=3,5,10,20,30$, with the data generator of the script \texttt{01-regular-free.py}. Observe means of about $1.26$, $0.60$, $0.15$, $0.013$ and $0.0014$ (the last is carried by rare data sets; its median is $3\cdot10^{-5}$), and explain the decay with the bound of \cref{comp:regular:box}. Repeat for the truth $(0.9,0)$, and explain why the error is still about $0.36$ at $n=100$.\label{ex:regular:small}
+
+\item \measurement (A truth near the singular set.) In the mixture part of the script, set $b_0=1$: the smallest eigenvalue of $J$ drops from $0.22$ to $0.073$, and the coefficient of \cref{ex:regular:error} becomes $-c=-4.5$ (at $b_0=\frac12$: $0.014$ and $-112$). Measure $n\E[F_n-\text{Laplace}]$ for $n$ from $10^3$ to $10^{4.5}$ and watch it approach $-4.5$. Below $n=10^3$ the log-likelihood is sometimes far from quadratic. Relate the sample size at which the regular theory becomes accurate to the smallest eigenvalue of $J$; \cref{ch:phases} lets the truth approach the singularity as $n$ grows.\label{ex:regular:nearsing}
+
+\item \research (The Laplace approximation of a network.) Practical Laplace approximations for networks \parencite{MacKay1992,DaxbergerEtAl2021} evaluate a curvature matrix at a trained network and add a prior precision to it, which makes the degenerate directions count as regular ones. For the tanh neuron at the truth $0$ with a Gaussian prior, compute what such an approximation gives for $F_n-nS_n$ as a function of $n$ and the prior precision, and compare with $\frac12\log n-\log\log n$ (\cref{ch:coefficient}). Open: a formula of this kind that is accurate to order $\log n$ at a degenerate point.\label{ex:regular:network}
+\end{exercises}
+
+\notesandrefs
+
+The approximation carries the name of Laplace, whose 1774 memoir was the first widely read presentation of inverse probability; \textcite{Stigler1986} introduces it and gives an English translation. \Textcite{TierneyKadane1986} made it a tool for posterior moments and marginal densities, and \textcite{KassRaftery1995} review its use for Bayes factors, describing BIC as a rough approximation to the log Bayes factor; for nested hypotheses and a normal prior that carries the information of one observation, the error of BIC improves from $O_p(1)$ to $O_p(n^{-1/2})$ \parencite{KassWasserman1995}. \Cref{thm:regular:laplace,cor:regular:bic} present the standard argument, with an envelope condition that makes every step checkable. The exact error $1/(n-1)$ of the regular plane and its digamma form \eqref{eq:regular:Gexact} are the book's computation; we have not found them in the literature.
+
+Akaike introduced his criterion in 1973 \parencite{Akaike1998} and named it AIC in \textcite{Akaike1974}. Our statement of van der Vaart's Theorem~10.1 follows the preprint of \textcite[Theorem~1]{RequadtEtAl2025}. Under misspecification the posterior is still approximately normal, centered near the minimizer of the Kullback--Leibler divergence, but its credible sets are not confidence sets \parencite{KleijnVanderVaart2012}. In the minimum description length tradition the same $\frac d2\log n$ is the parametric complexity of a regular model: \textcite{Rissanen1996} sharpened the code length with the Fisher information, and \textcite[eq.~(2.21)]{Grunwald2004} writes the complexity as $\frac d2\log\frac n{2\pi}+\log\int\sqrt{\det I(w)}\dd w+o(1)$. Watanabe treats the regular case as a special case of his general theory: the regular values of his four errors are listed in \textcite{Watanabe2010a}, and \textcite[Chapter~4]{Watanabe2018} is devoted to regular posteriors.
+
+\paragraph{Translating the literature.} \Textcite{Schwarz1978} and \textcite{Haughton1988} write $S(Y,n,j)$ for the logarithm of the posterior probability of model $j$, up to a constant that does not depend on the model: our $-F_n^{(j)}$ plus the log prior probability of the model. Their leading terms $n\sup_{\psi\in m_j}(Y\psi-b(\psi))-\frac12k_j\log n$ are our $-\BIC$, with $k_j$ our $d$. Akaike's $\AIC=-2\log(\text{maximum likelihood})+2k$ is $2n$ times ours. \Textcite{vanderVaart1998} writes $\theta$, $P_\theta$, $\dot\ell_\theta$ and $I_\theta$ for our $w$, $p(\cdot\mid w)$, $\nabla\ell(\cdot,w)$ and, in the realizable case, $J$. \Textcite{Watanabe2013} writes $F$ for our $F_n$ and $J(w)$ for the Hessian of $L$, and says that $q$ is regular for $p(x\mid w)$; \textcite{Watanabe2009} calls a model regular if it is identifiable with positive definite Fisher information at every parameter, and counts the regular models among the singular ones. \Textcite{Watanabe2010a} writes $B_g$ for our $G_n-S$. The $D_n$ of \textcite{ClarkeBarron1990} is our $\E[F_n-nS_n]$, and MacKay's evidence is $e^{-F_n}$.
+
+\printchapterbib
+\end{refsection}

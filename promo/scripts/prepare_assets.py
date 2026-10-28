@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Rasterize the real covers and a sample of interior pages from the five volume PDFs into public/.
+Rasterize the real covers and a sample of interior pages from the volume PDFs into public/.
 Needs `pdftoppm` (poppler) on PATH.   Run from the promo/ folder:  python3 scripts/prepare_assets.py
+With --covers only the covers are written (all that scripts/make_readme_assets.py needs).
+The film has acts for volumes I-V; volume VI's cover is rasterized for the README's shelf.
 """
 import os, subprocess, sys
 
@@ -13,7 +15,9 @@ BOOKS = {
     3: ("optimizers-in-the-wild/Optimizers-in-the-Wild.pdf", 369),
     4: ("experimental-science/Deep-Learning-as-an-Experimental-Science.pdf", 365),
     5: ("verifiable-intelligence/Verifiable-Intelligence.pdf", 357),
+    6: ("singular-learning/Singular-Learning-Theory-for-the-Rest-of-Us.pdf", 368),
 }
+COVERS_ONLY = "--covers" in sys.argv[1:]
 os.makedirs(f"{OUT}/covers", exist_ok=True)
 os.makedirs(f"{OUT}/pages", exist_ok=True)
 for k, (pdf, n) in BOOKS.items():
@@ -22,6 +26,8 @@ for k, (pdf, n) in BOOKS.items():
         sys.exit(f"missing {pdf}")
     # cover = title page, 150 dpi
     subprocess.run(["pdftoppm", "-r", "150", "-f", "1", "-l", "1", "-jpeg", "-jpegopt", "quality=92", "-singlefile", pdf, f"{OUT}/covers/v{k}"], check=True)
+    if COVERS_ONLY:
+        continue
     # 36 evenly spaced interior pages, 80 dpi (they become the page storm in the finale)
     lo, hi = 18, n - 12
     for i in range(36):

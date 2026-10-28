@@ -4,7 +4,9 @@ Builds the images used by the repository README (docs/img/): banner, social prev
 cover thumbnails with a soft shadow, and the shelf in a light and a dark variant.
 
 Inputs are produced by the film: promo/out/posters*/ (stills) and promo/public/covers/ (scripts/prepare_assets.py).
-Run from the repo root:  python3 promo/scripts/make_readme_assets.py   (stills named below must exist)
+Run from the repo root:  python3 promo/scripts/make_readme_assets.py
+Images whose sources are missing (the film's posters and frames) are skipped and the committed ones kept;
+volume VI has no act in the film, and its still comes from scripts/make_still_v6.py.
 """
 import os, sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -17,13 +19,21 @@ os.makedirs(f"{OUT}/stills", exist_ok=True)
 
 SCRATCH = sys.argv[1] if len(sys.argv) > 1 else None   # folder holding the extra stills (frames 680, 1640, 2216 of PromoEN)
 
-# ---------------------------------------------------------------- banner and social preview
-zh = Image.open(f"{P}/out/posters/1-title-lockup.png").convert("RGB")
-banner = zh.crop((0, 92, 1920, 872)).resize((1800, 731), Image.LANCZOS)
-banner.save(f"{OUT}/banner.jpg", quality=88, optimize=True, progressive=True)
+def have(src):
+    if src and os.path.exists(src):
+        return True
+    print(f"  skipped (source missing, committed image kept): {src}")
+    return False
 
-en = Image.open(f"{P}/out/posters-en/1-title-lockup.png").convert("RGB")
-en.crop((0, 60, 1920, 1020)).resize((1280, 640), Image.LANCZOS).save(f"{OUT}/social-preview.jpg", quality=90, optimize=True)
+# ---------------------------------------------------------------- banner and social preview
+if have(f"{P}/out/posters/1-title-lockup.png"):
+    zh = Image.open(f"{P}/out/posters/1-title-lockup.png").convert("RGB")
+    banner = zh.crop((0, 92, 1920, 872)).resize((1800, 731), Image.LANCZOS)
+    banner.save(f"{OUT}/banner.jpg", quality=88, optimize=True, progressive=True)
+
+if have(f"{P}/out/posters-en/1-title-lockup.png"):
+    en = Image.open(f"{P}/out/posters-en/1-title-lockup.png").convert("RGB")
+    en.crop((0, 60, 1920, 1020)).resize((1280, 640), Image.LANCZOS).save(f"{OUT}/social-preview.jpg", quality=90, optimize=True)
 
 # ---------------------------------------------------------------- one still per volume (1280 x 720)
 stills = {
@@ -34,7 +44,8 @@ stills = {
     5: f"{P}/out/posters-en/6-caught.png",
 }
 for n, src in stills.items():
-    Image.open(src).convert("RGB").resize((1280, 720), Image.LANCZOS).save(f"{OUT}/stills/v{n}.jpg", quality=84, optimize=True, progressive=True)
+    if have(src):
+        Image.open(src).convert("RGB").resize((1280, 720), Image.LANCZOS).save(f"{OUT}/stills/v{n}.jpg", quality=84, optimize=True, progressive=True)
 
 # ---------------------------------------------------------------- cover thumbnails with a soft shadow
 CW, CH = 330, 440          # cover size in the shelf image (the page is 595 x 794 pt, aspect 0.75)
@@ -51,7 +62,8 @@ def cover_with_shadow(n, dark=False, size=(CW, CH)):
     ImageDraw.Draw(canvas).rectangle([pad, pad, pad + size[0] - 1, pad + size[1] - 1], outline=edge, width=1)
     return canvas
 
-for n in range(1, 6):
+NVOL = 6
+for n in range(1, NVOL + 1):
     c = cover_with_shadow(n, size=(300, 400))
     c.save(f"{OUT}/covers/v{n}.png", optimize=True)
 
@@ -72,8 +84,17 @@ def find_face(path, want):
             break
     return 0
 
-PAL = "/System/Library/Fonts/Palatino.ttc"
-HEL = "/System/Library/Fonts/HelveticaNeue.ttc"
+def first_font(*paths):
+    """The first font file that exists: macOS first, then Windows (Palatino Linotype, Arial), then Linux."""
+    for p in paths:
+        if os.path.exists(p):
+            return p
+    return paths[0]
+
+PAL = first_font("/System/Library/Fonts/Palatino.ttc", "C:/Windows/Fonts/pala.ttf",
+                 "/usr/share/fonts/opentype/tex-gyre/texgyrepagella-regular.otf")
+HEL = first_font("/System/Library/Fonts/HelveticaNeue.ttc", "C:/Windows/Fonts/arial.ttf",
+                 "/usr/share/fonts/opentype/tex-gyre/texgyreheros-regular.otf")
 i_reg, i_ital = find_face(PAL, "regular"), find_face(PAL, "italic")
 VOLS = [
     ("I", ["Dissolving", "Problems"], 333, "#1b8aa8", "#52c7e8"),
@@ -81,11 +102,12 @@ VOLS = [
     ("III", ["Optimizers", "in the Wild"], 369, "#7d8d22", "#c4d453"),
     ("IV", ["Deep Learning as an", "Experimental Science"], 365, "#c0432a", "#ff8a6e"),
     ("V", ["Verifiable", "Intelligence"], 357, "#3a44b5", "#9aa4ff"),
+    ("VI", ["Singular Learning Theory", "for the Rest of Us"], 368, "#966012", "#e0a54a"),
 ]
 def shelf(dark):
-    W, H = 1800, 740
+    gap = 44
+    W, H = len(VOLS) * 308 + (len(VOLS) + 1) * gap, 740
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    gap = (W - 5 * 308) // 6
     fg = "#e6edf3" if dark else "#1f2328"
     mute = "#8b949e" if dark else "#656d76"
     f_num, f_title, f_pg = font(PAL, 50, i_reg), font(PAL, 29, i_reg), font(HEL, 21)

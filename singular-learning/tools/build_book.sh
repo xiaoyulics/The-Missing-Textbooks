@@ -1,0 +1,31 @@
+#!/bin/bash
+# Build the whole book: tools/build_book.sh   ->  Singular-Learning-Theory-for-the-Rest-of-Us.pdf
+set -u
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SERIES="$(cd "$ROOT/../template" && pwd)"
+BIBER="$ROOT/../.tools/biber"; [[ -x "$BIBER" ]] || BIBER=biber
+cd "$ROOT" || exit 2
+mkdir -p build
+export TEXINPUTS="$SERIES:$ROOT:"
+# The whole book (fifteen per-chapter bibliographies and many pgfplots figures) needs more TeX
+# memory than the default: MiKTeX takes it as options, TeX Live from the environment.
+MEM=()
+if pdflatex --version 2>/dev/null | grep -q MiKTeX; then
+  MEM=(-extra-mem-top=30000000 -extra-mem-bot=30000000)
+else
+  export extra_mem_top=30000000 extra_mem_bot=30000000
+fi
+pdflatex "${MEM[@]}" -interaction=nonstopmode -halt-on-error main.tex > build/main1.out 2>&1; s1=$?
+"$BIBER" main > build/biber.out 2>&1; sb=$?
+pdflatex "${MEM[@]}" -interaction=nonstopmode -halt-on-error main.tex > build/main2.out 2>&1
+pdflatex "${MEM[@]}" -interaction=nonstopmode -halt-on-error main.tex > build/main3.out 2>&1; s3=$?
+echo "== book: pdflatex exit $s1/$s3, biber exit $sb =="
+grep -n -A7 "^!" main.log | head -60
+grep -E "ERROR|WARN" build/biber.out | grep -v "Overriding locale" | head -20
+echo "-- undefined references/citations --"
+{ grep -oE "Reference \`[^']+' on page [0-9]+ undefined" main.log; grep -oE "Citation \`[^']+' on page [0-9]+ undefined" main.log; } | sed -E "s/ on page [0-9]+ undefined//" | sort -u | head -40
+grep -E "multiply defined" main.log | sort -u | head -20
+echo "-- overfull boxes: $(grep -c '^Overfull' main.log) total; over 3pt: --"
+grep -E "^Overfull \\\\[hv]box \(([3-9]|[1-9][0-9]+)\.[0-9]+pt too (wide|high)\)" main.log | head -30
+if [[ -f main.pdf ]]; then echo "-- pages: $(pdfinfo main.pdf | awk '/^Pages/{print $2}') --"; cp main.pdf "$ROOT/Singular-Learning-Theory-for-the-Rest-of-Us.pdf"; fi
+exit $s3

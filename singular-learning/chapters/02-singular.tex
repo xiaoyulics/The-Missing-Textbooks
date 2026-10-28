@@ -1,0 +1,443 @@
+% Chapter 2 of Singular Learning Theory for the Rest of Us: singular models, their true sets,
+% their Fisher information, and the shape of the posterior of y = abx.
+\sltchapter{Singular Models}{When parameters fold}{$y=a\tanh(bx)$}{ch:singular}
+\newtonfoot{2/2}{2}{\tfrac12}{a^2b^2}
+\begin{refsection}[chapters/02-singular.bib]
+
+\begin{chaptersummary}
+Different weights of a neural network can compute the same function, and where a unit is switched off they do so along whole curves and planes. We compute the true sets and Fisher information of the running models, and the posterior of $y=abx$ at its singular truth exactly, through the posterior of the product $ab$. We prove that the Fisher information is singular wherever the true set contains a curve, and that under the posterior $\log\abs a/\log n$ converges to the uniform distribution on $[-\frac12,0]$: the posterior spreads evenly over all scales from $n^{-1/2}$ to $1$, and no smooth coordinates make it asymptotically normal. Exact draws up to $n=10^{16}$ confirm the law and its slow convergence. For networks the true sets are known only in special cases, and how the posterior spreads over them is open.
+\end{chaptersummary}
+
+\section{The question: two weights, one function}\label{sec:singular:question}
+
+Train a network with one hidden layer of $h$ units with the $\tanh$ activation,
+\begin{equation}\label{eq:singular:net}
+f_w(x)=d+\sum_{j=1}^h a_j\tanh(b_jx+c_j),
+\end{equation}
+twice, from two random initializations, and compare the trained weights. They differ, and yet the two networks may compute exactly the same function. Exchanging two hidden units changes $w$ and not $f_w$; so does negating the three weights $(a_j,b_j,c_j)$ of one unit, because $\tanh$ is odd. For a unit with the rectified linear activation, multiplying its incoming weight and bias by $\alpha>0$ and dividing its outgoing weight by $\alpha$ changes nothing either. These \term{generic symmetries}\index{symmetry!of a network} act on the whole parameter space: exchanges and negations give each parameter of a $\tanh$ network finitely many twins, and rescalings give each parameter of a ReLU network curves of them.
+
+Other moves exist only at special parameters. If $a_j=0$, then the $j$th unit is switched off, and its incoming weight and bias can take every value: a whole plane of parameters computes one function. If $b_j=0$, then the unit outputs the constant $a_j\tanh(c_j)$, which the output bias can absorb; if $(b_j,c_j)=(b_k,c_k)$, then the two units act as one with outgoing weight $a_j+a_k$. Such parameters are called \term{reducible}.\index{reducible parameter} They form a set of measure zero, but it is exactly the set on which a network with more units than it needs represents a simpler function.
+
+The smallest instance is one unit without biases, fitted to pure noise. The \term{tanh neuron}\index{tanh neuron} of this book is the model
+\begin{equation}\label{eq:singular:tanh}
+y=a\tanh(bx)+\varepsilon,\qquad x\sim\Unif[-1,1],\quad\varepsilon\sim\Normal(0,1),
+\end{equation}
+with the uniform prior on $W=[-2,2]^2$ and the truth $y=\varepsilon$, so that the true regression function is $f\equiv0$.\sidenote{The inputs of this model are uniform on $[-1,1]$, not standard normal as for the other running models: with Gaussian inputs its loss is not analytic in $b$ at $b=0$ (\cref{ex:singular:tanh}), and Watanabe's general theorems assume analyticity.} Every parameter with $a=0$ or $b=0$ computes the zero function, so the parameters that realize the truth form a cross. Near its center $a\tanh(bx)=abx+O(ab^3)$: the tanh neuron is the product model $y=abx$ of the prologue, slightly bent, and the product model is what we compute with.
+
+In the notation of \cref{ch:regular}, a model $p(x\mid w)$, $w\in W\subset\R^d$, fitted to data from a truth $q$ has the average loss $L(w)=-\E_q[\log p(X\mid w)]$, minimized at a true parameter $w_0$; $K(w)=L(w)-L(w_0)\ge0$, and $W_0=\{w\in W:K(w)=0\}$ is the \term{set of true parameters}.\index{true parameters, set of} The \term{Fisher information}\index{Fisher information} at $w$ is the covariance of the score,
+\[
+I(w)=\E_{p(\cdot\mid w)}\bigl[\nabla_w\log p(X\mid w)\,\nabla_w\log p(X\mid w)^\top\bigr],
+\]
+and in the realizable case $I(w)=\nabla^2K(w)$ at every true parameter $w$ when two derivatives may be taken under the integral sign (\cref{comp:singular:fisher}). Following \textcite[Definition~2]{Watanabe2010}, the pair of truth and model is \term{regular}\index{regular model} if $W_0$ is a single point $w_0$ and $\nabla^2L(w_0)$ is positive definite, with $w_0$ in the interior of $W$ (a requirement this book adds), and \term{singular}\index{singular model} otherwise; a singular model is a model with singular truths of interest.\sidenote{Watanabe's 2009 book uses the words differently: there a \emph{model} is regular if it is identifiable with a positive definite Fisher information at every parameter, and the singular models include the regular ones. This book follows his usage from 2010 on.}
+
+\begin{regularanswer}[the shape of the posterior]
+Suppose that the model is differentiable in quadratic mean at an interior true parameter $w_0$ with nonsingular Fisher information $I(w_0)$, that for every $\eps>0$ some sequence of tests separates $w_0$ from $\{w:\norm{w-w_0}\ge\eps\}$ uniformly, and that the prior has a density that is continuous and positive at $w_0$. Then, by the Bernstein--von Mises theorem \parencite[Theorem~10.1]{vanderVaart1998},\index{Bernstein--von Mises theorem} the posterior law of $\sqrt n(w-w_0)$ is close in total variation to $\Normal(\Delta_n,I(w_0)^{-1})$, in probability, with $\Delta_n=I(w_0)^{-1}n^{-1/2}\sum_i\nabla_w\log p(X_i\mid w_0)$. The posterior concentrates at one point, at the rate $n^{-1/2}$, in the shape of a Gaussian with covariance $(nI(w_0))^{-1}$.
+\end{regularanswer}
+
+For the tanh neuron at $f\equiv0$ the hypotheses fail twice: the true set is a cross, and at its center the Fisher information is the zero matrix (\cref{comp:singular:fisher}). The prologue's \cref{fig:prologue:draws} showed what happens instead for the product model: the posterior draws crowd onto the cross and spread along both arms. This chapter asks what the set of true parameters of a singular model looks like, what the Fisher information does on it, and where the posterior goes when there is no single point to go to.
+
+\section{By hand: crosses, fibers, and the exact posterior}\label{sec:singular:byhand}
+
+We compute the true sets of the running models, the Fisher information of the product model, and the posterior of the product model, exactly. For a regression $y=f(w,x)+\varepsilon$ with standard normal noise,
+\begin{equation}\label{eq:singular:Kreg}
+K(w)=\tfrac12\E_x\bigl[(f(w,x)-f(w_0,x))^2\bigr],
+\end{equation}
+because $-\log p(y\mid x,w)=\frac12(y-f(w,x))^2+\frac12\log(2\pi)$ and the residual $y-f(w_0,x)=\varepsilon$ has mean zero and is independent of $x$.
+
+\begin{computation}{The true sets of the cast}\label{comp:singular:cast}
+\step \emph{The product model} $y=abx$, with $x\sim\Normal(0,1)$ and the uniform prior on $[-1,1]^2$. For the truth $y=c_0x+\varepsilon$, \eqref{eq:singular:Kreg} gives $K=\frac12(ab-c_0)^2$. At the singular truth $c_0=0$, $K=\frac12a^2b^2$ and $W_0$ is the cross $\{a=0\}\cup\{b=0\}$. At a truth with $0<\abs{c_0}<1$, $W_0$ is the part of the hyperbola $ab=c_0$ in the square, two arcs through its interior.
+\step \emph{The tanh neuron} \eqref{eq:singular:tanh}. Since $\tanh^2=1-\cosh^{-2}$,
+\[
+K(a,b)=\frac{a^2}2\cdot\frac12\int_{-1}^1\bigl(1-\cosh^{-2}(bx)\bigr)\dd x=\frac{a^2}2\Bigl(1-\frac{\tanh b}b\Bigr),
+\]
+with the value $0$ at $b=0$, and $W_0$ is the cross. The series $1-\frac{\tanh b}b=\frac{b^2}3-\frac{2b^4}{15}+\frac{17b^6}{315}-\cdots$ converges for $\abs b<\frac\pi2$, the distance to the poles $\pm\frac{i\pi}2$ of $\tanh$; and since $\tanh(b)/b$ is analytic on the strip $\abs{\operatorname{Im}b}<\frac\pi2$, $K$ is analytic on a neighborhood of $W$. The ratio $r(b)=6K/(a^2b^2)=3\E[x^2(\tanh(bx)/(bx))^2]$ decreases in $\abs b$, because $\tanh(u)/u$ is positive and decreases on $(0,\infty)$ (its derivative has the sign of $u-\frac12\sinh2u<0$); so $r(2)=\frac34(1-\frac12\tanh2)=0.388\le r(b)\le r(0)=1$, and $0.388\cdot\frac16a^2b^2\le K\le\frac16a^2b^2$ on $W$.
+\step \emph{The ReLU neuron}\index{ReLU neuron} $y=a\relu(bx)$, with $x\sim\Normal(0,1)$ and the uniform prior on $[-1,1]^2$. Since $\relu(bx)^2=b^2x^2\ind\{bx>0\}$ and $\E[x^2\ind\{x>0\}]=\frac12$, $K=\frac14a^2b^2$ exactly, and $W_0$ is the cross. The model itself is not analytic: for $x\ne0$, $b\mapsto\relu(bx)$ has a kink at $b=0$.
+\step \emph{The mixture}\index{mixture model} $p(x\mid a,b)=(1-a)\phi(x)+a\phi(x-b)$, with $\phi$ the standard normal density, $(a,b)\in[0,1]\times[-2,2]$, the uniform prior, and the truth $\phi$. Write $p=\phi\,(1+ag)$ with $g(x)=e^{bx-b^2/2}-1$, so that $\E g=0$ and $\E g^2=e^{b^2}-1$ under the truth. With $\psi(t)=t-\log(1+t)\ge0$, $K=\E[-\log(1+ag)]=\E[\psi(ag)]$, and Taylor's theorem for $\psi$ gives $K=\frac{a^2}2(e^{b^2}-1)+O(a^3)$ uniformly in $\abs b\le2$. So $W_0=\{a=0\}\cup\{b=0\}$, a cross whose arm $\{a=0\}$ lies on the boundary of $W$, and $0.149\,a^2b^2\le K\le13.4\,a^2b^2$ on $W$ (\cref{ex:singular:mixture}). But $K$ is not analytic in $a$ at $a=0$ when $b\ne0$: its $k$th Taylor coefficient in $a$ is $(-1)^k\E[g^k]/k$, which grows like $e^{k(k-1)b^2/2}$.
+\step \emph{Rank-one regression} $y=b\,a^\top x+\varepsilon$, with $a\in\R^N$, $b\in\R^M$, $x\sim\Normal(0,I_N)$ and the truth $0$: $K=\frac12\norm a^2\norm b^2$, and $W_0=\{a=0\}\cup\{b=0\}$ is the union of two linear subspaces, of dimensions $M$ and $N$, that meet at the origin.
+\end{computation}
+
+In every case the singular truth is ``nothing to learn'', and the true set is where a unit, or a mixture component, is switched off: its outgoing weight vanishes, or its incoming weight does (\cref{tab:singular:cast}). Where $K$ lies between two multiples of $a^2b^2$ on the whole box, the prior volume $V(\eps)$ of $\{K<\eps\}$ is squeezed between those of $\{a^2b^2<\eps/c_2\}$ and $\{a^2b^2<\eps/c_1\}$, both of order $\eps^{1/2}\log\frac1\eps$ (\cref{ch:volume}); so the tanh neuron, the ReLU neuron and the mixture share the product model's learning coefficient $\lambda=\frac12$ and multiplicity $m=2$, by the comparison rule of \cref{prop:blowups:rules}. (The learning coefficient is the real log canonical threshold of $K$; \cref{ch:volume} shows they are the same number.) The comparison does not transfer analyticity: the ReLU neuron and the mixture are not analytic models, so Watanabe's general theorems do not apply to them verbatim, and mixtures need separate treatment, as in the study of WAIC and WBIC for mixture models by \textcite{Watanabe2021}. The tanh neuron with uniform inputs is analytic, which is why the book uses it.
+
+\begin{table}[t]
+\centering\footnotesize
+\begin{tabular}{@{}llll@{}}
+\toprule
+model, prior box & $K(a,b)$ & $c_1$, $c_2$ & analytic\\
+\midrule
+$y=abx$, $[-1,1]^2$ & $\frac12a^2b^2$ & $\frac12$, $\frac12$ & yes\\
+$y=a\tanh(bx)$, $[-2,2]^2$ & $\frac{a^2}2\bigl(1-\frac{\tanh b}b\bigr)$ & $0.0647$, $\frac16$ & yes\\
+$y=a\relu(bx)$, $[-1,1]^2$ & $\frac14a^2b^2$ & $\frac14$, $\frac14$ & $K$ yes, model no\\
+mixture, $[0,1]\times[-2,2]$ & $\E[\psi(ag)]$ & $0.149$, $13.4$ & no, in $a$\\
+\bottomrule
+\end{tabular}
+\caption{Four models whose set of true parameters is a cross, at the truth ``nothing to learn'' (\cref{comp:singular:cast}); inputs $x\sim\Normal(0,1)$, except $x\sim\Unif[-1,1]$ for the tanh neuron. On the whole box $c_1a^2b^2\le K\le c_2a^2b^2$, and all four have $\lambda=\frac12$ and $m=2$, against $\frac d2=1$. The lower constants of the tanh neuron and the mixture are $\frac16r(2)$ and $\frac12\min_{\abs b\le2}\E[g^2/(1+g_+)]/b^2$ (\cref{ex:singular:mixture}), computed numerically.}\label{tab:singular:cast}
+\end{table}
+
+Truths away from the cross behave differently. At a truth $0<\abs{c_0}<1$ of the product model the true set is a smooth curve: still singular, with $\lambda=\frac12$ but $m=1$.\sidenote{With $c_0=1$ the hyperbola meets $[-1,1]^2$ only at the corners $\pm(1,1)$, where $K\approx\frac12(u+v)^2$ in the distances $u,v\ge0$ to the corner, and the learning coefficient becomes $1$. The book's generic truths cross the interior of the box.} At a truth $(a_0,b_0)$ with $a_0b_0\ne0$ the tanh neuron is regular up to its sign symmetry: the Taylor coefficients $ab$ and $-\frac13ab^3$ of $a\tanh(bx)$ at $x=0$ determine $b^2$ and $ab$, so $W_0=\{\pm(a_0,b_0)\}$, where the Fisher information is positive definite.\sidenote{But nearly singular: at $(1,1)$ its eigenvalues are $0.0021$ and $0.36$, so the posterior standard deviation along the weak direction is about $(0.0021\,n)^{-1/2}$, which is $0.69$ at $n=10^3$, a sixth of the width of the box.}
+
+\begin{computation}{The Fisher information}\label{comp:singular:fisher}
+\step For a regression with standard normal noise the score is $(y-f(w,x))\nabla_wf(w,x)$, and under $p(\cdot\mid w)$ the residual $y-f(w,x)$ is standard normal and independent of $x$; so $I(w)=\E_x\bigl[\nabla_wf\,\nabla_wf^\top\bigr]$.
+\step Differentiating \eqref{eq:singular:Kreg} twice under the integral sign, $\nabla^2K(w)=\E_x[\nabla_wf\,\nabla_wf^\top]+\E_x[(f(w,x)-f(w_0,x))\nabla_w^2f(w,x)]$, and the second term vanishes at a true parameter. So $\nabla^2K(w)=I(w)$ on $W_0$, for every regression model of \cref{comp:singular:cast} except the ReLU neuron at $b=0$, where $f$ is not differentiable in $b$.
+\step For the product model $\nabla_wf=(bx,ax)$, so, with $\E x^2=1$,
+\[
+I(a,b)=\begin{pmatrix}b^2&ab\\ab&a^2\end{pmatrix}=\begin{pmatrix}b\\a\end{pmatrix}\begin{pmatrix}b&a\end{pmatrix}.
+\]
+\step Its determinant is $a^2b^2-(ab)^2=0$ everywhere. Away from the origin the eigenvalue $a^2+b^2$ belongs to $(b,a)$, the gradient of $c=ab$, and the eigenvalue $0$ to $(a,-b)$, along which $\dd c=b\,\dd a+a\,\dd b$ vanishes: the tangent of the hyperbola $\{ab=\text{const}\}$ through $(a,b)$. At the origin $I=0$.
+\step For the tanh neuron $\nabla_wf=(\tanh(bx),\,ax\cosh^{-2}(bx))$, so $I(a,0)=\diag(0,\frac13a^2)$, $I(0,b)=\diag(1-\frac{\tanh b}b,0)$ and $I(0,0)=0$: the null direction is the direction of the arm.
+\end{computation}
+
+The Fisher information of the product model is singular everywhere, at the truth and away from it, for one reason: through every parameter passes a curve, a hyperbola $\{ab=c\}$ or an arm of the cross, along which the distribution of the data does not change, and its tangent is a null direction (\cref{fig:singular:fibres}). We call the set of parameters that give one distribution a \term{fiber}\index{fiber} of the model; the fibers of the product model are the hyperbolas $\{ab=c\}$, $c\ne0$, and the cross. The information about $c$ itself is $\E x^2=1$ per observation, and $I(a,b)=\nabla c\,\nabla c^\top$ is that information pulled back to the parameters.\sidenote{Jeffreys' prior, proportional to $\sqrt{\det I(w)}$, is therefore identically zero for the product model and cannot be normalized.\index{Jeffreys' prior}}
+
+\begin{figure}[t]
+\begin{minipage}[c]{0.47\linewidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,width=\linewidth,height=\linewidth,xmin=-1,xmax=1,ymin=-1,ymax=1,
+  xtick={-1,0,1},ytick={-1,0,1},xlabel={$a$},ylabel={$b$}]
+\pgfplotsinvokeforeach{0.04,0.16,0.45}{
+  \addplot[regular!55,line width=0.6pt,domain=#1:1,samples=90] ({x},{#1/x});
+  \addplot[regular!55,line width=0.6pt,domain=#1:1,samples=90] ({-x},{-#1/x});
+  \addplot[regular!55,line width=0.6pt,domain=#1:1,samples=90] ({x},{-#1/x});
+  \addplot[regular!55,line width=0.6pt,domain=#1:1,samples=90] ({-x},{#1/x});
+}
+\addplot[singular,line width=1.3pt] coordinates {(-1,0) (1,0)};
+\addplot[singular,line width=1.3pt] coordinates {(0,-1) (0,1)};
+\draw[singulardeep,line width=0.9pt,<->] (axis cs:0.294,0.506) -- (axis cs:0.506,0.294);
+\draw[singulardeep,line width=0.9pt,<->] (axis cs:0.654,0.236) -- (axis cs:0.946,0.164);
+\draw[singulardeep,line width=0.9pt,<->] (axis cs:-0.236,0.654) -- (axis cs:-0.164,0.946);
+\draw[singulardeep,line width=0.9pt,<->] (axis cs:-0.80,-0.54) -- (axis cs:-0.54,-0.80);
+\draw[singulardeep,line width=0.9pt,<->] (axis cs:0.45,0) -- (axis cs:0.75,0);
+\draw[singulardeep,line width=0.9pt,<->] (axis cs:0,-0.45) -- (axis cs:0,-0.75);
+\draw[regular,line width=0.8pt,->] (axis cs:0.4,0.4) -- (axis cs:0.5,0.5);
+\draw[regular,line width=0.8pt,->] (axis cs:0.8,0.2) -- (axis cs:0.83,0.32);
+\draw[regular,line width=0.8pt,->] (axis cs:0.6,0) -- (axis cs:0.6,0.14);
+\draw[regular,line width=0.8pt,->] (axis cs:0,-0.6) -- (axis cs:-0.14,-0.6);
+\fill[white] (axis cs:0,0) circle (2.2pt);
+\draw[singulardeep,line width=0.8pt] (axis cs:0,0) circle (2.2pt);
+\end{axis}
+\end{tikzpicture}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.49\linewidth}
+\caption{The fibers of the product model in $[-1,1]^2$: the cross $ab=0$ (bronze) and the hyperbolas $ab=\pm0.04,\pm0.16,\pm0.45$ (slate). At each marked point the bronze double arrow is the null direction of the Fisher information $I(a,b)$, tangent to the fiber; the slate arrows point along the gradient of $ab$, the direction of the nonzero eigenvalue. At the origin, the open circle, $I=0$.}\label{fig:singular:fibres}
+\end{minipage}
+\end{figure}
+
+The posterior of the product model can be computed exactly at every $n$, and the computation shows how the fibers organize it. Take the singular truth $c_0=0$, so that the $y_i$ are pure noise, and write $S_{xx}=\sum_ix_i^2$, $S_{xy}=\sum_ix_iy_i$, $\hat c=S_{xy}/S_{xx}$ and $s=S_{xx}^{-1/2}$; write $\Phi$ for the standard normal distribution function and $\Pi_n$ for the posterior distribution of $w=(a,b)$ at $\beta=1$.
+
+\begin{computation}{The posterior of $y=abx$, exactly}\label{comp:singular:posterior}
+\step \emph{The data see only $c=ab$.} Expanding the square, $nL_n(a,b)=\frac{(ab-\hat c)^2}{2s^2}+\frac12\bigl(\sum_iy_i^2-S_{xy}^2/S_{xx}\bigr)+\frac n2\log(2\pi)$, and only the first term depends on $(a,b)$. With the prior constant $\frac14$ cancelled, the posterior density on $W=[-1,1]^2$ is proportional to $e^{-(ab-\hat c)^2/(2s^2)}$.
+\step \emph{Coordinates along the fibers.} On $\{a\ne0\}$ use $(a,c)$ with $c=ab$: then $b=c/a$, $\dd a\,\dd b=\dd a\,\dd c/\abs a$, and $\abs b\le1$ becomes $\abs c\le\abs a$. The posterior of $(a,c)$ has density proportional to $e^{-(c-\hat c)^2/(2s^2)}/\abs a$ on $\{\abs c\le\abs a\le1\}$; the line $a=0$ has measure zero.
+\step \emph{The coefficient.} Since $\int_{\abs c\le\abs a\le1}\dd a/\abs a=2\log\frac1{\abs c}$, the posterior of $c$ has density proportional to $e^{-(c-\hat c)^2/(2s^2)}\log\frac1{\abs c}$ on $[-1,1]$: a Gaussian of width $s\approx n^{-1/2}$ times $\frac12\log\frac1{\abs c}$, the prior density of $c$ (\cref{ch:coefficient}).
+\step \emph{The fiber.} Given $c\ne0$, the conditional density of $a$ is proportional to $1/\abs a$ on $\{\abs c\le\abs a\le1\}$: the sign of $a$ is a fair coin, $\log\abs a$ is uniform on $[\log\abs c,0]$, and $b=c/a$; the data do not enter.
+\step \emph{The marginal of $a$.} Integrating $c$ over $[-\abs a,\abs a]$ in step 2, with $Y=\hat c+s\xi$ for $\xi\sim\Normal(0,1)$,
+\[
+\Pi_n(\dd a)\propto\frac1{\abs a}\Bigl[\Phi\Bigl(\frac{\abs a-\hat c}s\Bigr)-\Phi\Bigl(\frac{-\abs a-\hat c}s\Bigr)\Bigr]\dd a=\frac{\Prob(\abs Y\le\abs a)}{\abs a}\,\dd a.
+\]
+\step \emph{The scale.} In $u=\log\abs a$, both signs together, the posterior density is proportional to $\Prob(\abs Y\le e^u)$ on $u\le0$: about $2e^u\Phi'(\hat c/s)/s$ when $e^u\ll s$, and about $1$ when $e^u\gg s+\abs{\hat c}$, so flat in $\log\abs a$ from $\abs a\approx n^{-1/2}$ to $\abs a=1$. Since $\int_{-\infty}^u\Prob(\abs Y\le e^v)\dd v=\E[(u-\log\abs Y)_+]$, with $t_+=\max(t,0)$,
+\[
+\Pi_n\bigl(\log\abs a\le u\bigr)=\frac{\E[(u-\log\abs Y)_+]}{\E[(-\log\abs Y)_+]}\qquad(u\le0).
+\]
+\end{computation}
+
+What one had to notice is that the likelihood is constant on the fibers $\{ab=c\}$, so that the posterior factors into a one-dimensional posterior of $c$ and the prior's own distribution on each fiber; and that the uniform prior, conditioned on a hyperbola, is uniform in $\log\abs a$ (not in arc length; \cref{ex:singular:generic}). The data locate $c$ to within $O(n^{-1/2})$ of $0$ and say nothing about where along the fiber $(a,b)$ lies, and the fiber over such a $c$ reaches from $\abs a\approx n^{-1/2}$ to $\abs a=1$: the posterior spreads $\log\abs a$ evenly over about $\frac12\log n$. Steps 3 and 4 also give an exact sampler: draw $c$ from its posterior by inverting its distribution function on a grid, then $\log\abs a$ uniformly from $[\log\abs c,0]$, a random sign, and $b=c/a$.\sidenote{This is the sampler of the prologue's \cref{fig:prologue:draws}, \texttt{sk.sample\_product\_posterior} in the book's script kit.}
+
+In logarithmic coordinates (\cref{fig:singular:loglog}) a hyperbola $\abs{ab}=\abs c$ becomes the segment $\log_{10}\abs a+\log_{10}\abs b=\log_{10}\abs c$ between the axes, and the draws spread evenly along it. For the data set at $n=10^{12}$, $\log_{10}\abs{\hat c}=-5.92$, $96\%$ of the $1500$ draws lie within one decade of the line $\log_{10}\abs a+\log_{10}\abs b=-6$, and the median of $\log_{10}\abs a$ is $-3.01$, halfway along it. As $n$ grows the segment lengthens like $\log n$ while its thickness stays bounded.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 1,horizontal sep=4mm,yticklabels at=edge left},
+  splot,width=0.36\linewidth,height=0.36\linewidth,xmin=-9,xmax=0.4,ymin=-9,ymax=0.4,
+  xtick={-8,-4,0},ytick={-8,-4,0},xlabel={$\log_{10}\abs a$},title style={yshift=-1ex}]
+\nextgroupplot[ylabel={$\log_{10}\abs b$},title={$n=10^4$}]
+\addplot[draws] table[x=la,y=lb] {figures/data/02-singular-loglog-n4.dat};
+\addplot[guide,ink] coordinates {(-2,0) (0,-2)};
+\nextgroupplot[title={$n=10^8$}]
+\addplot[draws] table[x=la,y=lb] {figures/data/02-singular-loglog-n8.dat};
+\addplot[guide,ink] coordinates {(-4,0) (0,-4)};
+\nextgroupplot[title={$n=10^{12}$}]
+\addplot[draws] table[x=la,y=lb] {figures/data/02-singular-loglog-n12.dat};
+\addplot[guide,ink] coordinates {(-6,0) (0,-6)};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Exact posterior draws of $y=abx$ at the singular truth in logarithmic coordinates: $1500$ draws for one data set at each sample size (statistics seeds $204$, $208$, $212$; draw seeds $304$, $308$, $312$), by the sampler of \cref{comp:singular:posterior}. Dashed: the segment $\log_{10}\abs a+\log_{10}\abs b=-\frac12\log_{10}n$. The cross of \cref{fig:prologue:draws} becomes a segment whose length grows like $\log n$. Script: \texttt{figures/scripts/02-singular-scales.py}.}\label{fig:singular:loglog}
+\end{figure}
+
+\section{The theorem: folds make the Fisher information singular}\label{sec:singular:fisher}
+
+\Cref{comp:singular:fisher} found a null direction of the Fisher information along the fiber through each point. Nothing about the product model was needed for that, only a curve of true parameters and two derivatives.
+
+\begin{proposition}[Folds make the Fisher information singular]\label[proposition]{prop:singular:fisher}\index{Fisher information!singular}
+Let $w_0$ be an interior point of $W$ with $K(w_0)=0$, and suppose that $K$ is twice continuously differentiable on a neighborhood of $w_0$.
+\begin{enumerate}[label=(\roman*)]
+\item If $\gamma\colon(-\delta,\delta)\to W_0$ is a $C^1$ curve with $\gamma(0)=w_0$ and $\gamma'(0)=v\ne0$, then $\nabla^2K(w_0)\,v=0$.
+\item If $W_0$ contains a $k$-dimensional $C^1$ submanifold $M$ through $w_0$, then the tangent space of $M$ at $w_0$ lies in the kernel of $\nabla^2K(w_0)$, and $\rank\nabla^2K(w_0)\le d-k$.
+\item In the realizable case, if $I(w_0)=\nabla^2K(w_0)$, which holds when two derivatives may be taken under the integral sign (\cref{comp:singular:fisher}), then $I(w_0)v=0$ in (i), and the pair is singular.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+For (i), let $U$ be a neighborhood of $w_0$ inside the interior of $W$ on which $K$ is twice continuously differentiable. For all small $\abs t$, $\gamma(t)\in U$ and $K(\gamma(t))=0=\min_WK$, because $K\ge0$; so $\gamma(t)$ is an interior minimum of $K$, and $\nabla K(\gamma(t))=0$. The map $t\mapsto\nabla K(\gamma(t))$ is therefore identically zero near $t=0$, and by the chain rule, $\nabla K$ being $C^1$ on $U$ and $\gamma$ being $C^1$, its derivative at $0$ is $\nabla^2K(w_0)\gamma'(0)=\nabla^2K(w_0)v=0$. For (ii), every tangent vector $v$ of $M$ at $w_0$ is the velocity $\gamma'(0)$ of a $C^1$ curve $\gamma$ in $M\subseteq W_0$ through $w_0$, so $\nabla^2K(w_0)v=0$ by (i); the kernel contains a $k$-dimensional space, and the rank is at most $d-k$. For (iii), $I(w_0)v=\nabla^2K(w_0)v=0$ with $v\ne0$, and the pair is singular already because $W_0$ is not a point.
+\end{proof}
+
+The converse fails: the quartic model $y=ax_1+b^2x_2$ of \cref{ch:blowups} has a single true parameter and $\nabla^2K(0)=\diag(1,0)$. A fold is one way to be singular, a degenerate minimum another, and the learning coefficient of \cref{ch:volume} measures both. On a $k$-dimensional piece of $W_0$ at most $r=d-k$ directions carry information; when the rank is exactly $r$, the learning coefficient near such a point is $\frac r2$ rather than $\frac d2$ (\cref{ch:llc}), and where pieces cross, like the arms at the origin of the product model, the rank drops further and the learning coefficient lies between $\frac r2$ and $\frac r2+\frac{d-r}4$ for the rank $r$ there (\cref{thm:llc:hessian}).
+
+\paragraph{Folds in networks.} For networks with one hidden layer of $\tanh$ units the folds are known completely: \textcite{FarrugiaRoberts2023a} characterizes, for every parameter, the parameters that compute its function. We state the classical theorem behind this as that paper restates it, for the networks \eqref{eq:singular:net} with input $x\in\R$, whose parameter $w\in\R^{3h+1}$ lists the triples $(a_j,b_j,c_j)$ and the output bias $d$. Call $w$ \emph{reducible} if $a_j=0$ for some $j$, or $b_j=0$ for some $j$, or $(b_j,c_j)=\pm(b_k,c_k)$ for some $j\ne k$, and \emph{irreducible} otherwise.\sidenote{We have read the theorem in this restatement, not in Sussmann's paper. His title speaks of minimal nets; by part (i), these are the irreducible ones.}
+
+\begin{theorem}[\textcite{Sussmann1992}]\label{thm:singular:sussmann}\index{Sussmann's theorem}
+\begin{enumerate}[label=(\roman*)]
+\item A parameter $w\in\R^{3h+1}$ is reducible if and only if $f_w=f_{w'}$ for some parameter $w'$ of a network with fewer than $h$ hidden units.
+\item If $w$ is irreducible, then the parameters $w'\in\R^{3h+1}$ with $f_{w'}=f_w$ are exactly those obtained from $w$ by permuting the hidden units and negating the triples $(a_j,b_j,c_j)$ of some of them.
+\end{enumerate}
+\end{theorem}
+
+These $2^hh!$ moves give $2^hh!$ distinct parameters when $w$ is irreducible (a negation fixing a unit forces $a_j=0$, a permutation moving one forces $(b_j,c_j)=\pm(b_k,c_k)$), so at an irreducible truth $W_0$ is finite; \textcite{ChenEtAl1993} describe the group of these moves for multilayer $\tanh$ networks, a direct product of Weyl groups. At a reducible truth, by part (i) the truth of every network with more units than it needs, the picture changes.
+
+\begin{example}[Two units, one needed]\label[example]{exa:singular:twounits}
+Let $h=2$ and let the truth be $f^*(x)=d^*+a^*\tanh(b^*x+c^*)$ with $a^*\ne0\ne b^*$, fitted as a regression with standard normal noise and inputs uniform on $[-1,1]$; then $K(w)=0$ means $f_w=f^*$ on $[-1,1]$, hence on $\R$, since both are analytic in $x$. By \cref{thm:singular:sussmann}(i) such a $w\in\R^7$ is reducible, and in each case of reducibility it computes the function of a one-unit parameter, to which part (ii) applies. If $a_2=0$: $(a_1,b_1,c_1)=\pm(a^*,b^*,c^*)$, $d=d^*$, and $(b_2,c_2)$ is free, two planes. If $b_2=0$: $(a_1,b_1,c_1)=\pm(a^*,b^*,c^*)$ and $d+a_2\tanh c_2=d^*$ with $(a_2,c_2)$ free, two curved surfaces. If $(b_1,c_1)=\sigma(b_2,c_2)$ with $\sigma=\pm1$: $(b_1,c_1)=\epsilon(b^*,c^*)$, $d=d^*$ and $a_1+\sigma a_2=\epsilon a^*$ for a sign $\epsilon$, four lines. With the units exchanged in the first two cases, $W_0$ is the union of eight two-dimensional pieces and four lines in $\R^7$, which meet along lines and at points; by \cref{prop:singular:fisher} the Fisher information has rank at most $5$ on the two-dimensional pieces, at most $6$ on the lines, and less where pieces cross.
+\end{example}
+
+For ReLU networks the positive rescaling of each unit is already a continuous symmetry, so every true set contains curves; \textcite{DinhEtAl2017} used it to change the sharpness of a minimum arbitrarily without changing the function, \textcite{BonaPellissierEtAl2023} give conditions under which a deep ReLU network is determined by its function up to permutation and rescaling, and \textcite{GrigsbyEtAl2023} show that some ReLU networks have further, hidden symmetries.
+
+The folds shape gradient descent too. \Textcite{FukumizuAmari2000} showed that a critical point of a network with $h-1$ hidden units gives lines of critical points of the network with $h$ units, which can be local minima or saddles and can cause plateaus of training; \textcite{AmariEtAl2006}, \textcite{WeiEtAl2008} and \textcite{CousseauEtAl2008} analyze learning near such singularities. On the product model, gradient flow from $(\eps,\eps)$ needs a time of about $\frac1{2c_0}\log\frac{c_0}{\eps^2}$ to leave the origin toward the truth $c_0>0$ (\cref{ex:singular:plateau}); \cref{ch:sgd} returns to the dynamics.
+
+\section{The theorem: the posterior spreads over scales}\label{sec:singular:scales}
+
+We now turn \cref{comp:singular:posterior} into a theorem with a complete proof. Besides $S_{xx}$, $S_{xy}$, $\hat c$ and $s$, put
+\[
+Z_n=\frac{S_{xy}}{\sqrt{S_{xx}}}=\frac{\hat c}s,\qquad\ell_n=\tfrac12\log S_{xx}=-\log s,
+\]
+and write $t_+=\max(t,0)$ and $t_-=\max(-t,0)$. Under the singular truth, given $x_1,\dots,x_n$, the statistic $S_{xy}=\sum_ix_i\varepsilon_i$ is normal with mean $0$ and variance $S_{xx}$, so $Z_n\sim\Normal(0,1)$ exactly, for every $n$; and $S_{xx}/n\to1$ almost surely by the strong law of large numbers. The proof needs one fact about the logarithm of a normal variable.
+
+\begin{lemma}[The logarithm of a Gaussian]\label[lemma]{lem:singular:loggauss}
+Let $z\in\R$, let $\xi\sim\Normal(0,1)$, and let $X=\log\abs{z+\xi}$. Then $\E X_-\le\sqrt{2/\pi}$ and $\E X_+\le\log(1+\abs z)+\sqrt{2/\pi}$. Consequently, with $\kappa(z)=\log(1+\abs z)+\sqrt{2/\pi}$, for every real $L$
+\[
+\bigl|\E[(L-X)_+]-L_+\bigr|\le\kappa(z).
+\]
+\end{lemma}
+
+\begin{proof}
+The density of $z+\xi$ is at most $1/\sqrt{2\pi}$, and $X_->0$ only where $\abs{z+\xi}<1$, so $\E X_-\le\frac1{\sqrt{2\pi}}\int_{-1}^1\log\frac1{\abs y}\dd y=\sqrt{2/\pi}$. Since $1+\abs z+\abs\xi\le(1+\abs z)(1+\abs\xi)$ and $\log(1+\abs\xi)\le\abs\xi$, $X_+\le\log(1+\abs z+\abs\xi)\le\log(1+\abs z)+\abs\xi$, and $\E\abs\xi=\sqrt{2/\pi}$. For the consequence, let first $L\ge0$. Pointwise $(L-X)_+\ge L-X$, and $(L-X)_+\le L+X_-$ (if $X\ge0$, then the left side is at most $L$; if $X<0$, then it equals $L+X_-$); taking expectations, $L-\E X_+\le\E(L-X)_+\le L+\E X_-$, and both $\E X_+$ and $\E X_-$ are at most $\kappa(z)$. If $L<0$, then $0\le(L-X)_+\le X_-$ pointwise, so $0\le\E(L-X)_+\le\kappa(z)$, while $L_+=0$.
+\end{proof}
+
+\begin{theorem}[The posterior spreads uniformly over scales]\label{thm:singular:scales}\index{posterior!uniform over scales}
+Let $X_i=(x_i,y_i)$, $i=1,\dots,n$, be independent, with $x_i\sim\Normal(0,1)$ and $y_i\sim\Normal(0,1)$ independent of $x_i$: the product model $y=abx+\varepsilon$ at its singular truth. Let the prior be uniform on $W=[-1,1]^2$, let $\Pi_n$ be the posterior at $\beta=1$, and let $\xi\sim\Normal(0,1)$ be independent of the data.
+\begin{enumerate}[label=(\roman*)]
+\item For every data set with $S_{xx}>0$ and every $u\le0$,
+\begin{equation}\label{eq:singular:cdf}
+\Pi_n\bigl(\log\abs a\le u\bigr)=\frac{\E_\xi\bigl[(u-\log\abs{\hat c+s\xi})_+\bigr]}{\E_\xi\bigl[(-\log\abs{\hat c+s\xi})_+\bigr]}.
+\end{equation}
+\item With $\kappa_n=\log(1+\abs{Z_n})+\sqrt{2/\pi}$, on every data set with $\ell_n>\kappa_n$,
+\begin{equation}\label{eq:singular:bound}
+\sup_{u\le0}\Bigl|\Pi_n\bigl(\log\abs a\le u\bigr)-\Bigl(1+\frac u{\ell_n}\Bigr)_+\Bigr|\le\frac{2\kappa_n}{\ell_n-\kappa_n}.
+\end{equation}
+\item As $n\to\infty$,
+\[
+\sup_{\tau\le0}\Bigl|\Pi_n\bigl(\log\abs a\le\tau\log n\bigr)-(1+2\tau)_+\Bigr|=O_p\Bigl(\frac1{\log n}\Bigr).
+\]
+In particular $\Pi_n(\log\abs a\le\tau\log n)\to1+2\tau$ in probability for every $\tau\in[-\frac12,0]$: the posterior law of $\log\abs a/\log n$ converges weakly, in probability, to $\Unif(-\frac12,0)$.
+\item The same holds with $b$ in place of $a$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to read (i) off \cref{comp:singular:posterior}, to compare its numerator and denominator with $u+\ell_n$ and $\ell_n$ by \cref{lem:singular:loggauss}, and to let $n\to\infty$ in the resulting bound. Fix a data set with $S_{xx}>0$, an event of probability one.
+
+For (i), steps 1, 2 and 5 of \cref{comp:singular:posterior} are exact: the posterior density on $W$ is proportional to $e^{-(ab-\hat c)^2/(2s^2)}$, and for $a\ne0$ the substitution $c=ab$ gives $\int_{-1}^1e^{-(ab-\hat c)^2/(2s^2)}\dd b=\sqrt{2\pi}\,s\,\Prob(\abs Y\le\abs a)/\abs a$ with $Y=\hat c+s\xi$. For $u\le0$, substitute $\abs a=e^v$ on each half-line and exchange integral and expectation by Tonelli's theorem, which applies because the integrand $\ind\{\log\abs Y\le v\}$ is nonnegative ($Y\ne0$ almost surely):
+\begin{align*}
+\int_{\abs a\le e^u}\frac{\Prob(\abs Y\le\abs a)}{\abs a}\dd a&=2\int_{-\infty}^u\Prob\bigl(\log\abs Y\le v\bigr)\dd v\\
+&=2\,\E\Bigl[\int_{-\infty}^u\ind\{\log\abs Y\le v\}\dd v\Bigr]=2\,\E\bigl[(u-\log\abs Y)_+\bigr].
+\end{align*}
+Dividing the value at $u$ by the value at $u=0$ gives \eqref{eq:singular:cdf}. The denominator is positive because $\Prob(\abs Y<1)>0$, and finite by the next paragraph.
+
+For (ii), $\hat c=sZ_n$ gives $Y=s(Z_n+\xi)$; with $X=\log\abs{Z_n+\xi}$, $u-\log\abs Y=u+\ell_n-X$. Write $N=\E_\xi(u+\ell_n-X)_+$ and $D=\E_\xi(\ell_n-X)_+$ for the numerator and the denominator of \eqref{eq:singular:cdf}, and $A=(u+\ell_n)_+$. By \cref{lem:singular:loggauss} with $z=Z_n$, $\abs{N-A}\le\kappa_n$ and $\abs{D-\ell_n}\le\kappa_n$; and $0\le A\le\ell_n$, because $u\le0<\kappa_n<\ell_n$. Then $D\ge\ell_n-\kappa_n>0$, and splitting the difference of the ratios into a numerator error and a denominator error,
+\[
+\Bigl|\frac ND-\frac A{\ell_n}\Bigr|=\frac{\abs{\ell_n(N-A)-A(D-\ell_n)}}{\ell_nD}\le\frac{\ell_n\kappa_n+\ell_n\kappa_n}{\ell_n(\ell_n-\kappa_n)}=\frac{2\kappa_n}{\ell_n-\kappa_n}.
+\]
+Since $A/\ell_n=(1+u/\ell_n)_+$, this is \eqref{eq:singular:bound}.
+
+For (iii), put $u=\tau\log n$ and $\alpha_n=\log n/\ell_n$. On $\{\ell_n>\kappa_n\}$, by \eqref{eq:singular:bound} and the triangle inequality, the supremum in (iii) is at most $2\kappa_n/(\ell_n-\kappa_n)+\sup_{\tau\le0}\abs{(1+\alpha_n\tau)_+-(1+2\tau)_+}$. For $0<\alpha<\beta$ the function $\tau\mapsto(1+\alpha\tau)_+-(1+\beta\tau)_+$ on $(-\infty,0]$ equals $(\beta-\alpha)\abs\tau\le1-\alpha/\beta$ on $[-1/\beta,0]$, equals $1+\alpha\tau\le1-\alpha/\beta$ on $[-1/\alpha,-1/\beta]$, and vanishes below $-1/\alpha$; so the second supremum is at most $\abs{\alpha_n-2}/\max(\alpha_n,2)\le\frac12\abs{\alpha_n-2}=\abs{\log(n/S_{xx})}/\log S_{xx}$. Now $S_{xx}/n\to1$ almost surely, so $\ell_n/\log n\to\frac12$ and $\log(n/S_{xx})\to0$, and $\kappa_n$ has the same law for every $n$, because $Z_n\sim\Normal(0,1)$. Given $\eps>0$, choose $M$ with $\Prob(\kappa_n>M)<\eps$. For all large $n$, with probability at least $1-2\eps$, $\kappa_n\le M$, $\ell_n\ge\frac13\log n$ and $\abs{\log(n/S_{xx})}\le1$; if also $\log n\ge6M$, then $\ell_n-\kappa_n\ge\frac16\log n$ and the supremum is at most $(12M+2)/\log n$. This is the $O_p(1/\log n)$ bound. The distribution function of $\Unif(-\frac12,0)$ is $(1+2\tau)_+$ for $\tau\le0$ and $1$ for $\tau>0$, where the posterior one is $1$ as well, since $\abs a\le1$; uniform convergence to a continuous distribution function gives the weak convergence.
+
+For (iv), the map $(a,b)\mapsto(b,a)$ preserves $W$, Lebesgue measure and $ab$, hence the posterior, so $\log\abs b$ has the posterior law of $\log\abs a$.
+\end{proof}
+
+Under a regular posterior a parameter lives at one scale, $n^{-1/2}$; here $\log\abs a$ is spread evenly over $\frac12\log n$ units of scale. The posterior does concentrate at the origin, but only logarithmically: by \eqref{eq:singular:cdf}, $\Pi_n(\abs a>\delta)$ is about $2\log(1/\delta)/(\log n+0.58)$, which is $0.32$ for $\delta=0.1$ at $n=10^6$ and still $0.02$ at $n=10^{100}$.\sidenote{So the arms of the prologue's \cref{fig:prologue:draws} do shorten as $n$ grows, but only in posterior mass and only at the rate $1/\log n$: at $n=10^6$ nearly two thirds of the draws, $64\%$ on average over data sets, have $\max(\abs a,\abs b)>0.1$.}
+
+\begin{remark}[The finite-$n$ law]\label[remark]{rem:singular:finite}
+Since $(L-X)_+=L-X+(X-L)_+$, the numerator of \eqref{eq:singular:cdf} is $u+\ell_n-\mu(Z_n)+\E_\xi(X-u-\ell_n)_+$ with $\mu(z)=\E\log\abs{z+\xi}$, and the last term is negligible once $u+\ell_n$ is large; so the posterior $p$-quantile of $\log\abs a$ is about $-(1-p)(\ell_n-\mu(Z_n))$ (we do not bound the error). As $\E\ell_n=\frac12\log n+O(n^{-1})$ and $\E\mu(Z_n)=\E\log\abs{\Normal(0,2)}=-\frac\gamma2$, with $\gamma=0.5772$ Euler's constant, the average $p$-quantile of $\log\abs a/\log n$ is about
+\begin{equation}\label{eq:singular:finite}
+-\frac{1-p}2\Bigl(1+\frac\gamma{\log n}\Bigr);
+\end{equation}
+for the quartiles at $n=10^9$ this is $-0.385$, $-0.257$, $-0.128$, against the limits $-0.375$, $-0.25$, $-0.125$. The convergence is genuinely as slow as $1/\log n$.
+\end{remark}
+
+\begin{remark}[The scales and the $\log\log n$]\label[remark]{rem:singular:free}
+The denominator of \eqref{eq:singular:cdf} is the factor $\log n$ of the marginal likelihood. By step 1 of \cref{comp:singular:posterior}, $nK_n(a,b)=(ab-\hat c)^2/(2s^2)-Z_n^2/2$, and the proof of (i) gives, exactly,
+\[
+\int_W\tfrac14e^{-nK_n(w)}\dd w=\frac{\sqrt{2\pi}}2\,s\,e^{Z_n^2/2}\,\E_\xi\bigl[(-\log\abs{\hat c+s\xi})_+\bigr].
+\]
+The expectation is $\ell_n+O_p(1)$ by \cref{lem:singular:loggauss}, so $F_n-nS_n=\frac12\log n-\log\log n+O_p(1)$, as \cref{thm:coefficient:free} proves for every one-coefficient model; the $\log\log n$ is the logarithm of the number of scales that the posterior occupies.
+\end{remark}
+
+The first consequence answers the regular answer box: no change of coordinates, no centering and no rate rescues the Gaussian.
+
+\begin{corollary}[No Gaussian limit in smooth coordinates]\label[corollary]{cor:singular:nobvm}
+In the setting of \cref{thm:singular:scales}, let $\Psi$ be a $C^1$ diffeomorphism from an open set containing $W$ onto an open subset of $\R^2$, let $\hat\theta_n\in\R^2$ and $\sigma_n>0$ be statistics, and let $Q$ be a probability measure on $\R^2$ with a density bounded by a constant $B$. Then the total variation distance between the posterior law of $(\Psi(w)-\hat\theta_n)/\sigma_n$ and $Q$ does not converge to $0$ in probability. In particular the conclusion of the Bernstein--von Mises theorem fails in every system of $C^1$ coordinates, with every centering and every rate.
+\end{corollary}
+
+\begin{proof}
+The plan is to show that $Q$, moved and rescaled, puts most of its mass on a bounded range of scales of the distance to $\Psi(0)$, while by \cref{thm:singular:scales} the posterior puts vanishing mass on every such range. Write $\theta_0=\Psi(0)$, $\rho(w)=\norm{\Psi(w)-\theta_0}$, $\norm w_\infty=\max(\abs a,\abs b)$ and $T_n=(\Psi(w)-\hat\theta_n)/\sigma_n$.
+
+\emph{Step 1: $\rho$ is comparable with $\norm w_\infty$.} The derivative of $\Psi$ is bounded on the compact convex set $W$, so $\rho\le c_2\norm w_\infty$ by the mean value inequality. The ratio $\rho(w)/\norm w_\infty$ is continuous and positive on $W\setminus\{0\}$, since $\Psi$ is injective, and its lower limit at $0$ is at least the smallest singular value $\sigma_*>0$ of the invertible matrix $D\Psi(0)$; so it exceeds $\sigma_*/2$ near $0$ and has a positive minimum on the compact rest of $W$, and $\rho\ge c_1\norm w_\infty$ for some $c_1>0$.
+
+\emph{Step 2: bounded ranges of scales have vanishing posterior mass.} Fix $\ell>0$ and $J=[v,v+\ell]$, and let $J'=[v-\log c_2,\,v+\ell-\log c_1]$, of length $\ell'=\ell+\log(c_2/c_1)$. If $\log\rho(w)\in J$, then $\log\norm w_\infty\in J'$, and $\norm w_\infty$ is $\abs a$ or $\abs b$; by part (iv), $\Pi_n(\log\rho\in J)\le2\,\Pi_n(\log\abs a\in J')$. By \eqref{eq:singular:bound}, the posterior distribution function of $\log\abs a$, which is continuous, is within $\eps_n=2\kappa_n/(\ell_n-\kappa_n)$ of the $(1/\ell_n)$-Lipschitz function $\min\{1,(1+u/\ell_n)_+\}$, for $u\le0$ and also for $u>0$, where both equal $1$. Hence on $\{\ell_n>\kappa_n\}$
+\[
+\sup_{v\in\R}\Pi_n\bigl(\log\rho\in[v,v+\ell]\bigr)\le\frac{2\ell'}{\ell_n}+4\eps_n,
+\]
+which tends to $0$ in probability, as in the proof of (iii).
+
+\emph{Step 3: a limit $Q$ would put mass on a bounded range of scales.} Suppose, to the contrary, that $\delta_n=\norm{\Pi_n(T_n\in\cdot)-Q}_{\mathrm{TV}}\to0$ in probability. Choose $M\ge1$ with $Q(\{\norm t\le M\})\ge\frac78$ and $\eta\in(0,1]$ with $\pi\eta^2B\le\frac18$, so that every disc of radius $\eta$ has $Q$-mass at most $\frac18$; put $\ell=\log(3M/\eta)\ge\log3$ and $D_n=\norm{\hat\theta_n-\theta_0}$. If $D_n\ge2M\sigma_n$, then $\norm{T_n}\le M$ implies $\norm{\Psi(w)-\hat\theta_n}\le\frac12D_n$, so $\frac12D_n\le\rho\le\frac32D_n$, a range of length $\log3$ in $\log\rho$, with posterior probability at least $\frac78-\delta_n$. If $D_n<2M\sigma_n$, then $\norm{T_n}\le M$ implies $\rho<3M\sigma_n$, while $\{\rho<\eta\sigma_n\}$ is the event that $T_n$ lies in the disc of radius $\eta$ about $(\theta_0-\hat\theta_n)/\sigma_n$, of posterior probability at most $\frac18+\delta_n$; so $\eta\sigma_n\le\rho<3M\sigma_n$, a range of length $\ell$, with posterior probability at least $\frac78-\delta_n-\frac18-\delta_n$. In both cases
+\[
+\sup_{v\in\R}\Pi_n\bigl(\log\rho\in[v,v+\ell]\bigr)\ge\tfrac34-2\delta_n,
+\]
+which is at least $\frac12$ with probability tending to one, contradicting step 2.
+\end{proof}
+
+The coefficient, by contrast, is learned in the regular way: the posterior law of $(ab-\hat c)/s$ converges in total variation to $\Normal(0,1)$ (\cref{ex:singular:coefficient}). Only the parametrization is singular, as for a network whose weights fold while its output does not. The second consequence concerns point estimates.\index{maximum a posteriori estimate}
+
+\begin{corollary}[MAP, posterior mean, and the scale of $\abs a$]\label[corollary]{cor:singular:point}
+In the setting of \cref{thm:singular:scales}, on every data set with $0<\abs{\hat c}<1$:
+\begin{enumerate}[label=(\roman*)]
+\item the posterior density is maximal exactly on $\{(a,b)\in W:ab=\hat c\}$, two arcs of a hyperbola on which $\abs a$ takes every value in $[\abs{\hat c},1]$; so the maximum a posteriori estimate, which for the uniform prior is the maximum-likelihood estimate in $W$, is a curve;
+\item the posterior mean of $w$ is $(0,0)$;
+\item the posterior mean of $\abs a$ is $\E_\xi[(1-\abs{\hat c+s\xi})_+]/\E_\xi[(-\log\abs{\hat c+s\xi})_+]$, and $\log n\cdot\Ew{\abs a}\to2$ in probability, while the posterior median of $\abs a$ is $n^{-1/4+o_p(1)}$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+The plan is to read each claim off the posterior density and the integrals of \cref{thm:singular:scales}. For (i), the posterior density is proportional to $e^{-(ab-\hat c)^2/(2s^2)}\le1$, with equality exactly when $ab=\hat c$, and the points of $W$ with $ab=\hat c$ are $(a,\hat c/a)$ with $\abs{\hat c}\le\abs a\le1$. For (ii), the map $(a,b)\mapsto(-a,-b)$ preserves $W$, Lebesgue measure and $ab$, hence the posterior, so $\Ew a=\Ew{-a}=0$, and likewise $\Ew b=0$. For (iii), the inner integral of the proof of \cref{thm:singular:scales}(i) and Tonelli's theorem give $\int_W\abs a\,e^{-(ab-\hat c)^2/(2s^2)}\dd w=\sqrt{2\pi}\,s\int_{-1}^1\Prob(\abs Y\le\abs a)\dd a=2\sqrt{2\pi}\,s\,\E(1-\abs Y)_+$, and the normalizing integral is $2\sqrt{2\pi}\,s\,\E(-\log\abs Y)_+$. The numerator lies between $1-\E\abs Y\ge1-\abs{\hat c}-s$ and $1$, so it tends to $1$ almost surely; the denominator is $\ell_n+O_p(1)$ by \cref{lem:singular:loggauss}, and $\ell_n/\log n\to\frac12$. The median follows from \cref{thm:singular:scales}(iii) with $\tau=-\frac14$.
+\end{proof}
+
+In the regular theory these summaries agree to $o_p(n^{-1/2})$. Here the maximizers form a curve from scale $n^{-1/2}$ to scale $1$, the mean is a point near no maximizer, and the typical size of $\abs a$ is $n^{-1/4}$ while its mean is $2/\log n$.
+
+\section{Measuring it}\label{sec:singular:measuring}
+
+\Cref{thm:singular:scales} is exact at every $n$ through \eqref{eq:singular:cdf}, so a measurement can test both the limit and the finite-$n$ law. The script \texttt{02-singular-scales.py} (in \texttt{figures/scripts}; about $35$ seconds) simulates the product model at its singular truth at eight sample sizes from $10^2$ to $10^{16}$: the posterior depends on the data only through $(S_{xx},S_{xy})$, and under the truth $S_{xx}\sim\chi^2_n$ and $S_{xy}\mid S_{xx}\sim\Normal(0,S_{xx})$ exactly, so it draws these two statistics. For each size it simulates $200$ data sets, draws $2000$ exact posterior samples from each with the sampler of \cref{comp:singular:posterior}, and records the posterior quartiles of $\log\abs a/\log n$; a measured point is their mean over data sets, with a Student-$t$ $95\%$ interval, and the prediction is the same mean computed from \eqref{eq:singular:cdf} by Gauss--Hermite quadrature over $Z_n\sim\Normal(0,1)$, with $\ell_n$ at its mean. The regular comparison is the regular plane $y=ax_1+bx_2$ with the same prior and truth, whose posterior of $a$ is $\Normal(\hat a,v)$ (the box truncates it negligibly), with $\hat a/\sqrt v\sim\Normal(0,1)$ and $1/v\sim\chi^2_{n-1}$. The sampler passes a check against the exact answer: on each data set the quartiles of its draws differ from the exact quartiles of the same posterior by $0.0040$ to $0.0053$ on average, the size of the Monte Carlo error alone (standard error about $0.005$).
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},splot,width=0.50\linewidth,height=0.335\linewidth]
+\nextgroupplot[xlabel={$\tau$},ylabel={$\Pi_n(\log\abs a\le\tau\log n)$},xmin=-0.7,xmax=0,ymin=0,ymax=1,
+  xtick={-0.6,-0.4,-0.2,0},title={(a) distribution function at $n=10^6$},
+  legend style={font=\scriptsize,at={(0.99,0.03)},anchor=south east}]
+\addplot[regularpred] table[x=tau,y=reg] {figures/data/02-singular-cdfpred.dat};
+\addplot[measured3,ebars] table[x=tau,y=reg,y error plus=regci,y error minus=regci] {figures/data/02-singular-cdf.dat};
+\addplot[theory2,forget plot] table[x=tau,y=limit] {figures/data/02-singular-cdfpred.dat};
+\addplot[theory] table[x=tau,y=exact] {figures/data/02-singular-cdfpred.dat};
+\addplot[measured,ebars] table[x=tau,y=sing,y error plus=singci,y error minus=singci] {figures/data/02-singular-cdf.dat};
+\legend{regular{,} predicted,regular{,} measured,singular{,} predicted,singular{,} measured}
+\nextgroupplot[xmode=log,xlabel={sample size $n$},ylabel={quartiles of $\log\abs a/\log n$},xmin=50,xmax=4e16,
+  ymin=-0.95,ymax=0,ytick={-0.75,-0.5,-0.25,0},xtick={1e2,1e4,1e6,1e8,1e10,1e12,1e14,1e16},
+  title={(b) quartiles against $n$},legend pos=south east,legend style={font=\scriptsize}]
+\addplot[regularpred] table[x=n,y=g1] {figures/data/02-singular-quartpred.dat};
+\addplot[theory] table[x=n,y=p1] {figures/data/02-singular-quartpred.dat};
+\addplot[measured,ebars] table[x=n,y=q1,y error plus=q1ci,y error minus=q1ci] {figures/data/02-singular-quartiles.dat};
+\addplot[measured3,ebars] table[x=n,y=r1,y error plus=r1ci,y error minus=r1ci] {figures/data/02-singular-quartiles.dat};
+\addplot[regularpred,forget plot] table[x=n,y=g2] {figures/data/02-singular-quartpred.dat};
+\addplot[regularpred,forget plot] table[x=n,y=g3] {figures/data/02-singular-quartpred.dat};
+\addplot[theory,forget plot] table[x=n,y=p2] {figures/data/02-singular-quartpred.dat};
+\addplot[theory,forget plot] table[x=n,y=p3] {figures/data/02-singular-quartpred.dat};
+\addplot[guide,forget plot,domain=50:4e16,samples=2] {-0.375};
+\addplot[guide,forget plot,domain=50:4e16,samples=2] {-0.25};
+\addplot[guide,forget plot,domain=50:4e16,samples=2] {-0.125};
+\addplot[measured,ebars,forget plot] table[x=n,y=q2,y error plus=q2ci,y error minus=q2ci] {figures/data/02-singular-quartiles.dat};
+\addplot[measured,ebars,forget plot] table[x=n,y=q3,y error plus=q3ci,y error minus=q3ci] {figures/data/02-singular-quartiles.dat};
+\addplot[measured3,ebars,forget plot] table[x=n,y=r2,y error plus=r2ci,y error minus=r2ci] {figures/data/02-singular-quartiles.dat};
+\addplot[measured3,ebars,forget plot] table[x=n,y=r3,y error plus=r3ci,y error minus=r3ci] {figures/data/02-singular-quartiles.dat};
+\legend{regular{,} predicted,singular{,} predicted,singular{,} measured,regular{,} measured}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{The posterior of $\log\abs a/\log n$ for the product model $y=abx$ at its singular truth (dots; bronze curves) and for the regular plane $y=ax_1+bx_2$ (squares; slate curves), with the uniform prior on $[-1,1]^2$. Each point is the mean over $200$ data sets, simulated through $(S_{xx},S_{xy})$, of a posterior quantity estimated from $2000$ exact draws, with Student-$t$ $95\%$ intervals. (a) The distribution function at $n=10^6$. Bronze solid: the exact prediction \eqref{eq:singular:cdf}, averaged over data sets; bronze dotted: the limit $\Unif(-\frac12,0)$ of \cref{thm:singular:scales}; slate dashed: the regular prediction $2\Phi(n^{\tau+1/2}/\sqrt2)-1$. (b) The three quartiles against $n$, from $10^2$ to $10^{16}$. Bronze: the exact predictions, approaching the limits $-\frac38$, $-\frac14$, $-\frac18$ (thin dashed); slate dashed: the regular predictions, collapsing onto $-\frac12$. Seeds: data $2026$ (a), $5000+\log_{10}n$ (b); draws $10^4+r$ (a), $10^5\log_{10}n+r$ (b) for data set $r$. Script: \texttt{figures/scripts/02-singular-scales.py}.}\label{fig:singular:scales}
+\end{figure}
+
+In \cref{fig:singular:scales}(a), at $n=10^6$, the $29$ measured points of the product model lie within $0.0008$ of the exact prediction, and every interval contains it; for the regular plane $28$ of $29$ intervals contain the regular prediction. The regular posterior puts $\log\abs a/\log n$ between $-0.68$ and $-0.43$ with probability $0.9$, and its spread in $\log\abs a$ does not grow with $n$; the singular posterior spreads it over all of $[-\frac12,0]$, close to the uniform law, with a gap of at most $0.075$ that is the finite-$n$ effect of \cref{rem:singular:finite}.
+
+In \cref{fig:singular:scales}(b) the singular quartiles approach $-\frac38$, $-\frac14$, $-\frac18$ as slowly as \eqref{eq:singular:finite} says: at $n=10^{16}$ they are $-0.3809$, $-0.2539$, $-0.1270$ predicted and $-0.3800$, $-0.2530$, $-0.1265$ measured, with half-widths $0.0014$, $0.0012$, $0.0008$. The regular quartiles collapse onto $-\frac12$, from $(-0.674,-0.522,-0.416)$ at $n=10^2$ to $(-0.519,-0.501,-0.488)$ at $10^{16}$. Of the $24$ singular intervals $22$ contain the prediction, the two misses (at $n=10^3$ and $10^{12}$) lying at the edge of their intervals; of the $24$ regular ones $21$ do, the three misses being the three quartiles at $n=10^2$, from the same $200$ data sets, $1.3$ half-widths away. At $n=10^2$ the two models are hard to tell apart by their quartiles; what separates them is that the singular spread of $\log\abs a$ grows like $\frac14\log n$ and the regular one does not.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=4 by 1,horizontal sep=9mm},splot,width=0.255\linewidth,height=0.24\linewidth,
+  title style={yshift=-1ex},xlabel={$a$}]
+\nextgroupplot[title={$y=abx$},xmin=-1,xmax=1,ymin=-1,ymax=1,xtick={-1,0,1},ytick={-1,0,1},ylabel={$b$}]
+\addplot[draws] table[x=a,y=b] {figures/data/02-singular-zoo-product.dat};
+\nextgroupplot[title={$y=a\tanh(bx)$},xmin=-2,xmax=2,ymin=-2,ymax=2,xtick={-2,0,2},ytick={-2,0,2}]
+\addplot[draws] table[x=a,y=b] {figures/data/02-singular-zoo-tanh.dat};
+\nextgroupplot[title={$y=a\relu(bx)$},xmin=-1,xmax=1,ymin=-1,ymax=1,xtick={-1,0,1},ytick={-1,0,1}]
+\addplot[draws] table[x=a,y=b] {figures/data/02-singular-zoo-relu.dat};
+\nextgroupplot[title={mixture},xmin=0,xmax=1,ymin=-2,ymax=2,xtick={0,1},ytick={-2,0,2}]
+\addplot[draws] table[x=a,y=b] {figures/data/02-singular-zoo-mixture.dat};
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Posterior draws for the four models of \cref{tab:singular:cast} at the truth ``nothing to learn'', one data set of size $n=10^3$ each (data seed $1000$, draw seeds $2000$ to $2003$): $1500$ draws from the posterior computed by midpoint quadrature on a grid of $600\times600$ cells ($300\times1200$ for the mixture, whose weight $a$ lies in $[0,1]$ and location $b$ in $[-2,2]$). Script: \texttt{figures/scripts/02-singular-zoo.py}.}\label{fig:singular:zoo}
+\end{figure}
+
+\Cref{fig:singular:zoo} shows that the picture is not special to the product model (its script runs in about $40$ seconds). For the product model the grid quartiles of $\log\abs a/\log n$ are $-0.403$, $-0.267$, $-0.133$, against $-0.406$, $-0.266$, $-0.133$ from \eqref{eq:singular:cdf} for the same data, which checks the grid. The ReLU neuron gives almost the same numbers, $-0.403$, $-0.264$, $-0.132$; \cref{ex:singular:relu} shows why. The tanh neuron gives $-0.399$, $-0.240$, $-0.073$ and the mixture $-0.500$, $-0.309$, $-0.151$: their boxes and their constants $c_1,c_2$ differ from the product model's, and an $O(1)$ change in $\log\abs a$ moves $\log\abs a/\log n$ by $O(1/\log n)$, about $0.1$ at $n=10^3$. Whether their scale laws have the same limit we have not proved (\cref{ex:singular:tanhscales}).
+
+\section{The ledger}\label{sec:singular:ledger}
+
+The regular picture, a Gaussian at one point, needs a single true parameter with an invertible Fisher information, and a fold destroys both: wherever the true set contains a curve, its tangent is a null vector of the Fisher information (\cref{prop:singular:fisher}). The posterior of the product model is the prior's own distribution along the fibers $\{ab=c\}$, mixed over the fibers the data allow; it spreads $\log\abs a$ uniformly over $\frac12\log n$ units of scale (\cref{thm:singular:scales}), so that no smooth coordinates make it Gaussian (\cref{cor:singular:nobvm}), and the logarithm of the normalizer of that uniform law is the $-\log\log n$ of \cref{ch:coefficient}.
+
+\ledgercard{the set of true parameters $W_0$, the Fisher information on it, and the shape of the posterior}
+{$W_0$ a point; Fisher information invertible; the posterior close to a Gaussian of width $n^{-1/2}$ (Bernstein--von Mises)}
+{$W_0$ contains curves, on which the Fisher information is singular (\cref{prop:singular:fisher}); $\log\abs a/\log n\to\Unif(-\frac12,0)$ under the posterior (\cref{thm:singular:scales}); no Gaussian limit in $C^1$ coordinates (\cref{cor:singular:nobvm})}
+{$y=abx$: $W_0$ the cross, $I(a,b)=(b,a)^\top(b,a)$; posterior quartiles of $\log\abs a/\log n\to-\frac38,-\frac14,-\frac18$; tanh neuron: the same cross, $K\asymp a^2b^2$}
+{quartiles $-0.3800$, $-0.2530$, $-0.1265$ (half-widths at most $0.0014$) at $n=10^{16}$, predicted $-0.3809$, $-0.2539$, $-0.1270$; regular plane $-0.519$, $-0.501$, $-0.488$}
+{realizability at the singular truth; Gaussian noise of known variance; the uniform prior on $[-1,1]^2$, positive on both arms; the exact posterior}
+
+\section{Where the theory stops}\label{sec:singular:stops}
+
+\paragraph{What was assumed.} A truth exactly at the singular point: at a truth $0<\abs{c_0}<1$ the spread stops at the scale $\abs{c_0}$, and the posterior converges to a fixed law on the hyperbola (\cref{ex:singular:generic}). Gaussian noise of known variance, which makes the likelihood exactly Gaussian in $c$ and $Z_n$ exactly standard normal; the inputs enter only through $S_{xx}$, so every input law with $\log S_{xx}/\log n\to1$ in probability gives the same limit. A uniform prior, positive on both arms of the cross. The exact posterior at $\beta=1$, although the proof goes through at every fixed inverse temperature $\beta$, with $s$ replaced by $(\beta S_{xx})^{-1/2}$ and $Z_n$ by $\sqrt\beta\,Z_n$, and the limit survives at $\beta=1/\log n$, where the rate in (iii) becomes $\log\log n/\log n$. Not analyticity: the ReLU neuron obeys the same law (\cref{ex:singular:relu}); but Watanabe's general theorems assume it, which is why the tanh neuron takes uniform inputs and the mixture is not covered verbatim. And patience: at the rate $1/\log n$, the finite-$n$ law \eqref{eq:singular:cdf}, not its limit, describes the posterior at all practical sample sizes.
+
+\paragraph{Where it breaks.} Priors that vanish on the singular set change the picture. Jeffreys' prior is identically zero for the product model; where the Fisher information degenerates only on the singular set it vanishes there, and \textcite{Watanabe2024} states that with Jeffreys' prior the learning coefficient is at least $\frac d2$, which removes the advantage of the singularity. A prior proportional to $\abs a^h$, $h>0$, which vanishes on one arm only, keeps $\lambda=\frac12$ but lowers $m$ to $1$ and moves the posterior onto the other arm, with no spreading over scales (\cref{ex:singular:onearm}). Maximum likelihood fares worse: the maximum-likelihood set of the product model is a curve (\cref{cor:singular:point}), and the classical likelihood-ratio theory fails, with a statistic that is not bounded in probability for one against two normal components with unrestricted means \parencite[as later accounts state it]{Hartigan1985} and of order at least $\log n$ for perceptrons with two or more redundant hidden units \parencite[from the abstract]{Fukumizu2003}. In networks the true sets are unions of pieces of different dimensions (\cref{exa:singular:twounits}), and no theorem we know describes how the posterior divides its mass among the pieces and over scales; \cref{thm:singular:scales} covers the product model and the ReLU neuron only. And for feedforward ReLU networks \textcite{WeiEtAl2023} check, in the arXiv version we read, that the Fisher information is degenerate at every nontrivial weight vector: there the regular picture fails everywhere.
+
+\paragraph{Open problems.} First, the scale law beyond one coefficient: for the tanh neuron, the mixture (\cref{ex:singular:tanhscales}), and networks at reducible truths, find the limit law of the posterior along $W_0$, its division among the pieces and its distribution over scales along each. Watanabe's theory describes the posterior through a resolution of singularities, in the variable $nK(w)$ \parencite{Watanabe2009,Watanabe2024}; as of October 2026 we have not found the distribution over scales along $W_0$ stated, even for the product model. Second, the geometry of $W_0$ for deep networks. \Textcite{FarrugiaRoberts2023a} characterizes the equivalence classes of reducible single-hidden-layer $\tanh$ networks and outlines extensions to modern architectures as future work; for ReLU networks \textcite{GrigsbyEtAl2025} show that the functional dimension varies across parameter space and give disconnected fibers, and the experiments of \textcite{GrigsbyEtAl2023} indicate that the probability that a network at initialization has no hidden symmetries decreases toward $0$ with depth and increases toward $1$ with width and input dimension, a trend for which we know of no proof. Third, the crossings of $W_0$ in networks of moderate size, where the learning coefficient drops, have not been catalogued as far as we know; \cref{ch:catalogue,ch:llc} collect what is known.
+
+\begin{exercises}
+\item \consolidation\hard (The tanh neuron.) (a) Show that $\E\tanh^2(bx)=1-\frac{\tanh b}b$ for $x\sim\Unif[-1,1]$, and expand it to order $b^4$. (b) Show that $u-\frac{u^3}3\le\tanh u\le u$ for $u\ge0$, and deduce $\frac{b^2}3-\frac{2b^4}{15}\le\E\tanh^2(bx)\le\frac{b^2}3$. (c) With $x\sim\Normal(0,1)$, show that $b^2-2b^4\le\E\tanh^2(bx)\le b^2$, but that the Taylor series of $\E\tanh^2(bx)$ at $b=0$ diverges for every $b\ne0$. \hint{in (c), the coefficient of $b^{2k}$ is that of $u^{2k}$ in $\tanh^2u$, which decays only geometrically because of the poles at $\pm\frac{i\pi}2$, times $\E x^{2k}=(2k-1)!!$.}\label{ex:singular:tanh}
+
+\item \consolidation\hard (The mixture.) (a) Show that $\E g^2=e^{b^2}-1$, $\E g^3=e^{3b^2}-3e^{b^2}+2$, and $K=\frac{a^2}2\E g^2-\frac{a^3}3\E g^3+O(a^4)$ uniformly in $\abs b\le2$. (b) Using $\psi(t)\ge t^2/(2(1+t_+))$, $\psi(t)\le\frac{t^2}2$ for $t\ge0$ and $\psi(t)\le t^2/(2(1+t))$ for $-1<t<0$, show that $\frac{a^2}2\E[g^2/(1+g_+)]\le K\le a^2(e^{b^2}-1)$. (c) Show that the $k$th Taylor coefficient of $a\mapsto K(a,b)$ at $0$ is $(-1)^k\E[g^k]/k$, at least $2^{-k-1}e^{k(k-1)b^2/2}/k$ for large even $k$, so that the series diverges for every $a>0$ when $b\ne0$. \hint{for (b), on $\{g<0\}$, $1+ag\ge1+g=e^{bx-b^2/2}$.}\label{ex:singular:mixture}
+
+\item \consolidation (The coefficient is regular.) Show that under the posterior $t=(ab-\hat c)/s$ has a density proportional to $\phi(t)\,(\ell_n-\log\abs{Z_n+t})$ on $\{\abs{Z_n+t}\le e^{\ell_n}\}$, and deduce from \cref{lem:singular:loggauss} that its total variation distance from $\Normal(0,1)$ is at most $3\kappa_n/(2(\ell_n-\kappa_n))$ when $\ell_n>\kappa_n$. Conclude that the posterior law of $(\log\abs a,\log\abs b)/\log n$ converges weakly, in probability, to the uniform law on the segment from $(-\frac12,0)$ to $(0,-\frac12)$ (\cref{fig:singular:loglog}).\label{ex:singular:coefficient}
+
+\item \consolidation (The ReLU neuron obeys the same law.) Show that on $\{b>0\}$ the energy of the ReLU neuron depends on $(a,b)$ only through $ab$, with features $\relu(x_i)$, and on $\{b<0\}$ only through $-ab$, with features $\relu(-x_i)$; deduce that \cref{thm:singular:scales}(iii) holds for it. Where does the proof use analyticity?\label{ex:singular:relu}
+
+\item \byhand (A generic truth.) Let the truth be $y=c_0x+\varepsilon$ with $0<\abs{c_0}<1$. (a) Using steps 2 to 4 of \cref{comp:singular:posterior}, show that the posterior converges weakly, in probability, to the law on $W_0$ under which the sign of $a$ is uniform, $\log\abs a$ is uniform on $[\log\abs{c_0},0]$, and $b=c_0/a$. (b) Show that its density with respect to arc length on $W_0$ is $\abs a/(2\log\frac1{\abs{c_0}}\sqrt{a^4+c_0^2})$, the prior density divided by $\norm{\nabla(ab)}$ and normalized. (c) Explain why neither the Bernstein--von Mises theorem nor the scale law holds.\label{ex:singular:generic}
+
+\item \byhand\hard (Two units, one needed, without biases.) Let $f_w(x)=a_1\tanh(b_1x)+a_2\tanh(b_2x)$, $x\sim\Unif[-1,1]$, with the truth $a^*\tanh(b^*x)$, $a^*b^*\ne0$. (a) Show with \cref{thm:singular:sussmann} that $W_0$ is the union of twelve lines in $\R^4$, and list them. (b) Compute the rank and the kernel of $I(w)$ at $w=(a^*,b^*,0,\beta)$ for $\beta\notin\{0,\pm b^*\}$, for $\beta=b^*$ and for $\beta=0$, and match the kernels with the lines through these points. (c) Near $(a^*,b^*,0,0)$, expand $f_w-f^*$ to first order in $a_1-a^*$ and $b_1-b^*$ and to lowest order in $(a_2,b_2)$, and find a product model inside the network. \hint{$\tanh(\beta x)$, $\tanh(b^*x)$ and $x\cosh^{-2}(b^*x)$ are linearly independent when $\abs\beta\notin\{0,\abs{b^*}\}$: compare their complex poles, starting nearest to the origin.}\label{ex:singular:twounitsfree}
+
+\item \byhand (A plateau at the fold.) Run gradient flow on $K(a,b)=\frac12(ab-c_0)^2$, $c_0>0$, from $(\eps,\eps)$ with $0<\eps^2<c_0$. Show that $a=b$ for all $t\ge0$, that $v=a^2$ solves $\dot v=2v(c_0-v)$, and that $v$ reaches $\frac{c_0}2$ at the time $\frac1{2c_0}\log\bigl(\frac{c_0}{\eps^2}-1\bigr)$. How does the plateau depend on the distance of the start from the singular point?\label{ex:singular:plateau}
+
+\item \variation\hard (A Gaussian prior.) Replace the uniform prior by the standard normal density on $\R^2$. Show that given $c=ab$ the density of $u=\log\abs a$ is proportional to $\exp(-\frac12(e^{2u}+c^2e^{-2u}))$, and deduce that the scale law of \cref{thm:singular:scales} still holds. \hint{on $[\log\abs c,0]$ the exponent lies in $[-1,0]$; outside, it falls off doubly exponentially.}\label{ex:singular:gaussprior}
+
+\item \variation (A prior that vanishes on one arm.) Let the prior be $\frac{h+1}4\abs a^h$ on $[-1,1]^2$ with $h>0$. (a) Show that the zeta function of $K=\frac12a^2b^2$ has poles at $-\frac12$ and $-\frac{h+1}2$, so $\lambda=\frac12$ and $m=1$. (b) Show that given $c$ the density of $u=\log\abs a$ is proportional to $e^{hu}$ on $[\log\abs c,0]$, and deduce that $\Pi_n(\log\abs a\le\tau\log n)\to0$ in probability for every $\tau<0$. Where does the posterior go?\label{ex:singular:onearm}
+
+\item \measurement (The chain.) For $y=a_1a_2a_3x$ at the truth $0$, show that given $c=a_1a_2a_3$ the vector $(\log\abs{a_i})_{i\le3}$ is uniform on the simplex $\{u_i\le0,\ \sum_iu_i=\log\abs c\}$, and that $\log\abs{a_1}/\log n$ converges in law under the posterior to $-\frac12B$, $B\sim\mathrm{Beta}(1,2)$, with distribution function $(1+2\tau)^2$ on $[-\frac12,0]$ and quartiles $-0.250$, $-0.146$, $-0.067$. Adapt the sampler of \texttt{02-singular-scales.py} (the density of $c$ now carries $(\log\frac1{\abs c})^2$), measure the quartiles at $n=10^4$, $10^8$ and $10^{16}$, and compare.\label{ex:singular:chain}
+
+\item \research (Scale laws without a coefficient.) For the tanh neuron the energy does not depend on $(a,b)$ through one coefficient, and the proof of \cref{thm:singular:scales} does not apply. Prove or refute that $\log\abs a/\log n$ converges to $\Unif(-\frac12,0)$ under its posterior, and do the same for the mixture. One route compares $nK_n$ with a product model's energy in the coefficient $ab\sqrt{r(b)/3}$ by a sandwich as in \cref{ch:freeenergy}. We know of no published treatment.\label{ex:singular:tanhscales}
+\end{exercises}
+
+\notesandrefs
+In the early 1990s the non-identifiability of networks was studied as a question about functions \parencite{Sussmann1992,ChenEtAl1993}, and the statistical side followed (\cref{sec:singular:fisher,sec:singular:stops}). Watanabe's analysis took up exactly these models early: \textcite{Watanabe2001a} proved that the stochastic complexity of nonidentifiable learning machines has the form $\lambda\log n-(m-1)\log\log n+O(1)$, with $2\lambda\le d$ for multilayer networks, and \textcite{Watanabe2007} argued that almost all learning machines in use are singular, with neither the maximum-likelihood estimator nor the posterior converging to a normal distribution (for both we rely on the abstracts). The theory is developed in \textcite{Watanabe2009,Watanabe2018} and reviewed in \textcite{Watanabe2024}; \textcite{WeiEtAl2023} addressed it to deep-learning researchers.
+
+\Cref{thm:singular:scales}, its corollaries and the two remarks are the book's own; we have not found the uniform law over scales in print, though its ingredients are elementary and its normalizer is the factor $(\log n)^{m-1}$ of Watanabe's free energy formula.
+
+\paragraph{Translating the literature.} \Textcite{Watanabe2009} and, following him, \textcite{WeiEtAl2023} call a \emph{model} regular when it is identifiable with a positive definite Fisher information, and strictly singular otherwise; our regular and singular describe a truth relative to a model, as in \textcite{Watanabe2010} and later; Wei et al.\ also integrate the Fisher information against the true distribution, which agrees with ours at true parameters. \Textcite{Watanabe2024} writes $\theta\in\Theta$ for our $w\in W$ and $\pi(\theta)$ for our prior $\varphi(w)$. \Textcite{FarrugiaRoberts2023a} writes $(a_i,b_i,c_i,d)$ as we do in \eqref{eq:singular:net}, and $F[w]$ for the functional equivalence class of $w$, our $W_0$ (within $W$) when $w$ is a true parameter. \Textcite{vanderVaart1998} writes $\theta_0$, $I_{\theta_0}$ and $\Delta_{n,\theta_0}$ for our $w_0$, $I(w_0)$ and $\Delta_n$.
+
+\printchapterbib
+\end{refsection}

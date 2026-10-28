@@ -1,0 +1,380 @@
+% Chapter 7 of Singular Learning Theory for the Rest of Us: a catalogue of learning coefficients.
+\sltchapter{A Catalogue}{Learning coefficients of models in use}{$y=BAx$}{ch:catalogue}
+\newtonfoot{2/2}{2}{\tfrac12}{a^2b^2}
+\begin{refsection}[chapters/07-catalogue.bib]
+
+\begin{chaptersummary}
+A linear layer of width $H$ from $N$ inputs to $M$ outputs, $y=BAx$, has $H(M+N)$ parameters, and the regular theory charges half a unit of $\log n$ for each. Its smallest case, rank-one regression $y=b\,a^\top x$, learns a zero truth with the learning coefficient $\min(M,N)/2$: we compute this by hand in polar coordinates and prove it for box priors, the zeta function being a product of a factor for $\abs a$ and one for $\abs b$, whose poles collide, giving multiplicity $2$, exactly when $M=N$. A reduction proved here brings every truth of reduced-rank regression to a zero truth of a smaller problem; with it we check the Aoyagi--Watanabe formula, stated with its case distinctions, and collect what is known for deep linear networks, tanh networks, mixtures, Boltzmann machines and Bayesian networks, each with its status. Two-temperature estimates from Metropolis samples, validated where the tempered means are exactly known, give $1.40$, $2.50$, $2.50$ and $3.44$ at $n=10^5$ for four reduced-rank cases with $\lambda=\tfrac32,\tfrac52,\tfrac52,\tfrac72$ and $\tfrac d2=3,3,6,6$, the two with $m=2$ short by about the predicted logarithmic correction. Exact values are known for few architectures, and for deep nonlinear networks only bounds.
+\end{chaptersummary}
+
+\section{The question: what a layer costs}\label{sec:catalogue:question}
+
+A low-rank adapter fine-tunes a weight matrix of a pretrained network by training only a correction $BA$, with $B\in\R^{M\times H}$, $A\in\R^{H\times N}$ and a small rank $H$ \parencite[a preprint]{HuEtAl2021}.\sidenote{\textcite{HuEtAl2021} initialize $A$ at random and $B$ at zero, so that training starts from $BA=0$, at a point of the branch $\{B=0\}$ of the set of parameters whose product vanishes.} The same factorization is the bottleneck of a linear autoencoder and, in statistics since \textcite{Anderson1951}, \term{reduced-rank regression}\index{reduced-rank regression}: multivariate regression with a coefficient matrix of rank at most $H$. In this book's notation the model is
+\begin{equation}\label{eq:catalogue:rrr}
+y=BAx+\varepsilon,\qquad x\sim\Normal(0,I_N),\quad\varepsilon\sim\Normal(0,I_M),
+\end{equation}
+with $M$ outputs, $N$ inputs and $d=H(M+N)$ parameters. The parametrization is far from one-to-one: $(gA,Bg^{-1})$ gives the same product as $(A,B)$ for every invertible $H\times H$ matrix $g$, and the products fill the set of matrices of rank at most $H$, of dimension $H(M+N-H)$ when $H\le\min(M,N)$. Choosing $H$ from data, or asking how much the data pay for a trained adapter, needs the learning coefficient of \eqref{eq:catalogue:rrr} at a truth $C_0$ of some rank $r\le H$.
+
+\begin{regularanswer}[half a unit of $\log n$ per parameter]
+If the truth is regular for a model with $d$ parameters, then $\lambda=\tfrac d2$ and $m=1$: $F_n-nS_n=\tfrac d2\log n+O_p(1)$ (\cref{thm:regular:laplace}), and the Bayes generalization error is $\tfrac d{2n}+o(\tfrac1n)$ (\cref{thm:regular:aic}). For a model that is not identifiable, common practice replaces $d$ by the dimension of its set of distributions; for the rank of a reduced-rank regression that is $H(M+N-H)$ \parencite{DrtonPlummer2017}.
+\end{regularanswer}
+
+Neither count is right at the truths that matter. Take $H=1$, \term{rank-one regression}\index{rank-one regression} $y=b\,a^\top x+\varepsilon$ with $a\in\R^N$ and $b\in\R^M$, so that $d=M+N$ and the rank-one matrices form a set of dimension $M+N-1$. At the truth $C_0=0$, $K(a,b)=\tfrac12\abs a^2\abs b^2$ (\cref{comp:singular:cast}); the true set $\{a=0\}\cup\{b=0\}$ is two linear spaces, of dimensions $M$ and $N$, crossing at the origin, where the Hessian of $K$ vanishes. We shall see that $\lambda=\min(M,N)/2$: for $M=N=3$ it is $\tfrac32$, against $\tfrac d2=3$ and $\tfrac12(M+N-1)=\tfrac52$, and with $M=N$ the free energy gains a $-\log\log n$ besides (\cref{thm:freeenergy:main}). At a truth of rank one the dimension count is right. The learning coefficient at a truth is the minimum of the local ones over the true set, attained at its most singular points (\cref{prop:blowups:rules}), and parameter counts do not see those points; this is why BIC with the dimension $H(M+N-H)$ tends to choose ranks that are too small.\sidenote{\textcite[Example~2.2]{DrtonPlummer2017} give this overpenalization of models that contain the truth without being minimal as the theoretical explanation of the tendency that simulation studies had found.}
+
+This chapter asks: \emph{What are the learning coefficients and multiplicities of the models in use --- reduced-rank regression, deep linear networks, networks with a hidden layer of tanh units, mixtures, Boltzmann machines, Bayesian networks --- at the truths of interest? Which values are proved and which only bounded, and how close do estimates from posterior samples come to them?}
+
+\section{By hand: rank one, depth, and a tanh neuron}\label{sec:catalogue:byhand}
+
+The loss of rank-one regression depends on $(a,b)$ only through the lengths $\abs a$ and $\abs b$. A prior that respects this, the uniform distribution on the product $\mathbb B^N\times\mathbb B^M$ of the unit balls, makes every quantity exact; \cref{sec:catalogue:rankone} replaces it by the book's box prior.
+
+\begin{computation}{Rank-one regression on a product of balls}\label{comp:catalogue:balls}
+\step \emph{Polar coordinates.} Under the uniform prior on $\mathbb B^N\times\mathbb B^M$ the vectors $a$ and $b$ are independent, and so are $r=\abs a$ and $s=\abs b$. A ball of radius $t\le1$ has $t^N$ times the volume of the unit ball, so $\Prob(r\le t)=t^N$ and $r$ has the density $Nt^{N-1}$ on $[0,1]$; likewise $s$ has the density $Mt^{M-1}$. The loss is $K=\tfrac12r^2s^2$; the directions $a/r$ and $b/s$ do not enter it.
+\step \emph{The zeta function.} For $\Re z>0$, $\E r^{2z}=\int_0^1t^{2z}Nt^{N-1}\dd t=\frac N{2z+N}$, likewise for $s$, and independence gives
+\[
+\zeta(z)=\E\bigl[(\tfrac12r^2s^2)^z\bigr]=2^{-z}\,\E r^{2z}\,\E s^{2z}=\frac{2^{-z}NM}{(2z+N)(2z+M)},
+\]
+a meromorphic function on $\C$ with poles at $-\tfrac N2$ and $-\tfrac M2$ and nowhere else.
+\step \emph{Read off.} If $N<M$, the largest pole is $-\tfrac N2$, and it is simple: $\lambda=\tfrac N2$, $m=1$; symmetrically if $M<N$. If $M=N$, the two poles fall on each other, and $-\tfrac N2$ is a double pole: $\lambda=\tfrac N2$, $m=2$. In every case $\lambda=\min(M,N)/2$.
+\step \emph{The volume.} Put $\delta=\sqrt{2\eps}\le1$, so that $K<\eps$ exactly when $rs<\delta$. Given $s$, the probability that $r<\delta/s$ is $1$ for $s\le\delta$ and $(\delta/s)^N$ for $s>\delta$, so
+\[
+V(\eps)=\delta^M+\int_\delta^1Ms^{M-1}\Bigl(\frac\delta s\Bigr)^N\dd s=\begin{cases}\delta^N\bigl(1+N\log\frac1\delta\bigr), & M=N,\\[0.8ex] \dfrac{M\delta^N-N\delta^M}{M-N}, & M\ne N.\end{cases}
+\]
+For $N<M$, $V(\eps)\sim\frac M{M-N}(2\eps)^{N/2}$, a pure power; for $M=N$, $V(\eps)\sim\frac N2(2\eps)^{N/2}\log\frac1\eps$, a power times one logarithm, the signature of $m=2$ (\cref{ch:volume}).
+\step \emph{Numbers.} For $M=N=3$ and $\eps=10^{-4}$, $\delta=0.0141$ and $V(\eps)=\delta^3(1+3\log\frac1\delta)=3.90\times10^{-5}$. A regular model with six parameters keeps a prior fraction of order $\eps^3=10^{-12}$ within $\eps$ of its truth, and one with five, the dimension of the rank-one matrices, of order $10^{-10}$.
+\end{computation}
+
+At a truth of rank one, $C_0=b_0a_0^\top\ne0$, the model is as tame as a singular model can be. Its true set $\{(a_0/t,tb_0):t\ne0\}$ is a smooth curve, and at each of its points $(a,b)$ the differential $(\alpha,\beta)\mapsto\beta a^\top+b\,\alpha^\top$ of $(a,b)\mapsto ba^\top$ has rank $M+N-1$, vanishing exactly on the multiples of the tangent $(-a,b)$.\sidenote{The tangent is the infinitesimal form of the rescaling $(a,b)\mapsto(a/t,tb)$, the case $H=1$ of the symmetry $(A,B)\mapsto(gA,Bg^{-1})$; the symmetry is the only degeneracy at such a point.} The Hessian of $K=\tfrac12\norm{ba^\top-C_0}_F^2$ there is the Gram matrix of this differential, with the tangent line as kernel, and the rule for minimally singular sets (\cref{prop:blowups:morsebott}) gives $\lambda=\tfrac12(M+N-1)$ and $m=1$, which is $\tfrac52$ for $M=N=3$, provided the curve meets the interior of the prior's support.
+
+\begin{computation}{Depth, width, and a nonlinearity}\label{comp:catalogue:chain}
+\step \emph{The chain} $y=a_1a_2\cdots a_Lx$ of \cref{ch:coefficient}, with the uniform prior on $[-1,1]^L$ and the truth $0$, has $K=\tfrac12a_1^2\cdots a_L^2$. The coordinates are independent and $\E\abs{a_j}^{2z}=\int_0^1t^{2z}\dd t=\frac1{2z+1}$, so
+\[
+\zeta(z)=2^{-z}\prod_{j=1}^L\E\abs{a_j}^{2z}=\frac{2^{-z}}{(2z+1)^L},
+\]
+with one pole, of order $L$, at $-\tfrac12$: $\lambda=\tfrac12$ and $m=L$, against $\tfrac d2=\tfrac L2$. Each factor is a ball of dimension one, and the $L$ poles coincide. In rank-one regression the two factors are balls of dimensions $N$ and $M$: the smaller dimension sets $\lambda$, and the poles coincide only when $M=N$. Depth stacks equal poles; width moves them apart.
+\step \emph{The tanh neuron} $y=a\tanh(bx)$, with $x\sim\Unif[-1,1]$, the uniform prior on $[-2,2]^2$ and the truth $0$, has $K=\frac{a^2}2(1-\frac{\tanh b}b)$, and \cref{comp:singular:cast} showed that $0.388\cdot\frac16a^2b^2\le K\le\frac16a^2b^2$ on the box. Under this prior $\E\abs a^{2z}=\frac12\int_0^2t^{2z}\dd t=\frac{4^z}{2z+1}$, so $\frac16a^2b^2$ has $\zeta(z)=6^{-z}\bigl(\frac{4^z}{2z+1}\bigr)^2$, with a double pole at $-\tfrac12$. By comparison (\cref{prop:blowups:rules}), $\lambda=\tfrac12$ and $m=2$: the nonlinearity changes the constants, not the exponents.
+\end{computation}
+
+The neuron doubled is not the product model doubled. For two units, $f(x)=a_1\tanh(b_1x)+a_2\tanh(b_2x)$ with $d=4$, Aoyagi's formula in \cref{sec:catalogue:aoyagi} gives $\lambda=\tfrac23$ and $m=1$ at the truth $0$, which \cref{ex:catalogue:twotanh} derives by hand: the second unit adds $\tfrac16$, where the regular count adds $1$.
+
+\paragraph{What one had to notice.} In all three computations the prior is a product and the loss is, up to constant factors, a product of functions of the factors, so the zeta function is the product of the factors' zeta functions.\sidenote{\Cref{ch:coefficient} met the same structure through the density of the product $c=a_1\cdots a_L$: the zeta function is the Mellin transform of the law of $K$, and Mellin transforms turn products of independent variables into products of transforms.} A factor that depends on the length of a vector uniform on a ball in $\R^k$ contributes a simple pole at $-\frac k2$; the largest pole of the product sets $\lambda$, and poles that coincide add their orders. Products of losses take the minimum of the learning coefficients, sums of losses in separate variables add them (\cref{prop:blowups:rules}). Reduced-rank regression with $H\ge2$ is neither, and \cref{sec:catalogue:aoyagi} reduces it to them where it can.
+
+\section{The theorem: rank-one regression}\label{sec:catalogue:rankone}
+
+For $k\ge1$ let $\omega_k=\pi^{k/2}/\Gamma(\frac k2+1)$ be the volume of the unit ball of $\R^k$ ($\omega_1=2$, $\omega_2=\pi$, $\omega_3=\frac43\pi$), so that its sphere has area $k\omega_k$. For a box $A\subset\R^k$, a product of compact intervals, with the origin in its interior, write $\abs A$ for its volume and $\rho_A>0$ for the largest radius of a ball centered at the origin and contained in $A$.
+
+\begin{lemma}[The length of a uniform point of a box]\label{lem:catalogue:norm}
+Let $A\subset\R^k$ be a box with the origin in its interior and $a$ uniform on $A$. Then $\Prob(\abs a\le t)=\omega_kt^k/\abs A$ for $0\le t\le\rho_A$. The function $\zeta_A(z)=\E\abs a^{2z}$, defined for $\Re z>-\frac k2$, extends to a meromorphic function on $\C$ whose only pole is a simple pole at $-\frac k2$ with residue $k\omega_k/(2\abs A)$; for real $z>-\frac k2$, $\zeta_A(z)$ is the finite and positive expectation $\E\abs a^{2z}$.
+\end{lemma}
+
+\begin{proof}
+The plan is to split $A$ into a ball, where polar coordinates give the pole, and the rest, which gives an entire function. For $t\le\rho_A$ the ball of radius $t$ lies in $A$, which gives the distribution function. Let $D$ be the ball of radius $\rho_A$. In polar coordinates, for $\Re z>-\frac k2$,
+\[
+\int_D\abs a^{2z}\dd a=k\omega_k\int_0^{\rho_A}t^{2z+k-1}\dd t=\frac{k\omega_k\,\rho_A^{2z+k}}{2z+k}.
+\]
+On $A\setminus D$ the length $\abs a$ lies between $\rho_A$ and the largest length $R_A$ of a point of $A$, so for each such $a$ the function $z\mapsto\abs a^{2z}=e^{2z\log\abs a}$ is entire and bounded by $\max(\rho_A^{2\Re z},R_A^{2\Re z})$, uniformly on compact sets of $z$; differentiation under the integral sign shows that $E_A(z)=\abs A^{-1}\int_{A\setminus D}\abs a^{2z}\dd a$ is entire. Hence $\zeta_A(z)=k\omega_k\rho_A^{2z+k}/(\abs A(2z+k))+E_A(z)$ for $\Re z>-\frac k2$, and the right side is meromorphic on $\C$ with one pole, simple, at $-\frac k2$, of residue $k\omega_k\rho_A^0/(2\abs A)=k\omega_k/(2\abs A)$. For real $z>-\frac k2$ the defining integral converges and its integrand is positive.
+\end{proof}
+
+\begin{theorem}[Rank-one regression at the zero truth]\label{thm:catalogue:rankone}
+Let $M,N\ge1$ and $y=b\,a^\top x+\varepsilon$ with $a\in\R^N$, $b\in\R^M$, $x\sim\Normal(0,I_N)$ and $\varepsilon\sim\Normal(0,I_M)$ independent of $x$. Let the truth be $y=\varepsilon$, and the prior uniform on $W=A\times B$, where $A\subset\R^N$ and $B\subset\R^M$ are boxes with the origin in their interiors. Then $K(a,b)=\tfrac12\abs a^2\abs b^2$, and:
+\begin{enumerate}
+\item The zeta function extends to a meromorphic function on $\C$ with poles in $\{-\frac N2,-\frac M2\}$. Its largest pole is $-\frac12\min(M,N)$, of order $2$ if $M=N$ and $1$ if $M\ne N$. So $\lambda=\frac12\min(M,N)$, with $m=2$ if $M=N$ and $m=1$ if $M\ne N$.
+\item As $\eps\to0$, $V(\eps)\sim C\eps^\lambda(\log\frac1\eps)^{m-1}$, with $C=2^{N/2}\frac{\omega_N}{\abs A}\E\abs b^{-N}$ if $N<M$, where $b$ is uniform on $B$ and the expectation is finite; with $C=2^{M/2}\frac{\omega_M}{\abs B}\E\abs a^{-M}$ if $M<N$, where $a$ is uniform on $A$; and with $C=2^{N/2-1}N\omega_N^2/(\abs A\abs B)$ if $M=N$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is the computation of \cref{comp:catalogue:balls}, with \cref{lem:catalogue:norm} in place of the exact densities on balls. Since $\varepsilon$ is independent of $x$ and has mean zero, $K(a,b)=\tfrac12\E\abs{b\,a^\top x}^2=\tfrac12\abs b^2\E[(a^\top x)^2]=\tfrac12\abs a^2\abs b^2$.
+
+(i) Under the uniform prior on $A\times B$, $a$ and $b$ are independent and uniform on $A$ and on $B$, so for $\Re z>0$
+\[
+\zeta(z)=\E\bigl[(\tfrac12\abs a^2\abs b^2)^z\bigr]=2^{-z}\,\zeta_A(z)\,\zeta_B(z),
+\]
+and by \cref{lem:catalogue:norm} the right side is meromorphic on $\C$, with poles at $-\frac N2$ and $-\frac M2$ only. Suppose first that $N<M$. Near $-\frac N2$ the factor $2^{-z}\zeta_B(z)$ is holomorphic, because $-\frac N2>-\frac M2$, and its value there is $2^{N/2}\E\abs b^{-N}>0$ by the last claim of the lemma; the factor $\zeta_A$ has a simple pole there with residue $N\omega_N/(2\abs A)\ne0$. So $-\frac N2$ is a simple pole of $\zeta$, and no pole lies to its right: $\lambda=\frac N2$ and $m=1$. The case $M<N$ is the same with $a$ and $b$ exchanged. If $M=N$, both $\zeta_A$ and $\zeta_B$ have simple poles with nonzero residues at $-\frac N2$, and $2^{-z}\ne0$, so $\zeta$ has a pole of order exactly $2$ there, its only pole: $\lambda=\frac N2$ and $m=2$.
+
+(ii) Put $\delta=\sqrt{2\eps}$, so that $K<\eps$ exactly when $\abs a\abs b<\delta$, and let $G(t)=\Prob(\abs a<t)$, which is $\omega_Nt^N/\abs A$ for $t\le\rho_A$. Conditioning on $b$ and splitting according to whether $\abs b\ge\delta/\rho_A$,
+\[
+\begin{aligned}
+V(\eps)=\E\bigl[G(\delta/\abs b)\bigr]&=\frac{\omega_N\delta^N}{\abs A}\,\E\bigl[\abs b^{-N};\ \abs b\ge\delta/\rho_A\bigr]\\
+&\quad+\E\bigl[G(\delta/\abs b);\ \abs b<\delta/\rho_A\bigr].
+\end{aligned}
+\]
+Once $\delta\le\rho_A\rho_B$, the second term is at most $\Prob(\abs b<\delta/\rho_A)=\omega_M(\delta/\rho_A)^M/\abs B$. If $N<M$, then $\E\abs b^{-N}$ is finite by the lemma, the expectation in the first term increases to it as $\delta\downarrow0$ by monotone convergence, and the second term is $O(\delta^M)=o(\delta^N)$; so $V(\eps)\sim\frac{\omega_N}{\abs A}\E\abs b^{-N}\,\delta^N$, which is the claim since $\delta^N=2^{N/2}\eps^{N/2}$. The case $M<N$ follows by exchanging $a$ and $b$. If $M=N$, then $\abs b$ has the density $N\omega_Nt^{N-1}/\abs B$ on $[0,\rho_B]$, so for $\delta\le\rho_A\rho_B$
+\[
+\begin{aligned}
+\E\bigl[\abs b^{-N};\ \abs b\ge\delta/\rho_A\bigr]&=\frac{N\omega_N}{\abs B}\int_{\delta/\rho_A}^{\rho_B}\frac{\dd t}t+\E\bigl[\abs b^{-N};\ \abs b>\rho_B\bigr]\\
+&=\frac{N\omega_N}{\abs B}\log\frac1\delta+O(1),
+\end{aligned}
+\]
+while the second term of $V$ is $O(\delta^N)$. Hence $V(\eps)=\frac{N\omega_N^2}{\abs A\abs B}\delta^N\log\frac1\delta+O(\delta^N)$, and since $\log\frac1\delta=\frac12\log\frac1\eps-\frac12\log2$, this is $C\eps^{N/2}\log\frac1\eps\,(1+o(1))$ with the stated $C$.
+\end{proof}
+
+For $M=N=1$ the theorem is the product model, with $\lambda=\frac12$ and $m=2$ (\cref{ch:coefficient}); on $[-1,1]^2$ it gives $C=2^{-1/2}$, the constant of the exact volume $\sqrt{2\eps}\,(1+\frac12\log\frac1{2\eps})$ of \cref{ch:volume}. For $M=1$ and $N=2$, the model $y=b\,(a_1x_1+a_2x_2)$, it gives $\lambda=\frac12$ with $m=1$: one more input parameter removes the logarithm. The box enters only through $C$. For $M=N=3$ and $A=B=[-1,1]^3$, $C=\pi^2\sqrt2/12=1.163$, and the computation of (ii), carried to its end (\cref{ex:catalogue:exactvolume}), gives for every $\eps\le\frac12$
+\begin{equation}\label{eq:catalogue:exactvolume}
+V(\eps)=(2\eps)^{3/2}\Bigl(\frac{\pi^2}{24}\log\frac1{2\eps}+c_2\Bigr),\qquad c_2=\frac\pi3J_1+\frac{\pi^2}{36}=0.5905,
+\end{equation}
+with $J_1=\E[\abs a^{-3};\ \abs a>1]=0.3021$ for $a$ uniform on the cube. Monte Carlo with $2\times10^7$ prior draws gives $V(10^{-2})=6.23\times10^{-3}$ (Clopper--Pearson interval $[6.19,6.26]\times10^{-3}$) against $6.22\times10^{-3}$ from \eqref{eq:catalogue:exactvolume}; the leading term alone gives $5.36\times10^{-3}$. Priors bounded above and below by positive constants near the origin, and inputs with a positive definite second-moment matrix $\Sigma$, for which $K=\frac12\abs b^2a^\top\Sigma a$, leave $\lambda$ and $m$ unchanged, by comparison (\cref{prop:blowups:rules}), though not the constants; \cref{ex:catalogue:gaussian} treats a Gaussian prior, whose support is not compact.
+
+The theorem gives the global coefficient, the minimum of the local ones over the true set. At a point $(a^*,0)$ with $a^*\ne0$ the factor $\abs a^2$ stays away from zero, $K$ is comparable to $\abs b^2$, and the local value is $\frac M2$ with $m=1$; at $(0,b^*)$ with $b^*\ne0$ it is $\frac N2$ (\cref{ch:llc} computes both). So when $N<M$ the minimum $\frac N2$ is attained along the whole branch $\{a=0\}$, and when $M=N$ the two branches tie and their crossing point carries the second logarithm.
+
+\section{The theorem: reduced rank, and the catalogue}\label{sec:catalogue:aoyagi}
+
+For $H\ge2$ the product $BA$ is a sum of $H$ rank-one terms that share the input and output spaces, and the zeta function no longer factors. A reduction, proved here, removes the rank of the truth, and the formula of \textcite{AoyagiWatanabe2005} covers every case. Aoyagi's papers compute the real log canonical threshold of $K$ with respect to the prior, which is the learning coefficient under another name (\cref{ch:volume}). For the model \eqref{eq:catalogue:rrr} with an input second-moment matrix $\Sigma\succ0$ and a truth $C_0$ of rank $r$, $K(A,B)=\tfrac12\tr\bigl((BA-C_0)\,\Sigma\,(BA-C_0)^\top\bigr)$, and a true parameter $(A,B)$ is \term{deepest}\index{deepest true parameter} if $\rank A=\rank B=r$, the least possible. For $w$ in the true set write $\lambda(w)$ and $m(w)$ for the learning coefficient and multiplicity of $K$ restricted to a small neighborhood of $w$, with a prior continuous and positive at $w$; by comparison they depend on neither (\cref{prop:blowups:rules}).
+
+\begin{proposition}[Reduction to a zero truth]\label{prop:catalogue:reduction}
+Let $1\le r\le\min(M,N,H)$, and let $(\lambda_0,m_0)$ be the local learning coefficient and multiplicity at the origin of the zero-truth loss $K'(A',B')=\frac12\norm{B'A'}_F^2$, $B'\in\R^{(M-r)\times(H-r)}$, $A'\in\R^{(H-r)\times(N-r)}$, taken to be $(0,1)$ if one of $M-r$, $N-r$, $H-r$ is zero. Then every true parameter $w$ satisfies $\lambda(w)\ge\tfrac12r(M+N-r)+\lambda_0$, with equality and $m(w)=m_0$ at every deepest $w$, and with $m(w)\le m_0$ wherever equality holds. Consequently, for a prior that is bounded on a compact $W$ and continuous and positive at some deepest true parameter interior to $W$,
+\[
+\lambda=\tfrac12r(M+N-r)+\lambda_0,\qquad m=m_0.
+\]
+\end{proposition}
+
+\begin{proof}
+The plan is to bring a true parameter to a normal form by symmetries, to change coordinates so that $K$ becomes, up to constant factors, a sum of squares of $r(M+N-r)$ coordinates plus the zero-truth loss in the remaining blocks, and to compare true parameters by homogeneity. All norms are Frobenius norms.
+
+\emph{Step 1: normal form.} Let $w=(A,B)$ with $BA=C_0$, and choose invertible $P\in\R^{M\times M}$ and $Q\in\R^{N\times N}$ with $PC_0Q=E_r=\bigl(\begin{smallmatrix}I_r&0\\0&0\end{smallmatrix}\bigr)$. Split $AQ=(A'_1,A'_2)$ after its first $r$ columns, and let $B'_1$ be the first $r$ rows of $PB$. From $(PB)(AQ)=E_r$ we get $B'_1A'_1=I_r$, so $A'_1$ has rank $r$ and $\ker B'_1$, of dimension $H-r$, meets the column space of $A'_1$ only in $0$. With $g^{-1}=(A'_1,X)$, the columns of $X$ a basis of $\ker B'_1$, we have $g\in GL(H)$, $gA'_1=\bigl(\begin{smallmatrix}I_r\\0\end{smallmatrix}\bigr)$ and $B'_1g^{-1}=(I_r,0)$. Comparing the blocks of $(PBg^{-1})(gAQ)=E_r$ then gives
+\[
+gAQ=\begin{pmatrix}I_r&0\\0&\alpha\end{pmatrix},\qquad PBg^{-1}=\begin{pmatrix}I_r&0\\0&\beta\end{pmatrix},\qquad\beta\alpha=0,
+\]
+with $\alpha\in\R^{(H-r)\times(N-r)}$ and $\beta\in\R^{(M-r)\times(H-r)}$, and $w$ is deepest exactly when $\alpha=0$ and $\beta=0$. The map $\Phi(A,B)=(gAQ,PBg^{-1})$ is a linear automorphism of the parameter space, and $K\circ\Phi^{-1}(A,B)=\frac12\tr\bigl(D\Sigma D^\top\bigr)$ with $D=P^{-1}(BA-E_r)Q^{-1}$ lies between two positive multiples of $\frac12\norm{BA-E_r}^2$, both being positive definite quadratic forms in $BA-E_r$. By invariance and comparison (\cref{prop:blowups:rules}), $(\lambda(w),m(w))$ is the local value of $\frac12\norm{BA-E_r}^2$ at $\Phi(w)$. From now on $C_0=E_r$, $\Sigma=I$, and $w$ is in normal form.
+
+\emph{Step 2: coordinates.} Write $A=\bigl(\begin{smallmatrix}A_{11}&A_{12}\\A_{21}&A_{22}\end{smallmatrix}\bigr)$ and $B=\bigl(\begin{smallmatrix}B_{11}&B_{12}\\B_{21}&B_{22}\end{smallmatrix}\bigr)$ in the block sizes of the normal form, so that at $w$, $A_{11}=B_{11}=I_r$, the blocks $A_{12},A_{21},B_{12},B_{21}$ vanish, $A_{22}=\alpha$ and $B_{22}=\beta$. Near $w$, where $A_{11}$ and $B_{11}$ are invertible, the blocks of $BA-E_r$ are $P'=B_{11}A_{11}+B_{12}A_{21}-I_r$, $Q'=B_{11}A_{12}+B_{12}A_{22}$, $R'=B_{21}A_{11}+B_{22}A_{21}$ and $S=B_{21}A_{12}+B_{22}A_{22}$. Replacing $(A_{11},A_{12},B_{21})$ by $(P',Q',R')$ and keeping the other blocks is an analytic isomorphism near $w$, with inverse $A_{11}=B_{11}^{-1}(P'+I_r-B_{12}A_{21})$, $A_{12}=B_{11}^{-1}(Q'-B_{12}A_{22})$ and $B_{21}=(R'-B_{22}A_{21})A_{11}^{-1}$. To express $S$ in the new coordinates, let $Y=(B_{11}A_{11})^{-1}=(I-B_{12}A_{21}+P')^{-1}$ and $Y_0=(I-B_{12}A_{21})^{-1}$, so that $Y-Y_0=-YP'Y_0$, and collect in $L$ the terms that contain $R'$, $Q'$ or $Y-Y_0$. Substituting the inverse,
+\[
+S=(R'-B_{22}A_{21})\,Y\,(Q'-B_{12}A_{22})+B_{22}A_{22}=B_{22}\bigl(I+A_{21}Y_0B_{12}\bigr)A_{22}+L .
+\]
+Each entry of $L$ is a sum of products of an entry of $P'$, $Q'$ or $R'$ with functions analytic and bounded near $w$, so $\norm L\le c(\norm{P'}+\norm{Q'}+\norm{R'})$ near $w$ for some constant $c$. Since $A_{21}(I-B_{12}A_{21})=(I-A_{21}B_{12})A_{21}$, we have $I+A_{21}Y_0B_{12}=(I-A_{21}B_{12})^{-1}=:G$, which is $I$ at $w$ and invertible near it.
+
+\emph{Step 3: comparison.} Put $T=\norm{P'}^2+\norm{Q'}^2+\norm{R'}^2$ and $S'=B_{22}GA_{22}$. Then $K=\frac12(T+\norm S^2)$, and since $\norm S^2\le2\norm{S'}^2+2\norm L^2$, $\norm{S'}^2\le2\norm S^2+2\norm L^2$ and $\norm L^2\le3c^2T$, near $w$ the loss $K$ lies between two positive multiples of
+\[
+\tilde K=\tfrac12T+\tfrac12\norm{B'_{22}A_{22}}^2,\qquad B'_{22}=B_{22}G .
+\]
+Replacing $B_{22}$ by $B'_{22}$, with $A_{21}$ and $B_{12}$ fixed, is one more analytic isomorphism, and it fixes $w$ because $G=I$ there.
+
+\emph{Step 4: the local value at $w$.} In the coordinates $P'$, $Q'$, $R'$, $B'_{22}$, $A_{22}$, $B_{11}$, $B_{12}$ and $A_{21}$, the function $\tilde K$ is the sum of a positive definite quadratic form in the $r^2+r(N-r)+(M-r)r=r(M+N-r)$ entries of $P',Q',R'$, whose learning coefficient is $\frac12r(M+N-r)$ with $m=1$, and the zero-truth loss $K'$ in $(B'_{22},A_{22})$, near the point $(\beta,\alpha)$; the coordinates $B_{11},B_{12},A_{21}$ do not enter. The prior, carried to these coordinates, is continuous and positive at the image of $w$, hence bounded above and below on a small box around it by multiples of the uniform prior, which is a product over the groups. Integrating out the free coordinates and applying the rule for sums of functions of separate variables (\cref{prop:blowups:rules}) gives $\lambda(w)=\tfrac12r(M+N-r)+\lambda'(\beta,\alpha)$ and $m(w)=m'(\beta,\alpha)$, with $(\lambda',m')$ the local values of $K'$. At a deepest $w$, $(\beta,\alpha)=(0,0)$ and $(\lambda',m')=(\lambda_0,m_0)$. If one of $M-r$, $N-r$, $H-r$ is zero, $K'$ vanishes identically, leaving its variables free, and contributes $(0,1)$.
+
+\emph{Step 5: homogeneity.} For $t>0$ the dilation $(\beta,\alpha)\mapsto(t\beta,t\alpha)$ is an analytic isomorphism with $K'(t\beta,t\alpha)=t^4K'(\beta,\alpha)$, so the local values of $K'$ at $(\beta,\alpha)$ and at $(t\beta,t\alpha)$ coincide. Let $U_0$ be a box around the origin small enough to realize $(\lambda_0,m_0)$, and choose $t$ so small that a box $U$ around $(t\beta,t\alpha)$, small enough to realize its local values, lies in $U_0$. With the same uniform density, the volume of $\{K'<\eps\}\cap U$ is at most that of $\{K'<\eps\}\cap U_0$, so by the volume asymptotics of \cref{ch:volume} either $\lambda'(\beta,\alpha)>\lambda_0$, or the two are equal and $m'(\beta,\alpha)\le m_0$. With Step 4 this proves the inequality and its cases of equality.
+
+\emph{Step 6: the global value.} The global $\lambda$ is the minimum over the true set of the local values with the actual prior, and $m$ the largest multiplicity among the points that attain it (\cref{prop:blowups:rules}). With a bounded prior, the volume function near a true parameter $w$ is at most a constant times the one with a prior positive at $w$, so the local value with the actual prior is at least $\lambda(w)$, with multiplicity at most $m(w)$ if the two agree; at the interior deepest parameter where the prior is positive, they coincide. So $\lambda=\frac12r(M+N-r)+\lambda_0$ and $m=m_0$.
+\end{proof}
+
+\begin{corollary}\label{cor:catalogue:small}
+Under the hypotheses of \cref{prop:catalogue:reduction} on the prior, reduced-rank regression with true rank $r=1$ has (i) $\lambda=\frac12(M+N-1)$ and $m=1$ if $H=1$; (ii) $\lambda=\frac12(M+N-1)+\frac12\min(M-1,N-1)$ if $H=2$, with $m=2$ if $M=N\ge2$ and $m=1$ otherwise. In particular, for $(M,N,H)=(2,2,1)$, $(2,2,2)$, $(3,3,1)$ and $(3,3,2)$, $\lambda=\frac32$, $2$, $\frac52$, $\frac72$ with $m=1$, $2$, $1$, $2$.
+\end{corollary}
+
+\begin{proof}
+For $H=r=1$ the zero-truth problem has $H-r=0$, so $(\lambda_0,m_0)=(0,1)$. For $H=2$ and $r=1$ it is rank-one regression with $M-1$ outputs and $N-1$ inputs at the zero truth, and \cref{thm:catalogue:rankone}, applied on arbitrarily small boxes around the origin, gives its local value there, $\frac12\min(M-1,N-1)$ with multiplicity $2$ if $M=N$ and $1$ otherwise; if $\min(M,N)=1$, a dimension is zero and the value is $(0,1)$.
+\end{proof}
+
+\begin{theorem}[\textcite{AoyagiWatanabe2005}]\label{thm:catalogue:aoyagi}\index{Aoyagi--Watanabe formula}
+In reduced-rank regression \eqref{eq:catalogue:rrr}, with $B\in\R^{M\times H}$, $A\in\R^{H\times N}$, a truth of rank $r\le\min(M,N,H)$ and a prior as in \cref{prop:catalogue:reduction}, let $\iota=0$ if $M+N+H+r$ is even and $\iota=1$ if it is odd. The learning coefficient and its multiplicity are as follows.
+\begin{enumerate}
+\item If $N+r\le M+H$, $M+r\le N+H$ and $H+r\le M+N$, then
+\[
+\lambda=\frac{2(H+r)(M+N)-(M-N)^2-(H+r)^2+\iota}8,\qquad m=1+\iota.
+\]
+\item If $M+H<N+r$, then $\lambda=\frac12(HM-Hr+Nr)$ and $m=1$.
+\item If $N+H<M+r$, then $\lambda=\frac12(HN-Hr+Mr)$ and $m=1$.
+\item If $M+N<H+r$, then $\lambda=\frac12MN$ and $m=1$.
+\end{enumerate}
+\end{theorem}
+
+The cases are exclusive and exhaustive: if (i) fails, one of its inequalities fails, and two of (ii)--(iv) together would force $H<r$, $M<r$ or $N<r$. We have not seen the original paper. We quote the four cases from the restatement of \textcite[eq.~(6)]{HayashiWatanabe2017a}, which omits the multiplicities, and the multiplicities from \textcite[Table~3]{Watanabe2013} and \textcite[Example~2.2]{DrtonPlummer2017}, whose values the parity rule reproduces; the hypotheses, as the restatements give them, are Gaussian noise with identity covariance, inputs with a positive definite second-moment matrix, and a prior positive at the truth. Five checks, computed by \texttt{07-catalogue-formulas.py}:
+\begin{itemize}
+\item For $H=1$ the formula gives $\frac12\min(M,N)$ at $r=0$, with $m=2$ exactly when $M=N$ (\cref{thm:catalogue:rankone}), and $\frac12(M+N-1)$ with $m=1$ at $r=1$ (\cref{cor:catalogue:small}).
+\item It satisfies the identity of \cref{prop:catalogue:reduction}, $\lambda(M,N,H,r)=\frac12r(M+N-r)+\lambda(M-r,N-r,H-r,0)$ with equal multiplicities, for all $2754$ tuples with $M,N,H\le9$; since the proposition proves the identity for the true values, the formula's zero-truth part determines the rest.
+\item It gives the four values of \cref{cor:catalogue:small}, and $\lambda=4$, $m=1$ for $M=N=H=3$, $r=1$, which the proposition reduces to the zero-truth case $(2,2,2)$ with $\lambda_0=\frac32$.
+\item For $M=N=6$, $r=3$ and $H=3,4,5,6$ it gives $\frac{27}2$, $15$, $16$, $17$ with $m=1,2,1,2$, the theoretical values of \textcite[Table~3]{Watanabe2013}.
+\item It reproduces the ten entries of \textcite[Table~1]{DrtonPlummer2017}, $5$ responses and $3$ covariates, and their statement that $m=2$ only for model rank $3$ at true rank $0$.
+\end{itemize}
+
+\paragraph{Deep linear networks.}\index{deep linear network} For $y=W_L\cdots W_1x+\varepsilon$ with widths $H_0$ (input), $H_1,\dots,H_L$ (output), \textcite{Aoyagi2024} computed $\lambda$ and $m$ exactly. We state the result in the form of \textcite[Definition~4 and Remark~1]{Aoyagi2025}, which includes the multiplicity; \cref{ch:llc} uses it to validate estimators.
+
+\begin{theorem}[\textcite{Aoyagi2024}]\label{thm:catalogue:deep}
+Let $W_j\in\R^{H_j\times H_{j-1}}$, the noise be Gaussian, the inputs have a density positive on a set of positive volume, the prior be smooth with compact support and positive at the true parameter, and the true product have rank $r$; put $\Delta_j=H_j-r$, $j=0,\dots,L$. If some $\Delta_j=0$, then $\lambda=\frac12(r(H_0+H_L)-r^2)$ and $m=1$. Otherwise let $\Gamma\subseteq\{0,\dots,L\}$, $\abs\Gamma=\ell+1\ge2$, be such that $\Delta_j<\Delta_k$ for $j\in\Gamma$ and $k\notin\Gamma$, and such that $S=\sum_{j\in\Gamma}\Delta_j$ satisfies $S\ge\ell\Delta_j$ for $j\in\Gamma$ and $S<\ell\Delta_k$ for $k\notin\Gamma$. With $q=\lceil S/\ell\rceil$ and $p=S-(q-1)\ell$,
+\[
+\lambda=\frac{r(H_0+H_L)-r^2}2+\frac{p(\ell-p)}{4\ell}+\frac{S^2}{4\ell}-\frac14\sum_{j\in\Gamma}\Delta_j^2,\qquad m=p(\ell-p)+1.
+\]
+\end{theorem}
+
+For $L=2$ the formula agrees with \cref{thm:catalogue:aoyagi} on the $2754$ tuples above, and for widths $1,\dots,1$ it gives the chain. A consequence that we derive here and have not found stated is that depth beyond the width leaves $\lambda$ fixed and raises $m$:
+
+\begin{corollary}\label{cor:catalogue:depth}
+If all widths equal $h$, the truth is $0$ and $L\ge h$, then $\lambda=\frac14h(h+1)$ and $m=h(L-h)+1$, against $\frac d2=\frac12Lh^2$.
+\end{corollary}
+
+\begin{proof}
+All $\Delta_j=h$, and two indices with equal $\Delta$ are both in $\Gamma$ or both out, so $\Gamma$ is the whole index set, $\ell=L$ and $S=(L+1)h$. Since $L\ge h$, $h<S/\ell=h+h/L\le h+1$, so $q=h+1$ and $p=(L+1)h-hL=h$. \Cref{thm:catalogue:deep} gives $m=h(L-h)+1$ and
+\[
+\lambda=\frac{h(L-h)}{4L}+\frac{(L+1)^2h^2}{4L}-\frac{(L+1)h^2}4=\frac{hL-h^2+(L+1)h^2}{4L}=\frac{h(h+1)}4.\qedhere
+\]
+\end{proof}
+
+For width $2$, $\lambda=\frac32$ at every depth $L\ge2$, with $m=2L-3$: $3$ at depth $3$ and $5$ at depth $4$, against $\frac d2=6$ and $8$.\sidenote{The script \texttt{07-catalogue-formulas.py} checks the corollary against \cref{thm:catalogue:deep} for all widths $h\le6$ and depths $h\le L\le12$.} \textcite{Aoyagi2025} notes that the coefficients decrease as layers are added (for equal widths, by \cref{cor:catalogue:depth}, only until the depth reaches the width) and reads this as one theoretical reason for the effectiveness of deep linear networks. The values are global: at a generic trained parameter the local value can be larger (\cref{ch:llc}).
+
+\paragraph{One hidden layer of tanh units.}\index{tanh network} For $f(x)=\sum_{h=1}^Ha_h\tanh(b_hx)$ with one input in $[-1,1]$, one output, the truth $0$ and a positive prior, Aoyagi obtained
+\[
+\lambda=\frac{H+k^2+k}{4k+2},\quad k=\lfloor\sqrt H\rfloor,\qquad m=2\ \text{if}\ k^2=H,\quad m=1\ \text{otherwise},
+\]
+in papers of 2005, with Watanabe and in Japanese, and of 2006, which she cites in \textcite{Aoyagi2019}; the end of \S4 there restates the formula for several outputs from a paper of 2009. It gives $\frac12$ ($m=2$), $\frac23$, $\frac56$ and $1$ ($m=2$) for $H=1,2,3,4$, and grows like $\frac12\sqrt H$, against $\frac d2=H$. The mechanism is a singularity of Vandermonde type: near the origin $K$ is governed by the moments $\sum_ha_hb_h^p$ for odd $p$ \parencite{Aoyagi2010a,AoyagiNagata2012}. For several inputs, values for $H\le4$ are listed in \textcite[Theorem~6]{Aoyagi2019},\sidenote{We could not reconcile one entry of that list with the one-input formula. For $N=1$ input, $M=1$ output, $H=4$ and $Q=2$ (the tanh case), the minimum of the list for $H=4$ is $\frac23$, attained by its term $\frac{4N+Q(2(N-2)+2M)}{2(Q+1)}$, while the paper's own formula for one input gives $1$. The negative factor $N-2$ suggests that the list assumes more inputs. We do not use it.} and upper bounds for local values in \textcite{Kurumadani2027}.
+
+\paragraph{Mixtures.}\index{mixture model} The book's mixture $(1-a)\Normal(0,1)+a\Normal(b,1)$ at the truth $\Normal(0,1)$ has $\lambda=\frac12$ and $m=2$ by comparison with $a^2b^2$ (\cref{ch:singular}), consistent with the free-energy computation of \textcite{KariyaWatanabe2022}; its $K$ is not analytic at $a=0$, so the theorems of Part~III do not apply verbatim. With both means free, $\alpha\Normal(\mu_1,1)+(1-\alpha)\Normal(\mu_2,1)$ has $\lambda=\frac34$, $m=1$, at a truth $\Normal(\mu,1)$, and the regular $\frac32$ at a genuine two-component truth (\textcite[Example~2.1]{DrtonPlummer2017}, citing \textcite{Aoyagi2010a}). For normal mixtures in general there are upper bounds \parencite{YamazakiWatanabe2003}.
+
+\paragraph{Boltzmann machines and Bayesian networks.}\index{restricted Boltzmann machine} For a restricted Boltzmann machine with $M$ binary visible units, $N$ binary hidden units, no biases and $M>N$, \textcite[Theorem~3]{Aoyagi2010b} gives $\lambda=\frac14MN$ at the zero weights, with $m=1$ if $M>N+1$ and $m=M$ if $M=N+1$. For $M=3$ and $N=1$ this is $\frac34$, which a direct computation confirms: the model is $p(x)=\frac18(1+\sum_{i<j}b_ib_jx_ix_j)$ with $b_i=\tanh a_i$, so near the origin $K$ is comparable to $\sum_{i<j}a_i^2a_j^2$, whose Newton polyhedron meets the diagonal at $t=\frac43$ (\cref{ch:newton}).\sidenote{One entry of Theorem~2 of \textcite{Aoyagi2010b} gives $\lambda=\frac12$ for $M=3$ and $N=1$ at true weights $b^*\ne0$ with a zero coordinate. At $b^*=(c,0,0)$ the distribution is uniform, as at the zero weights, so for small $c$ this local value cannot lie below the value $\frac34$ at the origin; the same direct computation gives $1$ there, and also at $(c,d,0)$ with $cd\ne0$. We do not use the entry.} For naive Bayesian networks with $k\ge3$ binary features and two hidden classes, $d=2k+1$, \textcite[Theorem~4]{RusakovGeiger2005} prove that the coefficient of $\log n$ is $\frac12(2k+1)$ at regular points, $\frac12(2k-1)$ at their singularities of type~1, and $\frac12(k+1)$ where all features are independent, each with $m=1$; for $k=2$ it is $\frac32$ at the independence set, with an extra $2\log\log n$ in the log marginal likelihood, so $m=3$.\index{naive Bayesian network} Binary latent tree models \parencite{Zwiernik2011} and Gaussian latent tree and forest models \parencite{DrtonEtAl2017} have formulas in terms of the tree, for the cases those papers treat. For hidden Markov models we found upper bounds \parencite{YamazakiWatanabe2005b} and no exact values.
+
+\paragraph{Factorizations, ReLU networks, and recent results.} Non-negative matrix factorization has upper bounds that are exact in special cases \parencite{HayashiWatanabe2017a}, and latent Dirichlet allocation an exact formula with the case structure of \cref{thm:catalogue:aoyagi} \parencite{Hayashi2021}. ReLU networks are not analytic. For deep ReLU networks with more layers than the truth needs, \textcite[a preprint]{NagayasuWatanabe2023} bound the free energy by a quantity that does not grow with the extra layers, and \textcite[a preprint]{Aoyagi2025} claims exact values for one hidden ReLU layer, as sums of deep-linear values over the regions of input space where the network is linear. Since 2020 exact values have appeared for factor analysis \parencite[a preprint]{DrtonEtAl2025}, and local values at several critical points of the toy model of superposition \parencite[a preprint]{ChenEtAl2023}. As of October 2026 we found no exact value or rigorous bound for a transformer or an attention layer, only estimates (\cref{ch:llc,ch:stages}).
+
+\begin{table}[t]
+\centering\footnotesize
+\begin{tabular}{@{}llcccl@{}}
+\toprule
+model & truth & $d/2$ & $\lambda$ & $m$ & status\\
+\midrule
+product model $y=abx$ & $0$ & $1$ & $1/2$ & $2$ & proved (Ch.~\ref{ch:coefficient})\\
+chain, $L=3$ & $0$ & $3/2$ & $1/2$ & $3$ & proved\\
+rank one, $M=N=3$ & $0$ & $3$ & $3/2$ & $2$ & proved\\
+ & rank $1$ & $3$ & $5/2$ & $1$ & proved\\
+reduced rank $3\times3$, $H=2$ & $0$ & $6$ & $5/2$ & $1$ & source\\
+ & rank $1$ & $6$ & $7/2$ & $2$ & proved\\
+reduced rank $3\times3$, $H=3$ & rank $1$ & $9$ & $4$ & $1$ & source, reduced\\
+reduced rank $6\times6$, $H=4$ & rank $3$ & $24$ & $15$ & $2$ & source\\
+deep linear $2$-$2$-$2$-$2$ & $0$ & $6$ & $3/2$ & $3$ & source\\
+deep linear $3$-$3$-$3$-$3$ & $0$ & $27/2$ & $3$ & $1$ & source\\
+tanh units, $H=2$ & $0$ & $2$ & $2/3$ & $1$ & source, checked\\
+tanh units, $H=4$ & $0$ & $4$ & $1$ & $2$ & source\\
+mixture, $2$ parameters & $\Normal(0,1)$ & $1$ & $1/2$ & $2$ & proved (Ch.~\ref{ch:singular})\\
+mixture, $3$ parameters & $\Normal(\mu,1)$ & $3/2$ & $3/4$ & $1$ & source\\
+RBM, $3$ visible, $1$ hidden & $0$ & $3/2$ & $3/4$ & $1$ & source, checked\\
+RBM, $4$ visible, $2$ hidden & $0$ & $4$ & $2$ & $1$ & source\\
+naive Bayes, $3$ features & independent & $7/2$ & $2$ & $1$ & source\\
+naive Bayes, $2$ features & independent & $5/2$ & $3/2$ & $3$ & source\\
+\bottomrule
+\end{tabular}
+\caption{Learning coefficients of small instances against half the number of parameters. \emph{Proved}: in this chapter (\cref{comp:catalogue:chain}, \cref{thm:catalogue:rankone}, \cref{cor:catalogue:small}) or where indicated. \emph{Source}: taken from the cited source, which proves it or cites a proof (\cref{thm:catalogue:aoyagi,thm:catalogue:deep}; \textcite{Aoyagi2019,Aoyagi2010b,RusakovGeiger2005}; \textcite{DrtonPlummer2017}, citing \textcite{Aoyagi2010a}, for the three-parameter mixture). \emph{Checked}: also verified here independently (the comparable polynomial of \cref{ex:catalogue:twotanh}; a Newton polyhedron). \emph{Reduced}: brought to a zero truth by \cref{prop:catalogue:reduction}. Inputs uniform on $[-1,1]$ for the tanh units; priors positive at the most singular true parameters. Values from \texttt{07-catalogue-formulas.py}.}\label{tab:catalogue:small}
+\end{table}
+
+\paragraph{The singular BIC.}\index{singular BIC} Learning coefficients enter model selection through the singular BIC of \textcite{DrtonPlummer2017} (\cref{def:freeenergy:sbic}), which gives each model $\cM_i$ an approximate marginal likelihood that averages the free energy formulas $L'_{ij}=P(X^n\mid\hat w_i,\cM_i)(\log n)^{m_{ij}-1}n^{-\lambda_{ij}}$ over the submodels $\cM_j$ that could contain the truth; for reduced-rank regression \cref{thm:catalogue:aoyagi} supplies every $\lambda_{ij}$ and $m_{ij}$. As a worked example, take $M=N=3$ and compare $\cM_0=\{C=0\}$ with the rank-one model $\cM_1$, using $\lambda_{00}=0$, $\lambda_{10}=\frac32$ with $m_{10}=2$ (\cref{thm:catalogue:rankone}), and $\lambda_{11}=\frac52$ (\cref{cor:catalogue:small}). Let $T$ be twice the maximized log-likelihood ratio of $\cM_1$ against $\cM_0$, $A=e^{T/2}$, $b=1-An^{-5/2}$ and $c=An^{-3/2}\log n$. Dividing every $L'$ by the maximized likelihood of $\cM_0$, the recursion of Drton and Plummer gives
+\[
+\mathrm{sBIC}(\cM_1)-\mathrm{sBIC}(\cM_0)=\log\tfrac12\bigl(-b+\sqrt{b^2+4c}\bigr).
+\]
+For small $T$ this is close to $\frac T2-\frac32\log n+\log\log n$, the free energy formula at a zero truth; for large $T$, to BIC's $\frac T2-\frac52\log n$. At $n=100$ the sBIC prefers the rank-one model once $T>12.14$, while BIC with the dimension $5$ of the rank-one matrices needs $T>23.03$, and with $d=6$, $T>27.63$. At $T=0$ the difference is $-5.39$, against $-5.38$ from the zero-truth formula; at $T=40$ it is $8.57$, against BIC's $8.49$. \Cref{ch:freeenergy} runs the full rank-selection experiment.
+
+\paragraph{A warning about pre-asymptotic ranges.}\index{pre-asymptotic regime} The values above are limits as $\eps\to0$, and the approach can be slow. For the two tanh units of \cref{sec:catalogue:byhand}, with inputs uniform on $[-1,1]$ and the uniform prior on $[-1,1]^4$, \texttt{07-catalogue-tanh.py} estimates $V(\eps)$ from $2\times10^7$ prior draws and fits exponents $0.484$ over $[10^{-5},3\times10^{-2}]$, $0.519$ over $[10^{-5},10^{-3}]$ and $0.551$ over $[10^{-5},10^{-4}]$, against $\lambda=\frac23$: a Monte Carlo study would report about $\frac12$, the value of a single neuron. The reason is visible to third order, $K\approx0.167\,(S_1-0.2S_3)^2+0.00127\,S_3^2$ with $S_p=a_1b_1^p+a_2b_2^p$: the second coefficient is $0.0076$ times the first, and the constraint that makes $\lambda=\frac23$ binds only far below $\eps=10^{-5}$. For the comparable polynomial $S_1^2+S_3^2$, $4\times10^7$ draws give $0.660$ over $[10^{-8},10^{-4}]$.
+
+\section{Measuring it}\label{sec:catalogue:measuring}
+
+Volumes are of no use in twelve dimensions, so we estimate $\lambda$ as \textcite{Watanabe2013} does, from posterior samples at two temperatures (\cref{ch:temperature}),\index{two-temperature estimator}
+\[
+\hat\lambda=\frac{\E^{\beta_1}_w[nL_n(w)]-\E^{\beta_2}_w[nL_n(w)]}{1/\beta_1-1/\beta_2},\qquad\beta_1=\frac1{\log n},\quad\beta_2=\frac{1.5}{\log n},
+\]
+which converges to $\lambda$ in probability \parencite[Corollary~3]{Watanabe2013}. As in his experiment on reduced-rank regression, we sample at $\beta_1$ only, by random-walk Metropolis (\cref{sec:toolkit:mcmc}), and obtain the mean at $\beta_2$ by reweighting with $e^{-(\beta_2-\beta_1)nL_n}$ \parencite[\S6.2 and eq.~(20)]{Watanabe2013}. If the tempered means behave like their population versions, $\E^\beta_w[nK]=\frac1\beta\bigl(\lambda-\frac{m-1}{\log(n\beta)+\kappa}\bigr)$ up to smaller terms (\cref{prop:temperature:mean}), with $\kappa$ a constant of the model and the prior, then
+\begin{equation}\label{eq:catalogue:bias}
+\hat\lambda\approx\lambda-(m-1)\Bigl(\frac3{\ell_n+\kappa}-\frac2{\ell_n+\log1.5+\kappa}\Bigr),\qquad\ell_n=\log\frac n{\log n},
+\end{equation}
+a shortfall of about $(m-1)/\log n$, as the appendix records (\cref{sec:toolkit:mcmc}). For the product model on $[-1,1]^2$ and rank-one regression with $M=N=3$ on $[-1,1]^6$ the population expansion is exact up to terms of order $e^{-n\beta/2}$, because their volumes are known exactly for $\eps\le\frac12$; then $\kappa=\gamma+\log2=1.270$ and $\kappa=\frac8\pi J_1-\log2-\psi(\frac32)=0.040$ (\cref{ex:catalogue:exactvolume}).
+
+\paragraph{Validation.} The script \texttt{07-catalogue-validate.py} checks the estimator where exact tempered means are available, at $n=10^3$, $10^4$ and $10^5$, with uniform priors on $[-1,1]^d$ and the truth $0$. On the regular plane, $20$ data sets per $n$ with $16$ chains each give $1.002$, $1.000$, $1.000$ (Student-$t$ half-widths at most $0.010$), against $1.000$ from exact quadrature on the same data; per data set the two differ by $0.014$ to $0.017$ on average. On the product model they give $0.323$, $0.371$, $0.393$ (half-widths $0.005$), against $0.323$, $0.369$, $0.396$ by exact quadrature in $c=ab$ and $0.320$, $0.368$, $0.396$ from \eqref{eq:catalogue:bias}: the shortfall from $\frac12$ is a property of the posterior, not of the sampler. On rank-one regression with $M=N=3$ at the truth $0$ without noise, the population posterior, $1024$ chains as long as those of the reduced-rank runs below give $1.269$, $1.347$, $1.391$ (half-widths at most $0.008$) against the exact $1.271$, $1.342$, $1.381$. The last is $0.010$ high, a small bias of the random walk at the largest $n$: a Gibbs sampler that redraws $b$ given $a$ and $a$ given $b$ from their exact conditional laws, truncated Gaussians, gives $1.381\pm0.003$.
+
+\paragraph{Reduced-rank regression.} The script \texttt{07-catalogue-rrr.py} runs the estimator for $M=N=3$, $H=1,2$, the truths $0$ and $\frac12e_1e_1^\top$, the uniform prior on $[-1,1]^{6H}$ and $n=10^3,10^4,10^5$, with $12$ data sets per case and $16$ chains per data set (\cref{fig:catalogue:rrr}). Reweighting keeps an effective sample size of $67$ to $86$ percent of the draws,\sidenote{If $\beta_1$ times the energy above its minimum had the Gamma law of shape $\lambda$, its limit law in the population version when $m=1$, the weights $e^{-(\beta_2-\beta_1)nL_n}$ would keep the fraction $(8/9)^\lambda$: $0.84$, $0.75$ and $0.66$ for $\lambda=\frac32,\frac52,\frac72$.} and in all twelve cases the estimates from the two halves of the kept draws differ by less than twice their standard error. Every estimate lies far below $\frac d2$; the ones at a zero truth also lie below half the dimension of the set of distributions, $\frac52$ and $4$. With $m=1$ the estimates reach $\lambda$ by $n=10^5$, $2.502\pm0.029$ and $2.501\pm0.033$ against $\frac52$, but not at $n=10^3$: $2.737$ for the rank-one truth with $H=1$ and $2.341$ for the zero truth with $H=2$, a shortfall that shrinks steadily with $n$. The excess belongs to the tempered posterior, not to the data or the sampler: without noise the same sampler gives $2.742$, $2.524$, $2.504$,\sidenote{Without noise the energy is $nK(w)$ itself; \texttt{07-catalogue-validate.py} runs the same sampler on it and computes the population values by quadrature, integrating $b$ out in closed form.} and quadrature of the population posterior $2.747$, $2.529$, $2.504$. At $n\beta_1=145$ the posterior still feels the prior near the truth, mostly through the box: at a fixed size $s$, the prior weighs a rank-one matrix $s\,uv^\top$ ($\abs u=\abs v=1$) by the range of $\log t$ over which its factorizations $(a/t,tb)$ stay inside the box, which is $\log\frac1s$ along the coordinate axes, where the truth lies, and longer off them. With the uniform prior on a product of balls, where the range is $\log\frac1s$ in every direction, the population value at $n=10^3$ falls to $2.601$; the rest of the excess comes from the growth of $\log\frac1s$ toward the singular point $s=0$ and from the curvature of the set of rank-one matrices (\cref{ex:catalogue:closeness}). With $m=2$ the estimates stay below $\lambda$. For $\lambda=\frac32$ they are $1.294$, $1.367$, $1.399$, where \eqref{eq:catalogue:bias} with the exact $\kappa$ predicts $1.271$, $1.342$, $1.381$; the excess of about one half-width at every $n$ is absent from the noiseless runs, apart from the sampler's $0.010$ at $n=10^5$, so the data shrink the shortfall a little. For $\lambda=\frac72$ they are $3.427$, $3.356$, $3.438$, where $\kappa$ is unknown and $\kappa=0$ gives $3.269$, $3.341$, $3.380$. Watanabe's estimates for $M=N=6$, true rank $3$ and $n=500$ \parencite[Table~3]{Watanabe2013} also fall short, $14.80$, $15.72$ and $16.55$ against $15$, $16$ and $17$, the first and last with $m=2$; he attributes the differences to terms of lower order than $\log n$, and for $m=2$ also to $\log\log n$.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=3 by 2,horizontal sep=10mm,vertical sep=16mm,xlabels at=edge bottom},splot,
+  width=0.345\linewidth,height=0.255\linewidth,xmode=log,xmin=600,xmax=1.7e5,xtick={1e3,1e4,1e5},
+  xlabel={sample size $n$},title style={font=\footnotesize}]
+\nextgroupplot[title={(a) regular plane: $\lambda=\frac d2=1$},ymin=0.9,ymax=1.1,ylabel={$\hat\lambda$},
+  ytick={0.9,1,1.1}]
+\addplot[regularpred,domain=600:1.7e5,samples=2] {1};
+\addplot[theory,domain=600:1.7e5,samples=2] {1};
+\addplot[measured2,ebars] table[x=nex,y=ex,y error plus=exerr,y error minus=exerr] {figures/data/07-catalogue-plane.dat};
+\addplot[measured,ebars] table[x=n,y=mh,y error plus=mherr,y error minus=mherr] {figures/data/07-catalogue-plane.dat};
+\nextgroupplot[title={(b) product model: $\lambda=\frac12$, $m=2$},ymin=0.2,ymax=1.1]
+\addplot[regularpred,domain=600:1.7e5,samples=2] {1};
+\addplot[theory,domain=600:1.7e5,samples=2] {0.5};
+\addplot[theory2,domain=600:1.7e5,samples=40] {0.5-3/(ln(x/ln(x))+1.2704)+2/(ln(1.5*x/ln(x))+1.2704)};
+\addplot[measured2,ebars] table[x=nex,y=ex,y error plus=exerr,y error minus=exerr] {figures/data/07-catalogue-product.dat};
+\addplot[measured,ebars] table[x=n,y=mh,y error plus=mherr,y error minus=mherr] {figures/data/07-catalogue-product.dat};
+\nextgroupplot[title={(c) $H=1$, truth $0$: $\lambda=\frac32$, $m=2$},ymin=1.1,ymax=3.2]
+\addplot[regularpred,domain=600:1.7e5,samples=2] {3};
+\addplot[theory,domain=600:1.7e5,samples=2] {1.5};
+\addplot[theory2,domain=600:1.7e5,samples=40] {1.5-3/(ln(x/ln(x))+0.0397)+2/(ln(1.5*x/ln(x))+0.0397)};
+\addplot[measured,ebars] table[x=n,y=H1r0,y error plus=H1r0err,y error minus=H1r0err] {figures/data/07-catalogue-rrr.dat};
+\nextgroupplot[title={(d) $H=1$, rank-one truth: $\lambda=\frac52$},ymin=2.3,ymax=3.1,ylabel={$\hat\lambda$}]
+\addplot[regularpred,domain=600:1.7e5,samples=2] {3};
+\addplot[theory,domain=600:1.7e5,samples=2] {2.5};
+\addplot[measured,ebars] table[x=n,y=H1r1,y error plus=H1r1err,y error minus=H1r1err] {figures/data/07-catalogue-rrr.dat};
+\nextgroupplot[title={(e) $H=2$, truth $0$: $\lambda=\frac52$},ymin=2,ymax=6.5,
+  legend style={font=\scriptsize,at={(0.03,0.86)},anchor=north west}]
+\addplot[regularpred,domain=600:1.7e5,samples=2,forget plot] {6};
+\addplot[theory,domain=600:1.7e5,samples=2,forget plot] {2.5};
+\addplot[measured,ebars,forget plot] table[x=n,y=H2r0,y error plus=H2r0err,y error minus=H2r0err] {figures/data/07-catalogue-rrr.dat};
+\addlegendimage{measured}\addlegendentry{Metropolis estimate}
+\addlegendimage{measured2}\addlegendentry{exact tempered means}
+\addlegendimage{theory}\addlegendentry{singular: $\lambda$}
+\addlegendimage{theory2}\addlegendentry{with the correction \eqref{eq:catalogue:bias}}
+\addlegendimage{regularpred}\addlegendentry{regular: $\frac d2$}
+\nextgroupplot[title={(f) $H=2$, rank-one truth: $\lambda=\frac72$, $m=2$},ymin=3,ymax=6.5]
+\addplot[regularpred,domain=600:1.7e5,samples=2] {6};
+\addplot[theory,domain=600:1.7e5,samples=2] {3.5};
+\addplot[theory2,domain=600:1.7e5,samples=40] {3.5-3/(ln(x/ln(x)))+2/(ln(1.5*x/ln(x)))};
+\addplot[measured,ebars] table[x=n,y=H2r1,y error plus=H2r1err,y error minus=H2r1err] {figures/data/07-catalogue-rrr.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Two-temperature estimates of the learning coefficient, $\beta_1=1/\log n$ and $\beta_2=1.5/\log n$, with Student-$t$ $95\%$ intervals over data sets; uniform priors on $[-1,1]^d$. (a, b) Validation, $20$ data sets per $n$ at the truth $0$ (seeds $71000+1000k+j$ and $72000+1000k+j$ for the data set $j$ at $n=10^{k+3}$): dots, Metropolis with reweighting; circles, the same estimator from exact tempered means on the same data, drawn slightly to the right. (c)--(f) Reduced-rank regression with $M=N=3$, $H=1,2$, the truths $0$ and $\frac12e_1e_1^\top$, $12$ data sets per $n$ (seeds $75000+10000c+1000k+j$ for the case $c=0,\dots,3$ in the order (c)--(f)), $16$ chains per data set, $8000$ adaptation steps, $16000$ kept. Bronze: $\lambda$ from \cref{thm:catalogue:rankone,cor:catalogue:small,thm:catalogue:aoyagi}; dotted: \eqref{eq:catalogue:bias} with $\kappa=\gamma+\log2$ (b), $\kappa=0.040$ (c), and $\kappa=0$ (f), where the true constant is unknown; slate dashed: $\frac d2$. Scripts \texttt{07-catalogue-validate.py} and \texttt{07-catalogue-rrr.py}.}\label{fig:catalogue:rrr}
+\end{fullwidth}
+\end{figure}
+
+\section{The ledger}\label{sec:catalogue:ledger}
+
+For rank-one regression the zeta function is a product, and \cref{thm:catalogue:rankone} proves $\lambda=\frac12\min(M,N)$, with $m=2$ exactly when $M=N$. For reduced-rank regression \cref{prop:catalogue:reduction} removes the rank of the truth, which with the rank-one theorem proves the small cases of \cref{cor:catalogue:small}, and the Aoyagi--Watanabe formula, cited and checked, gives the rest. Deep linear networks, one-layer tanh networks, simple mixtures, Boltzmann machines and Bayesian networks have exact values in the literature, all far below $\frac d2$; most other architectures have bounds only. Estimates from posterior samples agree with the formulas at $n=10^5$ once the multiplicity correction is counted; at $n=10^3$ the prior near the truth can still move them by a quarter.
+
+\ledgercard{the learning coefficient $\lambda$ and multiplicity $m$ of models in use, at their most singular true parameters}{$\frac d2$, or half the dimension of the set of distributions; $m=1$}{rank-one regression: $\frac12\min(M,N)$, $m=2$ iff $M=N$ (\cref{thm:catalogue:rankone}); reduced-rank regression: the Aoyagi--Watanabe formula (\cref{thm:catalogue:aoyagi}), reduced to a zero truth by \cref{prop:catalogue:reduction}; other families in \cref{tab:catalogue:small}}{rank-one regression, $M=N=3$: $\lambda=\frac32$, $m=2$ at the truth $0$ and $\frac52$ at a rank-one truth, against $\frac d2=3$}{two-temperature Metropolis estimates at $n=10^5$: $1.40$, $2.50$, $2.50$, $3.44$ for $\lambda=\frac32,\frac52,\frac52,\frac72$; with $m=2$ short of $\lambda$ by about the correction \eqref{eq:catalogue:bias}}{realizability; a prior positive at a most singular true parameter; Gaussian noise of known covariance; analytic (here polynomial) losses; $n\to\infty$ with the model fixed; global values, attained at the most singular points}
+
+\section{Where the theory stops}\label{sec:catalogue:stops}
+
+\paragraph{What was assumed.} Every value in this chapter belongs to a fixed model and a realizable truth as $n\to\infty$. Reduced-rank regression with $H<r$ cannot realize its truth; \textcite[\S6.2]{Watanabe2013} then uses the regular value $\frac12H(M+N-H)$ of the best approximation, and \cref{thm:catalogue:aoyagi} does not apply. The values need a prior positive at a most singular true parameter: a prior that vanishes there can raise the coefficient, and Jeffreys' prior raises it to at least $\frac d2$ \parencite{Watanabe2024}; a box that the true set meets only at corners raises it too, to $1$ for the product model at the truth $ab=1$ on $[-1,1]^2$. They assume Gaussian noise with known covariance. Watanabe's statistical theorems need analytic losses: those of reduced-rank regression and deep linear networks are polynomials, tanh networks are analytic only with bounded inputs (\cref{ch:singular}), and the book's mixture and all ReLU networks are not analytic, so for them the values describe volumes and zeta functions, and Part~III does not apply verbatim. Finally, the catalogue lists global values, minima over the true set, while a trained network sits at one true parameter, where the local value can be larger: $\frac M2$ against $\frac N2$ on the branch $\{b=0\}$ of rank-one regression with $N<M$ (\cref{ch:llc}).
+
+\paragraph{Where it breaks.} Exact values are known for few architectures: linear networks of every depth, one hidden tanh layer with a single input, a few mixtures, restricted Boltzmann machines with more visible than hidden units at the zero weights, naive Bayesian networks and latent trees. For networks with two or more nonlinear hidden layers, for hidden Markov models and for ReLU networks only bounds are published, and the exact ReLU values of \textcite{Aoyagi2025} are, as of October 2026, an unrefereed preprint. Even exact values can mislead at practical scales: for two tanh units, volumes measured down to $\eps=10^{-5}$ suggest $\frac12$ instead of $\frac23$, and the two-temperature estimator at $n=10^3$ is off by up to a quarter in either direction, from the multiplicity and from lower-order terms that depend on the prior near the truth (\cref{sec:catalogue:measuring}). Published values also need care: in two theorems of the literature we found entries that we could not reconcile with independent computations (the side notes of \cref{sec:catalogue:aoyagi}).
+
+\paragraph{Open problems.} Exact learning coefficients are open for networks with one tanh layer, several inputs and outputs and more than four hidden units, and for networks with two nonlinear layers beyond the smallest (\cref{ex:catalogue:twolayers}); \textcite{Aoyagi2019} poses the general Vandermonde case. They are open for hidden Markov models, for non-negative matrix factorization outside its special cases \parencite{HayashiWatanabe2017a}, and for attention layers, and the exact ReLU values claimed by \textcite{Aoyagi2025} await independent checks. Resolution of singularities is constructive in principle, but no general method computes $\lambda$ for a model with more than a handful of parameters; exact algorithms exist for two-dimensional models \parencite[a preprint]{SergeantPerthuisEtAl2026}. The sBIC needs $\lambda_{ij}$ for every pair of nested models, which \cref{thm:catalogue:deep} supplies for deep linear networks; whether the consistency conditions of Drton and Plummer hold when the hidden width of a deep linear network is chosen is, as far as we know, unexamined (\cref{ex:catalogue:sbicdeep}).
+
+\begin{exercises}
+\item \consolidation (Unequal sides.)\label{ex:catalogue:unequal} For rank-one regression with $(M,N)=(3,2)$ and the uniform prior on the product of unit balls, show that $V(\eps)=3\delta^2-2\delta^3$ with $\delta=\sqrt{2\eps}$, so that $\lambda=1$ and $m=1$. With the uniform prior on $[-1,1]^5$, show from \cref{thm:catalogue:rankone} that $V(\eps)\sim C\eps$ with $C=\frac\pi2\E\abs b^{-2}$, $b$ uniform on $[-1,1]^3$; with $\E\abs b^{-2}=1.9185$, $C=3.014$.
+
+\item \consolidation (The exact volume and the constant $\kappa$.)\label{ex:catalogue:exactvolume} (a) For $M=N=3$ and $A=B=[-1,1]^3$, carry the proof of \cref{thm:catalogue:rankone}(ii) to the end for $\delta\le1$: the part $\abs b\ge\delta$ contributes $\frac\pi6\delta^3(\frac\pi2\log\frac1\delta+J_1)$ and the part $\abs b<\delta$ contributes $\frac\pi2\delta^3J_2$, with $J_2=\int_1^\infty t^{-4}\Prob(\abs a\le t)\dd t$. Deduce \eqref{eq:catalogue:exactvolume} from $J_2=\frac13J_1+\frac\pi{18}$, and prove this identity by writing $r(u)=1/\max_iu_i$ for the distance to the boundary of the cube along a direction $u$ in the positive octant of the sphere, so that $J_1=\int\log r(u)\dd\sigma(u)$. (b) From \eqref{eq:catalogue:exactvolume}, show that $\int e^{-sK}\varphi=C's^{-3/2}(\log s+\kappa)+O(e^{-s/2})$ with $\kappa=\frac8\pi J_1-\log2-\psi(\frac32)=0.040$, so that the population tempered mean is $\frac1\beta\bigl(\frac32-\frac1{\log(n\beta)+\kappa}\bigr)$ up to exponentially small terms. Do the same for the product model and find $\kappa=\gamma+\log2$.
+
+\item \consolidation (The identity by hand.)\label{ex:catalogue:reduction} Check that \cref{thm:catalogue:aoyagi} satisfies the identity of \cref{prop:catalogue:reduction} for $(M,N,H,r)=(4,4,2,1)$ and $(3,5,2,1)$, finding $\lambda=5$ with $m=2$ and $\lambda=\frac92$ with $m=1$, and say which case of the theorem each side uses.
+
+\item \consolidation (Depth.)\label{ex:catalogue:depth} Use \cref{cor:catalogue:depth} for deep linear networks of width $3$ and depths $3,4,5$ at the truth $0$ (answers: $\lambda=3$ with $m=1,4,7$), and show from \cref{thm:catalogue:deep} that width $3$ and depth $2$, reduced-rank regression with $M=N=H=3$, give $\lambda=\frac72$ with $m=2$, as \cref{thm:catalogue:aoyagi} does.
+
+\item \consolidation (The singular BIC by hand.)\label{ex:catalogue:sbic} In the worked example of \cref{sec:catalogue:aoyagi}, derive from \cref{def:freeenergy:sbic} the quadratic equation for $L'(\cM_1)$ and the stated difference of the sBIC values, and show that at $n=1000$ the sBIC prefers $\cM_1$ once $T>18.24$, while BIC with the dimension $5$ needs $T>34.54$.
+
+\item \byhand (A second hidden unit.)\label{ex:catalogue:htwo} Prove part (ii) of \cref{cor:catalogue:small} in detail for $(M,N)=(2,3)$, where $\lambda=\frac52$ and $m=1$, and check the value against \cref{thm:catalogue:aoyagi}. Which true parameters are deepest when $C_0=e_1e_1^\top$?
+
+\item \byhand\hard (Two tanh units.)\label{ex:catalogue:twotanh} Let $f(x)=a_1\tanh(b_1x)+a_2\tanh(b_2x)$, $x\sim\Unif[-1,1]$, the truth $0$, and $S_p=a_1b_1^p+a_2b_2^p$. (a) Show that near the origin $K$ is comparable to $S_1^2+S_3^2$. (b) Show that $S_3-b_1^2S_1=a_2b_2(b_2^2-b_1^2)$, so that $S_1^2+S_3^2$ is comparable to $S_1^2+a_2^2b_2^2(b_2^2-b_1^2)^2$. (c) In the chart $(b_1,b_2)=(t,ts)$ of the blow-up of the $b$-plane, with Jacobian $\abs t$, and with $a_1'=a_1+a_2s$, show that the loss becomes comparable to $t^2a_1'^2+t^6a_2^2$ away from $s\in\{0,\pm1\}$, and compute the volume of $\{t^2a_1'^2+t^6a_2^2<\eps\}$ with the weight $\abs t$ to find $\lambda=\frac23$ and $m=1$ at the origin, after checking that the directions $s\in\{0,\pm1\}$ and the other chart change nothing. \hint{For (a), $S_{p+4}=(b_1^2+b_2^2)S_{p+2}-b_1^2b_2^2S_p$, and the Gram matrix of $x$ and $x^3$ under $\Unif[-1,1]$ is positive definite. For (c), split the $t$-range at $\eps^{1/2}$ and $\eps^{1/6}$.}
+
+\item \byhand (Two Bernoullis.)\label{ex:catalogue:bernoulli} The mixture $(1-a)\,\mathrm{Bern}(p_1)+a\,\mathrm{Bern}(p_2)$ with the uniform prior on $[0,1]^3$ is fitted to $\mathrm{Bern}(q_0)$ data, $0<q_0<1$. Show that the model is $\mathrm{Bern}(q)$ with $q=(1-a)p_1+ap_2$, that the true set is a smooth surface meeting the interior of the cube, and that $\lambda=\frac12$ and $m=1$, against $\frac d2=\frac32$.
+
+\item \byhand (Hessians.)\label{ex:catalogue:hessian} For $K=\frac12\norm{ba^\top-C_0}_F^2$ with $C_0=b_0a_0^\top\ne0$, compute the Hessian at $(a_0,b_0)$ and show that its kernel is spanned by $(-a_0,b_0)$. At the zero truth compute the Hessians at the origin and at $(a^*,0)$, and compare their ranks with the local learning coefficients.
+
+\item \variation (A Gaussian prior.)\label{ex:catalogue:gaussian} Let $a\sim\Normal(0,I_N)$ and $b\sim\Normal(0,I_M)$ be independent. Show that $\zeta(z)=2^z\Gamma(z+\frac N2)\Gamma(z+\frac M2)/(\Gamma(\frac N2)\Gamma(\frac M2))$, so that $\lambda$ and $m$ are those of \cref{thm:catalogue:rankone}, and find all the poles. For which $M,N$ do later poles collide?
+
+\item \variation (An upper bound from sub-models.)\label{ex:catalogue:submodel} Write $BA$ as the sum of the rank-one terms $b_ha_h^\top$, $h=1,\dots,H$, show that the squared Frobenius norm of $BA$ is at most $H\sum_h\abs{a_h}^2\abs{b_h}^2$, and deduce from the sum and comparison rules that at the zero truth $\lambda\le\frac H2\min(M,N)$. Compare with \cref{thm:catalogue:aoyagi} for $M=N=3$ and $H=2,3$.
+
+\item \measurement (How close is the singularity?)\label{ex:catalogue:closeness} Replace the rank-one truth $\frac12e_1e_1^\top$ of the script \texttt{07-catalogue-rrr.py} by $\sigma e_1e_1^\top$ with $\sigma=0.25$ and $\sigma=0.9$, and rerun the case $H=1$. Explain the size and sign of the deviation from $\frac52$ at $n=10^3$ and $10^4$ in terms of $n\beta_1\sigma^2$ and of the range $\log\frac1\sigma$ of $\log t$ over which the true factorizations $(a/t,tb)$ stay inside $[-1,1]^6$, and what happens at $\sigma=0.9$, where that range is short.
+
+\item \research (The singular BIC for deep linear networks.)\label{ex:catalogue:sbicdeep} For deep linear networks of a fixed depth $L\ge3$ from $N$ inputs to $M$ outputs with all hidden widths equal to $h\le\min(M,N)$, the models $h=0,1,2,\dots$ are nested: they are the sets of matrices of rank at most $h$. Using \cref{thm:catalogue:deep}, write down $\lambda_{ij}$ and $m_{ij}$ for choosing $h$, and check whether they satisfy the conditions under which \textcite{DrtonPlummer2017} prove the consistency of the singular BIC, in particular that the complexities increase with the model. Why does choosing the depth at a fixed width not fit their framework? As far as we know this has not been examined.
+
+\item \research (Two nonlinear layers.)\label{ex:catalogue:twolayers} For $y=a\tanh(b\tanh(cx))$ with $x\sim\Unif[-1,1]$, the truth $0$ and a box prior, show by comparison that $\lambda=\frac12$ and $m=3$, as for the chain. Then take two units in each of two hidden layers and find $\lambda$; we know of no exact value for a network with two nonlinear hidden layers of more than one unit each.
+\end{exercises}
+
+\notesandrefs
+Reduced-rank regression goes back to \textcite{Anderson1951}, who estimated linear restrictions on the coefficients of a multivariate normal regression. Its learning coefficients were computed by \textcite{AoyagiWatanabe2005}; \textcite{Watanabe2013} used them, with their multiplicities, to test WBIC and the two-temperature estimator, and \textcite{DrtonPlummer2017} in the first experiment with the singular BIC, the choice of a rank. \Cref{thm:catalogue:rankone}, with its proof by factorizing the zeta function, and \cref{prop:catalogue:reduction}, with its proof by normal form and homogeneity, are the book's own presentations; the reduction is the method of Aoyagi's papers written out for this case, and \cref{cor:catalogue:depth} is our consequence of Aoyagi's theorem.
+
+Watanabe's first papers already treated layered networks \parencite{Watanabe2001a}, and his books \parencite{Watanabe2009,Watanabe2018} collect the general method. Aoyagi then computed one family after another: three-layer networks and normal mixtures through singularities of Vandermonde type \parencite{Aoyagi2010a,AoyagiNagata2012,Aoyagi2019}, restricted Boltzmann machines \parencite{Aoyagi2010b}, deep linear networks \parencite{Aoyagi2024}, and, in a preprint, ReLU networks \parencite{Aoyagi2025}. In algebraic statistics, \textcite{RusakovGeiger2005}, \textcite{Zwiernik2011} and \textcite{DrtonEtAl2017} computed marginal likelihood asymptotics for Bayesian networks and latent trees, and \textcite{DrtonEtAl2025} for factor analysis.
+
+The deep-learning literature uses the catalogue as ground truth. \Textcite{LauEtAl2025} validated their estimator of the local learning coefficient on deep linear networks against Aoyagi's values, which \textcite[a preprint]{HitchcockHoogland2025} point out are only lower bounds for the local values at generic trained parameters; \cref{ch:llc} returns to both, and \cref{ch:temperature} to the two-temperature estimator.
+
+\paragraph{Translating the literature.} \Textcite{Watanabe2013} writes $x\in\R^M$ for the input and $y\in\R^N$ for the output, with $A$ of size $H\times M$ and $B$ of size $N\times H$, so his $M$ and $N$ are our $N$ and $M$, and his true rank $H_0$ is our $r$. \Textcite{DrtonPlummer2017} call the responses $N$ and the covariates $M$, also the reverse of ours, and write $\lambda_i(\pi_0)$, $m_i(\pi_0)$ for our $\lambda$ and $m$ of model $i$ at the truth $\pi_0$ and $\lambda_{ij}$ for its generic value at truths of rank $j$; the formula of \cref{thm:catalogue:aoyagi} is symmetric in $M$ and $N$, so the swaps do not change it. \Textcite{Aoyagi2025} writes $c_{w_0}$ and $\theta$ for our local $\lambda$ and $m$, $H^{(1)},\dots,H^{(L+1)}$ for our widths in the order output to input, $\mathcal M$ for our $\Gamma$, and $a$ for our $p$. \Textcite{RusakovGeiger2005} write $N$ for the sample size and $n$ for the number of features, our $n$ and $k$, and expand the log marginal likelihood, $-F_n$, so that their coefficient of $-\log N$ is our $\lambda$.
+
+\printchapterbib
+\end{refsection}

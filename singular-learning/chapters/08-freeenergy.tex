@@ -1,0 +1,412 @@
+% Chapter 8 of Singular Learning Theory for the Rest of Us: the free energy formula.
+\sltchapter{The Free Energy Formula}{Model selection without the Laplace approximation}{$y=ax_1+b^3x_2$}{ch:freeenergy}
+\newtonfoot{0/6,2/0}{3/2}{\tfrac23}{a^2+b^6}
+\begin{refsection}[chapters/08-freeenergy.bib]
+
+\begin{chaptersummary}
+Bayesian model selection compares free energies, the negative logarithms of marginal likelihoods, and for regular models Schwarz's formula charges $\tfrac12\log n$ per parameter. For the two-parameter model $y=ax_1+b^3x_2$ we compute by hand that the volume of nearly true parameters is exactly $1.4457\,\eps^{2/3}$, that the free energy without noise is $\tfrac23\log n-0.266$, and that the noise in the energy is at most its square root times one random factor, so that it shifts the free energy by a bounded amount. This sandwich proves $F_n=nS_n+\lambda\log n-(m-1)\log\log n+O_p(1)$ for every model linear in a coefficient matrix, given its volume function; Watanabe's theorem extends it to analytic models by resolution of singularities. Exact quadrature for five models gives slopes $0.998$, $0.749$, $0.667$, $0.491$ against $\lambda=1,\tfrac34,\tfrac23,\tfrac12$ for the four with $m=1$, and $0.510$ for the product model once its $\log\log n$ is added back; a singular BIC that uses learning coefficients finds the rank of a reduced-rank regression where BIC does not. The formula is for a fixed model and truth, and its bounded remainder holds all it leaves out.
+\end{chaptersummary}
+
+\section{The question: what a singular model pays}\label{sec:freeenergy:question}
+
+Bayesian model selection compares models by their marginal likelihoods\index{marginal likelihood}: the probability that each model assigns to the data once its parameters have been integrated out against the prior. For neural networks this is the evidence with which \textcite{MacKay1992} chose weight decays and compared architectures of backpropagation networks, and which the Laplace approximation\index{Laplace approximation}, revived for modern networks by \textcite{DaxbergerEtAl2021}, still estimates: expand the log-likelihood to second order at a trained parameter and integrate the Gaussian. In this book the negative logarithm of the marginal likelihood is the \term{free energy}\index{free energy}
+\[
+F_n=-\log\int_W\varphi(w)\prod_{i=1}^np(X_i\mid w)\dd w=-\log\int_W\varphi(w)e^{-nL_n(w)}\dd w .
+\]
+The logarithm of the ratio of two marginal likelihoods, the log \term{Bayes factor}\index{Bayes factor}, is the difference of the two free energies \parencite{KassRaftery1995}. Since $L_n(w)=S_n+K_n(w)$ in the realizable case, the term $nS_n$ is common to all models of the same data, and model comparison compares the \emph{normalized} free energies
+\[
+F_n-nS_n=-\log\int_W\varphi(w)e^{-nK_n(w)}\dd w .
+\]
+
+\begin{regularanswer}[the free energy]
+If the truth is regular for a model with $d$ parameters, then $F_n=nL_n(\hat w)+\tfrac d2\log n+O_p(1)$, with $\hat w$ the maximum-likelihood estimate \parencite{Schwarz1978,Haughton1988}; Laplace's method, \cref{thm:regular:laplace}, identifies the bounded term. For a realizable truth $nS_n-nL_n(\hat w)=O_p(1)$, so the data charge the model $\tfrac12\log n$ per parameter: $F_n-nS_n=\tfrac d2\log n+O_p(1)$.
+\end{regularanswer}
+
+The $\tfrac d2$ has a simple origin (\cref{ch:regular}):\sidenote{Schwarz derived the criterion in 1978 for exponential families and linear submodels; \textcite{Haughton1988} extended the expansion to curved families and showed that a criterion built from its leading terms selects the true model with probability tending to one.} near a nondegenerate minimum the posterior is a Gaussian of width $n^{-1/2}$ in each of the $d$ directions, and each direction removes a factor $n^{-1/2}$ from the prior mass that the posterior keeps. The model of this chapter breaks that picture with two parameters. Fit $y=ax_1+b^3x_2+\varepsilon$, with inputs $x\sim\Normal(0,I_2)$, unit noise and the uniform prior on $[-1,1]^2$, to data whose truth is $(a,b)=(0,0)$, so that $y$ is pure noise. The loss is
+\[
+K(a,b)=\tfrac12\E_x\bigl[(ax_1+b^3x_2)^2\bigr]=\tfrac12\bigl(a^2+b^6\bigr),
+\]
+whose Hessian at the truth is $\diag(1,0)$: the Fisher information is singular, Laplace's term $\tfrac12\log\det J$ is $-\infty$, and the posterior is not Gaussian. In the direction of $b$ the data see only $b^3$, so they locate $b$ to within $n^{-1/6}$ rather than $n^{-1/2}$. Call this the \term{sextic model}\index{sextic model}. Its coefficient vector $c=(a,b^3)$ runs over the same square $[-1,1]^2$ as the coefficient vector $(a,b)$ of the regular plane $y=ax_1+bx_2$: the two models are the same set of distributions, with the same maximized likelihood and the same number of parameters, and Schwarz's formula cannot tell them apart. Their marginal likelihoods differ.
+
+\Cref{ch:coefficient} computed the free energy of models whose loss depends on a single coefficient, and \cref{ch:volume} the \term{population free energy}\index{free energy!population}
+\[
+\bar F(s)=-\log\int_W\varphi(w)e^{-sK(w)}\dd w ,\qquad s>0,
+\]
+in which the empirical $K_n$ is replaced by its mean: if the volume function $V(\eps)=\int_{K<\eps}\varphi$ behaves like $C\eps^\lambda(\log\frac1\eps)^{m-1}$, then $\bar F(n)=\lambda\log n-(m-1)\log\log n+O(1)$ by the Abelian lemma, \cref{lem:volume:abelian}. What is missing is the data. The empirical loss $K_n$ fluctuates around $K$, and where the posterior lives, $K\approx n^{-1}$, the fluctuation is as large as $K$ itself. Does the fluctuation change the coefficients of the free energy, that is, is $F_n-nS_n=\lambda\log n-(m-1)\log\log n+O_p(1)$ for singular models in general? And what does the answer do to model selection?
+
+\section{By hand: the sextic model with and without noise}\label{sec:freeenergy:byhand}
+
+We first remove the noise and compute the population free energy of the sextic model from its volume function, then add the noise back and bound its effect.
+
+\begin{computation}{The population free energy of $y=ax_1+b^3x_2$}\label{comp:freeenergy:volume}
+\step The truth is $c_0=0$, the inputs are independent with unit variance, and so $K(a,b)=\tfrac12(a^2+b^6)$. The set of true parameters is the single point $(0,0)$, at which the Hessian $\diag(1,0)$ is singular: the pair is singular in the sense of this book although $W_0$ is a point.
+\step For $0<\eps\le\tfrac12$ the set $\{K<\eps\}=\{\abs b<(2\eps)^{1/6},\ \abs a<\sqrt{2\eps-b^6}\}$ lies inside the square, and the substitution $b=(2\eps)^{1/6}v$ shows that its area $\int2\sqrt{2\eps-b^6}\dd b$ is $2(2\eps)^{2/3}I_6$, with
+\[
+I_6=\int_{-1}^1\sqrt{1-v^6}\dd v=\frac{\Gamma(\frac16)\Gamma(\frac32)}{3\,\Gamma(\frac53)}=1.8215
+\]
+by the substitution $u=v^6$, which turns $I_6$ into $\tfrac13B(\tfrac16,\tfrac32)$. With the prior density $\tfrac14$,
+\[
+V(\eps)=2^{-1/3}I_6\,\eps^{2/3}=1.4457\,\eps^{2/3}\qquad(0<\eps\le\tfrac12).
+\]
+\step The volume is an exact power: $\lambda=\tfrac23$ and $m=1$. The coefficient $a$ contributes $\tfrac12$, as a regular parameter does, and $b$ contributes $\tfrac16$, because $\{b^6<\eps\}$ has length $2\eps^{1/6}$. The Newton diagram at the foot of the chapter's first page gives the same number: its boundary through $(0,6)$ and $(2,0)$ meets the diagonal at $t=\tfrac32$, and $1/t=\tfrac23$ (\cref{thm:newton:plane}).
+\step The partition function factorizes, $\int e^{-nK}\varphi=Z_aZ_b$ with $Z_a=\tfrac12\int_{-1}^1e^{-na^2/2}\dd a$ and $Z_b=\tfrac12\int_{-1}^1e^{-nb^6/2}\dd b$. Extending both integrals to the whole line changes them by a relative error below $e^{-n/2}$ for $n\ge2$, and the substitutions $a=(2/n)^{1/2}u$, $b=(2/n)^{1/6}v$ give $Z_a=\sqrt{\pi/(2n)}$ and $Z_b=\Gamma(\tfrac76)(2/n)^{1/6}$. Hence, up to an error below $3e^{-n/2}$,
+\[
+\bar F(n)=\tfrac23\log n-\log\Bigl(\sqrt{\tfrac\pi2}\,2^{1/6}\,\Gamma(\tfrac76)\Bigr)=\tfrac23\log n-0.2663 ,
+\]
+in agreement with \cref{lem:volume:abelian}, which predicts the constant $-\log(C\Gamma(\lambda+1))=-\log(1.4457\times0.9027)=-0.2663$. At $n=10^4$ the sextic model pays $5.874$; the regular plane, whose population free energy is $\log n-\log\frac\pi2$, pays $8.759$.
+\end{computation}
+
+Now the data. Write $\hat\Sigma_n=\frac1n\sum_ix_ix_i^\top$ for the empirical second moment of the inputs and $z_n=n^{-1/2}\sum_ix_iy_i$; at the truth $c_0=0$ the outputs are the noise, $y_i=\varepsilon_i$.
+
+\begin{computation}{The noise is at most the square root of the energy}\label{comp:freeenergy:sandwich}
+\step Expanding the squares in $nK_n(w)=\sum_i\bigl[\tfrac12(y_i-c^\top x_i)^2-\tfrac12y_i^2\bigr]$ with $c=(a,b^3)$ gives
+\[
+nK_n(w)=t(w)-\sqrt n\,c^\top z_n,\qquad t(w)=\tfrac n2\,c^\top\hat\Sigma_nc .
+\]
+The first term is the energy of $w$ on this design, a deterministic function of $w$ once the inputs are fixed; the second is the noise.
+\step Given the inputs, $z_n=n^{-1/2}\sum_ix_i\varepsilon_i$ is Gaussian with covariance $\hat\Sigma_n$. So $\xi=\hat\Sigma_n^{-1/2}z_n$ is a standard Gaussian vector in $\R^2$, and $\rho^2=\abs\xi^2$ has the $\chi^2_2$ law whatever $n$ is.
+\step Since $\sqrt n\,c^\top z_n=(\sqrt n\,\hat\Sigma_n^{1/2}c)^\top\xi$ and $\abs{\sqrt n\,\hat\Sigma_n^{1/2}c}^2=2t(w)$, writing this inner product with the angle $\theta(w)$ between $\hat\Sigma_n^{1/2}c$ and $\xi$ gives
+\[
+nK_n(w)=t(w)-\sqrt{2t(w)}\,\rho\cos\theta(w).
+\]
+Since $\abs{\cos\theta}\le1$, which is the Cauchy--Schwarz inequality, the noise is at most the square root of the energy, times one random number $\rho$ that does not depend on $w$.
+\step For $\eta\in(0,1)$, the inequality $2uv\le\eta u^2+v^2/\eta$ with $u=\sqrt t$ and $v=\rho/\sqrt2$ gives $\sqrt{2t}\rho\le\eta t+\rho^2/(2\eta)$, so that for every $w$ at once
+\[
+(1-\eta)\,t(w)-\frac{\rho^2}{2\eta}\le nK_n(w)\le(1+\eta)\,t(w)+\frac{\rho^2}{2\eta}.
+\]
+\step Let $\Phi_n(\sigma)=-\log\int e^{-\sigma t(w)}\varphi(w)\dd w$, the free energy of noiseless data with the same inputs. Exponentiating, integrating against $\varphi$ and taking $-\log$ gives
+\[
+\Phi_n(1-\eta)-\frac{\rho^2}{2\eta}\le F_n-nS_n\le\Phi_n(1+\eta)+\frac{\rho^2}{2\eta}.
+\]
+For the typical design $\hat\Sigma_n=I_2$, $\Phi_n$ is the population free energy: $\Phi_n(\sigma)=\bar F(\sigma n)=\tfrac23\log(\sigma n)-0.266$.
+\step With $n=10^4$, $\eta=\tfrac12$, $\hat\Sigma_n=I_2$ and $\rho^2=2$, its mean: $3.41\le F_n-nS_n\le8.14$. The band has width $\tfrac23\log3+4=4.73$ at every $n$, and $3.96$ at the best $\eta=0.775$; the mean of $F_n-nS_n$ over $200$ simulated data sets at $n=10^4$ is $5.17$ (\cref{sec:freeenergy:measuring}).
+\end{computation}
+
+\paragraph{What one had to notice.} Two things. The volume of nearly true parameters is an exact power, because the loss is a sum of monomials in separate variables; this gives the population free energy, as in \cref{ch:volume}. And the noise enters the energy linearly in the coefficient vector, so that Cauchy--Schwarz bounds it, uniformly in $w$, by the square root of the quadratic part times one random factor whose law is fixed. Where the energy is large its square root is negligible, and where it is small both are of order one: the noise moves the free energy by an additive amount but cannot change how fast the volume of $\{t<\eps\}$ shrinks. For the product model of \cref{ch:coefficient}, whose coefficient is a scalar, the angle is $0$ or $\pi$: $nK_n=t\mp\sqrt{2t}\,\rho$.
+
+\paragraph{The exact free energy.} The sandwich is crude, but it is the argument that generalizes. For linear models one can also complete the square. With $\hat c=\hat\Sigma_n^{-1}z_n/\sqrt n$, the least-squares coefficient,\sidenote{The square $\rho^2=n\,\hat c^\top\hat\Sigma_n\hat c$ is twice the log-likelihood ratio of the unrestricted least-squares fit against the truth, the statistic of Wilks's likelihood-ratio test; see \cref{lem:freeenergy:chisq} below.}
+\begin{equation}\label{eq:freeenergy:complete}
+F_n-nS_n=-\frac{\rho^2}2-\log\int\exp\Bigl(-\frac n2(c-\hat c)^\top\hat\Sigma_n(c-\hat c)\Bigr)\varphi(w)\dd w .
+\end{equation}
+The integral is a Gaussian of width $n^{-1/2}$ centered at $\hat c$, averaged against the law of $c=(a,b^3)$ under the prior, whose density is $\frac1{12}\abs{c_2}^{-2/3}$ on $[-1,1]^2$: the computation of \cref{ch:coefficient} in two coordinates. Rescaling $u=\sqrt n\,c$ shows (\cref{ex:freeenergy:limit}) that $R_n=F_n-nS_n-\tfrac23\log n$ converges in law to
+\begin{equation}\label{eq:freeenergy:sexticlimit}
+\log12-\tfrac12\log(2\pi)-\tfrac12\abs\zeta^2-\log H(\zeta_2),\qquad H(z)=\int_\R e^{-(t-z)^2/2}\abs t^{-2/3}\dd t,
+\end{equation}
+with $\zeta\sim\Normal(0,I_2)$; its mean is $-0.991$. For the regular plane the same rescaling gives Laplace's formula exactly, $R_n\to-\log\frac\pi2-\tfrac12\abs\zeta^2$, with mean $-1.452$.
+
+\section{The theorem: models linear in their coefficients}\label{sec:freeenergy:linear}
+
+The computation used three properties of the sextic model: the log-likelihood ratio is a quadratic function of a finite coefficient vector; its random part is linear in the same vector, with Gaussian coefficients whose law does not depend on $n$; and the volume function has a known asymptotic form. Every model whose mean is linear in a coefficient matrix has the first two properties, and the third is what Part~II computes.
+
+\begin{assumption}[Linear in the coefficients]\label{ass:freeenergy:linear}
+The data are independent pairs $(x_i,y_i)$, $i=1,\dots,n$, with inputs $x_i\in\R^N$ distributed as $x$, where $\E\norm x^2<\infty$ and $\Sigma=\E[xx^\top]$ is positive definite, and outputs $y_i=C_0x_i+\varepsilon_i\in\R^M$ with noise $\varepsilon_i\sim\Normal(0,I_M)$ independent of $x_i$. The model is $y=G(w)x+\varepsilon$, $\varepsilon\sim\Normal(0,I_M)$, for a measurable map $G\colon W\to\R^{M\times N}$ on a measurable set $W\subseteq\R^d$, with a prior probability density $\varphi$ on $W$. The truth is realizable, $C_0=G(w_0)$ for some $w_0\in W$. With $\Delta(w)=G(w)-C_0$, the volume function of
+\[
+K(w)=\tfrac12\tr\bigl(\Delta(w)\,\Sigma\,\Delta(w)^\top\bigr)
+\]
+satisfies $V(\eps)=\int_{\{K<\eps\}}\varphi(w)\dd w\sim C\eps^\lambda(\log\tfrac1\eps)^{m-1}$ as $\eps\to0$, for some $C>0$, $\lambda>0$ and integer $m\ge1$.
+\end{assumption}
+
+A scalar output is the case $M=1$, $G(w)=g(w)^\top$, which gives the models $y=g(w)^\top x+\varepsilon$; the five running models of \cref{sec:freeenergy:measuring} are of this form, and rank-one and reduced-rank regression, with $G(w)=ba^\top$ or $BA$, are of the matrix form. The law of the inputs is the same for every $w$, so it cancels from every likelihood ratio, and we write $L_n(w)=-\frac1n\sum_i\log p(y_i\mid x_i,w)$ and $S_n=L_n(w_0)$. The function $K$ is the Kullback--Leibler divergence: $\E\bigl[\tfrac12\norm{\varepsilon-\Delta x}^2-\tfrac12\norm\varepsilon^2\bigr]=\tfrac12\tr(\Delta\Sigma\Delta^\top)$, because $\varepsilon$ is independent of $x$ with mean $0$. The data enter through
+\[
+\hat\Sigma_n=\frac1n\sum_{i=1}^nx_ix_i^\top,\qquad Z_n=\frac1{\sqrt n}\sum_{i=1}^n\varepsilon_ix_i^\top\in\R^{M\times N},\qquad \rho_n^2=\tr\bigl(Z_n\hat\Sigma_n^{-1}Z_n^\top\bigr),
+\]
+the last when $\hat\Sigma_n$ is invertible. Expanding the squares as in \cref{comp:freeenergy:sandwich} gives, with $\Delta=\Delta(w)$,
+\begin{equation}\label{eq:freeenergy:energy}
+nK_n(w)=\tfrac n2\tr\bigl(\Delta\hat\Sigma_n\Delta^\top\bigr)-\sqrt n\tr\bigl(\Delta Z_n^\top\bigr),
+\end{equation}
+because $\sum_i\varepsilon_i^\top\Delta x_i=\tr(\Delta\sum_ix_i\varepsilon_i^\top)$.
+
+\begin{lemma}[The sandwich]\label{lem:freeenergy:sandwich}
+Let $P\in\R^{N\times N}$ be positive definite, $Z\in\R^{M\times N}$, $s>0$ and $\eta\in(0,1)$. For $\Delta\in\R^{M\times N}$ put $t(\Delta)=\frac s2\tr(\Delta P\Delta^\top)$, and let $\rho^2=\tr(ZP^{-1}Z^\top)$. Then for every $\Delta$
+\[
+(1-\eta)\,t(\Delta)-\frac{\rho^2}{2\eta}\le t(\Delta)-\sqrt s\tr(\Delta Z^\top)\le(1+\eta)\,t(\Delta)+\frac{\rho^2}{2\eta}.
+\]
+\end{lemma}
+
+\begin{proof}
+The bilinear form $\ip{A}{B}=\tr(APB^\top)$ on $\R^{M\times N}$ is an inner product: $\ip{A}{A}=\sum_ja_j^\top Pa_j>0$ for $A\ne0$, with $a_j^\top$ the rows of $A$. In it, $\tr(\Delta Z^\top)=\tr(\Delta PP^{-1}Z^\top)=\ip{\Delta}{ZP^{-1}}$, and $\ip{ZP^{-1}}{ZP^{-1}}=\tr(ZP^{-1}Z^\top)=\rho^2$. The Cauchy--Schwarz inequality gives
+\[
+\sqrt s\,\abs{\tr(\Delta Z^\top)}\le\sqrt{s\ip{\Delta}{\Delta}}\,\rho=\sqrt{2t(\Delta)}\,\rho ,
+\]
+and $2uv\le\eta u^2+v^2/\eta$ with $u=\sqrt{t(\Delta)}$, $v=\rho/\sqrt2$ bounds the right side by $\eta\,t(\Delta)+\rho^2/(2\eta)$. Subtract the bound from $t(\Delta)$, and add it, to obtain the two inequalities.
+\end{proof}
+
+\begin{lemma}[The noise statistic]\label{lem:freeenergy:chisq}
+Under \cref{ass:freeenergy:linear}, conditionally on inputs $x_1,\dots,x_n$ for which $\hat\Sigma_n$ is invertible, $\rho_n^2$ has the $\chi^2_{MN}$ law. Moreover $\rho_n^2=2\bigl(nL_n(w_0)-\min_{C}nL_n(C)\bigr)$, where the minimum is over all matrices $C\in\R^{M\times N}$ and $L_n(C)$ is the loss of the coefficient matrix $C$.
+\end{lemma}
+
+\begin{proof}
+Write $\varepsilon_{ij}$ for the coordinates of $\varepsilon_i$. Given the inputs, the $j$th row of $\sqrt nZ_n$ is $u_j^\top=\sum_i\varepsilon_{ij}x_i^\top$, a Gaussian vector with mean $0$ and covariance $\sum_ix_ix_i^\top=n\hat\Sigma_n$, and the $M$ rows are independent because the coordinates $\varepsilon_{ij}$ are. So the vectors $(n\hat\Sigma_n)^{-1/2}u_j$ are independent standard Gaussians in $\R^N$, and $\rho_n^2=\sum_{j=1}^Mu_j^\top(n\hat\Sigma_n)^{-1}u_j$ is a sum of $MN$ independent squared standard Gaussians. For the second claim, \eqref{eq:freeenergy:energy} holds for every matrix $C$ in place of $G(w)$, with $\Delta=C-C_0$; its right side is a convex quadratic function of $\Delta$ whose gradient $n\Delta\hat\Sigma_n-\sqrt nZ_n$ vanishes at $\hat\Delta=Z_n\hat\Sigma_n^{-1}/\sqrt n$, where it equals $\tfrac12\rho_n^2-\rho_n^2=-\tfrac12\rho_n^2$.
+\end{proof}
+
+\begin{theorem}[The free energy formula for linear models]\label{thm:freeenergy:linear}
+Under \cref{ass:freeenergy:linear},
+\[
+F_n-nS_n=\lambda\log n-(m-1)\log\log n+O_p(1).
+\]
+More precisely, let $R_n=F_n-nS_n-\lambda\log n+(m-1)\log\log n$ and $\kappa=-\log\bigl(C\,\Gamma(\lambda+1)\bigr)$, and for $\eta\in(0,1)$ let $A_n(\eta)$ be the event $(1-\eta)\Sigma\preceq\hat\Sigma_n\preceq(1+\eta)\Sigma$. Then $\Prob(A_n(\eta))\to1$, and there are numbers $\epsilon_n(\eta)\to0$ such that on $A_n(\eta)$
+\begin{equation}\label{eq:freeenergy:band}
+2\lambda\log(1-\eta)-\frac{\rho_n^2}{2\eta}-\epsilon_n(\eta)\le R_n-\kappa\le2\lambda\log(1+\eta)+\frac{\rho_n^2}{2\eta}+\epsilon_n(\eta),
+\end{equation}
+where $\rho_n^2$ has the $\chi^2_{MN}$ law given the inputs (\cref{lem:freeenergy:chisq}).
+\end{theorem}
+
+\begin{proof}
+The plan is to sandwich the random energy $nK_n$ between two multiples of the population energy $nK$, up to the additive random constant $\rho_n^2/(2\eta)$, and to read the two population free energies off the Abelian lemma.
+
+\emph{The event.} The inputs have finite second moments, so $\hat\Sigma_n\to\Sigma$ almost surely by the strong law of large numbers. The event $A_n(\eta)$ says that the eigenvalues of $\Sigma^{-1/2}\hat\Sigma_n\Sigma^{-1/2}$ lie in $[1-\eta,1+\eta]$, and since this matrix tends to $I_N$, the event holds for all large $n$ almost surely; in particular $\Prob(A_n(\eta))\to1$. On $A_n(\eta)$ the matrix $\hat\Sigma_n$ is invertible.
+
+\emph{The energies.} For a positive semidefinite matrix $Q$ and every $\Delta$, $\tr(\Delta Q\Delta^\top)=\sum_j\delta_j^\top Q\delta_j\ge0$, with $\delta_j^\top$ the rows of $\Delta$. Applied to $Q=\hat\Sigma_n-(1-\eta)\Sigma$ and to $Q=(1+\eta)\Sigma-\hat\Sigma_n$, this shows that on $A_n(\eta)$ the energy $t(w)=\frac n2\tr(\Delta(w)\hat\Sigma_n\Delta(w)^\top)$ satisfies
+\[
+(1-\eta)\,nK(w)\le t(w)\le(1+\eta)\,nK(w)\qquad\text{for every }w .
+\]
+
+\emph{The sandwich.} By \eqref{eq:freeenergy:energy}, $nK_n(w)=t(w)-\sqrt n\tr(\Delta(w)Z_n^\top)$, and \cref{lem:freeenergy:sandwich} with $P=\hat\Sigma_n$, $Z=Z_n$, $s=n$ bounds it between $(1-\eta)t(w)-\rho_n^2/(2\eta)$ and $(1+\eta)t(w)+\rho_n^2/(2\eta)$. Combined with the previous step, on $A_n(\eta)$
+\[
+(1-\eta)^2nK(w)-\frac{\rho_n^2}{2\eta}\le nK_n(w)\le(1+\eta)^2nK(w)+\frac{\rho_n^2}{2\eta}\qquad\text{for every }w .
+\]
+
+\emph{Integration.} Exponentiating, integrating against $\varphi$ and taking $-\log$ turns these bounds into bounds on $F_n-nS_n=-\log\int e^{-nK_n}\varphi$:
+\[
+\bar F\bigl((1-\eta)^2n\bigr)-\frac{\rho_n^2}{2\eta}\le F_n-nS_n\le\bar F\bigl((1+\eta)^2n\bigr)+\frac{\rho_n^2}{2\eta}.
+\]
+
+\emph{The Abelian lemma.} The prior $\varphi$ is a probability density and $K\ge0$, so \cref{lem:volume:abelian} applies to the hypothesis on $V$: $\bar F(s)=\lambda\log s-(m-1)\log\log s+\kappa+o(1)$ as $s\to\infty$ through the real numbers. For fixed $\sigma>0$, $\log\log(\sigma n)-\log\log n=\log\bigl(1+\log\sigma/\log n\bigr)\to0$, and therefore
+\[
+\bar F(\sigma n)=\lambda\log n-(m-1)\log\log n+\lambda\log\sigma+\kappa+o(1).
+\]
+Apply this with $\sigma=(1\mp\eta)^2$ and let $\epsilon_n(\eta)$ be the larger of the absolute values of the two $o(1)$ terms; subtracting $\lambda\log n-(m-1)\log\log n+\kappa$ from the bounds of the previous step gives \eqref{eq:freeenergy:band}.
+
+\emph{Boundedness in probability.} Take $\eta=\frac12$, so that \eqref{eq:freeenergy:band} gives $\abs{R_n-\kappa}\le2\lambda\log2+\rho_n^2+\epsilon_n(\tfrac12)$ on $A_n(\tfrac12)$. Given $\delta>0$, choose $b_\delta$ with $\Prob(\chi^2_{MN}>b_\delta)<\delta/2$, and $n_0$ such that $\Prob(A_n(\tfrac12)^c)<\delta/2$ and $\epsilon_n(\tfrac12)\le1$ for $n\ge n_0$. Since $A_n(\tfrac12)$ depends only on the inputs, \cref{lem:freeenergy:chisq} gives $\Prob(A_n(\tfrac12)\cap\{\rho_n^2>b_\delta\})=\E\bigl[\ind_{A_n(1/2)}\Prob(\rho_n^2>b_\delta\mid x_1,\dots,x_n)\bigr]\le\Prob(\chi^2_{MN}>b_\delta)$. Hence $\Prob\bigl(\abs{R_n-\kappa}>2\lambda\log2+b_\delta+1\bigr)<\delta$ for $n\ge n_0$, which is $R_n=O_p(1)$.
+\end{proof}
+
+The proof used little. Compactness of $W$, analyticity of $G$, an interior truth and a prior positive at the truth enter only through the volume hypothesis, where the geometry of Part~II does its work; a Gaussian prior on $\R^d$ is allowed (\cref{ex:freeenergy:gaussian}). The Gaussian noise was used only in \cref{lem:freeenergy:chisq}: for noise with mean zero and finite covariance, independent of $x$, \eqref{eq:freeenergy:energy} still holds, $\rho_n^2$ is bounded in probability by the central limit theorem, and the theorem holds with $nL_n(w_0)$ in place of $nS_n$. In one line, $F_n-nS_n=\bar F(n)+O_p(1)$: the data shift the free energy of a linear model by a bounded random amount. Watanabe states the same relation for analytic models, crediting it to his 2001 paper \parencite[\S7.3]{Watanabe2013}.\sidenote{The proof is the book's own presentation of a standard idea; we have not found the sandwich in this form in the literature.}
+
+\begin{corollary}[The running models]\label{cor:freeenergy:running}
+With inputs $x\sim\Normal(0,I)$, unit noise, the truth $0$ and the uniform prior on $[-1,1]^d$, $F_n-nS_n=\lambda\log n-(m-1)\log\log n+O_p(1)$ with $(\lambda,m)=(1,1)$ for the regular plane, $(\tfrac34,1)$ for the quartic model $y=ax_1+b^2x_2$, $(\tfrac23,1)$ for the sextic model, $(\tfrac12,1)$ for the quartic cup $y=a^2x_1+b^2x_2$, $(\tfrac12,2)$ for the product model $y=abx$, and $(\tfrac12,L)$ for the chain $y=a_1\cdots a_Lx$.
+\end{corollary}
+
+\begin{proof}
+Each model is linear in its coefficients, so it suffices to check the volume hypothesis. For the sextic model it is \cref{comp:freeenergy:volume}. For the regular plane $V(\eps)=\frac\pi2\eps$ for $\eps\le\frac12$; for the quartic model and the quartic cup $V$ is an exact power for small $\eps$, $1.4699\,\eps^{3/4}$ and $1.3110\,\eps^{1/2}$ (\cref{ex:freeenergy:quartic}). For the chain, whose coefficient $c$ has the density $(\log\frac1{\abs c})^{L-1}/(2(L-1)!)$ on $[-1,1]$ (\cref{ch:coefficient}), $V(\eps)$ is the integral of this density over $\abs c<r=\sqrt{2\eps}$; since $\int_0^r(\log\frac1c)^{L-1}\dd c\sim r(\log\frac1r)^{L-1}$ and $\log\frac1r\sim\frac12\log\frac1\eps$, $V(\eps)\sim\frac{2^{1/2-(L-1)}}{(L-1)!}\,\eps^{1/2}(\log\tfrac1\eps)^{L-1}$, which for $L=2$ is the product model.
+\end{proof}
+
+\section{The theorem: Watanabe's formula and model selection}\label{sec:freeenergy:main}
+
+For a model that is not linear in its coefficients, such as the $\tanh$ neuron or a mixture, the log-likelihood ratio is not a quadratic function of a finite vector, and its random part is not a single Gaussian vector. Watanabe's theorem says that after a change of coordinates both properties come back. Its hypotheses are stated with the log density ratio $f(x,w)=\log\bigl(p_0(x)/p(x\mid w)\bigr)$, so that $K(w)=\E_X[f(X,w)]=L(w)-L(w_0)$, and the condition that makes the random part small is the following: the pair has \term{relatively finite variance}\index{relatively finite variance} if there are $\eps,c>0$ with
+\[
+\E_X\bigl[f(X,w)\bigr]\ge c\,\E_X\bigl[f(X,w)^2\bigr]\qquad\text{whenever }K(w)\le\eps .
+\]
+The variance of $nK_n(w)$ is then at most $nK(w)/c$: the noise is at most the square root of the energy, as in \cref{comp:freeenergy:sandwich}. Every realizable pair and every regular pair has relatively finite variance \parencite[p.~872]{Watanabe2013}; for the sextic model $\E f=K$ and $\E f^2=2K+3K^2$, so the constant $c=\frac15$ works on the whole square (\cref{ex:freeenergy:rfv}).
+
+\begin{theorem}[Watanabe's free energy formula]\label{thm:freeenergy:main}
+Let the model $p(x\mid w)$, $w\in W\subseteq\R^d$, the prior $\varphi$ and the truth $q$ satisfy the following conditions.
+\begin{enumerate}[label=(\roman*),nosep]
+\item Some $w_0$ in the interior of $W$ minimizes $L$, and every minimizer of $L$ gives the same density $p_0=p(\cdot\mid w_0)$.
+\item $W$ is compact with nonempty interior, and $W=\{w:\pi_1(w)\ge0,\dots,\pi_k(w)\ge0\}$ for analytic functions $\pi_j$.
+\item $\varphi=\varphi_1\varphi_2$ with $\varphi_1\ge0$ analytic and $\varphi_2>0$ infinitely differentiable.
+\item For some $s\ge6$, the map $w\mapsto f(\cdot,w)$ extends to an analytic map from an open set $W'\supseteq W$ to $L^s(q)$.
+\item The pair has relatively finite variance.
+\end{enumerate}
+Let $\lambda$ and $m$ be the learning coefficient and multiplicity of $K$ with respect to $\varphi$. Then
+\[
+F_n=nL_n(w_0)+\lambda\log n-(m-1)\log\log n+R_n,
+\]
+with a remainder $R_n$ that converges in law to a random variable as $n\to\infty$. If $q$ is realizable, then $nL_n(w_0)=nS_n$.
+\end{theorem}
+
+This is Theorem~2 of \textcite{Watanabe2013}, whose Fundamental Conditions (1)--(4) are our (ii)--(v) and whose standing assumptions are (i).\sidenote{That paper is about WBIC (\cref{ch:temperature}); it restates the free energy formula as the background result that WBIC is designed to estimate.} By Watanabe's account \parencite[p.~876]{Watanabe2013}, the expectation $\E[F_n]=nS+\lambda\log n-(m-1)\log\log n+O(1)$ of the realizable case is in \textcite{Watanabe2001a}, the realizable case as a random variable in his 2009 book (\S6.2), and the unrealizable case in \textcite{Watanabe2010d}, which derives it from the limit of the rescaled posterior. The learning coefficient\index{learning coefficient} here is the real log canonical threshold\index{real log canonical threshold} of $K$ with respect to $\varphi$; the two names denote the same number, which Watanabe defines through a resolution and \cref{ch:volume} through the largest pole, $-\lambda$, of the zeta function (\cref{thm:blowups:pullback} connects the two).
+
+\begin{proofsketch}
+The plan is the proof of \cref{thm:freeenergy:linear}, carried out on a parameter space on which $K$ is a monomial. We sketch the statement with $O_p(1)$ in place of convergence in law, and say at the end what the convergence in law needs.
+
+\emph{Localization.} The process $\psi_n(w)=n^{-1/2}\sum_i(K(w)-f(X_i,w))$ (Watanabe's $\eta_n$) converges in law in the supremum norm \parencite[Theorems 5.9 and 5.10, as cited in][]{Watanabe2013}, so $\sup_W\abs{\psi_n}=O_p(1)$ and $nK_n\ge nK-\sqrt n\sup\abs{\psi_n}$. On $\{K\ge\eps\}$ the integrand $e^{-nK_n}$ is therefore at most $e^{-n\eps+O_p(\sqrt n)}$, negligible against $n^{-\lambda}$ \parencite[Lemma~1]{Watanabe2013}.
+
+\emph{Resolution.} On $\{K<\eps\}$, Hironaka's theorem\index{resolution of singularities} \parencite{Hironaka1964a}, in the form of \cref{thm:toolkit:hironaka}, gives a manifold $\cM$ and a proper analytic map $g\colon\cM\to W$ such that in local coordinates $u$
+\[
+K(g(u))=u^{2k},\qquad f(x,g(u))=u^ka(x,u),\qquad \varphi(g(u))\abs{g'(u)}=b(u)\abs{u^h},
+\]
+with multi-indices $k,h$, an $L^s(q)$-valued analytic $a$, and a smooth $b>0$ \parencite[Theorem~1, the standard representation]{Watanabe2013}. The middle identity is where relatively finite variance enters: $\E f^2\le\E f/c=u^{2k}/c$ forces $f$ to be divisible by $u^k$.
+
+\emph{The empirical process.} With $\xi_n(u)=n^{-1/2}\sum_i\bigl(u^k-a(X_i,u)\bigr)$ and $t=nu^{2k}$,
+\[
+nK_n(g(u))=nu^{2k}-\sqrt n\,u^k\xi_n(u)=t-\sqrt t\,\xi_n(u)\cdot\sgn(u^k),
+\]
+and $\xi_n$ converges in law to a Gaussian process with $\E\sup\xi_n^2\to\E\sup\xi^2$ \parencite[Theorems 6.1--6.3, as cited in][]{Watanabe2013}; see \cref{thm:toolkit:empirical}. The noise is again at most the square root of the energy, times $\sup_u\abs{\xi_n(u)}=O_p(1)$; in the linear models $\xi_n(u)$ was $\sqrt2\,\rho_n\cos\theta$.
+
+\emph{The sandwich.} Since $\sqrt t\abs{\xi_n(u)}\le\eta t+\sup\xi_n^2/(4\eta)$, the argument of \cref{thm:freeenergy:linear} bounds $\int_{K<\eps}e^{-nK_n}\varphi$ above and below by $e^{\pm\sup\xi_n^2/(4\eta)}$ times the population integrals at $(1\mp\eta)n$, chart by chart. On each chart the volume function is that of a monomial with the weight $b(u)\abs{u^h}$, so $V(\eps)\sim C\eps^\lambda(\log\frac1\eps)^{m-1}$ (\cref{prop:volume:monomial,thm:blowups:pullback}), and the Abelian lemma gives $F_n-nL_n(w_0)=\lambda\log n-(m-1)\log\log n+O_p(1)$.
+
+\emph{Convergence in law.} The finer statement replaces the sandwich by an asymptotic expansion: $\delta(t-u^{2k})\abs{u^h}\dd u=t^{\lambda-1}(\log\frac1t)^{m-1}\dd u^*+O\bigl(t^{\lambda-1}(\log\frac1t)^{m-2}\bigr)$ for a measure $\dd u^*$ supported where the minimum $\lambda$ is attained \parencite[Lemma~4, citing Theorem~4.6 of the 2009 book]{Watanabe2013}. With the sign of $u^k$ absorbed into $\xi_n$ orthant by orthant, as Watanabe does by summing over the orthants, it gives
+\[
+\int e^{-nK_n}\varphi=\frac{(\log n)^{m-1}}{n^\lambda}\Bigl(\int\dd u^*\int_0^\infty t^{\lambda-1}e^{-t+\sqrt t\,\xi_n(u)}\dd t+o_p(1)\Bigr),
+\]
+and the convergence in law of $\xi_n$ gives that of $R_n$, to minus the logarithm of the same double integral with $\xi$ in place of $\xi_n$ \parencite[eq.~(52) of the arXiv version]{Watanabe2024}.
+
+What is omitted is the proof of the three black boxes: the standard representation (Hironaka's theorem and the division by $u^k$), the convergence of $\xi_n$ on the resolved manifold, and the expansion of $\delta(t-u^{2k})\abs{u^h}$. They occupy Chapters~4--6 of \textcite{Watanabe2009}.
+\end{proofsketch}
+
+\paragraph{Schwarz's criterion overcharges.} The Bayesian information criterion\index{Bayesian information criterion} estimates $F_n$; in Watanabe's convention it is $\BIC=nL_n(\hat w)+\tfrac d2\log n$. For the linear models of \cref{thm:freeenergy:linear}, $0\le nS_n-\inf_WnL_n\le\frac12\rho_n^2$ by \cref{lem:freeenergy:chisq}, since a supremum of the likelihood over $W$ is at most its maximum over all matrices (and $\inf_W$ replaces $nL_n(\hat w)$ when $W$ is not compact); for analytic models on a compact $W$ the difference $nL_n(w_0)-nL_n(\hat w)$ is bounded in probability as well \parencite[citing Main Theorem~6.4 of the 2009 book]{Watanabe2013}. In both cases
+\begin{equation}\label{eq:freeenergy:bic}
+F_n-\BIC=-\Bigl(\frac d2-\lambda\Bigr)\log n-(m-1)\log\log n+O_p(1).
+\end{equation}
+When $\lambda<\frac d2$, as it is whenever the prior is continuous and positive at an interior true parameter where the Hessian of an analytic $K$ is degenerate (then $\{K<\eps\}$ contains a box with sides of order $\eps^{1/2}$, and $\eps^{1/3}$ along a null direction), Schwarz's criterion overestimates the free energy of a singular model by an amount that grows like $\log n$, and model selection by BIC is biased toward smaller models.
+
+\paragraph{The same distributions, two priors.} The regular plane and the sextic model are the same set of distributions, $\{\Normal(c^\top x,1):c\in[-1,1]^2\}$, with the same maximum likelihood and the same $d$, so their BIC values are equal. At the truth $0$, \cref{thm:freeenergy:linear} applied to both on the same data gives a log Bayes factor in favor of the sextic model of
+\[
+F_n^{\mathrm{reg}}-F_n^{\mathrm{sext}}=\bigl(1-\tfrac23\bigr)\log n+O_p(1).
+\]
+The sextic model wins because its prior, pushed forward to the coefficients, has the density $\frac1{12}\abs{c_2}^{-2/3}$, which is infinite at the truth: it puts more prior mass near the truth, which is how the marginal likelihood implements Occam's razor \parencite{MacKay1992}. At a truth with $c_2\ne0$ both models are regular, and the log Bayes factor converges to $\log(\abs{c_2}^{-2/3}/3)$, which favors the sextic model only when $\abs{c_2}<3^{-3/2}=0.192$ (\cref{ex:freeenergy:generic}). The learning coefficient belongs to the model together with its prior, not to the set of distributions.\sidenote{\textcite{Skalse2023} argues, in a blog post, that the inductive bias of a Bayesian learner is fixed by the prior and by the map from parameters to functions, and that singular learning theory abstracts away from both. The example shows that the learning coefficient depends on both: it records that bias without explaining it.}
+
+\paragraph{The singular BIC.} Since $\lambda$ and $m$ depend on the unknown truth, the free energy formula cannot be applied directly to choose a model: to know which formula holds one would need to know which model is true. \textcite{DrtonPlummer2017} call this the paradox of circular reasoning and resolve it by averaging. Let $\cM_0\subset\cM_1\subset\dots\subset\cM_I$ be nested models, and for $j\le i$ let $\lambda_{ij}$ and $m_{ij}$ be the learning coefficient and multiplicity of $\cM_i$ at a generic truth in $\cM_j$ (for $j=i$, typically half the dimension of $\cM_i$, with $m_{ii}=1$). Put
+\[
+L'_{ij}=P(X^n\mid\hat w_i,\cM_i)\,\frac{(\log n)^{m_{ij}-1}}{n^{\lambda_{ij}}},
+\]
+the approximation of the marginal likelihood of $\cM_i$ that \cref{thm:freeenergy:main} gives if the truth is a generic point of $\cM_j$, with the likelihood at the truth replaced by the maximized likelihood $P(X^n\mid\hat w_i,\cM_i)$.
+
+\begin{definition}[The singular BIC; {\textcite[Definition~3.1]{DrtonPlummer2017}}]\label{def:freeenergy:sbic}
+The \term{singular Bayesian information criterion}\index{singular BIC} of $\cM_i$ is $\mathrm{sBIC}(\cM_i)=\log L'(\cM_i)$, where $L'(\cM_0),\dots,L'(\cM_I)$ is the solution with all components positive of
+\[
+\sum_{j\le i}\bigl(L'(\cM_i)-L'_{ij}\bigr)L'(\cM_j)=0,\qquad i=0,\dots,I.
+\]
+\end{definition}
+
+Each $L'(\cM_i)$ is the average of the $L'_{ij}$, $j\le i$, weighted by the approximate marginal likelihoods $L'(\cM_j)$ themselves, as the posterior over submodels would weight them if the $L'$ were exact and the models equally likely a priori (their system also allows other priors on the models). The positive solution is unique and recursive: $L'(\cM_0)=L'_{00}$, and
+\[
+L'(\cM_i)=\tfrac12\Bigl(-b_i+\sqrt{b_i^2+4c_i}\Bigr),\qquad b_i=\sum_{j<i}L'(\cM_j)-L'_{ii},\quad c_i=\sum_{j<i}L'_{ij}L'(\cM_j)
+\]
+\parencite[Proposition~3.1]{DrtonPlummer2017}. On the scale of this chapter $-\mathrm{sBIC}$ estimates $F_n$, and when every model is regular $-\mathrm{sBIC}$ is $\BIC$. Under three conditions, that likelihood ratios of true models are bounded in probability, that false models lose likelihood exponentially fast, and that the complexities $n^{\lambda_{ij}}/(\log n)^{m_{ij}-1}$ increase with the model and decrease toward smaller truths, \textcite[Theorems~4.1 and~4.2]{DrtonPlummer2017} prove that the sBIC selects the smallest true model with probability tending to $1$, and that $\log L(\cM_i)=\mathrm{sBIC}(\cM_i)+O_p(1)$ for every true model at a generic truth: unlike BIC, the sBIC inherits the free energy formula. For reduced-rank regression with known noise covariance the coefficients $\lambda_{ij}$ are those of Aoyagi and Watanabe (\cref{thm:catalogue:aoyagi}), and the model, $y=BAx+\varepsilon$, is linear in its coefficient matrix, so \cref{thm:freeenergy:linear} covers it.\sidenote{Drton and Plummer's Table~1 lists $\lambda_{ij}$ for $5$ responses and $3$ covariates; our implementation of the Aoyagi--Watanabe formula reproduces all ten entries.}
+
+\section{Measuring it}\label{sec:freeenergy:measuring}
+
+The script \texttt{08-freeenergy-models.py} computes $F_n-nS_n$ for five models with two parameters at the truth $0$: the regular plane, the quartic, sextic and product models, and the quartic cup. Each is linear in its coefficients, so the data enter only through $\hat\Sigma_n$ and $z_n$, which the script draws exactly: $n\hat\Sigma_n$ from the Wishart law by the Bartlett decomposition,\sidenote{It writes a $2\times2$ Wishart matrix with $n$ degrees of freedom as $LL^\top$ with $L$ lower triangular and independent entries, $L_{11}^2\sim\chi^2_n$, $L_{22}^2\sim\chi^2_{n-1}$ and $L_{21}\sim\Normal(0,1)$; then $z_n=L\zeta/\sqrt n$ with $\zeta\sim\Normal(0,I_2)$.} and $z_n\sim\Normal(0,\hat\Sigma_n)$ given it. There are $200$ data sets at each $n$ in $10^2,10^{2.5},\dots,10^6$, shared by the five models (the product model uses the first input). The integral over $a$ is done exactly with error functions where $a$ enters linearly, and the rest by composite Gauss--Legendre quadrature on panels refined at the posterior scale $n^{-1/(2k)}$ of a coefficient $b^k$; for the product model it uses the kit's exact quadrature in $c=ab$. At $n=100$ and $1000$ the results agree to five decimals with the kit's grid quadrature on $1000^2$ and $2000^2$ points, and doubling the number of Gauss--Legendre nodes changes them by less than $10^{-14}$. The run takes one to two minutes.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,height=0.5\linewidth,xmode=log,xmin=70,xmax=2.5e7,ymin=0,ymax=14,
+  xtick={1e2,1e3,1e4,1e5,1e6},xlabel={sample size $n$},ylabel={$\E[F_n-nS_n]$},legend pos=north west,
+  legend style={font=\scriptsize}]
+\addplot[regularpred,domain=100:1e6,samples=2] {ln(x)-1-ln(pi/2)};
+\addlegendentry{regular: $\log n-1-\log\frac\pi2$}
+\addplot[theory,domain=100:1e6,samples=30] {ln(x)-1.4516};
+\addlegendentry{singular: $\lambda\log n-(m-1)\log\log n+\E R$}
+\addplot[measured,ebars] table[x=n,y=reg,y error minus=reglo,y error plus=reghi] {figures/data/08-freeenergy-models.dat};
+\addlegendentry{measured}
+\addplot[theory,domain=100:1e6,samples=30,forget plot] {0.75*ln(x)-0.9569};
+\addplot[measured,ebars,forget plot] table[x=n,y=quart,y error minus=quartlo,y error plus=quarthi] {figures/data/08-freeenergy-models.dat};
+\addplot[theory,domain=100:1e6,samples=30,forget plot] {2/3*ln(x)-0.9912};
+\addplot[measured,ebars,forget plot] table[x=n,y=sext,y error minus=sextlo,y error plus=sexthi] {figures/data/08-freeenergy-models.dat};
+\addplot[theory,domain=100:1e6,samples=30,forget plot] {0.5*ln(x)-0.4623};
+\addplot[measured,ebars,forget plot] table[x=n,y=cup,y error minus=cuplo,y error plus=cuphi] {figures/data/08-freeenergy-models.dat};
+\addplot[theory,domain=100:1e6,samples=40,forget plot] {0.5*ln(x)-ln(ln(x))-0.0326};
+\addplot[measured,ebars,forget plot] table[x=n,y=prod,y error minus=prodlo,y error plus=prodhi] {figures/data/08-freeenergy-models.dat};
+\node[anchor=west,font=\scriptsize] at (axis cs:1.3e6,12.36) {$\lambda=1$};
+\node[anchor=west,font=\scriptsize] at (axis cs:1.3e6,9.50) {$\lambda=\frac34$};
+\node[anchor=west,font=\scriptsize] at (axis cs:1.3e6,8.12) {$\lambda=\frac23$};
+\node[anchor=west,font=\scriptsize] at (axis cs:1.3e6,6.45) {$\lambda=\frac12$};
+\node[anchor=west,font=\scriptsize] at (axis cs:1.3e6,4.25) {$\lambda=\frac12,m=2$};
+\end{axis}
+\end{tikzpicture}
+\caption{The normalized free energy of five models with two parameters at the truth $0$, from top to bottom the regular plane, the quartic model, the sextic model, the quartic cup and the product model; inputs $\Normal(0,I_2)$, unit noise, uniform prior on $[-1,1]^2$. Dots: means over $200$ data sets at each $n$ (seeds $80020,80025,\dots,80060$), computed by exact one- and two-dimensional quadrature, with Student-$t$ $95\%$ intervals. Bronze: the singular prediction $\lambda\log n-(m-1)\log\log n+\E R$, with $\E R$ the mean of the limit law of the remainder. Slate dashed: the regular prediction for two parameters, Laplace's value for the regular plane, which coincides there with the singular one. Script: \texttt{08-freeenergy-models.py}.}\label{fig:freeenergy:models}
+\end{figure}
+
+\Cref{fig:freeenergy:models} shows the result. The five models pay $\lambda\log n$, not $\log n$: by $n=10^6$ the sextic model has paid $8.16$ against the regular plane's $12.27$. The bronze curves use the means of the limit laws, $-1.452$, $-0.957$, $-0.991$, $-0.462$ and $-0.033$ from top to bottom, computed from \eqref{eq:freeenergy:sexticlimit} and its analogues. For the four models with $m=1$ the measured means lie within $0.15$ of their curves at every $n$, and inside the $95\%$ interval in $32$ of the $36$ cases; three of the four misses are at $n=10^{4.5}$, where the data sets, shared by the models, happen to have a mean $\rho^2$ of $1.72$ instead of $2$, which by \eqref{eq:freeenergy:complete} raises $F_n-nS_n$ by about $0.14$. The product model lies below its curve by $0.14$ at $n=100$ and $0.06$ at $n=10^6$: its remainder converges like $-\gamma/\log n$ (\cref{ex:freeenergy:slow}). \Cref{tab:freeenergy:slopes} fits a line in $\log n$ to the five curves. For the four models with $m=1$ the slope estimates $\lambda$ to within $0.01$, inside its interval. The product model's slope is $0.394$, not $\tfrac12$: over this range $\tfrac12\log n-\log\log n$ has slope $\tfrac12-1/\log n\approx0.40$, and adding $\log\log n$ back to the measured free energies gives $0.510$. A measured slope of a free energy estimates $\lambda$ only when $m$ is known.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+model & $\lambda$ & $m$ & fitted slope & with $(m-1)\log\log n$ & slope of $\bar F$\\
+\midrule
+regular plane & $1$ & $1$ & $0.998\pm0.015$ & $0.998$ & $1.000$\\
+quartic & $\frac34$ & $1$ & $0.749\pm0.015$ & $0.749$ & $0.750$\\
+sextic & $\frac23$ & $1$ & $0.667\pm0.012$ & $0.667$ & $0.667$\\
+quartic cup & $\frac12$ & $1$ & $0.491\pm0.014$ & $0.491$ & $0.500$\\
+product & $\frac12$ & $2$ & $0.394\pm0.009$ & $0.510$ & $0.400$\\
+\bottomrule
+\end{tabular}
+\caption{Least-squares slopes against $\log n$ of the means in \cref{fig:freeenergy:models}, $n=10^2,\dots,10^6$, with $95\%$ intervals from the standard errors of the means; the regular theory predicts $1$ for all five. Fifth column: the slope after adding $(m-1)\log\log n$ to the means. Last column: the slope of the exact population free energy over the same range.}\label{tab:freeenergy:slopes}
+\end{table}
+
+The same run checks the theorem's ingredients. The sandwich of \cref{comp:freeenergy:sandwich} with $\eta=\frac12$, computed with the exact noiseless free energies, held in all $900$ checks ($20$ data sets per $n$, five models), as a deterministic inequality must; the event $A_n(\frac12)$ held in $1799$ of the $1800$ data sets; and the mean of $\rho^2$ was $1.997$. The log Bayes factor of the sextic model against the regular plane was $1.05$ at $n=100$ and $4.11$ at $n=10^6$ (intervals $\pm0.05$), against the prediction $\frac13\log n-0.460$ of the two limit laws, $1.07$ and $4.14$, and it favored the sextic model in all $1800$ data sets. The remainder $R_n$ has standard deviation $0.97$ for the regular plane, $0.77$ for the sextic model and $0.58$ for the product model, but on the same data much of it cancels: the log Bayes factor above has standard deviation about $0.33$, and the one between the sextic and quartic models, whose learning coefficients differ by $\frac1{12}$, about $0.6$; it favors the sextic model in $153$ of $200$ data sets at $n=100$ and $191$ at $n=10^4$.
+
+The second script, \texttt{08-freeenergy-sbic.py}, reruns the rank-selection experiment for reduced-rank regression\index{reduced-rank regression} of \textcite[\S5.1]{DrtonPlummer2017} with our own seeds: $M=10$ outputs, $N=15$ inputs, a coefficient matrix of rank $5$ with singular values $1.2,1.0,0.8,0.6,0.4$ and singular vectors drawn from the Haar measure for every data set, known noise covariance $I_{10}$, and candidate ranks $0,\dots,10$. The maximized likelihoods come from reduced-rank least squares; BIC charges $\frac12\dim\cM_i\cdot\log n$ with $\dim\cM_i=i(25-i)$, and the sBIC uses the Aoyagi--Watanabe coefficients, solved in logarithms (checked against $60$-digit arithmetic). In \cref{fig:freeenergy:sbic}, at $n=300$ the sBIC selects rank $5$ in $182$ of $200$ data sets and BIC in $5$, choosing rank $4$ in $161$ and rank $3$ in $34$; both are correct in at least $199$ data sets from $n=1000$ on. Drton and Plummer report the same pattern (their Figure~5.1).
+
+The reason is \eqref{eq:freeenergy:bic} at a smaller truth. While the fifth singular value is not yet resolved, the data look like a truth of rank $4$, at which the rank-$5$ model has learning coefficient $\lambda_{54}=45$, while the rank-$4$ model has $\lambda_{44}=42$, half its dimension. The marginal likelihood charges the fifth rank $3\log n$; BIC charges $\frac12(\dim\cM_5-\dim\cM_4)\log n=8\log n$, which at $n=300$ is $46$ nats, more than the fifth component of the signal is worth.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,height=0.4\linewidth,xmode=log,xmin=35,xmax=7000,ymin=-0.04,ymax=1.04,
+  xtick={50,100,200,500,1000,2000,5000},xticklabels={50,100,200,500,1000,2000,5000},
+  xlabel={sample size $n$},ylabel={frequency of the true rank},legend pos=south east,
+  legend style={font=\scriptsize}]
+\addplot[measured2,ebars] table[x=n,y=sbic,y error minus=sbiclo,y error plus=sbichi] {figures/data/08-freeenergy-sbic.dat};
+\addlegendentry{sBIC (learning coefficients)}
+\addplot[measured3,ebars] table[x=n,y=bic,y error minus=biclo,y error plus=bichi] {figures/data/08-freeenergy-sbic.dat};
+\addlegendentry{BIC (dimensions)}
+\addplot[singular!60,line width=0.5pt,forget plot] table[x=n,y=sbic] {figures/data/08-freeenergy-sbic.dat};
+\addplot[regular!60,line width=0.5pt,dashed,forget plot] table[x=n,y=bic] {figures/data/08-freeenergy-sbic.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{Choosing the rank of a reduced-rank regression ($10$ outputs, $15$ inputs, true rank $5$, singular values $1.2,1.0,0.8,0.6,0.4$): the fraction of $200$ data sets at each $n$ in which the criterion selects rank $5$, with Clopper--Pearson $95\%$ intervals; seeds $8{,}100{,}000+n$. Circles: the singular BIC of \textcite{DrtonPlummer2017} with the Aoyagi--Watanabe learning coefficients. Squares: Schwarz's BIC with the dimension of the matrices of rank at most $i$. Script: \texttt{08-freeenergy-sbic.py}.}\label{fig:freeenergy:sbic}
+\end{figure}
+
+\section{The ledger}\label{sec:freeenergy:ledger}
+
+The free energy of a singular model grows like $\lambda\log n-(m-1)\log\log n$, not like $\frac d2\log n$. For models linear in a coefficient matrix this is proved here for every prior whose volume function has the form $C\eps^\lambda(\log\frac1\eps)^{m-1}$, with nothing but Cauchy--Schwarz and the Abelian lemma, because the noise in the energy is at most its square root; Watanabe's theorem extends the formula to analytic models, where resolution of singularities restores that property. Schwarz's criterion overestimates the free energy of a singular model by $(\frac d2-\lambda)\log n$, and a criterion that uses learning coefficients selects better than one that counts dimensions.
+
+\ledgercard{the free energy $F_n=-\log$ (marginal likelihood), normalized as $F_n-nS_n$}{$\frac d2\log n+O_p(1)$: Schwarz's BIC, Laplace's method (\cref{thm:regular:laplace})}{$\lambda\log n-(m-1)\log\log n+O_p(1)$: proved for linear models (\cref{thm:freeenergy:linear}), Watanabe's theorem for analytic models (\cref{thm:freeenergy:main})}{the sextic model $y=ax_1+b^3x_2$: $\lambda=\frac23$, $m=1$ against $\frac d2=1$; $\bar F(n)=\frac23\log n-0.266$}{slope $0.667\pm0.012$ (sextic); $0.998$, $0.749$, $0.491$ for $\lambda=1,\frac34,\frac12$; $0.394$ for the product model; the sBIC finds the true rank where BIC does not ($182$ against $5$ of $200$ at $n=300$)}{a fixed model and truth as $n\to\infty$; realizability or relatively finite variance; the volume asymptotics (analyticity and Hironaka's theorem in general); the exact posterior at $\beta=1$}
+
+\section{Where the theory stops}\label{sec:freeenergy:stops}
+
+\paragraph{What was assumed.} Both theorems take $n\to\infty$ with the model, the prior and the truth fixed. A truth at distance $n^{-1/2}$ from a singularity, which is what a slowly learned feature looks like, behaves like neither the singular nor the regular formula over a long range of $n$ (\cref{ch:phases}). Watanabe's theorem asks for a compact parameter set, because infinity can itself act as a singularity: for the regression of $x_2$ on $x_1$ with mean $a\sin(bx_1)$, at a truth whose true parameters include the line $a=0$, the maximum-likelihood estimator never exists \parencite[p.~5 of the arXiv version]{Watanabe2010a}. \Cref{thm:freeenergy:linear} needs no compactness, but networks are not linear in their coefficients, and their priors are Gaussian on all of $\R^d$. The theorem asks for analyticity, which ReLU networks lack; \textcite{NagayasuWatanabe2023} bound the free energy of deep ReLU networks with more layers than needed (a preprint; we rely on its abstract). It asks for a prior that is analytic up to a smooth positive factor: if the only true parameter is $w=0$ and the prior behaves like $e^{-1/\norm w^2}$ there, vanishing to infinite order, the volume of nearly true parameters shrinks faster than every power of $\eps$; in this example, also from the arXiv version of \textcite{Watanabe2010a}, the generalization errors need not scale like $1/n$. It asks for relatively finite variance, which realizable and regular truths have and unrealizable singular ones can lack, and for essential uniqueness of the optimal distribution: when several distributions are optimal, \textcite{NagayasuWatanabe2022} find asymptotic terms that differ from the formula's. And it describes the exact posterior at $\beta=1$, while the posteriors of networks are approximated.
+
+\paragraph{Where it breaks.} The cleanest failure is Watanabe's non-renormalizable\index{renormalizable condition} example \parencite[\S5]{Watanabe2010d}:\sidenote{Watanabe takes the word from physics, where a family is renormalizable if some rescaling reveals a universal law \parencite[\S6.2]{Watanabe2010d}; here the rescaling is $t=nK$, and the law is the limit of the rescaled posterior, from which the free energy formula and the learning curves follow.} the truth $q=\Normal(0,I_2)$ and the model $p(x,y\mid a)=\Normal\bigl((a,\sqrt{a^4-a^2+1}),I_2\bigr)$, which cannot realize $q$. The energy is exactly $nK_n(a)=\frac n2a^4-\sqrt n\,a\,\xi_1-\sqrt n\,h(a)\,\xi_2$, with $h(a)=\sqrt{a^4-a^2+1}-1$ and independent standard Gaussians $\xi_1,\xi_2$: the noise $\sqrt n\,a\,\xi_1$ is not bounded by a multiple of the square root $\sqrt{n/2}\,a^2$ of the energy. Watanabe derives, by a sketch, learning curves of order $n^{-2/3}$ instead of $1/n$; the source does not treat the free energy, and we argue, without a full proof, as follows. Since the prior is a probability density, $F_n-nL_n(w_0)\ge\min_anK_n(a)$, and a window of width $n^{-1/3}$ around the minimizer gives an upper bound larger by $O_p(\log n)$. The minimum of $\frac n2a^4-\sqrt n\,a\,\xi_1$ is $-3\cdot2^{-7/3}\abs{\xi_1}^{4/3}n^{1/3}$, and the term with $h(a)\approx-\frac12a^2$ moves it by $O_p(n^{1/6})$. So $F_n-nL_n(w_0)$ decreases like $n^{1/3}$, with mean $-3c\,n^{1/3}+\frac13\log n+O(1)$, $c=\Gamma(\frac76)/(2^{5/3}\sqrt\pi)=0.165$. In \texttt{08-freeenergy-nonrenorm.py} (uniform prior on $[-1,1]$, $400$ data sets per $n$, means estimated with a control variate) the mean divided by $n^{1/3}$ is $-0.447\pm0.003$ at $n=10^6$ and $-0.482\pm0.001$ at $n=10^8$, within $0.001$ of a Laplace approximation at the minimizer, on its slow way to $-3c=-0.495$. Since $\E[G_n]-L(w_0)$, for the Bayes generalization loss $G_n$, is the increment of $\E[F_n-nL_n(w_0)]$ from $n$ to $n+1$, this suggests the learning curve $-c\,n^{-2/3}$ that \cref{ch:waic} derives and measures; the constants printed in the source are larger by the factor $2^{4/3}$.
+
+Within the theory, the bounded remainder carries everything the formula leaves out, and at practical sample sizes it competes with the differences the formula is meant to detect. It depends on the scale of the prior: widening the uniform prior of the sextic model from $[-1,1]^2$ to $[-10,10]^2$ raises its free energy by $2\log10=4.6$ at every $n$, up to exponentially small terms, because the posterior lives inside the smaller square; between two models whose learning coefficients differ by $\frac16$, that is the whole difference $\frac16\log n$ at $n=10^{12}$. It converges slowly when $m>1$: for the product model the mean remainder is $-0.033-\gamma/\log n+O(1/\log^2n)$, with Euler's $\gamma$, and still $-0.035$ at $n=10^{100}$ (\cref{ex:freeenergy:slow}). Without compactness the remainder of \eqref{eq:freeenergy:bic} can diverge: the log-likelihood ratios of Gaussian mixtures with unbounded means can grow like $\log\log n$, as \textcite{DrtonPlummer2017} note, citing \textcite{Hartigan1985}. Finally, the marginal likelihood is not a measure of predictive performance: in deep-learning model selection it can be negatively correlated with generalization \parencite{LotfiEtAl2022}.
+
+\paragraph{Open problems.} The theorems fix the dimension $d$ while $n$ grows; neural networks are trained with $d$ comparable to $n$ or larger. For linear models the sandwich of \cref{lem:freeenergy:sandwich} holds for every number $k=MN$ of coefficients, but its random term $\rho_n^2\sim\chi^2_{k}$ is of order $k$, so the sandwich pins the free energy down only to $O_p(k)$, and the comparison of $\hat\Sigma_n$ with $\Sigma$ needs $N\ll n$ (\cref{ex:freeenergy:growing}). How the free energy of a singular model behaves when $d$ grows with $n$, and when $\lambda\log n$ still dominates its fluctuation, is open; non-asymptotic PAC-Bayes bounds for Gibbs posteriors whose prior integrals are analyzed with the tools of this book \parencite[a 2026 preprint; we rely on its abstract]{WangYang2026} approach the question from another side. The limit law of the remainder is known (\cref{thm:freeenergy:main}), but \textcite[\S2]{DrtonPlummer2017} knew of no higher-order approximations in statistically relevant singular settings, and estimating the remainder from data is open as far as we know. Finally, the sBIC needs $\lambda_{ij}$ for every pair of nested models, and these are known for few families; \textcite{Imai2019a} proposes estimating them from the variance of the energy in thermodynamic integration and inserting the estimates into the sBIC (a preprint), and computing them for networks of practical size is open (\cref{ch:catalogue}).
+
+\begin{exercises}
+\item \consolidation (Wilks's statistic.)\label{ex:freeenergy:wilks} Complete the square to prove the second claim of \cref{lem:freeenergy:chisq}, and deduce \eqref{eq:freeenergy:complete} from the identity, with $\hat\Delta=Z_n\hat\Sigma_n^{-1}/\sqrt n$,
+\[
+nK_n(w)=\tfrac n2\tr\bigl((\Delta-\hat\Delta)\hat\Sigma_n(\Delta-\hat\Delta)^\top\bigr)-\tfrac12\rho_n^2 .
+\]
+
+\item \consolidation (The quartic model and the quartic cup.) For $K=\frac12(a^2+b^4)$ and $K=\frac12(a^4+b^4)$ with the uniform prior on $[-1,1]^2$, show that for small $\eps$, $V(\eps)=\frac12I_4(2\eps)^{3/4}=1.4699\,\eps^{3/4}$ with $I_4=\int_{-1}^1\sqrt{1-v^4}\dd v=1.7480$, and $V(\eps)=\frac{\sqrt2}4\,\frac{\Gamma(\frac14)\Gamma(\frac54)}{\Gamma(\frac32)}\,\eps^{1/2}=1.3110\,\eps^{1/2}$. Check that $\bar F(n)=\frac34\log n-0.301$ and $\frac12\log n-0.150$, by the Abelian lemma and by factorizing the integral.\label{ex:freeenergy:quartic}
+
+\item \consolidation (The Gibbs bound.) For every model, prior and truth with a minimizer $w_0$ of $L$, show that $\E[F_n-nL_n(w_0)]\le\bar F(n)$, assuming $\E\abs{f(X,w)}$ is bounded on $W$. \hint{for every probability density $\tilde\varphi$ on $W$, $-\log\int e^{-H}\varphi\le\int H\tilde\varphi+\KL(\tilde\varphi\,\|\,\varphi)$ by Jensen's inequality; take $H=nK_n$ and $\tilde\varphi\propto e^{-nK}\varphi$, and use $\E[K_n(w)]=K(w)$.} From the limit laws, the gap $\E[F_n-nS_n]-\bar F(n)$ tends to $-1$ for the regular plane, $-0.725$ for the sextic model and $-\frac12$ for the product model; derive the first and the last.\label{ex:freeenergy:gibbs}
+
+\item \consolidation (Relatively finite variance.) For the sextic model at the truth $0$, with $f=\frac12(c^\top x)^2-\varepsilon\,c^\top x$ and $c=(a,b^3)$, show that $\E f=\frac12\abs c^2=K$ and $\E f^2=\abs c^2+\frac34\abs c^4=2K+3K^2$, so that $\E f\ge\frac15\E f^2$ on $[-1,1]^2$, and that every constant below $\frac12$ works in place of $\frac15$ near the truth.\label{ex:freeenergy:rfv}
+
+\item \consolidation (The slow remainder of the product model.) For the product model, the exact computation of \cref{ch:coefficient} (step~5 of its first computation box) gives, up to an exponentially small error, $F_n-nS_n=\frac12\log S_{xx}-\log\bigl(\frac12\log S_{xx}-h(Z_n)\bigr)-\frac{Z_n^2}2+\frac12\log\frac2\pi$, with $S_{xx}=\sum_ix_i^2$, $Z_n=\sum_ix_iy_i/\sqrt{S_{xx}}\sim\Normal(0,1)$ and $h(z)=\E\log\abs{z+U}$ for $U\sim\Normal(0,1)$. Show that $\E h(Z_n)=-\gamma/2$, with Euler's constant $\gamma$, and, expanding the logarithm in powers of $1/\log S_{xx}$, that $\E R_n=\frac12\log\frac8\pi-\frac12-\gamma/\log n+O(1/\log^2n)$: $-0.095$ at $n=10^4$ and $-0.035$ at $n=10^{100}$, against the limit $-0.033$. (\Cref{ch:coefficient} proves the corresponding expansion of $R_n$ in probability.)\label{ex:freeenergy:slow}
+
+\item \byhand\hard (The limit law of the sextic model.) Prove \eqref{eq:freeenergy:sexticlimit}. \hint{in \eqref{eq:freeenergy:complete} substitute $u=\sqrt n\,c$; the law of $u$ under the prior has density $\frac1{12}n^{-2/3}\abs{u_2}^{-2/3}$ on $[-\sqrt n,\sqrt n]^2$; show that $\sqrt n\,\hat c-\xi\to0$ in probability, with $\xi\sim\Normal(0,I_2)$ the vector of \cref{comp:freeenergy:sandwich}, and use dominated convergence.} Compute $H(0)=2^{1/6}\Gamma(\frac16)=6.248$ and, numerically, $\E\log H(\zeta_2)=1.557$ and the mean $-0.991$.\label{ex:freeenergy:limit}
+
+\item \byhand (Rank-one regression.) Let $y=b\,a^\top x+\varepsilon$ with $a,b\in\R^2$ uniform on $[-1,1]^2$ each, $x\sim\Normal(0,I_2)$, $\varepsilon\sim\Normal(0,I_2)$ and the truth $0$. Show that $K=\frac12\abs a^2\abs b^2$ and that $V(\eps)\sim\frac{\pi^2}8\,\eps\log\frac1\eps$, and conclude from \cref{thm:freeenergy:linear} that $F_n-nS_n=\log n-\log\log n+O_p(1)$. How much do BIC with $d=4$ and BIC with the dimension $3$ of the rank-one matrices overcharge? \hint{$\Prob(\abs a<r)=\frac\pi4r^2$ for $r\le1$.}\label{ex:freeenergy:rankone}
+
+\item \byhand (The singular BIC of two models.) Let $\cM_0=\{y=\varepsilon\}$ and $\cM_1$ the product model, whose distributions form a one-dimensional family: $\lambda_{00}=0$, $\lambda_{10}=\frac12$ with $m_{10}=2$, and $\lambda_{11}=\frac12$ with $m_{11}=1$. With $T$ twice the maximized log-likelihood ratio and $A=e^{T/2}n^{-1/2}$, show that $\mathrm{sBIC}(\cM_1)-\mathrm{sBIC}(\cM_0)=\log\bigl(\frac12(A-1+\sqrt{(1-A)^2+4A\log n})\bigr)$, and that for $n>e$ this lies between $\log A$, which is minus the difference of our BIC values when $\cM_1$ is charged its dimension $1$, and $\log A+\log\log n$. Evaluate it at $n=100$ for $T=0,2,10,20$ (answers: $-1.01$, $-0.21$, $2.87$, $7.70$).\label{ex:freeenergy:sbichand}
+
+\item \variation (A Gaussian prior.) Give the sextic model the prior $\Normal(0,I_2)$ on $\R^2$. Show that $V(\eps)\sim\frac{2^{2/3}I_6}\pi\,\eps^{2/3}=0.920\,\eps^{2/3}$, that \cref{thm:freeenergy:linear} applies although $W$ is not compact, and that the constant of $\bar F(n)$ increases by $\log\frac\pi2$.\label{ex:freeenergy:gaussian}
+
+\item \variation (A generic truth.) Let the truth of the sextic model and the regular plane be $c_0=(0,c_2)$ with $0<\abs{c_2}<1$. Show that both pairs are regular, and that the log Bayes factor $F_n^{\mathrm{reg}}-F_n^{\mathrm{sext}}$ converges in probability to $\log(\abs{c_2}^{-2/3}/3)$. For which $c_2$ does the marginal likelihood prefer the sextic model?\label{ex:freeenergy:generic}
+
+\item \measurement (Fitting $\lambda$ and $m$.) In \texttt{08-freeenergy-models.py}, fit $\alpha\log n-\beta\log\log n+\kappa$ to the product model's means with $\alpha$, $\beta$, $\kappa$ all free. How well are $\alpha$ and $\beta$ determined over $n=10^2,\dots,10^6$, and why? Repeat with $n$ up to $10^8$.\label{ex:freeenergy:fitm}
+
+\item \measurement (A weaker signal.) In \texttt{08-freeenergy-sbic.py}, halve the singular values. Since the eigenvalues of the explained sum of squares grow like $n$ times the squared singular values, predict how the sample size at which each criterion is right in $90\%$ of the data sets changes, and check.\label{ex:freeenergy:weaker}
+
+\item \research (Growing dimension.) Let $y=c^\top x+\varepsilon$ with $c\in[-1,1]^{k}$ uniform, $x\sim\Normal(0,I_k)$ and the truth $0$, and let $k=k_n\to\infty$ with $k_n/n\to0$. Using \cref{lem:freeenergy:sandwich} and the fact that the extreme eigenvalues of $\hat\Sigma_n$ then tend to $1$ in probability, show that $F_n-nS_n=\frac{k_n}2\log n+O_p(k_n)$. Formulate the analogous question for a singular family whose learning coefficient stays bounded while $d$ grows, such as $y=\bigl(\sum_{j\le k}a_jb_j\bigr)x$, and say what would have to be controlled. As far as we know, the singular case is open.\label{ex:freeenergy:growing}
+\end{exercises}
+
+\notesandrefs
+The free energy formula is Watanabe's. It appears first in \textcite{Watanabe1999}, the paper in which, by Watanabe's own account \parencite{Watanabe2024}, the real log canonical threshold was found to determine the accuracy of Bayesian estimation, and in full, for the mean, $\lambda\log n-(m-1)\log\log n+O(1)$, in \textcite{Watanabe2001a}, with an algorithm for $\lambda$ and $m$ by resolution. The random-variable form with a remainder converging in law is in Section~6.2 of the 2009 book \parencite{Watanabe2009},\sidenote{\textcite{DrtonPlummer2017} cite it as Theorem~6.7 of the book; we have not checked the number against the book.} the unrealizable case under the renormalizable condition in \textcite{Watanabe2010d}, and the statement we quote in \textcite{Watanabe2013}. \Textcite{Watanabe2024} reviews the whole theory, and the 2018 textbook \parencite{Watanabe2018} is the place to read it with exercises; the algebraic-statistics side, Bayesian integrals of algebraic models, is in \textcite[Chapter~5]{DrtonEtAl2009} and \textcite{Lin2011}.
+
+\Cref{thm:freeenergy:linear} and its sandwich are the book's own presentation of a standard argument; the idea that the noise of a log-likelihood ratio is at most the square root of its mean is Watanabe's relatively finite variance, a form of what \textcite{Watanabe2010d} calls the renormalizable condition. For regular models, \textcite{ClarkeBarron1990} showed that the expected normalized free energy, the relative entropy between the truth and the Bayes mixture of $n$ observations, is $\frac d2\log n$ plus a constant determined by the prior density and the Fisher information at the truth; \textcite{KassRaftery1995} review Bayes factors and BIC.
+
+The singular BIC is due to \textcite{DrtonPlummer2017}, whose examples are reduced-rank regression, factor analysis and mixtures; it uses the reduced-rank values of \textcite{AoyagiWatanabe2005}, and \textcite[\S7.2]{Watanabe2013} describes a related two-step method that he attributes to Drton. Watanabe's own answer to the paradox of circular reasoning is WBIC, which needs no learning coefficients (\cref{ch:temperature}). \Textcite{Rao2026}, a 2026 preprint that we know from its abstract, studies linear-Gaussian rank models with exact marginal likelihoods and reports that the error of Laplace and BIC grows like $(\frac d2-\lambda)\log n$, as \eqref{eq:freeenergy:bic} says. \Textcite{WeiEtAl2023} argue for deep learning that dividing by the Hessian determinant, as the Laplace approximation does, is inappropriate for singular models.
+
+\paragraph{Translating the literature.} \Textcite{Watanabe2013} writes $\mathcal F$ for our $F_n$, $L_n$, $K$, $K_n$ and $\BIC=nL_n(\hat w)+\frac d2\log n$ as we do, and calls $\lambda$ the real log canonical threshold; his Fundamental Conditions (1)--(4) are our conditions (ii)--(v) of \cref{thm:freeenergy:main}, and his $\eta_n$ is our $\psi_n$. \Textcite{Watanabe2010d} writes $H_n$, $L_0$ and $B_g$ for our $K_n$, $L(w_0)$ and $G_n$. Section~6.2 of the 2009 book, ``Evidence and stochastic complexity'', uses the older names of the marginal likelihood and of its negative logarithm, and $f(x,w)=\log(q(x)/p(x\mid w))$. \Textcite{Watanabe2024} writes $\theta$, $\Theta$, $\pi(\theta)$ for our $w$, $W$, $\varphi(w)$. \Textcite{DrtonPlummer2017} work on the log-likelihood scale: their $L(\cM_i)$ is our $e^{-F_n}$, their BIC is minus ours, and $\lambda_i(\pi_0)$, $m_i(\pi_0)$ are our learning coefficient and multiplicity at the truth $\pi_0$; in their reduced-rank regression $N$ counts the responses and $M$ the covariates, the reverse of our $M$ outputs and $N$ inputs, and $\pi$ is our coefficient matrix.
+
+\printchapterbib
+\end{refsection}

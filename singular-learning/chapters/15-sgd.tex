@@ -1,0 +1,362 @@
+% Chapter 15 of Singular Learning Theory for the Rest of Us: SGD is not Bayes.
+\newcommand{\sgdasinh}{\operatorname{arcsinh}}
+\newcommand{\sgdvar}{\sigma_{xy}^2}
+
+\sltchapter{SGD Is Not Bayes}{What the theory does not explain}{$y=abx$ under gradient descent}{ch:sgd}
+\newtonfoot{2/2}{2}{\tfrac12}{a^2b^2}
+\begin{refsection}[chapters/15-sgd.bib]
+
+\begin{chaptersummary}
+Singular learning theory describes the Bayesian posterior; deep learning trains one network by stochastic gradient descent. On the product model $y=abx$ both can be followed by hand: gradient flow conserves $a^2-b^2$ and stops at the point of the curve of minimizers that this quantity selects, while the posterior spreads uniformly over scales along the curve. We prove that from the prior's starting points gradient flow ends at the two extreme scales $1$ and $n^{-1/2}$, half the time each, from a small start at $n^{-1/4}$, and that finite steps break the conservation law toward balance. Scripts confirm this and show that minibatch noise can collapse the weights onto the singular point and that Langevin dynamics recovers the posterior while minibatch SGLD does not. The chapter ends with what the theory explains about trained networks and what it does not.
+\end{chaptersummary}
+
+\section{The question: one trained network, or a posterior?}\label{sec:sgd:question}
+
+Every theorem of the previous fourteen chapters is a statement about the posterior: an average over all parameters, weighted by the prior and the likelihood, for a fixed model, as the number $n$ of examples grows. Deep learning does something else. It draws one initialization, runs stochastic gradient descent (SGD) for a budget of steps, and keeps the last iterate, often with more parameters than examples.\sidenote{Averaging the iterates is a common exception; \textcite{MandtEtAl2017} analyze Polyak averaging from the same stochastic-process view as their approximate inference.} \Cref{ch:llc,ch:stages} used the theory anyway, through the local learning coefficient of a trained point, and said what that use assumes. This chapter asks the prior question: what does gradient descent find, and how is it related to what the posterior averages?\index{posterior!and gradient descent}
+
+\begin{regularanswer}[a trained point and a posterior draw]
+If the truth is regular, with a unique true parameter $\wzero$ in the interior of $W$ and an invertible Fisher information $I$, then with probability tending to one the maximum-likelihood estimate $\hat w$ is the only minimizer of $\Ln$ near $\wzero$, and gradient descent started near $\wzero$ converges to it. By the Bernstein--von Mises theorem \parencite[Theorem~10.1]{vanderVaart1998}, the posterior law of $\sqrt n(w-\hat w)$ converges in total variation to $\Normal(0,I^{-1})$, in probability (\cref{ch:regular}). The trained point is the center of the posterior, and a posterior draw differs from it by $O_p(n^{-1/2})$: to first order, training and Bayesian inference agree.
+\end{regularanswer}
+
+The product model breaks this answer twice. Its loss depends on $(a,b)$ only through $c=ab$, so the minimizers of $\Ln$ form a curve, the hyperbola $ab=\hat c$, and the point that training finds depends on where training starts. And the posterior does not concentrate at a point: at the singular truth, $\log\abs a/\log n$ is asymptotically uniform on $[-\frac12,0]$ under the posterior (\cref{thm:singular:scales}). Training and inference cannot agree to first order; the question is how they differ. Where on the hyperbola does gradient descent stop, and how does the law of its end point compare with the posterior? And beyond this toy: what does singular learning theory say about networks trained by stochastic gradient descent, and what does it not say?
+
+\section{By hand: gradient flow on \texorpdfstring{$y=abx$}{y = abx}}\label{sec:sgd:byhand}
+
+The data enter the product model's loss through $S_{xx}=\sum_ix_i^2$ and $S_{xy}=\sum_ix_iy_i$. Expanding the square as in \cref{ch:singular},
+\begin{equation}\label{eq:sgd:loss}
+\Ln(a,b)=\frac\kappa2\,(ab-\hat c)^2+C_n,\qquad\kappa=\frac{S_{xx}}n,\quad\hat c=\frac{S_{xy}}{S_{xx}},
+\end{equation}
+with $C_n$ independent of $(a,b)$. Gradient descent with step $\eta$ replaces $w=(a,b)$ by $w-\eta\nabla\Ln(w)$; as $\eta\to0$, the first $t/\eta$ steps follow the solution of the \term{gradient flow}\index{gradient flow} $\dot w=-\nabla\Ln(w)$ up to time $t$. The flow removes the step size from the problem, and \cref{prop:sgd:discrete} puts it back.
+
+\begin{computation}{Gradient flow on the product model}\label{comp:sgd:flow}
+\step \emph{The flow.} Differentiating \eqref{eq:sgd:loss}, $\nabla\Ln(a,b)=r\,(b,a)$ with the scaled residual $r=\kappa(ab-\hat c)$; so $\dot a=-rb$ and $\dot b=-ra$.
+\step \emph{A conserved quantity.} $\frac{\dd}{\dd t}(a^2-b^2)=2a\dot a-2b\dot b=-2rab+2rab=0$. So $D=a^2-b^2$ keeps its initial value: each trajectory runs along one hyperbola $a^2-b^2=D$, or along one of the lines $a=\pm b$ when $D=0$.
+\step \emph{Coordinates that decouple.} In $u=a+b$ and $v=a-b$ the flow reads $\dot u=-ru$ and $\dot v=rv$, so $u(t)=u(0)e^{-R(t)}$ and $v(t)=v(0)e^{R(t)}$ with $R(t)=\int_0^tr$. Neither $u$ nor $v$ changes sign, and $uv=D$.
+\step \emph{The product.} $c=ab$ obeys $\dot c=\dot ab+a\dot b=-\kappa(c-\hat c)(a^2+b^2)$, and $a^2+b^2=\sqrt{D^2+4c^2}\ge\abs D$. If $D\ne0$, then $\abs{c(t)-\hat c}\le\abs{c(0)-\hat c}\,e^{-\kappa\abs Dt}$: the product reaches $\hat c$ exponentially fast.
+\step \emph{The end point.} The limit $(a_\infty,b_\infty)$ has $a_\infty b_\infty=\hat c$ and $a_\infty^2-b_\infty^2=D$. Solving, $a_\infty^2=\frac12(D+\sqrt{D^2+4\hat c^2})$ and $b_\infty^2=\frac12(-D+\sqrt{D^2+4\hat c^2})$, with the signs of $u$ and $v$ kept from the start.
+\step \emph{Numbers.} Take $\kappa=1$ and $\hat c=0.01$, the size of $\hat c$ for $10^4$ examples of pure noise. From $(0.6,0.3)$, where $D=0.27$, the flow stops at $(0.5200,0.0192)$; from $(0.3,0.6)$ at $(0.0192,0.5200)$; from $(0.6,0.6)$, on the diagonal, at the balanced point $(0.1,0.1)$; and from $(0.6,-0.6)$, on the line $u=0$, it runs into the origin, a saddle point. From the small start $(0.001,0.002)$, where $D=-3\times10^{-6}$, it stops at $(0.09999,0.10001)$, after a plateau: $c$ grows like $c(0)e^{2\kappa\hat ct}$ from $2\times10^{-6}$ and is halfway to $\hat c$ near $t=\log(\hat c/c(0))/(2\kappa\hat c)=426$ (numerically, at $t=420$).
+\end{computation}
+
+What one had to notice is the symmetry. The rescalings $(a,b)\mapsto(sa,b/s)$ leave the loss unchanged; the vector $(a,-b)$ that generates them is the gradient of $\frac12(a^2-b^2)$ and is orthogonal to $\nabla\Ln=r\,(b,a)$ at every point, so the flow can never change $\frac12(a^2-b^2)$. This is Noether's theorem\index{Noether's theorem}\index{conservation law} in its simplest form, and it is how \textcite{SaxeEtAl2014} found the conserved quantity for deep linear networks, whose dynamics in each mode is exactly this flow (\cref{fig:sgd:portrait}).\sidenote{Saxe, McClelland and Ganguli write the error as $\frac1{2\tau}(s-ab)^2$, with $s$ the strength of an input--output mode and $\tau$ a time constant, note that the dynamics ``follows hyperbolas of constant $a^2-b^2$'', and solve it in hyperbolic coordinates in their Appendix~A.}
+
+\begin{figure}[t]
+\centering
+\begin{minipage}[c]{0.5\linewidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[splot,width=\linewidth,height=\linewidth,xmin=-1.06,xmax=1.06,ymin=-1.06,ymax=1.06,
+  xtick={-1,0,1},ytick={-1,0,1},xlabel={$a$},ylabel={$b$}]
+\addplot[guide,domain=-1:1,samples=2] {-x};
+\addplot[singular,line width=1.5pt,domain=0.25:1,samples=90] {0.25/x};
+\addplot[singular,line width=1.5pt,domain=-1:-0.25,samples=90] {0.25/x};
+\pgfplotsinvokeforeach{0,...,15}{
+  \addplot[ink,line width=0.5pt,restrict expr to domain={\thisrow{id}}{#1:#1}] table[x=a,y=b] {figures/data/15-sgd-portrait.dat};
+}
+\addplot[ink,line width=0.6pt,-{Stealth[length=4.5pt,width=3.5pt]},quiver={u=\thisrow{da},v=\thisrow{db}}] table[x=a,y=b] {figures/data/15-sgd-portrait-arrows.dat};
+\addplot[only marks,mark=o,mark size=1.5pt,color=ink,mark options={fill=white}] table[x=a0,y=b0] {figures/data/15-sgd-portrait-ends.dat};
+\addplot[only marks,mark=*,mark size=1.7pt,color=singulardeep] table[x=a1,y=b1] {figures/data/15-sgd-portrait-ends.dat};
+\end{axis}
+\end{tikzpicture}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.46\linewidth}
+\caption{Gradient flow on $\Ln=\frac\kappa2(ab-\hat c)^2$ with $\kappa=1$ and $\hat c=0.25$, a value chosen large for visibility. Thin lines: the flow from sixteen starts (circles) to its end points (dots), each along a hyperbola $a^2-b^2=\text{const}$, from the closed form of \cref{thm:sgd:balance}. Bronze: the minimizers $ab=\hat c$. Dashed: the line $a=-b$, along which the flow runs into the saddle point at the origin; starts with $a+b>0$ end on the upper branch, starts with $a+b<0$ on the lower one. Script: \texttt{15-sgd-product.py}.}\label{fig:sgd:portrait}
+\end{minipage}
+\end{figure}
+
+The end point depends on the start only through $D$ and the signs of $a+b$ and $a-b$. To compare it with the posterior we need a coordinate along the fiber $\{ab=c\}$, the set of parameters that compute the function $y=cx$.\sidenote{For $c>0$ the branch $a,b>0$ of the fiber is $(a,b)=\sqrt c\,(e^\theta,e^{-\theta})$, as $(\cosh\theta,\sinh\theta)$ traces $x^2-y^2=1$; hence the name hyperbolic angle for $\theta$.}
+
+\begin{computation}{Two biases at the singular truth}\label{comp:sgd:biases}
+\step \emph{A coordinate along the fiber.} On the fiber $\{ab=c\}$, $c\ne0$, write $\abs a=\abs c^{1/2}e^{\theta}$ and $\abs b=\abs c^{1/2}e^{-\theta}$. The hyperbolic angle $\theta=\frac12\log\abs{a/b}$ says where on the fiber a point lies, and $a^2-b^2=2\abs c\sinh2\theta$.
+\step \emph{Where the posterior puts $\theta$.} Given $c$, the uniform prior restricted to the fiber makes $\log\abs a$ uniform on $[\log\abs c,0]$ (\cref{ch:singular}), so $\theta$ is uniform on $[-\frac12\log\frac1{\abs c},\frac12\log\frac1{\abs c}]$: the posterior spreads evenly along the whole fiber inside the prior box.
+\step \emph{Where gradient flow puts $\theta$.} By step~5 of \cref{comp:sgd:flow}, $2\abs{\hat c}\sinh2\theta_\infty=D$, so $\theta_\infty=\frac12\sgdasinh\frac{D}{2\abs{\hat c}}$: one point, fixed by the start and the data.
+\step \emph{At the singular truth.} There $\abs{\hat c}$ is of order $n^{-1/2}$, and the posterior's interval of $\theta$ has length about $\frac12\log n$. A start drawn from the prior has $D$ of order $1$; since $\sgdasinh x=\pm\log(2\abs x)+o(1)$ as $x\to\pm\infty$, $\theta_\infty$ lies within $\frac12\abs{\log\abs D}$ of an end of that interval: $\abs{a_\infty}\approx\abs D^{1/2}$ if $D>0$ and $\abs{a_\infty}\approx\abs{\hat c}/\abs D^{1/2}$ if $D<0$. A start so small that $\abs D\ll\abs{\hat c}$ has $\theta_\infty\approx0$, the middle, where $\abs{a_\infty}\approx\abs{b_\infty}\approx\abs{\hat c}^{1/2}$, of order $n^{-1/4}$.
+\step \emph{Numbers.} For $n=10^6$ and a data set with $\kappa=1$ and $\hat c=10^{-3}$, the posterior gives the event $\abs a>0.1$ probability $0.324$; gradient flow from a start uniform on $[-1,1]^2$ gives it probability $0.483$, the probability that $D>0.0099$; gradient flow from a small start never reaches it, since then $\abs{a_\infty}=0.0316$. By symmetry, the event $\max(\abs a,\abs b)>0.1$ has twice these probabilities: $0.647$ and $0.965$.
+\end{computation}
+
+Both procedures end near the fiber $ab=\hat c$, so they agree about the function, $y=\hat cx$ up to $O_p(n^{-1/2})$; they disagree about the parameters. The posterior weights each point of the fiber by the prior volume of the nearly true parameters around it and forgets every start; gradient flow ignores volume and remembers its start through $D$. The balanced point is the posterior's center in logarithmic coordinates, since given $c$ the posterior mean of $\log\abs a$ is $\frac12\log\abs c$, but the posterior puts no more mass near it than at other scales. The two biases also differ in sharpness: at a point of the fiber the Hessian of $\Ln$ has the eigenvalues $0$ and $\kappa(a^2+b^2)=\kappa\sqrt{D^2+4\hat c^2}$ (\cref{ex:sgd:sharp}), so the end point reached from $(0.6,0.3)$ in \cref{comp:sgd:flow} is $13.5$ times sharper than the balanced point, though both compute $y=0.01x$; with this rescaling \textcite{DinhEtAl2017} showed that sharpness is not a property of the function a network computes.
+
+\section{The theorem: gradient flow conserves \texorpdfstring{$a^2-b^2$}{a2 - b2}}\label{sec:sgd:balance}
+
+The computation becomes a theorem once we know that the flow exists for all time and converges, and which starts are exceptional. One fact about scalar equations does the work.
+
+\begin{lemma}[A monotone scalar equation]\label{lem:sgd:scalar}
+Let $g\colon\R\to\R$ be continuously differentiable and strictly decreasing, and let $R$ solve $\dot R=g(R)$, $R(0)=0$, on its maximal interval of existence. If $g$ has a zero $R^*$, then $R$ exists for all $t\ge0$, is monotone, and converges to $R^*$. If $g>0$ on $\R$, then $R$ exists for all $t\ge0$ and increases to $+\infty$; if $g<0$ on $\R$, then it exists for all $t\ge0$ and decreases to $-\infty$.
+\end{lemma}
+
+\begin{proof}
+The plan is to show that $R$ moves monotonically toward the zero of $g$ and cannot stop short of it. By the Picard--Lindel\"of theorem the equation has a unique solution on a maximal interval $[0,T)$, and if $T<\infty$, then $\abs{R(t)}\to\infty$ as $t\to T$. Suppose $g(R^*)=0$ with $R^*>0$. The constant $R^*$ is a solution, so by uniqueness $R(t)<R^*$ for all $t$; then $\dot R=g(R)>0$, so $R$ increases and stays in $[0,R^*)$, which forces $T=\infty$. Its limit $L\le R^*$ equals $R^*$: otherwise $\dot R\ge g(L)>0$ for all $t$ and $R(t)\ge g(L)\,t\to\infty$. The case $R^*<0$ is symmetric, and $R\equiv0$ if $R^*=0$. If $g>0$ on $\R$, then $R$ increases, so $R\ge0$ and $\dot R\le g(0)$; thus $R(t)\le g(0)\,t$ cannot blow up, $T=\infty$, and a bounded $R$ would converge to some $L$ with $\dot R\ge g(L)>0$ for all $t$, which is absurd. The case $g<0$ is symmetric.
+\end{proof}
+
+\begin{theorem}[Gradient flow on the product model]\label{thm:sgd:balance}\index{gradient flow!conservation law}
+Let $(x_i,y_i)$, $i=1,\dots,n$, be data with $S_{xx}>0$ and $\hat c\ne0$, with $\kappa$ and $\hat c$ as in \eqref{eq:sgd:loss}, and let $w(t)=(a(t),b(t))$ solve the gradient flow $\dot w=-\nabla\Ln(w)$ from $w(0)=(a_0,b_0)\in\R^2$. Put $D=a_0^2-b_0^2$ and let $E=\{(a,b):a=-\sgn(\hat c)\,b\}$.
+\begin{enumerate}[label=(\roman*)]
+\item \emph{Conservation.} The solution exists for all $t\ge0$, and $a(t)^2-b(t)^2=D$ for every $t$.
+\item \emph{Convergence.} As $t\to\infty$, $w(t)$ converges to a critical point $w_\infty=(a_\infty,b_\infty)$ of $\Ln$. For every start outside the line $E$, a set of measure zero, $a_\infty b_\infty=\hat c$, so that $w_\infty$ minimizes $\Ln$; from a start on $E$ the flow converges to the origin, a saddle point of $\Ln$.
+\item \emph{The limit point.} If $w(0)\notin E$, then $w_\infty$ is the unique point with $a_\infty b_\infty=\hat c$, $a_\infty^2-b_\infty^2=D$, $\sgn(a_\infty+b_\infty)=\sgn(a_0+b_0)$ and $\sgn(a_\infty-b_\infty)=\sgn(a_0-b_0)$, and
+\begin{equation}\label{eq:sgd:limit}
+a_\infty^2=\frac{D+\sqrt{D^2+4\hat c^2}}2,\qquad b_\infty^2=\frac{-D+\sqrt{D^2+4\hat c^2}}2;
+\end{equation}
+equivalently, $\log\abs{a_\infty/b_\infty}=\sgdasinh\bigl(D/(2\abs{\hat c})\bigr)$.
+\item \emph{The scale at the singular truth.} Let the $x_i$ and $y_i$ be independent standard normal variables (the product model at its singular truth), and let the start $w(0)=w_0^{(n)}$ be random and independent of the data, with $\Prob(D=0)=0$ and $\sqrt n\,D\to0$ in probability. Then $\log\abs{a_\infty}/\log n\to-\frac14$ and $\log\abs{b_\infty}/\log n\to-\frac14$ in probability.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The plan is to pass to the coordinates $u=a+b$, $v=a-b$ of \cref{comp:sgd:flow}, in which the flow is multiplicative, and to reduce it to one scalar equation, to which \cref{lem:sgd:scalar} applies. Write $u_0=a_0+b_0$ and $v_0=a_0-b_0$, so that $u_0v_0=D$.
+
+\emph{Reduction.} Since $\partial_a\Ln=-\frac1n\sum_i(y_i-abx_i)x_ib=\kappa(ab-\hat c)\,b$, and likewise for $b$, the flow is $\dot a=-r(a,b)\,b$, $\dot b=-r(a,b)\,a$ with $r(a,b)=\kappa(ab-\hat c)$. For $R\in\R$ let
+\[
+g(R)=\kappa\Bigl(\tfrac14\bigl(u_0^2e^{-2R}-v_0^2e^{2R}\bigr)-\hat c\Bigr),
+\]
+let $R$ solve $\dot R=g(R)$, $R(0)=0$, on its maximal interval $[0,T)$, and put $u=u_0e^{-R}$, $v=v_0e^{R}$, $a=\frac12(u+v)$ and $b=\frac12(u-v)$. Then $ab=\frac14(u^2-v^2)$, so $\dot R=r(a,b)$, and
+\[
+\dot a=\tfrac12(-\dot Ru+\dot Rv)=-r(a,b)\,b,\qquad\dot b=\tfrac12(-\dot Ru-\dot Rv)=-r(a,b)\,a .
+\]
+So $(a,b)$ solves the flow from $(a_0,b_0)$ on $[0,T)$. The vector field $-\nabla\Ln$ is a polynomial, hence locally Lipschitz, so this is the solution, and along it $a^2-b^2=uv=u_0v_0=D$.
+
+\emph{Cases.} If $u_0=v_0=0$, the start is the origin, a critical point, and the flow stays there. Otherwise $g'(R)=-\frac\kappa2(u_0^2e^{-2R}+v_0^2e^{2R})<0$, so $g$ is strictly decreasing. As $R\to-\infty$, $g(R)\to+\infty$ if $u_0\ne0$ and $g(R)\to-\kappa\hat c$ if $u_0=0$; as $R\to+\infty$, $g(R)\to-\infty$ if $v_0\ne0$ and $g(R)\to-\kappa\hat c$ if $v_0=0$.
+(a) If $u_0\ne0$ and $v_0\ne0$, then $g$ takes every real value and has a zero $R^*$. By \cref{lem:sgd:scalar}, $T=\infty$ and $R\to R^*$, so $u\to u_\infty=u_0e^{-R^*}$ and $v\to v_\infty=v_0e^{R^*}$, both nonzero, with $u_\infty v_\infty=D$ and, since $g(R^*)=0$, $\frac14(u_\infty^2-v_\infty^2)=\hat c$.
+(b) If $v_0=0\ne u_0$, the start lies on the diagonal $a=b$, and $g$ decreases from $+\infty$ to $-\kappa\hat c$. If $\hat c>0$, then $g$ has a zero, and as in (a) $u\to u_\infty$ with $u_\infty^2=4\hat c$ and $\sgn u_\infty=\sgn u_0$, while $v\equiv0$. If $\hat c<0$, then $g>0$, $R\to+\infty$ by the lemma, and $u\to0$: the flow converges to the origin.
+(c) If $u_0=0\ne v_0$, the start lies on the line $a=-b$, and symmetrically: if $\hat c<0$, then $v\to v_\infty$ with $v_\infty^2=-4\hat c$ and $\sgn v_\infty=\sgn v_0$, while $u\equiv0$; if $\hat c>0$, then $R\to-\infty$ and the flow converges to the origin.
+In every case $T=\infty$, which completes (i), and $w(t)$ converges.
+
+\emph{Identification.} In (a), in (b) with $\hat c>0$, and in (c) with $\hat c<0$, the limit satisfies $a_\infty b_\infty=\frac14(u_\infty^2-v_\infty^2)=\hat c$ and $a_\infty^2-b_\infty^2=u_\infty v_\infty=D$, with $\sgn u_\infty=\sgn u_0$ and $\sgn v_\infty=\sgn v_0$. The remaining starts, those of (b) with $\hat c<0$, those of (c) with $\hat c>0$, and the origin, make up the line $E$, and from them the flow converges to the origin. There $\nabla\Ln=0$, and $\nabla^2\Ln(0)$ has the entries $0$ on the diagonal and $-\kappa\hat c$ off it, with eigenvalues $\pm\kappa\hat c$: a saddle point. This proves (ii). The conditions in (iii) determine one point: $uv=D$ and $u^2-v^2=4\hat c$ make $u^2$ and $-v^2$ the two roots of $X^2-4\hat cX-D^2=0$, so $u^2=2\hat c+\sqrt{D^2+4\hat c^2}$ and $v^2=-2\hat c+\sqrt{D^2+4\hat c^2}$, and the signs of $u$ and $v$ are prescribed. Since $a^2=\frac14(u^2+v^2+2uv)$ and $b^2=\frac14(u^2+v^2-2uv)$, this is \eqref{eq:sgd:limit}. With $x=D/(2\abs{\hat c})$ it gives $a_\infty^2/b_\infty^2=(x+\sqrt{1+x^2})/(-x+\sqrt{1+x^2})=(x+\sqrt{1+x^2})^2$, and $\log(x+\sqrt{1+x^2})=\sgdasinh x$.
+
+\emph{The scale.} Under the singular truth, given $x_1,\dots,x_n$, the statistic $S_{xy}$ is normal with mean $0$ and variance $S_{xx}$; so $Z_n=S_{xy}/\sqrt{S_{xx}}\sim\Normal(0,1)$ exactly (\cref{ch:singular}), $\hat c=Z_n/\sqrt{S_{xx}}\ne0$ almost surely, and $S_{xx}/n\to1$ almost surely by the strong law of large numbers. Since $E\subset\{D=0\}$, the start avoids $E$ almost surely, and (iii) gives
+\[
+\log\abs{a_\infty}=\tfrac12\log\abs{\hat c}+\tfrac12\sgdasinh\frac D{2\abs{\hat c}},\qquad\log\abs{b_\infty}=\tfrac12\log\abs{\hat c}-\tfrac12\sgdasinh\frac D{2\abs{\hat c}}.
+\]
+The argument of $\sgdasinh$ is $\sqrt nD\cdot\sqrt{S_{xx}/n}\,/(2\abs{Z_n})$: a factor that tends to $0$ in probability, one that tends to $1$, and one that is bounded in probability, because $Z_n$ has the same law for every $n$ and no atom at $0$. So it tends to $0$ in probability, and so does its $\sgdasinh$. And $\frac12\log\abs{\hat c}=\frac12\log\abs{Z_n}-\frac14\log S_{xx}$, where $\log\abs{Z_n}$ is bounded in probability and $\log S_{xx}/\log n\to1$. Dividing by $\log n$ proves (iv).
+\end{proof}
+
+The same case analysis handles $\hat c=0$, an event of probability zero (\cref{ex:sgd:zero}). Near $w_\infty$ the residual decays like $e^{-\kappa\sqrt{D^2+4\hat c^2}\,t}$, at the rate of the nonzero eigenvalue of the Hessian there, which is smallest at the balanced point, where it is $2\kappa\abs{\hat c}$, of order $n^{-1/2}$ at the singular truth; from a small start the flow first waits on a plateau of length about $\log(\abs{\hat c}/\abs{c(0)})/(2\kappa\abs{\hat c})$, the plateau\index{plateau} that the Amari school found near the singularities of networks.\sidenote{\Textcite{FukumizuAmari2000} showed that critical points of a network with fewer hidden units give lines of critical points of a larger one, which can cause plateaus; \cref{ch:singular} has the history.} Numerical integration of the flow from $24$ starts on four data sets of size $10^4$ agrees with \eqref{eq:sgd:limit} to $6\times10^{-13}$ (\texttt{15-sgd-product.py}). Part~(iv) needs a start much smaller than $n^{-1/4}$; starts of order $1$ end at the two ends of the posterior's range of scales.
+
+\begin{corollary}[Two biases]\label{cor:sgd:biases}
+In the setting of \cref{thm:sgd:balance}(iv), let instead the start have a law $\mu$ that does not depend on $n$, with $\mu\{D=0\}=0$. Then $\log\abs{a_\infty}/\log n+\frac12\ind\{D<0\}\to0$ in probability. In particular, if $\mu$ is the prior, uniform on $[-1,1]^2$, then $\log\abs{a_\infty}/\log n$ converges in law to $\frac12\delta_{-1/2}+\frac12\delta_0$, whereas under the posterior $\log\abs a/\log n$ converges in law to $\Unif(-\frac12,0)$ (\cref{thm:singular:scales}), and from a small start it converges to $-\frac14$ (\cref{thm:sgd:balance}(iv)).
+\end{corollary}
+
+\begin{proof}
+The plan is to expand $\sgdasinh$ for large arguments in the formula for $\log\abs{a_\infty}$ of the last proof. For $x>0$, $\sgdasinh x=\log(2x)+\log\frac{1+\sqrt{1+x^{-2}}}2$, and the last term lies in $[0,\frac1{4x^2}]$; and $\sgdasinh$ is odd. Put $x_n=\abs D/(2\abs{\hat c})=\sqrt n\abs D\sqrt{S_{xx}/n}\,/(2\abs{Z_n})$. Since $D$ has a fixed law without an atom at $0$ and $\abs{Z_n}$ is bounded in probability, $x_n\to\infty$ in probability. On $\{D>0\}$ this gives $\log\abs{a_\infty}=\frac12\log\abs{\hat c}+\frac12\log(D/\abs{\hat c})+o_p(1)=\frac12\log D+o_p(1)$, which is bounded in probability; on $\{D<0\}$ it gives $\log\abs{a_\infty}=\log\abs{\hat c}-\frac12\log\abs D+o_p(1)$, and $\log\abs{\hat c}/\log n\to-\frac12$ in probability. Dividing by $\log n$ proves the first claim. For the prior, $\mu\{D<0\}=\mu\{D>0\}=\frac12$ by the symmetry $(a,b)\mapsto(b,a)$, and $-\frac12\ind\{D<0\}$ has the law $\frac12\delta_{-1/2}+\frac12\delta_0$.
+\end{proof}
+
+So the middle half of the scales, $-\frac38<\log\abs a/\log n\le-\frac18$, gets probability tending to $0$ from gradient flow with the prior's starts, $\frac12$ from the posterior, and $1$ from gradient flow with a small start; starts of size $n^{-\gamma}$ interpolate (\cref{ex:sgd:scale}).
+
+\paragraph{Finite steps.} Gradient descent takes steps of a fixed size, often on minibatches. The conservation law does not survive, but it fails in one direction, and the failure is exact.
+
+\begin{proposition}[Finite steps break the law toward balance]\label{prop:sgd:discrete}\index{balancedness}\index{stochastic gradient descent!finite steps}
+For a nonempty list $B$ of indices, repetitions allowed, let $L_B(a,b)=\frac1{2\abs B}\sum_{i\in B}(y_i-abx_i)^2+\frac12\log(2\pi)$, and let $w_{t+1}=w_t-\eta\nabla L_{B_t}(w_t)$ with a step $\eta>0$ and minibatches $B_t$ chosen in an arbitrary way ($B_t=\{1,\dots,n\}$ for gradient descent). With $r_t=\frac1{\abs{B_t}}\sum_{i\in B_t}(x_i^2a_tb_t-x_iy_i)$, $u_t=a_t+b_t$, $v_t=a_t-b_t$ and $D_t=a_t^2-b_t^2$,
+\begin{equation}\label{eq:sgd:discrete}
+u_{t+1}=(1-\eta r_t)\,u_t,\qquad v_{t+1}=(1+\eta r_t)\,v_t,\qquad D_{t+1}=(1-\eta^2r_t^2)\,D_t .
+\end{equation}
+Consequently: (i) the lines $a=b$ and $a=-b$, and the origin, are invariant; (ii) if $D_t\ne0$ and $0<\eta^2r_t^2<2$, then $\abs{D_{t+1}}<\abs{D_t}$; (iii) if $\eta\abs{r_t}\le1$ for all $t$, then $\abs{D_t}\le\abs{D_0}\exp(-\eta^2\sum_{s<t}r_s^2)$, so that $D_t\to0$ whenever $\sum_tr_t^2=\infty$.
+\end{proposition}
+
+\begin{proof}
+As for $\Ln$, $\nabla L_B(a,b)=r\,(b,a)$ with $r=\frac1{\abs B}\sum_{i\in B}(x_i^2ab-x_iy_i)$. Hence $a_{t+1}+b_{t+1}=a_t+b_t-\eta r_t(b_t+a_t)$ and $a_{t+1}-b_{t+1}=a_t-b_t+\eta r_t(a_t-b_t)$, which are the first two identities, and $D_{t+1}=u_{t+1}v_{t+1}$ gives the third. Part~(i) follows from the first two, (ii) from $\abs{1-x}<1$ for $0<x<2$, and (iii) from $0\le1-x\le e^{-x}$ for $0\le x\le1$.
+\end{proof}
+
+For gradient descent that converges to a point of the fiber, $r_t\to0$ geometrically and the end point keeps the fraction $\prod_t(1-\eta^2r_t^2)$ of $D$, close to $1$ for small $\eta$: from $(0.6,0.3)$ in \cref{comp:sgd:flow}, with $\eta=0.1$, it keeps $99.6\%$.\sidenote{With momentum, $u_{t+1}=(1-\eta r_t+\mu)u_t-\mu u_{t-1}$, so the lines $a=\pm b$ stay invariant when the start has no velocity, but $D_t$ no longer changes by a single factor.} Minibatches change this. At a minimizer of $\Ln$, $r_t$ is the disagreement of the minibatch with the full batch, of mean square about $\sgdvar/\abs B$ for minibatches of $\abs B$ examples drawn with replacement, with $\sgdvar$ the empirical variance of the products $x_iy_i$ (about $1$ at the singular truth). So $\abs{D_t}$ decays roughly like $e^{-\eta^2\sgdvar t/\abs B}$: SGD forgets its start on the time scale $\abs B/(\eta^2\sgdvar)$ and drifts along the fiber to the balanced point. \Textcite{KuninEtAl2021} showed that finite learning rates break the conservation laws of gradient flow, and \textcite{WangEtAl2022} that gradient descent with a large learning rate on matrix factorization ends nearly balanced. For full batches, \eqref{eq:sgd:discrete} is the one-unit case of an identity in the proofs of \textcite[Appendix~B.1]{DuEtAl2018}; it gives the exact form of both effects for one unit. Once balanced, SGD meets a second effect.
+
+\begin{heuristic}[Heuristic derivation of stochastic collapse]
+On the balanced lines \eqref{eq:sgd:discrete} gives $c_{t+1}=c_t(1-\sgn(c_t)\,\eta r_t)^2$: the product evolves multiplicatively and keeps its sign. Near $c=0$, $r_t\approx-\frac1{\abs B}\sum_{i\in B}x_iy_i$ has mean $-\kappa\hat c$ and variance $\sgdvar/\abs B$ over minibatches, so to second order in $\eta$ the expected change of $\log\abs{c_t}$ per step is
+\[
+\E\bigl[2\log\abs{1-\sgn(c_t)\,\eta r_t}\bigr]\approx2\eta\kappa\,\sgn(c_t)\,\hat c-\frac{\eta^2\sgdvar}{\abs B} .
+\]
+If $\sgn(c_t)=\sgn(\hat c)$ and $\abs{\hat c}>\eta\sgdvar/(2\kappa\abs B)$, then $\log\abs{c_t}$ drifts up while $c_t$ is small, and SGD fluctuates along the balanced line. With the full mean $\kappa(c_t-\hat c)$ of $r_t$ in place of $-\kappa\hat c$, the drift averages to zero where the mean of $\abs{c_t}$ is about $\abs{\hat c}-\eta\sgdvar/(2\kappa\abs B)$ (compare \cref{ex:sgd:wd}). If $\abs{\hat c}<\eta\sgdvar/(2\kappa\abs B)$, then it drifts down: $c_t\to0$, and the weights collapse onto the origin, the most singular point of the cross. The balanced line opposite to $\hat c$ is the invariant line $E$ of \cref{thm:sgd:balance}, on which $c_t\to0$ whatever $\hat c$; near it, above the threshold, SGD passes near the origin and leaves along the balanced line on the side of $\hat c$, as gradient flow does near $E$.
+\end{heuristic}
+
+At the singular truth $\abs{\hat c}$ is of order $n^{-1/2}$, so for a fixed step and minibatch size the collapse condition holds with probability tending to one as $n$ grows. This is the simplest instance of the \term{stochastic collapse}\index{stochastic collapse} of \textcite{ChenEtAl2023b}, who give a sufficient condition, a competition between curvature and gradient noise, under which SGD is attracted to invariant sets of simpler subnetworks, such as vanishing units; here the invariant set is the origin, a saddle point. The posterior gives the scales below $n^{-1/2}$ vanishing mass (\cref{thm:singular:scales}), and the origin none.
+
+\section{The theorem: what transfers from posteriors to training}\label{sec:sgd:transfer}
+
+On the product model the comparison is exact. For networks the literature asks three questions: whether some training algorithm samples the posterior, whether SGD as practiced does, and whether SGD nevertheless prefers what the posterior prefers. We state each result as its authors state it.
+
+\paragraph{Langevin dynamics.} The Langevin diffusion of \cref{sec:toolkit:sgld} adds noise to gradient flow so that the posterior becomes its equilibrium.
+
+\begin{proposition}[The tempered posterior is invariant under Langevin dynamics]\label{prop:sgd:langevin}\index{Langevin dynamics}\index{Fokker--Planck equation}
+Let $U\colon\R^d\to\R$ be twice continuously differentiable with $\int e^{-U}<\infty$, and let $p_\infty=e^{-U}/\int e^{-U}$. Then $p_\infty$ is a stationary solution of the Fokker--Planck equation $\partial_tp=\frac12\nabla\cdot(p\nabla U)+\frac12\Delta p$ of the diffusion $\dd w=-\frac12\nabla U(w)\dd t+\dd B_t$. For $U=n\beta\Ln-\log\varphi$ with a smooth positive prior $\varphi$, $p_\infty$ is the tempered posterior at inverse temperature $\beta$.
+\end{proposition}
+
+\begin{proof}
+Since $\nabla p_\infty=-p_\infty\nabla U$, the field $p_\infty\nabla U+\nabla p_\infty$ vanishes, and so does its divergence, $\nabla\cdot(p_\infty\nabla U)+\Delta p_\infty$.
+\end{proof}
+
+Stationarity is the easy half: convergence to $p_\infty$ needs growth conditions on $U$, the Euler scheme with a fixed step has an invariant law of its own (\cref{ch:llc}), and a uniform prior on a box makes the diffusion reflect at the boundary.\sidenote{Reflection is the dynamical form of the uniform prior: without it the chains would leave $[-1,1]^2$, where the posterior vanishes.} On the product model one Euler step $w\mapsto w-\frac\epsilon2\nabla U(w)+\sqrt\epsilon\,\xi$ is a step of gradient descent with $\eta=\epsilon n/2$ plus Gaussian noise of variance $\epsilon=2\eta/n$ in each coordinate, and the noise is what moves the iterate along the fiber, where the gradient vanishes. \textcite{WellingTeh2011} replaced $\nabla U$ by a minibatch estimate, which gives \term{stochastic-gradient Langevin dynamics}\index{stochastic-gradient Langevin dynamics} (SGLD), and argued that with step sizes annealed to zero the iterates converge to posterior samples; consistency for decreasing steps was proved later (\cref{sec:toolkit:sgld}). With the usual constant step, proportional to $1/n$, \textcite{BrosseEtAl2018} proved, for strongly log-concave posteriors, that the invariant law of SGLD comes close to that of SGD as $n$ grows, and, in Bayesian linear regression, that it stays at a distance of order one from the posterior, whose width shrinks like $n^{-1/2}$.
+
+\paragraph{Constant-step SGD.} \Textcite{MandtEtAl2017} assume Gaussian minibatch gradient noise with a constant covariance $C/\abs B$ for minibatches of $\abs B$ examples, a stochastic differential equation in place of SGD, and a stationary law confined to where the loss is a quadratic with positive definite Hessian $A$ (their Assumptions~1--4). Then the stationary law $q$ of SGD with step $\eta$ is Gaussian with covariance $\Sigma$ solving $A\Sigma+\Sigma A=(\eta/\abs B)\,C$, and the step $\eta^*=2\abs Bd/(n\tr C)$, for $n$ examples and $d$ parameters, minimizes $\KL(q\,\|\,p)$ with $p$ the posterior, which the quadratic loss makes Gaussian (their Theorem~1). The positive definite Hessian is what fails at a singular minimum: on the product model the Hessian at a point of the fiber and the covariance of the gradient noise both have rank $1$, in the direction $(b,a)$, so to first order the noise never moves SGD along the fiber; it does so only through the second-order effect of \cref{prop:sgd:discrete}. In a blog post on small degenerate landscapes, \textcite{CorlouerMace2024} found that SGD converges more slowly to more degenerate critical points and that its end-of-training distribution can differ from the posterior.
+
+\begin{observation}[\textcite{IzmailovEtAl2021}]
+With full-batch Hamiltonian Monte Carlo on modern architectures, Bayesian neural networks could beat standard training and deep ensembles, posterior tempering was not needed for near-optimal performance, and SGMCMC and deep ensembles gave predictive distributions distinct from those of Hamiltonian Monte Carlo.
+\end{observation}
+
+About functions the agreement can be good: \textcite{MingardEtAl2021} found that the probability that SGD finds a function consistent with the training set correlates well with its Bayesian posterior probability, computed with Gaussian processes, for a range of architectures and data sets. On the product model, too, training and the posterior agree about the function and disagree about the parameters, and the quantities of singular learning theory are volumes in parameter space.
+
+\paragraph{Implicit biases.}\index{implicit bias} The product model has shown three, memory of the start, balance from finite steps, and collapse from gradient noise, and each has a general form. Gradient flow conserves the difference of the squared norms of the incoming and outgoing weights of every unit with a linear, ReLU or leaky ReLU activation \parencite[Theorem~2.1]{DuEtAl2018}, and every differentiable symmetry of the loss that satisfies a further condition, which translations, scalings and rescalings of weights do, gives a conservation law \parencite[Theorem~1]{KuninEtAl2021}; gradient noise attracts SGD to invariant sets of simpler subnetworks \parencite{ChenEtAl2023b}. For Langevin diffusion at a large inverse temperature on a nonnegative real-analytic potential, started on its zero set, \textcite{Larsson2026}, in a preprint, derives a candidate limiting evolution on the zero set: the Dirichlet forms converge, in a certain sense, to a hierarchy on strata indexed by the local learning coefficient and its multiplicity, strongly biased toward the higher-dimensional, ``more singular'' strata. He offers this as a mechanism for the preference of stochastic gradient methods for singular solutions.
+
+\paragraph{The program's bridge.} The deep-learning applications of \cref{ch:llc,ch:stages} rest on two hypotheses. A \emph{dynamical transition} is a sudden move of SGD from near one critical point to near another; a \emph{Bayesian transition} is a change, as $n$ grows, of the region that dominates the posterior (\cref{ch:phases}). The first hypothesis is \cref{conj:stages:bah} of \cref{ch:stages}, restated here without its phase labels.
+
+\begin{conjecture}[Bayesian antecedent hypothesis; \textcite{ChenEtAl2023}]\label{conj:sgd:bah}\index{Bayesian antecedent hypothesis}
+The dynamical transitions encountered in neural network training have Bayesian antecedents: for each such transition between two phases there is a Bayesian transition between the same two phases as $n$ grows.
+\end{conjecture}
+
+\begin{conjecture}[\textcite{PepinLehalleurEtAl2025}, Figure~2]\label{conj:sgd:nt}
+Stochastic gradient descent finds parameters that the posterior prefers, and at step $t$ its preference is that of the posterior at a sample size $n(t)$ that increases with $t$.
+\end{conjecture}
+
+The evidence points both ways. In the toy model of superposition, \textcite{ChenEtAl2023} found that the critical points they classify for the posterior's phases also explain SGD's plateaus, each drop of the loss accompanied by a rise of the estimated local learning coefficient, and their analysis suggests that the observed dynamical transitions have Bayesian antecedents, with two inconclusive cases; but the posterior's transition from the $5$-gon to the $6$-gon was not observed in SGD. \textcite{CarrollEtAl2025}, in a preprint, found transformers trained on in-context linear regression moving first toward a simpler and then toward a more complex solution, as the posterior does when $n$ grows; above a threshold of task diversity they never left the simpler one, whereas the Bayesian account predicts that it always eventually gives way. The authors list possible reasons, from limited capacity or training to a real difference between Bayesian and dynamical selection, and leave the question open. Read as a statement about the law of the parameters, \cref{conj:sgd:nt} fails on the product model, as we argue in \cref{sec:sgd:stops}.
+
+\section{Measuring it}\label{sec:sgd:measuring}
+
+Two scripts test the chapter's claims at the singular truth of the product model, against the exact posterior.
+
+\paragraph{Gradient flow against the posterior.} The script \texttt{15-sgd-product.py} (a few seconds) simulates data sets of size $n=10^{12}$ exactly through $(S_{xx},S_{xy})$, draws exact posterior samples (\cref{ch:singular}), and computes gradient flow's end points by \eqref{eq:sgd:limit} from starts uniform on $[-1,1]^2$ and from small starts $\Normal(0,10^{-12}I)$. In logarithmic coordinates (\cref{fig:sgd:ends}a) the posterior draws spread along the segment $\log_{10}\abs a+\log_{10}\abs b\approx\log_{10}\abs{\hat c}=-5.88$, while $48\%$ of the flows from the prior's starts end with $\log_{10}\abs{a_\infty}>-1$, $49\%$ within a decade of the other end, and $3\%$ between, and the flows from small starts all end at the middle, $\log_{10}\abs{a_\infty}=-2.94$. Over $200$ data sets (\cref{fig:sgd:ends}b), the middle half of the scales, $-\frac38<\log\abs a/\log n\le-\frac18$, has posterior mass $0.490$, against $0.005$ for the flow from the prior and $1.000$ from small starts. The posterior points agree with the exact formula of \cref{thm:singular:scales} to $0.0012$ and lie slightly above the limit law on the left, the slow $1/\log n$ convergence of \cref{ch:singular}. The flow from the prior has its lower atom spread over a window of width $O(1/\log n)$ above $-\frac12$: its distribution function is $0.199$ at $\tau=-\frac12$ and $0.497$ at $\tau=-\frac38$. At the atom itself its limit is not $\frac12$ but $\Prob(D<0,\,Z_n^2\le\abs D)=0.195$, with $Z_n\sim\Normal(0,1)$ as in the proof of \cref{cor:sgd:biases}.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},splot,width=0.47\linewidth,height=0.385\linewidth]
+\nextgroupplot[xmin=-8.2,xmax=0.3,ymin=-8.2,ymax=0.3,xtick={-8,-6,-4,-2,0},ytick={-8,-6,-4,-2,0},
+  xlabel={$\log_{10}\abs a$},ylabel={$\log_{10}\abs b$},title={(a) one data set, $n=10^{12}$},
+  legend style={font=\scriptsize,at={(0.03,0.03)},anchor=south west}]
+\addplot[draws,color=ink,mark size=0.45pt] table[x=la,y=lb] {figures/data/15-sgd-scatter-post.dat};
+\addplot[measured2,mark size=1.3pt] table[x=la,y=lb] {figures/data/15-sgd-scatter-prior.dat};
+\addplot[guide,forget plot] coordinates {(-5.884,0) (0,-5.884)};
+\addplot[measured3,mark size=2.8pt,mark options={line width=1.1pt,fill=white}] table[x=la,y=lb] {figures/data/15-sgd-scatter-small.dat};
+\legend{{posterior draws},{flow, prior start},{flow, small start}}
+\nextgroupplot[xmin=-0.67,xmax=0.07,ymin=-0.03,ymax=1.03,xtick={-0.5,-0.25,0},ytick={0,0.25,0.5,0.75,1},
+  xlabel={$\tau$},ylabel={fraction with $\log\abs a/\log n\le\tau$},title={(b) distribution functions, $n=10^{12}$},
+  legend style={font=\scriptsize,at={(0.03,0.97)},anchor=north west}]
+\addplot[regularpred] coordinates {(-0.67,0) (-0.5,0) (-0.5,1) (0.07,1)};
+\addplot[theory] coordinates {(-0.67,0) (-0.5,0) (0,1) (0.07,1)};
+\addplot[theory2] coordinates {(-0.67,0) (-0.5,0) (-0.5,0.5) (0,0.5) (0,1) (0.07,1)};
+\addplot[theory2,forget plot] coordinates {(-0.67,0) (-0.25,0) (-0.25,1) (0.07,1)};
+\addplot[measured,ebars] table[x=tau,y=post,y error=posthw] {figures/data/15-sgd-cdf.dat};
+\addplot[measured2,ebars] table[x=tau,y=prior,y error=priorhw] {figures/data/15-sgd-cdf.dat};
+\addplot[measured3,ebars] table[x=tau,y=small,y error=smallhw] {figures/data/15-sgd-cdf.dat};
+\legend{{regular: both at $-\frac12$},{posterior limit},{flow limits},{posterior draws},{flow, prior start},{flow, small start}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Where gradient flow stops and where the posterior goes, for the product model at its singular truth with $n=10^{12}$. (a) One data set (seed $1503$): $1500$ exact posterior draws, and the end points of gradient flow from $300$ starts uniform on $[-1,1]^2$ and from $300$ starts $\Normal(0,10^{-12}I)$; dashed, the segment $\log_{10}\abs a+\log_{10}\abs b=\log_{10}\abs{\hat c}$. A few draws with $\abs{ab}\ll\abs{\hat c}$ fall outside the frame. (b) The distribution function of $\log\abs a/\log n$, averaged over $200$ data sets ($2000$ draws and $2\times200$ flows each), with Student-$t$ $95\%$ intervals over data sets. Solid bronze: the posterior's limit $\Unif(-\frac12,0)$ (\cref{thm:singular:scales}); dotted bronze: the flow's limits, $\frac12\delta_{-1/2}+\frac12\delta_0$ from the prior and $\delta_{-1/4}$ from small starts (\cref{cor:sgd:biases}, \cref{thm:sgd:balance}); dashed slate: the regular plane, whose posterior and minimizer both sit at the scale $n^{-1/2}$. Script: \texttt{15-sgd-product.py}.}\label{fig:sgd:ends}
+\end{figure}
+
+\paragraph{Finite steps, noise, and Langevin.} The script \texttt{15-sgd-steps.py} (under a minute) generates $400$ data sets of size $n=10^4$ and runs on each, from one start uniform on $[-1,1]^2$: gradient descent with step $\eta=0.1$ for $2\times10^4$ steps; SGD with the same step and minibatches of $\abs B=10$; SGLD at $\beta=1$ with step $\epsilon=2\eta/n$, the same minibatches and drift, and injected noise, reflected into the prior box; and Langevin dynamics, the same with full batches (\cref{fig:sgd:steps}). Langevin dynamics reproduces the posterior: its distribution function of $\log\abs a/\log n$ is within $0.025$ of the exact one on $[-0.75,0]$. SGLD with minibatches of $10$ does not: its gradient noise, about $\eta(\sgdvar/\abs B)^{1/2}\abs w\approx0.03\abs w$ per step, reaches seven times the injected noise $\sqrt\epsilon=0.0045$, it drifts toward balance like SGD, and its law is too narrow, with a largest error of $0.234$, the effect that \textcite{BrosseEtAl2018} proved for strongly log-concave posteriors at large $n$. SGD forgets $a^2-b^2$ as \cref{prop:sgd:discrete} predicts: the median of $\abs{D_t/D_0}$ is $0.359$ after $1000$ steps against $e^{-\eta^2\sgdvar t/\abs B}=0.368$, and $4.3\times10^{-5}$ after $10^4$ steps against $4.6\times10^{-5}$, while gradient descent keeps $0.9965$ of it. And SGD collapses: $144$ of the $400$ runs end with $\abs{ab}<10^{-8}$. Of the $158$ data sets with $\abs{\hat c}<\eta\sgdvar/(2\kappa\abs B)$, the threshold of the heuristic, $83.5\%$ collapsed within the $5\times10^4$ steps, of the others $5\%$, all of them within a factor $1.5$ of the threshold. Every surviving run sits on a balanced line on the side of $\hat c$, with $\abs{ab}$ over its last $10^4$ steps averaging $0.0062$ over the runs, against $0.0059$ from the heuristic. These measurements on a model with two parameters show that the gap between training and the posterior is real where it can be computed; they say nothing about its size in a network with $10^8$ parameters.
+
+\begin{figure}[t]
+\begin{fullwidth}
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=16mm},splot,width=0.47\linewidth,height=0.385\linewidth]
+\nextgroupplot[xmin=-1.02,xmax=0.07,ymin=-0.03,ymax=1.03,xtick={-1,-0.75,-0.5,-0.25,0},ytick={0,0.25,0.5,0.75,1},
+  xlabel={$\tau$},ylabel={fraction with $\log\abs a/\log n\le\tau$},title={(a) end points, $n=10^4$},
+  legend style={font=\scriptsize,at={(0.03,0.97)},anchor=north west}]
+\addplot[regularpred] coordinates {(-1.02,0) (-0.5,0) (-0.5,1) (0.07,1)};
+\addplot[theory] table[x=tau,y=post] {figures/data/15-sgd-steps-cdf.dat};
+\addplot[theory2] table[x=tau,y=flow] {figures/data/15-sgd-steps-cdf.dat};
+\addplot[measured,ebars] table[x=tau,y=langevin,y error plus=langevinhi,y error minus=langevinlo] {figures/data/15-sgd-steps-cdf.dat};
+\addplot[measured2,ebars] table[x=tau,y=sgld,y error plus=sgldhi,y error minus=sgldlo] {figures/data/15-sgd-steps-cdf.dat};
+\addplot[measured3,ebars] table[x=tau,y=sgd,y error plus=sgdhi,y error minus=sgdlo] {figures/data/15-sgd-steps-cdf.dat};
+\legend{{regular},{posterior (exact)},{gradient flow},{Langevin},{SGLD, $\abs B=10$},{SGD, $\abs B=10$}}
+\nextgroupplot[xmode=log,ymode=log,xmin=7,xmax=6e4,ymin=1e-15,ymax=4,xlabel={step $t$},ylabel={median of $\abs{D_t/D_0}$},
+  title={(b) the conserved quantity $D=a^2-b^2$},ytick={1e-15,1e-10,1e-5,1},
+  legend style={font=\scriptsize,at={(0.03,0.03)},anchor=south west}]
+\addplot[guide,domain=7:6e4,samples=2] {1};
+\addplot[theory] table[x=t,y=pred] {figures/data/15-sgd-steps-balance.dat};
+\addplot[measured3] table[x=t,y=gd] {figures/data/15-sgd-steps-balance.dat};
+\addplot[measured] table[x=t,y=sgd] {figures/data/15-sgd-steps-balance.dat};
+\addplot[measured2] table[x=t,y=sgld] {figures/data/15-sgd-steps-balance.dat};
+\legend{{gradient flow},{$e^{-\eta^2\sgdvar t/\abs B}$},{GD},{SGD},{SGLD}}
+\end{groupplot}
+\end{tikzpicture}
+\end{fullwidth}
+\caption{Finite steps and gradient noise on the product model at its singular truth, $n=10^4$: $400$ data sets, one run of each algorithm per data set from a common start uniform on $[-1,1]^2$ (seeds $1511$, $1512$); step $\eta=0.1$, minibatches of $\abs B=10$ drawn with replacement, SGLD and Langevin with $\epsilon=2\eta/n$ at $\beta=1$, reflected into the prior box. (a) Distribution functions of $\log\abs a/\log n$ after $5\times10^4$ steps, with Clopper--Pearson $95\%$ intervals; solid bronze, the exact posterior averaged over the data sets; dotted, the end points of gradient flow from the same starts; dashed slate, the regular prediction. SGD runs that collapsed onto the origin lie to the left of the frame. (b) Medians over the $400$ runs of $\abs{D_t/D_0}$ (gradient descent stops after $2\times10^4$ steps), with the prediction $e^{-\eta^2\sgdvar t/\abs B}$ from \cref{prop:sgd:discrete} at the median $\sgdvar=0.9997$ over the data sets; gradient flow keeps $D$ exactly. Script: \texttt{15-sgd-steps.py}.}\label{fig:sgd:steps}
+\end{figure}
+
+\section{The ledger}\label{sec:sgd:ledger}
+
+On the product model, gradient flow conserves $a^2-b^2$ and stops at the point of the hyperbola $ab=\hat c$ that this quantity and the signs of $a\pm b$ select (\cref{thm:sgd:balance}): from the prior's starts at the two extreme scales, from small starts at the middle one, $n^{-1/4}$ (\cref{cor:sgd:biases}), while the posterior spreads uniformly over all of them (\cref{thm:singular:scales}). Finite steps shrink $a^2-b^2$ by the exact factor $1-\eta^2r_t^2$ (\cref{prop:sgd:discrete}), so SGD forgets its start and drifts to balance, where gradient noise can collapse it onto the singular point. Langevin dynamics leaves the posterior invariant (\cref{prop:sgd:langevin}) and reproduces it in our measurement; SGLD with small minibatches behaves like SGD. Training and the posterior find the same function and different parameters.
+
+\ledgercard{what gradient descent finds against what the posterior averages: the law of $\log\abs a/\log n$ at the end of training and under the posterior}{they agree: the minimizer is the center of the asymptotically normal posterior, and both live at the scale $n^{-1/2}$ around $\hat w$}{they differ: gradient flow conserves $a^2-b^2$ and stops where it selects (\cref{thm:sgd:balance}); finite steps multiply $a^2-b^2$ by $1-\eta^2r_t^2$ (\cref{prop:sgd:discrete}); the posterior spreads uniformly over scales (\cref{thm:singular:scales})}{$y=abx$ at its singular truth: flow from the prior $\to\frac12\delta_{-1/2}+\frac12\delta_0$, from a small start $\to-\frac14$; posterior $\to\Unif(-\frac12,0)$}{$n=10^{12}$: mass of the middle half of the scales $0.490$ (posterior), $0.005$ (flow, prior start), $1.000$ (flow, small start); $n=10^4$: Langevin within $0.025$ of the posterior, SGLD with $\abs B=10$ off by $0.234$; SGD's $a^2-b^2$ follows $e^{-\eta^2\sgdvar t/\abs B}$, and $36\%$ of SGD runs collapse onto the origin}{gradient flow or explicit steps on the product model and its one symmetry; the exact posterior at $\beta=1$ with the uniform prior; Gaussian data at the singular truth; collapse argued, not proved}
+
+\section{Where the theory stops}\label{sec:sgd:stops}
+
+This chapter is where the book takes stock. We state the main critique of the theory's relevance to deep learning and the replies to it, list what the theory explains and what it does not (\cref{tab:sgd:explains}), and close with the three paragraphs that close every chapter.
+
+
+\paragraph{The critique.} In November 2023 Joar Skalse, who had attended a workshop on the theory that June, set out a critique in a blog post \parencite{Skalse2023}. The puzzle of generalization, he argues, is about small data relative to expressivity, and its answer must be an inductive bias toward simple functions, fixed by the prior and the parameter-function map; the theory abstracts from both, so its generalization theorem holds only relative to the machine's own implicit prior. His example fits polynomials of degree $4$ with $15$ parameters, $f(x)=\theta_1x^4+\theta_2\theta_3x^3+\dots+\theta_{11}\cdots\theta_{15}$, to the one point $(1,1)$; he argues that the fit of lowest learning coefficient is $x^4$, not the constant $1$, so that a low learning coefficient can mean a complex function. He adds that the limit of infinite data is already covered by classical learning theory, and that the dominance of singular points needs both analyticity and infinite data. He does not object that networks are trained by gradient descent rather than by Bayesian updating, since he regards gradient descent as ``empirically quite similar'' to Bayesian sampling, citing his earlier summary of work he coauthored \parencite{MingardEtAl2021}.
+
+\begin{table}[t]
+\begin{fullwidth}
+\centering\footnotesize
+\renewcommand{\arraystretch}{1.12}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.21\linewidth}>{\raggedright\arraybackslash}p{0.25\linewidth}@{}}
+\toprule
+claim & status & where\\
+\midrule
+\multicolumn{3}{@{}l}{\emph{What singular learning theory explains}}\\
+Parameter counts are the wrong complexity for Bayesian learning in singular models: the free energy charges $\lambda\log n-(m-1)\log\log n$ & proved & \cref{thm:coefficient:free,thm:freeenergy:main}\\
+The Bayes generalization error is $\lambda/n$, not $\frac d{2n}$; WAIC and WBIC estimate generalization and free energy & proved & \cref{thm:generalization:main,thm:waic:main,thm:temperature:wbic}\\
+The posterior of a singular model is not asymptotically normal; it spreads over scales & proved (product model) & \cref{thm:singular:scales}; \textcite{Watanabe2018}\\
+How overparameterized singular models \emph{can} generalize under Bayesian learning (Murfet's (i)) & proved as $n\to\infty$ & \textcite{Watanabe2009,Murfet2023a}\\
+The local learning coefficient as the complexity of a trained point & defined and bounded; estimates observed & \cref{ch:llc}; \textcite{LauEtAl2025}\\
+Jumps of the estimated local learning coefficient at stage boundaries & observed in small models & \cref{ch:stages}; \textcite{HooglandEtAl2025}\\
+\midrule
+\multicolumn{3}{@{}l}{\emph{What it does not explain}}\\
+Which minimizer SGD finds; whether SGD samples the posterior & not on $y=abx$ (flow proved, SGD observed); open for networks & \cref{cor:sgd:biases,prop:sgd:discrete}; \textcite{MandtEtAl2017}\\
+Why networks trained on natural data generalize (Murfet's (ii)) & open & \textcite{Murfet2023a,Skalse2023}\\
+That a low learning coefficient means a simple function & false in general; open for networks & \textcite{Skalse2023}; \textcite[App.~F]{LauEtAl2025}\\
+More parameters than data; finite $n$ & open & \cref{ch:freeenergy}; \textcite{NagayasuWatanabe2023}\\
+Non-analytic architectures such as ReLU networks & open beyond special cases & \cref{ch:singular,ch:llc}\\
+The role of training time: stages, $n(t)$ & conjectured; evidence both ways & \cref{conj:sgd:bah,conj:sgd:nt}; \textcite{CarrollEtAl2025}\\
+\bottomrule
+\end{tabularx}
+\end{fullwidth}
+\caption{What singular learning theory explains about deep learning and what it does not, as of October 2026, with the status of each claim and where it is proved or discussed.}\label{tab:sgd:explains}
+\end{table}
+
+\paragraph{The replies.} Daniel Murfet \parencite{Murfet2023a} separates (i) how it is possible for overparameterized models to generalize despite classical forms of Occam's razor such as BIC, from (ii) why neural networks in particular generalize on natural data. The theory, in his view, comes close to settling (i), modulo the validity of the asymptotic limit, the relation between Bayesian generalization error and the test error of a trained network (largely the posterior against SGD), and hypotheses such as relatively finite variance. It does not settle (ii), which it reduces to the question why natural data and networks give a low loss $L_0$, learning coefficient $\lambda$ and singular fluctuation $\nu$, through the Gibbs generalization error $L_0+(\lambda+\nu)/n$.\sidenote{In Murfet's formula $L_0$ is roughly the loss of the best parameter and $\nu$ the singular fluctuation of \cref{ch:generalization}.} In a second comment he grants that the expository posts may lead readers to think (ii) settled, and places the theory's present value in phase transitions and emergent structure \parencite{Murfet2023c}. Dmitry Vaintrob replied that good generalization relative to the machine's own implicit prior is exactly what the theory claims, and is nontrivial, and that the distinction between SGD and sampling matters more than many people realize \parencite{Vaintrob2023}. In an appendix to the arXiv version of their paper, \textcite[Appendix~F]{LauEtAl2025} agree that the local learning coefficient is a model complexity, not a model-independent one: $f(x,w)=w^8f_1(x)+(1-w^8)f_2(x)$ prefers $f_2$, of learning coefficient $\frac1{16}$, to $f_1$, of learning coefficient $\frac12$, whatever their Kolmogorov complexities, and explaining simplicity bias by a bias toward low learning coefficient alone would be, as they say Skalse noted, tautological; a footnote adds that its role in inductive biases is ``only rigorously established for Bayesian learning'', though they suspect that it applies to SGD as well. Ege Erdil's discrete restatement of the theory took the stationary distribution of SGD to be proportional to $e^{-\beta L}$ \parencite{Erdil2023}; on the product model the long-run law of SGD concentrates near the balanced lines (\cref{prop:sgd:discrete}) and is no such density. A commenter, interstice, put the dynamical objection directly: what is specific to the theory is that volume concentrates at singular points as $n\to\infty$, and the commenter saw no mechanism by which SGD would be attracted to such points \parencite{interstice2023}; stochastic collapse \parencite{ChenEtAl2023b}, of which our collapse onto the origin is an instance, and Larsson's result \parencite{Larsson2026} can be read as partial answers.
+
+\paragraph{Flatness and description length.}\index{sharpness}\index{minimum description length} Rescalings that keep the function change the sharpness \parencite{DinhEtAl2017}, as in \cref{comp:sgd:biases}, but not the local learning coefficient (\cref{ch:llc}). \Textcite{UrdshalsEtAl2025} prove that, under technical conditions, a realizable singular model has a two-part code with redundancy $\lambda\log n-(m-1)\log\log n+O_p(1)$, and observe that estimated local learning coefficients of language models track how coarsely their weights can be quantized, an asymptotic theorem and a correlational experiment.
+
+\paragraph{What was assumed.} \Cref{thm:sgd:balance} assumes gradient flow: infinitesimal steps, full batches, no momentum and no weight decay. Each of these changes the answer: finite steps and minibatches break the conservation law (\cref{prop:sgd:discrete}), weight decay makes $a^2-b^2$ decay to zero even under the flow (\cref{ex:sgd:wd}), and adaptive optimizers such as Adam were not treated. The theorem uses the product model's one continuous symmetry; a network has one rescaling symmetry for each positively homogeneous unit, each with its conserved quantity \parencite{DuEtAl2018}, and permutations, which give no conservation law. The scale statements assume the singular truth, Gaussian data and a start independent of the data, and the comparison assumes the exact posterior at $\beta=1$ with the uniform prior. Behind the whole book stand a fixed model as $n\to\infty$, realizability or relatively finite variance, analyticity, and here training run to convergence, which from a small start takes a time of order $n^{1/2}\log n$.
+
+\paragraph{Where it breaks.} On the simplest singular model, training and the posterior disagree about the parameters in every respect we measured (\cref{sec:sgd:measuring}): gradient flow from the prior's starts misses the middle scales that carry half the posterior mass, SGD collapses onto the origin in $36\%$ of our runs, which the posterior never does, and only full-batch Langevin dynamics reproduces the posterior. For networks, the positive theorem on SGD as approximate inference \parencite{MandtEtAl2017} assumes a positive definite Hessian, which a singular minimum lacks; constant-step SGLD departs from the posterior as $n$ grows, even when the posterior is strongly log-concave \parencite{BrosseEtAl2018}; SGMCMC and deep ensembles give predictive distributions distinct from Hamiltonian Monte Carlo \parencite{IzmailovEtAl2021}; the Bayesian $5\to6$ transition of the toy model of superposition was not seen in SGD \parencite{ChenEtAl2023}; and the transformers of \textcite{CarrollEtAl2025} stopped short of a transition that Bayesian model selection predicts. On the other side, SGD and the posterior agreed well about functions in the experiments of \textcite{MingardEtAl2021}, as they do on our toy. Read as a statement about the law of the parameters, \cref{conj:sgd:nt} fails on the product model, we argue: under the posterior at every sample size the position $\theta=\frac12\log\abs{a/b}$ along the fiber is spread out, with a density of order $1/\log(1/\abs c)$ (\cref{comp:sgd:biases}), while under SGD $D_t\to0$ (\cref{prop:sgd:discrete,fig:sgd:steps}), so the law of $\theta_t$ concentrates at $0$ and no choice of $n(t)$ keeps the two laws close in total variation.
+
+\paragraph{Open problems.} (1) The long-run law of constant-step SGD on a singular model: on the product model, find the stationary law of $(c_t,D_t)$ as $\eta\to0$ with $\eta/\abs B$ fixed, prove the collapse threshold, and compare the law with the posterior's local free energies; \textcite{CorlouerMace2024} pose the comparison for degenerate toy landscapes. (2) Conditions under which a dynamical transition has a Bayesian antecedent (\cref{conj:sgd:bah}), and whether \cref{conj:sgd:nt} holds for functions, where the product model does not refute it. (3) Murfet's question (ii): why natural data and architectures give low $L_0$, $\lambda$ and $\nu$ \parencite{Murfet2023a}. (4) Whether the local learning coefficient of neural networks is model-independent in some universality class, as \textcite[Appendix~F]{LauEtAl2025} suggest. (5) A theory that keeps the learning coefficient when the number of parameters is comparable to $n$ or larger; bounds for redundant networks of fixed size, such as that of \textcite{NagayasuWatanabe2023} for deep ReLU networks with more layers than necessary, are a start.
+
+\begin{exercises}
+\item \consolidation (Balancedness in deep linear networks.) For $y=W_L\cdots W_1x$ with a square loss, show that gradient flow keeps every $W_{j+1}^\top W_{j+1}-W_jW_j^\top$ constant, and deduce that for the chain $y=a_1\cdots a_Lx$ every $a_i^2-a_j^2$ is conserved.\hint{Write $\nabla_{W_j}L=P_j^\top GQ_j^\top$ with $P_j=W_L\cdots W_{j+1}$ and $Q_j=W_{j-1}\cdots W_1$, and use $P_j=P_{j+1}W_{j+1}$, $Q_{j+1}=W_jQ_j$.}\label{ex:sgd:dln}
+
+\item \consolidation (Sharpness along the fiber.) Show that at a point of the fiber $ab=\hat c$ the Hessian of $\Ln$ is $\kappa(b,a)^\top(b,a)$, with eigenvalues $0$ and $\kappa\sqrt{D^2+4\hat c^2}$, so that the balanced points are the flattest minimizers, and that per unit length of the fiber the posterior density is proportional to $(a^2+b^2)^{-1/2}$.\label{ex:sgd:sharp}
+
+\item \consolidation (The truth on the cross.) Show that if $\hat c=0$, gradient flow converges from $(a_0,b_0)$ to $(\sgn(a_0)\sqrt{D_+},\sgn(b_0)\sqrt{D_-})$ with $D_\pm=\max(\pm D,0)$, and that from a start on the lines $a=\pm b$ it approaches the origin only like $t^{-1/2}$.\label{ex:sgd:zero}
+
+\item \consolidation (Langevin dynamics and Mandt's step.) (a) For the regular line, $U(c)=\frac{n\kappa}2(c-\hat c)^2$, check \cref{prop:sgd:langevin} directly. (b) Model one SGD step on the same model as $c'-\hat c=(1-\eta\kappa)(c-\hat c)+\eta\xi$ with independent $\xi$ of variance $\sgdvar/\abs B$. Show that the stationary variance is $\eta\sgdvar/(\abs B\kappa(2-\eta\kappa))$, and that it equals the posterior variance $1/(n\kappa)$ when $\eta=2\abs B/(n\sgdvar+\abs B\kappa)$, the optimal step of \textcite{MandtEtAl2017} up to a relative error of order $\abs B\kappa/(n\sgdvar)$.\label{ex:sgd:mandt}
+
+\item \byhand (Two arms with different learning coefficients.) For the cusp model $y=ab^2x$, show: (a) gradient flow conserves $a^2-\frac12b^2$; (b) the arm $\{b=0\}$ of the true set has local learning coefficient $\frac14$, the arm $\{a=0\}$ has $\frac12$; (c) assuming the flow converges, it ends near the arm $\{a=0\}$ if $a_0^2<\frac12b_0^2$ and near $\{b=0\}$ otherwise, so from a start uniform on $[-1,1]^2$ it ends near $\{a=0\}$ with probability $1/(2\sqrt2)\approx0.354$ as $\hat c\to0$; if $a_0\hat c<0$ and $a_0^2>\frac12b_0^2$, then it ends at a critical point that is not a minimizer; (d) under the posterior at the singular truth, $\log\abs b/\log n\to-\frac14$ and $\log\abs a/\log n\to0$ in probability.\hint{Given $c=ab^2$, the uniform prior gives $\abs b$ the density proportional to $b^{-2}$ on $[\abs c^{1/2},1]$.}\label{ex:sgd:cusp}
+
+\item \byhand (The chain.) For $y=a_1a_2a_3x$ at its singular truth, show that if gradient flow from a small, nearly balanced start converges to a minimizer, then it ends with $\abs{a_i}\approx\abs{\hat c}^{1/3}$, so that $\log\abs{a_i}/\log n\to-\frac16$ for starts small enough; and that under the posterior $\log\abs{a_1}/\log n$ converges in law to the density $8(\tau+\frac12)$ on $[-\frac12,0]$, whose mean is $-\frac16$.\label{ex:sgd:chain}
+
+\item \byhand (The size of the start.) Let $a_0=n^{-\gamma}\xi_1$ and $b_0=n^{-\gamma}\xi_2$ with independent standard normal $\xi_1,\xi_2$ and $\gamma\ge0$. Show from \eqref{eq:sgd:limit} that at the singular truth $\log\abs{a_\infty}/\log n$ tends in probability to $-\gamma$ on $\{\abs{\xi_1}>\abs{\xi_2}\}$ and to $-\frac12+\gamma$ on its complement when $\gamma<\frac14$, and to $-\frac14$ when $\gamma\ge\frac14$.\label{ex:sgd:scale}
+
+\item \variation (Weight decay.) Add $\frac\mu2(a^2+b^2)$ to $\Ln$. Show that gradient flow now satisfies $\frac{\dd}{\dd t}(a^2-b^2)=-2\mu(a^2-b^2)$, and that the minimizers are the balanced points with $\abs{ab}=\abs{\hat c}-\mu/\kappa$ and $\sgn(ab)=\sgn(\hat c)$ when $\abs{\hat c}>\mu/\kappa$, and the origin otherwise. Compare the threshold $\mu/\kappa$ and the value of $\abs{ab}$ at the minimizers with the collapse threshold $\eta\sgdvar/(2\kappa\abs B)$ of SGD and the mean of $\abs{c_t}$ in the heuristic of stochastic collapse.\label{ex:sgd:wd}
+
+\item \measurement (The collapse threshold.) In \texttt{15-sgd-steps.py}, vary $\eta\in\{0.05,0.1,0.2\}$ and $\abs B\in\{5,10,20\}$, and compare the fraction of collapsed runs with the fraction of data sets with $\abs{\hat c}<\eta\sgdvar/(2\kappa\abs B)$; which runs have not collapsed yet, and why? Then give SGLD minibatches of $100$ and $1000$, with fewer data sets to keep the run short, and watch its law approach the posterior's.\label{ex:sgd:collapse}
+
+\item \research (SGD and the learning coefficient.) On the cusp model of \cref{ex:sgd:cusp} the posterior concentrates on the arm of learning coefficient $\frac14$. Where does constant-step SGD go in the long run, and does the answer depend on $\eta/\abs B$? Formulate what would count as evidence for or against \cref{conj:sgd:bah} in a model with two arms, and test it; the question is open (\cref{sec:sgd:stops}).\label{ex:sgd:research}
+\end{exercises}
+
+\notesandrefs
+The Amari school studied gradient learning near the singularities of networks long before singular learning theory reached deep learning (\cref{ch:singular}); \textcite{FukumizuAmari2000} showed how smaller networks create plateaus in larger ones. \Textcite{SaxeEtAl2014} solved the gradient dynamics of deep linear networks exactly and derived the conserved quantity $a^2-b^2$ from the rescaling symmetry through Noether's theorem; they credit the balanced initial condition, under which the dynamics becomes a matrix Riccati equation, to a paper of Fukumizu at the 1998 International Conference on Neural Information Processing, which we have not seen. \Textcite{AroraEtAl2018} assumed balanced layers, $W_{j+1}^\top W_{j+1}=W_jW_j^\top$, at initialization and derived the dynamics of the end-to-end matrix (their Theorem~1); \textcite{DuEtAl2018} proved the conservation laws for units with linear, ReLU or leaky ReLU activations (their Theorems~2.1 and~2.2), and their proofs for matrix factorization contain the full-batch form of \eqref{eq:sgd:discrete}; \textcite{KuninEtAl2021} derived conservation laws from symmetries, and \textcite{WangEtAl2022} proved the balancing effect of large learning rates. \Cref{thm:sgd:balance} is the case of one unit, with the convergence, the exceptional line and the scale $n^{-1/4}$ added; its proof through \cref{lem:sgd:scalar}, \cref{cor:sgd:biases}, the minibatch form of \eqref{eq:sgd:discrete} and the collapse heuristic are the book's own, and we did not find them in this form in the literature.
+
+The debate on the theory's relevance took place on LessWrong in 2023, in \textcite{Erdil2023} and \textcite{Skalse2023} and their comment threads. As of October 2026 we know of no refereed paper whose main purpose is to criticize the theory's relevance to deep learning; the concessions are in the program's own papers, such as Appendix~F of \textcite{LauEtAl2025}, and in their limitations sections.
+
+To read next: \textcite{Watanabe2018}, the rigorous sequel, and \textcite{Watanabe2009}; \textcite{Suzuki2023a}, exercises with Stan code; \textcite{Carroll2023}, an informal introduction; and, in Japanese, \textcite{AmariWatanabe2026}, which joins singularities to statistical neurodynamics.
+
+\paragraph{Translating the literature.} \Textcite{SaxeEtAl2014} write the error $\frac1{2\tau}(s-ab)^2$, with $s$ the strength of an input--output mode and $\tau$ a time constant, for our $\Ln-C_n$ with $\kappa=1/\tau$ and $\hat c=s$; their hyperbolic coordinates parametrize the conserved hyperbolas, ours the fibers $ab=c$. \Textcite{MandtEtAl2017} write $\epsilon$, $S$, $N$ and $D$ for our $\eta$, $\abs B$, $n$ and $d$, and factor the noise covariance $C$ as $BB^\top$; \textcite{WellingTeh2011} write $N$ and $n$ for our $n$ and $\abs B$, and \cref{sec:toolkit:sgld} writes $b$ for our $\abs B$. \Textcite{ChenEtAl2023} call a transition during training dynamical and one of the posterior as $n$ grows Bayesian.
+
+{\setcounter{biburlnumpenalty}{9000}\setcounter{biburlucpenalty}{9000}\setcounter{biburllcpenalty}{9000}%
+\printchapterbib
+\setcounter{biburlnumpenalty}{0}\setcounter{biburlucpenalty}{0}\setcounter{biburllcpenalty}{0}}
+\end{refsection}
